@@ -1,0 +1,36 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    env:
+      HUSKY: '0' # el script `prepare` no debe instalar hooks en CI
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24.19.0
+
+      - name: Activar pnpm 11.21.0 (corepack)
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+
+      - run: pnpm install --frozen-lockfile
+
+      # typecheck + lint + tests. Los tests no importan config/env.ts, así que no se
+      # definen variables de entorno dummy: si un test las necesita, debe fallar acá.
+      - run: pnpm check

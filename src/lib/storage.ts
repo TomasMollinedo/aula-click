@@ -7,7 +7,8 @@ import {
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner'
 import { env } from '@/config/env'
 
-const DEFAULT_URL_TTL_SECONDS = 60
+// 15 min: la foto no vence mientras el usuario sigue en pantalla.
+const DEFAULT_URL_TTL_SECONDS = 900
 
 const s3 = new S3Client({
   endpoint: env.S3_ENDPOINT,

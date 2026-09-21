@@ -6,15 +6,16 @@ services:
     container_name: aula-click-postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER:-aula_click}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-aula_click_dev_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-aula_click_db}
     ports:
-      - "5432:5432"
+      - '127.0.0.1:5432:5432'
     volumes:
-      - pgdata:/var/lib/postgresql   # en Postgres 18 va aquí, no en /data
+      - pgdata:/var/lib/postgresql # en Postgres 18 va aquí, no en /data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-aula_click} -d ${POSTGRES_DB:-aula_click_db}']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -28,12 +29,12 @@ services:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY}
     ports:
-      - "127.0.0.1:9000:9000"   # API S3
-      - "127.0.0.1:9001:9001"   # consola web
+      - '127.0.0.1:9000:9000' # API S3
+      - '127.0.0.1:9001:9001' # consola web
     volumes:
       - miniodata:/data
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ['CMD', 'mc', 'ready', 'local']
       interval: 5s
       timeout: 5s
       retries: 10
@@ -54,7 +55,7 @@ services:
       mc mb --ignore-existing local/$${S3_BUCKET} &&
       echo 'Bucket listo'
       "
-    restart: "no"
+    restart: 'no'
 
 volumes:
   pgdata:

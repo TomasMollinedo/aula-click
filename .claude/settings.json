@@ -1,0 +1,51 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pnpm typecheck)",
+      "Bash(pnpm lint)",
+      "Bash(pnpm test:run)",
+      "Bash(pnpm check)",
+      "Bash(pnpm build)",
+      "Bash(pnpm format)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ],
+    "ask": [
+      "Bash(git commit:*)",
+      "Bash(git checkout -b:*)",
+      "Bash(git switch -c:*)",
+      "Bash(git switch --create:*)",
+      "Bash(pnpm db:migrate:*)",
+      "Bash(prisma migrate:*)",
+      "Bash(pnpm prisma migrate:*)",
+      "Bash(pnpm exec prisma migrate:*)",
+      "Bash(pnpm dlx prisma migrate:*)",
+      "Bash(npx prisma migrate:*)",
+      "Bash(prisma db push:*)",
+      "Bash(pnpm prisma db push:*)",
+      "Bash(pnpm exec prisma db push:*)",
+      "Bash(pnpm dlx prisma db push:*)",
+      "Bash(npx prisma db push:*)",
+      "Edit(./prisma/migrations/**)"
+    ],
+    "deny": [
+      "Read(./.env)",
+      "Read(./.env.local)",
+      "Read(./.env.*.local)",
+      "Read(./.env.development)",
+      "Read(./.env.production)",
+      "Read(./.env.test)",
+      "Bash(cat .env)",
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(git checkout main -- .)",
+      "Bash(rm -rf:*)",
+      "Bash(prisma migrate reset:*)",
+      "Bash(pnpm prisma migrate reset:*)",
+      "Bash(pnpm exec prisma migrate reset:*)",
+      "Bash(pnpm dlx prisma migrate reset:*)",
+      "Bash(npx prisma migrate reset:*)"
+    ]
+  }
+}
