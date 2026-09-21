@@ -60,6 +60,7 @@ src/
 │   │   ├── <dominio>.repository.ts                # único que usa Prisma
 │   │   └── __tests__/<dominio>.service.test.ts
 │   ├── middlewares/auth.ts                        # requireAuth() + requireRole(...)
+│   ├── shared/                                    # (A construir) paginación, primitivas Zod, búsqueda, fechas, Actor
 │   └── errors/                                    # AppError y subclases, error-handler, ErrorResponseSchema
 ├── lib/
 │   ├── prisma.ts                                  # singleton (globalThis) con adaptador pg
@@ -92,6 +93,110 @@ Flujo: cliente -> routes (valida con Zod) -> controller -> service -> repository
 - `<dominio>.routes.ts` exporta `<dominio>Routes = createRouter()` y le agrega los endpoints declarados con `createRoute()`.
 - `createRouter()` devuelve `OpenAPIHono<AppEnv>`: en los handlers, `c.get('user')` y `c.get('session')` están tipados (los setea `requireAuth()`).
 - Cada feature se registra en `src/server/app.ts` con **una sola línea**: `app.route('/<dominio>', <dominio>Routes)`.
+
+## Convenciones transversales (backend)
+
+Se aplican a todas las features. Lo que se sabe que se repite vive en `src/server/shared/`; ninguna feature lo reimplementa.
+
+**Estado: las convenciones valen desde ya para todo código nuevo, pero el código de apoyo todavía NO existe** (`src/server/shared/`, el Actor en `requireAuth()` y `disableSignUp` están "A construir"). Si una tarea necesita una de esas piezas y aún no existe, **avisar a la persona antes de crearla**: se construye una sola vez, en un PR propio y con sus tests, siguiendo la especificación de más abajo. Nunca se inventa una versión propia dentro de la feature.
+
+| Pieza                                                                                                           | Estado                                                                          |
+| --------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| Convenciones de idioma, nombres de query, formato de fechas/horas, paginación y respuestas (secciones de abajo) | **Vigentes**                                                                    |
+| `src/server/shared/` (`actor`, `paginacion`, `zod`, `busqueda`, `fechas`) con sus tests                         | **A construir** (no depende del schema; es lo primero)                          |
+| Regla de ESLint `shared` -> `features`                                                                          | **A construir**, junto con `shared/`                                            |
+| `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                                   | **A construir**                                                                 |
+| `disableSignUp: true` en `src/lib/auth.ts`                                                                      | **A construir** (una línea). **Hoy el registro público por email está abierto** |
+| Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría                                  | **A construir** (dependen del `schema.prisma`)                                  |
+| Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`                            | **A construir** (dependen de la feature `turnos`)                               |
+| Auditoría completada por el repository, y seed                                                                  | **A construir**                                                                 |
+
+### `server/shared/`
+
+Contiene solo código sin significado de negocio: paginación, primitivas de Zod, normalización de búsqueda, fechas y el tipo `Actor`.
+
+- `shared` NO importa de `features`. Las features sí importan de `shared`.
+- Se construye de entrada solo lo que ya sabemos que se va a repetir. Cualquier otra cosa se extrae recién en la tercera repetición.
+- Lo que tiene significado de negocio NO va a `shared`: vive en su feature y otras lo consumen por su repository (regla 2).
+
+### Fechas y horas
+
+- Zona horaria del negocio: `America/Argentina/Salta`. El servidor puede correr en UTC, así que nunca usar `new Date()` para "hoy".
+- Existe un único `hoy()` en `shared/fechas.ts`. Los services reciben el reloj inyectable (parámetro con `hoy()` por defecto) para poder testearlos.
+- Las fechas de calendario se guardan como `@db.Date` (sin hora) y en la API viajan como string `YYYY-MM-DD`. Nunca como `DateTime`.
+- La hora se guarda como minutos desde medianoche (`Int`: 09:30 = 570); en la API viaja como `HH:mm`. Comparar solapamientos es comparar enteros.
+- El día de la semana sigue ISO: 1 = lunes ... 7 = domingo.
+- Las marcas de auditoría (`createdAt`, `updatedAt`) sí son `DateTime` (instante).
+
+### Paginación
+
+- Por offset: query `page` (default 1) y `pageSize` (default 20, máximo 100). Se valida con el schema de `shared`.
+- Respuesta de listados: `{ data: [...], meta: { page, pageSize, total, totalPages } }`.
+- El repository ejecuta `findMany` y `count` en una sola transacción y el orden siempre incluye `id` como desempate, para que las páginas no se mezclen.
+- Se pagina todo listado de entidades. No se pagina: los selectores de catálogo (por ejemplo materias activas para un dropdown) y la agenda diaria, que se filtra por fecha.
+
+### Filtros y respuestas
+
+- Nombres fijos de query: `q` (búsqueda), `estado`, `materiaId`. Un filtro nuevo se agrega a esta lista.
+- El recurso individual se devuelve directo, sin `{ data }`. Los errores usan siempre `ErrorResponseSchema`.
+- Idioma: el dominio en español (rutas, campos JSON, códigos de error como `BLOQUE_LLENO`, mensajes al usuario). La infraestructura y el código genérico en inglés.
+
+### Búsqueda sin tildes
+
+- Prisma `mode: 'insensitive'` no resuelve tildes. Las entidades buscables (alumnos, profesores) tienen una columna `busqueda`, calculada al guardar con `normalizarBusqueda()` (minúsculas, sin tildes, espacios colapsados) sobre apellido, nombre y DNI.
+- La búsqueda normaliza `q` con la misma función y usa `contains` sobre `busqueda`. Si cambian nombre, apellido o DNI, se recalcula.
+- No se usa la extensión `unaccent` de Postgres.
+
+### Auditoría y actor
+
+- Toda entidad de negocio lleva `createdById`, `updatedById`, `createdAt`, `updatedAt`.
+- `requireAuth()` deja el `Actor` (`{ userId, role }`) en el contexto de Hono (`c.set('actor', ...)`; se agrega `actor: Actor` a `AppEnv` en `src/server/router.ts`, así `c.get('actor')` sale tipado en los controllers). El controller lo pasa al service y el service al repository, que completa los campos. No se usan extensiones de Prisma ni magia.
+- Si el usuario autenticado no tiene rol, `requireAuth()` responde 403 (`SIN_PERMISO`). Siguen en el contexto `user` y `session`, y `requireRole(...roles)` no cambia su contrato.
+- El detalle de una entidad devuelve quién la creó y quién la modificó por última vez (nombre y fecha/hora).
+
+### Baja lógica
+
+- Profesores y materias: enum `estado` (`ACTIVO` / `INACTIVO`). Nada se borra. Los listados aceptan `?estado=` con `ACTIVO` por defecto. Los alumnos no tienen baja lógica.
+
+### Regla de "turno vigente"
+
+- "Vigente" (turno recurrente sin fecha de fin o con fin >= hoy, o sesión única con fecha >= hoy) se define una sola vez, en una consulta de `turnos.repository`.
+- Profesores y materias la usan desde sus services (HU-03 a HU-06), importando ese repository. Prohibido reescribir la condición en otro lado.
+
+### Concurrencia en la capacidad de un bloque
+
+- La verificación de capacidad y la inserción del turno se hacen en una sola transacción de `turnos.repository` que bloquea la fila del bloque (`SELECT ... FOR UPDATE` dentro de `$transaction`). El service decide la regla; el repository la ejecuta de forma atómica.
+- Debe existir un test que cubra dos reservas simultáneas del último lugar.
+
+### Seguridad de cuentas
+
+- El registro público debe estar deshabilitado (**A construir**; hoy está abierto). Los usuarios los crea un gerente (o el seed en desarrollo). No se expone ningún endpoint de sign-up abierto.
+- La opción es `emailAndPassword.disableSignUp: true` en `src/lib/auth.ts` (existe en el tipo de Better Auth 1.7.5). Con ella, `POST /api/auth/sign-up/email` responde 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED`. El chequeo no exime las llamadas desde el servidor: **`auth.api.signUpEmail` también queda bloqueado, así que el seed no puede usarlo** (ver "Decisiones abiertas").
+- Cómo verificarlo: mientras la base no tenga las tablas de Better Auth, el endpoint da 500 (`Prisma schema mismatch`) con o sin la opción, así que no prueba nada. Con el schema creado, `POST /api/auth/sign-up/email` con un cuerpo válido debe dar 400 y no crear la cuenta.
+- El campo `role` nunca lo define el usuario (`input: false`).
+
+### Especificación de `src/server/shared/` (A construir)
+
+Cada archivo con su test en `shared/__tests__/`, con tests reales (no `it.todo`). Usar el `z` de `@hono/zod-openapi` para poder llamar a `.openapi()`.
+
+| Archivo         | Exporta                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| --------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `actor.ts`      | `type Actor = { userId: string; role: string }` (`role` como string hasta decidir sus valores).                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `paginacion.ts` | `paginacionQuerySchema` (`page`: entero >= 1, default 1; `pageSize`: entero 1..100, default 20; ambos coercionados desde string), `paginatedSchema(itemSchema)` (respuesta `{ data, meta }`), `calcularSkipTake(query)` -> `{ skip, take }` y `armarMeta(query, total)` (`totalPages` = techo de `total / pageSize`, 0 si no hay resultados).                                                                                                                                                                                                              |
+| `zod.ts`        | `dni`: se limpian puntos y espacios y luego se valida 7 u 8 dígitos; **se guarda solo con dígitos**. `email`: trim, minúsculas, email válido de hasta 254 caracteres. `telefono`: trim; solo dígitos, espacios, `+`, `-` y paréntesis; entre 8 y 20 caracteres con al menos 8 dígitos; **se guarda como lo escribió el usuario**. `textoRequerido(max)`: trim, entre 1 y `max`. `fechaISO`: `YYYY-MM-DD` y fecha real de calendario. `horaHHmm`: `HH:mm` de 00:00 a 23:59. `horaAMinutos` / `minutosAHora` (0 a 1439; lanzan `RangeError` si es inválido). |
+| `busqueda.ts`   | `normalizarBusqueda(texto)`: minúsculas, sin tildes ni diacríticos, espacios colapsados y recortados. `"González"` -> `"gonzalez"`; `"  Ñandú  Pérez "` -> `"nandu perez"`.                                                                                                                                                                                                                                                                                                                                                                                |
+| `fechas.ts`     | `hoy(reloj?)` -> `YYYY-MM-DD` en `America/Argentina/Salta` (`reloj` inyectable, por defecto el del sistema; es el único lugar que usa `new Date()`), `fechaADate` / `dateAFecha` entre `YYYY-MM-DD` y `Date` en UTC a medianoche (lo que Prisma devuelve para `@db.Date`) y `diaSemanaISO(fecha)` (1 = lunes ... 7 = domingo).                                                                                                                                                                                                                             |
+
+Casos de test obligatorios: `hoy()` a las 23:30 hora Salta (02:30 UTC del día siguiente) devuelve el día correcto, y `normalizarBusqueda` con los dos ejemplos de arriba.
+
+Notas de implementación (verificadas con Zod 4.6.5, `@hono/zod-openapi` 1.6.3 y Node 24):
+
+- `z.iso.date()` ya rechaza fechas inexistentes (`2026-02-30`, `2026-02-29`).
+- `dni` y `email` usan `.pipe()`, y en el OpenAPI aparecen solo como `string`: agregarles `.openapi({ description, example })`.
+- El `tsconfig` apunta a ES2017: quitar tildes con `/[̀-ͯ]/g` (no con `\p{M}`), y armar `hoy()` con `Intl.DateTimeFormat(...).formatToParts()` (no depender del formato del locale).
+- Con `createRouter()`, un query inválido llega como 400 `VALIDACION` (con `app.onError(errorHandler)` instalado).
+- Tests del middleware de auth: `vi.mock('@/lib/auth')` con `vi.hoisted`, sin base ni variables de entorno.
+- Regla de ESLint a agregar: `src/server/shared/**` no importa `@/server/features/**` ni `**/features/**` (ni Prisma). Probarla en negativo con un archivo descartable y en positivo con una feature que importe de `shared`.
 
 ## Reglas obligatorias
 
@@ -138,6 +243,8 @@ Están en `eslint.config.mjs` y `pnpm lint` (y por lo tanto `pnpm check`, el pre
 | `no-restricted-imports` (frontend)       | importar `@/server/*`, `@/lib/auth` o `@/lib/storage`                                                                   | `src/app/**` y `src/components/**`, salvo `src/app/api/**`                    |
 | `no-restricted-imports` (OpenAPIHono)    | importar `OpenAPIHono` de `@hono/zod-openapi` (crear routers con `createRouter()`)                                      | todo `src/**`, salvo `src/server/router.ts` y `src/server/app.ts`             |
 
+**A construir** (junto con `src/server/shared/`): `no-restricted-imports` que impide a `src/server/shared/**` importar de `src/server/features/**` (con alias o relativo). Las features sí pueden importar de `shared`.
+
 ESLint no puede verificar el resto (por ejemplo `try/catch` en controllers, o endpoints sin todos sus status codes): eso se revisa en el PR, con ayuda de `/revisar-arquitectura`.
 
 ## Tests
@@ -164,6 +271,7 @@ ESLint no puede verificar el resto (por ejemplo `try/catch` en controllers, o en
 - Nombre del rol de mesa de entradas (`RECEPCION` en el doc de arquitectura vs. "mesa de entradas" en el backlog). Hasta decidirlo, `role` en `src/lib/auth.ts` no tiene valores ni `defaultValue`, y `requireRole` recibe `string[]`.
 - Modelo de turnos recurrentes: propuesta = guardar la regla y expandir las ocurrencias al consultar; prioridad calculada al leer.
 - Excepciones al registrar un recurrente cuando alguna fecha está llena.
+- Cómo se crea el primer gerente con el registro público deshabilitado. Con `disableSignUp`, `auth.api.signUpEmail` también queda bloqueado, así que **el seed no puede usarlo**. Opciones a confirmar (verificar la API exacta en la versión instalada de Better Auth): (a) el `internalAdapter` del contexto de Better Auth (`auth.$context`), para crear el usuario y su cuenta con contraseña desde un script o el seed; (b) el plugin `admin` (`createUser`), que trae su propio campo `role` y podría chocar con el `additionalFields.role` de `src/lib/auth.ts`.
 
 ## Flujo de trabajo del equipo
 

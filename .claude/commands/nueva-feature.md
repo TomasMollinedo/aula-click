@@ -17,7 +17,12 @@ Crear el esqueleto de la feature **`$ARGUMENTS`** siguiendo EXACTAMENTE las regl
 En `src/server/features/<d>/`, con el mismo contenido que los de `alumnos` reemplazando el nombre:
 
 - `<d>.routes.ts`: importa `createRouter` de `@/server/router` y exporta `export const <d>Routes = createRouter()`. **Nunca** `new OpenAPIHono()`. Sin endpoints.
-- `<d>.controller.ts`, `<d>.validation.ts`, `<d>.service.ts`, `<d>.repository.ts`: solo el comentario de responsabilidad de cada capa y `export {}`. No inventar funciones, tipos ni schemas.
+- `<d>.controller.ts`, `<d>.validation.ts`, `<d>.service.ts`, `<d>.repository.ts`: solo comentarios y `export {}`. **No inventar funciones, tipos ni schemas.** Cada archivo lleva el comentario de responsabilidad de su capa (el de `alumnos`) más la convención transversal que le toca, escrita como comentario (lo que se implementará cuando existan el modelo y `shared/`):
+  - `controller`: "Obtiene el Actor con `c.get('actor')` y lo pasa al service."
+  - `validation`: "Los schemas de listado usan `paginacionQuerySchema` y `paginatedSchema(...)` de `@/server/shared/paginacion`."
+  - `service`: "Recibe el `Actor` (`@/server/shared/actor`) y, si usa fechas, un reloj inyectable con `hoy()` de `@/server/shared/fechas` por defecto."
+  - `repository`: "Expone un método de listado paginado: `findMany` y `count` en una sola transacción, orden con `id` como desempate y `calcularSkipTake` / `armarMeta` de `@/server/shared/paginacion`. Completa la auditoría (`createdById`, `updatedById`) con el Actor."
+  - Las piezas de `src/server/shared/` pueden no existir todavía (ver "Convenciones transversales" en `AGENTS.md`): **no importarlas ni crearlas**, solo mencionarlas en el comentario.
 - `__tests__/<d>.service.test.ts`: `describe('<d>.service', ...)` con los dos `it.todo` del modelo. Importar `describe` e `it` de `vitest`.
 
 ## 3. Registrar la feature
@@ -28,6 +33,7 @@ En `src/server/app.ts`: agregar el `import` de `<d>Routes` y **una sola línea**
 
 - Solo el repository puede importar Prisma (`@/lib/prisma`, `@/generated/*`). Los demás archivos, nunca.
 - Ningún archivo de la feature importa el `service`, `controller` ni `routes` de otra feature; de otra feature solo se importa su `repository` (lecturas).
+- Una feature puede importar de `@/server/shared/*` (nunca al revés), pero solo cuando esa pieza exista; si no existe, no crearla.
 - Errores desde `@/server/errors`. Nada de `process.env` (usar `@/config/env`, y solo en `lib/` o `config/`).
 
 ## 5. Verificar y reportar
