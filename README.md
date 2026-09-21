@@ -1,36 +1,54 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Aula Click
 
-## Getting Started
+Sistema de gestión para un centro de atención académica — Ingeniería de Software (UCASAL).
 
-First, run the development server:
+## Requisitos
+
+- Node.js 24.19.0 (usar nvm / nvm-windows)
+- pnpm 11.21.0 (`npm install -g pnpm@11.21.0`)
+- Docker Desktop (con WSL 2 en Windows)
+- VS Code con las extensiones recomendadas del proyecto
+
+## Puesta en marcha
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone <url-del-repo>
+cd aula-click
+nvm install 24.19.0 && nvm use 24.19.0
+pnpm install
+cp .env.example .env        # PowerShell: Copy-Item .env.example .env
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Generar un secreto y pegarlo en `BETTER_AUTH_SECRET` del `.env`:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Levantar servicios y la aplicación:
 
-## Learn More
+```bash
+pnpm services:up
+pnpm dev
+```
 
-To learn more about Next.js, take a look at the following resources:
+- App: http://localhost:3000
+- Consola MinIO: http://localhost:9001 (minioadmin / minioadmin123)
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## Scripts
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+| Comando                              | Descripción                           |
+| ------------------------------------ | ------------------------------------- |
+| `pnpm dev`                           | Servidor de desarrollo                |
+| `pnpm lint` / `pnpm typecheck`       | Verificaciones de código              |
+| `pnpm build`                         | Build de producción                   |
+| `pnpm services:up` / `services:down` | Levantar / detener Postgres y MinIO   |
+| `pnpm db:migrate`                    | Crear y aplicar migraciones           |
+| `pnpm db:studio`                     | Explorador visual de la base de datos |
+| `pnpm test`                          | Tests con Vitest                      |
 
-## Deploy on Vercel
+## Notas
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- No commitear el `.env`.
+- Si pnpm muestra `ERR_PNPM_IGNORED_BUILDS`, ejecutar `pnpm approve-builds`.
+- Si el puerto 5432 está ocupado por un Postgres local, cambiar el mapeo a `5433:5432` en `docker-compose.yml` y el puerto en el `DATABASE_URL`.
