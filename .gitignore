@@ -39,3 +39,9 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# Permitir la plantilla de variables
+!.env.example
+
+# Cliente Prisma generado
+/src/generated
