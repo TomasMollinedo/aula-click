@@ -74,7 +74,12 @@ const eslintConfig = defineConfig([
     rules: { 'no-restricted-imports': restrict() },
   },
   {
-    files: ['src/server/**/*.ts', 'src/app/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}'],
+    files: [
+      'src/server/**/*.ts',
+      'src/app/**/*.{ts,tsx}',
+      'src/components/**/*.{ts,tsx}',
+      'src/features/**/*.{ts,tsx}',
+    ],
     ignores: ['src/server/**/*.repository.ts'],
     rules: { 'no-restricted-imports': restrict({ patterns: [prismaImports] }) },
   },
@@ -90,7 +95,7 @@ const eslintConfig = defineConfig([
     rules: { 'no-restricted-imports': restrict({ patterns: [crossFeatureImports] }) },
   },
   {
-    files: ['src/app/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}'],
+    files: ['src/app/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}', 'src/features/**/*.{ts,tsx}'],
     ignores: ['src/app/api/**'],
     rules: {
       'no-restricted-imports': restrict({ patterns: [prismaImports, serverFromFrontend] }),
