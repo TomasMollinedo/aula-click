@@ -1,18 +1,18 @@
 import Link from 'next/link'
 
 const links = [
-  { href: '/alumnos', label: 'Alumnos' },
-  { href: '/profesores', label: 'Profesores' },
-  { href: '/materias', label: 'Materias' },
-  { href: '/turnos', label: 'Turnos' },
-  { href: '/calendario', label: 'Calendario' },
+  { href: '/mesa/alumnos', label: 'Alumnos' },
+  { href: '/mesa/profesores', label: 'Profesores' },
+  { href: '/mesa/materias', label: 'Materias' },
+  { href: '/mesa/turnos', label: 'Turnos' },
+  { href: '/mesa/calendario', label: 'Calendario' },
 ]
 
-// El Sidebar es por rol (uno por cada route group, ej. (profesor)/ tendría
+// El Sidebar es por rol (uno por segmento de URL, ej. /profesor tendría
 // profesor-sidebar.tsx). El Header, si hace falta uno (logo, menú de usuario), es el mismo
 // para todos los roles — va en components/layout/header.tsx y se monta una sola vez en el
 // layout raíz (src/app/layout.tsx), no acá. Ver arquitectura-frontend.md.
-export function PersonalMesaEntradasSidebar() {
+export function MesaSidebar() {
   return (
     <nav className="w-56 shrink-0 border-r border-slate-200 p-4">
       <p className="mb-4 text-xs font-medium tracking-wide text-slate-400 uppercase">
