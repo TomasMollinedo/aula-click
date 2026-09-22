@@ -159,6 +159,7 @@ Implementar el ingreso al sistema y el esqueleto de navegación que usan todas l
 1. `features/auth/`: `auth-client.ts` (`createAuthClient` de `better-auth/react`, con `role` tipado en el cliente) y `LoginForm`.
 2. `/login` (fuera de los layouts de rol): email y contraseña obligatorios, contraseña enmascarada. Credenciales incorrectas → "Usuario o contraseña incorrectos". Profesor inactivo → "Su usuario no está habilitado". Sin pantalla de registro.
 3. Segmentos de URL por rol (decisión T-19): migrar `(personal-mesa-entradas)` a `app/mesa/` y crear `app/profesor/`. `/gerente` y `/portal` no se crean en este sprint.
+   - **Hecho (fuera de esta tarea):** la migración de `(personal-mesa-entradas)` a `app/mesa/` ya está en `main`, al detectarse la deriva contra T-19 (incluye `mesa-sidebar.tsx` / `MesaSidebar` y los `href` a `/mesa/...`). **Falta:** crear `app/profesor/`.
 4. Tras el login, redirigir al inicio del rol. Si un usuario entra a un segmento de otro rol, redirigirlo al suyo (es navegación, no seguridad: la seguridad la da la API).
 5. `AppShell`, `header.tsx` (logo, usuario, botón "Cerrar sesión") y un sidebar por rol en `components/layout/`. El layout raíz sólo monta `<Providers>`.
    - Mesa de entradas: Alumnos, Profesores, Materias, Turnos, Agenda diaria.
