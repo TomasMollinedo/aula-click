@@ -4,15 +4,16 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 
 ## Roles
 
-| Rol              | Valor técnico de `role` | Estado                                                   |
-| ---------------- | ----------------------- | -------------------------------------------------------- |
-| Mesa de entradas | `MESA_ENTRADAS`         | Sprint 1                                                 |
-| Profesor         | `PROFESOR`              | Planificado                                              |
-| Gerente          | `GERENTE`               | Planificado. Crea los usuarios (no hay registro público) |
-| Alumno           | `ALUMNO`                | Sprint 3 (portal)                                        |
+| Rol              | Valor técnico de `role` | Estado            |
+| ---------------- | ----------------------- | ----------------- |
+| Mesa de entradas | `MESA_ENTRADAS`         | Sprint 1          |
+| Profesor         | `PROFESOR`              | Sprint 1          |
+| Gerente          | `GERENTE`               | Planificado       |
+| Alumno           | `ALUMNO`                | Sprint 3 (portal) |
 
 - Cada usuario tiene un solo rol. Los valores técnicos son los de la tabla catálogo `rol`; la base rechaza cualquier otro (T-23).
-- No hay registro público. El primer gerente (y un usuario por rol, en desarrollo) lo crea el seed (T-21).
+- No hay registro público. Las cuentas se crean desde el sistema: el primer gerente (y un usuario por rol, en desarrollo) lo crea el seed (T-21), y mesa de entradas crea la cuenta de cada profesor (T-22).
+- Un usuario inactivo no puede iniciar sesión: recibe "Su usuario no está habilitado".
 - Cada profesor tiene su cuenta de usuario: mesa de entradas la crea con una contraseña inicial al dar de alta al profesor (T-22). La cuenta del alumno llega con el portal (Sprint 3).
 
 ## Alumnos

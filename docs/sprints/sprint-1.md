@@ -67,7 +67,7 @@ Traducir el DER aprobado a `prisma/schema.prisma` y generar la migración inicia
 9. Seed en `prisma/seed.ts`, registrado en `prisma7.config.ts`:
    - Idempotente (`upsert`), para poder correrlo varias veces.
    - Crea un usuario `MESA_ENTRADAS`, un `PROFESOR` (con su registro en `Profesor`, estado `ACTIVO`) y un `GERENTE` (no se usa en este sprint, pero queda disponible). El usuario alumno se agrega cuando se implemente el portal (Sprint 3).
-   - No puede usar `auth.api.signUpEmail`, porque con `disableSignUp` queda bloqueado (D-05). Las cuentas se crean escribiendo `Usuario` y su cuenta de tipo credencial, con la contraseña hasheada por el helper de hash que expone `src/lib/auth.ts` (ver T-03). Así el seed y el alta de profesor usan el mismo mecanismo.
+   - No puede usar `auth.api.signUpEmail`, porque con `disableSignUp` queda bloqueado (decisión T-21). Las cuentas se crean escribiendo `Usuario` y su cuenta de tipo credencial, con la contraseña hasheada por el helper de hash que expone `src/lib/auth.ts` (ver T-03). Así el seed y el alta de profesor usan el mismo mecanismo.
    - Emails y contraseñas por variables de entorno, agregadas a `.env.example`.
    - Carga unas materias de ejemplo para que el frontend tenga datos.
 10. Actualizar `docs/decisiones.md`: D-05 (creación de cuentas con el registro deshabilitado) y D-10 (vínculo cuenta ↔ profesor: FK de `Profesor` a `Usuario`, cuenta creada por mesa de entradas con contraseña inicial) pasan a "Tomadas". Actualizar también `docs/dominio.md` → Roles.
@@ -127,7 +127,7 @@ Dejar Better Auth cerrado a registro público y resuelta en la API la identifica
    - `emailAndPassword.disableSignUp: true` (`convenciones-backend.md` → Seguridad de cuentas).
    - Campo `role` con los valores definidos y `input: false`.
    - Exponer el helper de hash de contraseñas que usan el seed y el alta de profesor, basado en el mecanismo de Better Auth (verificar la API en la versión instalada). Nunca un hash hecho a mano.
-2. Sesión con vencimiento por inactividad: se renueva con la actividad y vence tras un período sin uso (propuesta: 60 minutos, a confirmar con los PO).
+2. Sesión con vencimiento por inactividad: se renueva con la actividad y vence tras un período sin uso (60 minutos, confirmado por los PO: decisión T-24).
 3. Bloquear el inicio de sesión de un profesor en estado `INACTIVO` con un error propio y el mensaje "Su usuario no está habilitado". El código de error nuevo se agrega a `contrato-api.md`.
 4. Ante credenciales incorrectas, el mismo error siempre, sin indicar si falló el email o la contraseña.
 5. `requireAuth()` deja el `Actor` en el contexto (`c.set('actor', ...)`, con `actor` en `AppEnv`); responde 403 `SIN_PERMISO` si el usuario no tiene rol. `requireRole(...)` recibe roles de `ROLES`.
@@ -158,13 +158,16 @@ Implementar el ingreso al sistema y el esqueleto de navegación que usan todas l
 
 1. `features/auth/`: `auth-client.ts` (`createAuthClient` de `better-auth/react`, con `role` tipado en el cliente) y `LoginForm`.
 2. `/login` (fuera de los layouts de rol): email y contraseña obligatorios, contraseña enmascarada. Credenciales incorrectas → "Usuario o contraseña incorrectos". Profesor inactivo → "Su usuario no está habilitado". Sin pantalla de registro.
+   - El texto sale del `code` que devuelve `authClient.signIn.email` (formato de Better Auth, con `message` en inglés): `INVALID_EMAIL_OR_PASSWORD` (401) y `USUARIO_INHABILITADO` (403). Ver `contrato-api.md` → Autenticación.
+   - No mandar `rememberMe`: la sesión vence siempre por inactividad (T-24) y la API ignora ese valor.
 3. Segmentos de URL por rol (decisión T-19): migrar `(personal-mesa-entradas)` a `app/mesa/` y crear `app/profesor/`. `/gerente` y `/portal` no se crean en este sprint.
+   - **Hecho (fuera de esta tarea):** la migración de `(personal-mesa-entradas)` a `app/mesa/` ya está en `main`, al detectarse la deriva contra T-19 (incluye `mesa-sidebar.tsx` / `MesaSidebar` y los `href` a `/mesa/...`). **Falta:** crear `app/profesor/`.
 4. Tras el login, redirigir al inicio del rol. Si un usuario entra a un segmento de otro rol, redirigirlo al suyo (es navegación, no seguridad: la seguridad la da la API).
 5. `AppShell`, `header.tsx` (logo, usuario, botón "Cerrar sesión") y un sidebar por rol en `components/layout/`. El layout raíz sólo monta `<Providers>`.
    - Mesa de entradas: Alumnos, Profesores, Materias, Turnos, Agenda diaria.
    - Profesor: Mi agenda, Mis alumnos.
    - Las pantallas de HU aún no implementadas quedan como páginas con su título.
-6. Manejo centralizado del 401 en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`): redirige a `/login` con el aviso "Tu sesión expiró".
+6. Manejo centralizado del 401 en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`): redirige a `/login` con el aviso "Tu sesión expiró". En el mismo lugar, el 403 `USUARIO_INHABILITADO` (usuario dado de baja con la sesión abierta) cierra la sesión y lleva a `/login` con "Su usuario no está habilitado"; el resto de los 403 (`SIN_PERMISO`) los maneja cada componente.
 7. Actualizar el tipo `Role` de `src/types/index.ts` a los valores del contrato y `arquitectura-frontend.md` (Roles; ya no hay route groups de rol).
 
 **Criterios de aceptación**
@@ -255,8 +258,8 @@ Crear la feature `src/server/features/profesores/` con `/nueva-feature-api profe
    - El filtro por materia considera las asignaciones activas de `AsignacionMateria`. Devuelve resultados una vez que T-11 permite asignar materias.
 2. `GET /api/v1/profesores/{id}`: todos los datos, estado y auditoría (la de su `Usuario`). Materias asignadas (HU-04) y horario de atención (HU-05) se suman al implementar esas HU.
 3. `POST /api/v1/profesores`:
-   - Obligatorios: nombre, apellido, DNI, teléfono, email, título, matrícula y contraseña inicial (largo mínimo según la configuración de Better Auth).
-   - En una sola transacción del repository crea `Usuario` (rol `PROFESOR`), su cuenta de tipo credencial con la contraseña hasheada por el helper de `src/lib/auth.ts` (T-03) y `Profesor` en estado `ACTIVO`. Si algo falla, no queda nada creado.
+   - Obligatorios: nombre, apellido, DNI, teléfono, email, título, matrícula y contraseña inicial, de entre `LARGO_MINIMO_PASSWORD` (8) y `LARGO_MAXIMO_PASSWORD` (128) caracteres: se validan con esas constantes de `src/lib/auth-reglas.ts`, las mismas que usa Better Auth, no con números propios.
+   - En una sola transacción del repository crea `Usuario` (rol `PROFESOR`), su cuenta de tipo credencial (`providerId: 'credential'`, `accountId` = id del usuario) con la contraseña hasheada por `hashPassword()` de `src/lib/auth.ts` (T-03) y `Profesor` en estado `ACTIVO`. Si algo falla, no queda nada creado. Nunca `auth.api.signUpEmail` (bloqueado) ni un hash a mano. Referencia: `prisma/seed.ts` y `arquitectura-backend.md` → Cambios frecuentes.
    - La contraseña nunca se devuelve ni se registra en logs.
 4. `PATCH /api/v1/profesores/{id}`: mismas validaciones, salvo la contraseña, que no se edita (la administración de usuarios está fuera de alcance). Como el email es el de la cuenta, cambiarlo cambia el email de ingreso.
 5. Unicidad: DNI y matrícula entre todos los profesores (activos e inactivos) y email entre todos los usuarios → 409 `CONFLICTO` con un mensaje que indique qué dato está repetido.
@@ -288,7 +291,7 @@ Crear `src/features/profesores/` con `/nueva-feature-ui profesores profesor` y s
 
 1. Listado paginado con foto (o avatar genérico), apellido y nombre. Con el filtro "Todos", los inactivos llevan la etiqueta "Inactivo".
 2. Filtros de estado (Activos por defecto, Inactivos, Todos) y de materia, más el buscador, combinables. El filtro de materia usa el hook de `features/materias` (selector de materias activas). Aviso cuando no hay coincidencias.
-3. Botón "+ Nuevo profesor". Formulario de alta con todos los datos, contraseña inicial y su confirmación (ambas enmascaradas). La edición no muestra la contraseña.
+3. Botón "+ Nuevo profesor". Formulario de alta con todos los datos, contraseña inicial y su confirmación (ambas enmascaradas). El schema del formulario pide entre 8 y 128 caracteres, el mismo rango que valida la API (T-07); si la API responde 400, se marca el campo. La edición no muestra la contraseña.
 4. Errores 400 por campo y 409 (DNI, matrícula o email repetidos) mostrados sobre el campo correspondiente.
 5. Foto con vista previa, y opciones de reemplazar o quitar desde la edición.
 6. Detalle con todos los datos, estado, auditoría y botón "Editar". Sección "Materias" vacía, que completa T-12, y "Horario de atención" como "Próximamente" (HU-05).

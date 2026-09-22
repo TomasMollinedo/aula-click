@@ -1,12 +1,12 @@
 ---
 paths:
-  - "src/server/**"
-  - "src/lib/**"
-  - "src/config/**"
-  - "src/app/api/**"
-  - "src/proxy.ts"
-  - "prisma/**"
-  - "prisma7.config.ts"
+  - 'src/server/**'
+  - 'src/lib/**'
+  - 'src/config/**'
+  - 'src/app/api/**'
+  - 'src/proxy.ts'
+  - 'prisma/**'
+  - 'prisma7.config.ts'
 ---
 
 # Backend (API)
@@ -24,6 +24,6 @@ Checklist (resumen; la fuente es `docs/arquitectura-backend.md`):
 - Capas: routes (contrato HTTP) → controller (sin `try/catch` ni reglas) → service (sin HTTP ni Prisma; lanza `AppError` o subclases) → repository (único que usa Prisma; traduce `P2002` a `ConflictError`).
 - De otra feature solo se importa su repository, para lecturas. Dentro de la propia feature, imports relativos (con alias, ESLint lo marca como otra feature).
 - Cada endpoint: `createRoute()` con schemas Zod de entrada y todos sus status codes, errores declarados con `ErrorResponseSchema` y rol con `requireAuth()` + `requireRole(...)`.
-- Fechas, paginación, búsqueda y validaciones comunes salen de `src/server/shared/`. Está **A construir**: si una tarea lo necesita y no existe, avisar antes de crearlo.
+- Fechas, paginación, búsqueda y validaciones comunes salen de `src/server/shared/`. Ya existe: usarlo siempre; no reimplementar.
 - Un test por service, con el repository mockeado: camino feliz + un caso por cada error que lanza.
 - Si cambia el contrato con el frontend, actualizar `docs/contrato-api.md` en el mismo cambio.
