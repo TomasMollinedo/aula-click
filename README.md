@@ -58,11 +58,25 @@ Next.js (App Router) + API con Hono/OpenAPI + Prisma (PostgreSQL) + Better Auth 
    pnpm db:generate
    ```
 
-8. Levantar la aplicación:
+8. Aplicar las migraciones (con los servicios levantados):
 
    ```bash
-   pnpm dev
+   pnpm db:migrate
    ```
+
+9. Cargar los datos de desarrollo (roles, un usuario por rol y materias de ejemplo). En Prisma 7, `db:migrate` ya **no** corre el seed solo; hay que ejecutarlo aparte. Es idempotente: se puede correr las veces que haga falta.
+
+   ```bash
+   pnpm db:seed
+   ```
+
+   Los emails y contraseñas de los usuarios salen de las variables `SEED_*` del `.env` (con los valores de ejemplo de `.env.example`: `mesa@aulaclick.local`, `profesor@aulaclick.local` y `gerente@aulaclick.local`). Si falta alguna, el seed falla y dice cuál. Al volver a correrlo, las contraseñas se actualizan a las del `.env`.
+
+10. Levantar la aplicación:
+
+    ```bash
+    pnpm dev
+    ```
 
 - App: http://localhost:3000
 - API: http://localhost:3000/api/v1 — documentación Swagger en http://localhost:3000/api/v1/docs
@@ -87,6 +101,7 @@ Si la app no arranca con `Variables de entorno inválidas o faltantes`, falta al
 | `pnpm services:up` / `pnpm services:down` | Levantar / detener Postgres y MinIO                          |
 | `pnpm db:migrate`                         | Crear y aplicar migraciones (coordinar antes, ver más abajo) |
 | `pnpm db:generate`                        | Generar el cliente de Prisma                                 |
+| `pnpm db:seed`                            | Cargar los datos de desarrollo (idempotente)                 |
 | `pnpm db:studio`                          | Explorador visual de la base de datos                        |
 
 ## Estructura
@@ -103,7 +118,7 @@ src/
 ├── server/         # app.ts, router.ts, middlewares/, errors/ y features/<dominio>/
 │                   # (routes, controller, validation, service, repository, __tests__)
 └── lib/            # prisma.ts, auth.ts, storage.ts
-prisma/             # schema.prisma y migraciones
+prisma/             # schema.prisma, migraciones y seed.ts
 ```
 
 Features: `alumnos`, `profesores`, `materias`, `turnos`. El detalle de cada capa y de las reglas de dependencia está en AGENTS.md.

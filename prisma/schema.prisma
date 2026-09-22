@@ -1,7 +1,12 @@
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
-// Get a free hosted Postgres database in seconds: `npx create-db`
+// Modelo de datos de Aula Click (T-01).
+//
+// Convenciones (docs/convenciones-backend.md):
+// - Modelos en PascalCase y campos en camelCase; tablas y columnas en snake_case con @@map / @map.
+// - Fechas de calendario con @db.Date; horas en minutos desde medianoche (Int); día de la semana ISO 1..7.
+// - Auditoría en cada entidad de negocio: createdById, updatedById, createdAt, updatedAt.
+// - Baja lógica con el enum Estado: nada se borra.
+// - Las restricciones CHECK (bloque_agenda, turno) no las genera Prisma: se agregan a mano
+//   en el migration.sql de la migración inicial.
 
 generator client {
   provider = "prisma-client"
@@ -10,4 +15,386 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// ---------- Enums ----------
+
+enum Estado {
+  ACTIVO
+  INACTIVO
+}
+
+enum NivelEscolaridad {
+  INICIAL
+  PRIMARIO
+  SECUNDARIO
+  TERCIARIO
+  UNIVERSITARIO
+}
+
+enum TipoTurno {
+  RECURRENTE
+  SESION_UNICA
+}
+
+// La vigencia de un turno se calcula por fechas, nunca por este estado.
+enum EstadoTurno {
+  ACTIVO
+  CANCELADO
+}
+
+// ---------- Usuarios y roles ----------
+
+// Catálogo que carga el seed. Sin auditoría.
+model Rol {
+  id          String  @id // MESA_ENTRADAS, PROFESOR, GERENTE, ALUMNO
+  nombre      String
+  descripcion String?
+  estado      Estado  @default(ACTIVO)
+
+  usuarios Usuario[]
+
+  @@map("rol")
+}
+
+// Usuario de dominio y de Better Auth (user.modelName: 'usuario' en src/lib/auth.ts).
+// La contraseña no vive acá: está en Account.password (providerId 'credential').
+// Su estado es también la baja lógica del profesor.
+model Usuario {
+  id              String    @id // lo genera Better Auth (o el seed)
+  nombre          String // Better Auth: name
+  apellido        String
+  dni             String    @unique
+  busqueda        String
+  telefono        String
+  email           String    @unique
+  emailVerified   Boolean   @default(false) @map("email_verified")
+  image           String? // lo exige Better Auth; sin uso (la foto va por avatarKey)
+  role            String    @map("rol_id")
+  avatarKey       String?   @map("avatar_key")
+  avatarMimeType  String?   @map("avatar_mime_type")
+  avatarUpdatedAt DateTime? @map("avatar_updated_at")
+  estado          Estado    @default(ACTIVO)
+
+  // Autorreferencia: opcionales porque el seed no tiene creador.
+  createdById String?  @map("usuario_creador_id")
+  updatedById String?  @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  rol       Rol      @relation(fields: [role], references: [id], onDelete: Restrict)
+  createdBy Usuario? @relation("UsuarioCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario? @relation("UsuarioModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  sessions Session[]
+  accounts Account[]
+  profesor Profesor?
+
+  // Relaciones inversas de auditoría.
+  usuariosCreados             Usuario[]           @relation("UsuarioCreador")
+  usuariosModificados         Usuario[]           @relation("UsuarioModificador")
+  alumnosCreados              Alumno[]            @relation("AlumnoCreador")
+  alumnosModificados          Alumno[]            @relation("AlumnoModificador")
+  materiasCreadas             Materia[]           @relation("MateriaCreador")
+  materiasModificadas         Materia[]           @relation("MateriaModificador")
+  asignacionesCreadas         AsignacionMateria[] @relation("AsignacionMateriaCreador")
+  asignacionesModificadas     AsignacionMateria[] @relation("AsignacionMateriaModificador")
+  bloquesCreados              BloqueAgenda[]      @relation("BloqueAgendaCreador")
+  bloquesModificados          BloqueAgenda[]      @relation("BloqueAgendaModificador")
+  turnosCreados               Turno[]             @relation("TurnoCreador")
+  turnosModificados           Turno[]             @relation("TurnoModificador")
+  turnoExcepcionesCreadas     TurnoExcepcion[]    @relation("TurnoExcepcionCreador")
+  turnoExcepcionesModificadas TurnoExcepcion[]    @relation("TurnoExcepcionModificador")
+  examenesMateriaCreados      ExamenMateria[]     @relation("ExamenMateriaCreador")
+  examenesMateriaModificados  ExamenMateria[]     @relation("ExamenMateriaModificador")
+
+  @@index([apellido])
+  @@index([busqueda])
+  @@index([role])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("usuario")
+}
+
+// ---------- Tablas de Better Auth (infraestructura) ----------
+// Conservan los nombres de modelo y de campo que espera Better Auth 1.7.5
+// (@better-auth/core/dist/db/get-tables.mjs). La relación hacia Usuario se llama `usuario`,
+// que es la clave que arma el adaptador de Prisma para los joins (nombre del modelo en minúsculas).
+
+model Session {
+  id        String   @id
+  expiresAt DateTime @map("expires_at")
+  token     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  ipAddress String?  @map("ip_address")
+  userAgent String?  @map("user_agent")
+  userId    String   @map("usuario_id")
+
+  usuario Usuario @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String    @map("account_id")
+  providerId            String    @map("provider_id")
+  userId                String    @map("usuario_id")
+  accessToken           String?   @map("access_token")
+  refreshToken          String?   @map("refresh_token")
+  idToken               String?   @map("id_token")
+  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
+  scope                 String?
+  password              String? // hash de la contraseña (providerId 'credential')
+  createdAt             DateTime  @default(now()) @map("created_at")
+  updatedAt             DateTime  @updatedAt @map("updated_at")
+
+  usuario Usuario @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([providerId, accountId])
+  @@index([userId])
+  @@map("account")
+}
+
+model Verification {
+  id         String   @id
+  identifier String
+  value      String
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([identifier])
+  @@map("verification")
+}
+
+// ---------- Profesores ----------
+
+// Sin estado ni auditoría propios: los toma de su Usuario (datos personales, busqueda y baja lógica).
+model Profesor {
+  id        Int    @id @default(autoincrement())
+  usuarioId String @unique @map("usuario_id")
+  titulo    String
+  matricula String @unique
+
+  usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
+
+  asignaciones AsignacionMateria[]
+  bloques      BloqueAgenda[]
+
+  @@map("profesor")
+}
+
+// ---------- Alumnos ----------
+
+// Sin vínculo a Usuario todavía: el portal del alumno llega en el Sprint 3.
+// Los datos del tutor son obligatorios si el alumno es menor: lo valida la API, no la base.
+model Alumno {
+  id                   Int               @id @default(autoincrement())
+  nombre               String
+  apellido             String
+  dni                  String            @unique
+  busqueda             String
+  fechaNacimiento      DateTime          @map("fecha_nacimiento") @db.Date
+  telefono             String
+  email                String
+  tutorNombre          String?           @map("tutor_nombre")
+  tutorApellido        String?           @map("tutor_apellido")
+  tutorDni             String?           @map("tutor_dni")
+  tutorTelefono        String?           @map("tutor_telefono")
+  tutorEmail           String?           @map("tutor_email")
+  nivelEscolaridad     NivelEscolaridad? @map("nivel_escolaridad")
+  grado                String?
+  institucionEducativa String?           @map("institucion_educativa")
+  observaciones        String?
+  estado               Estado            @default(ACTIVO)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  createdBy Usuario @relation("AlumnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario @relation("AlumnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  turnos   Turno[]
+  examenes ExamenMateria[]
+
+  @@index([apellido])
+  @@index([busqueda])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("alumno")
+}
+
+// ---------- Materias ----------
+
+model Materia {
+  id          Int     @id @default(autoincrement())
+  nombre      String
+  // Nombre normalizado con normalizarBusqueda(): "Matemática" y "matematica" chocan.
+  busqueda    String  @unique
+  descripcion String?
+  estado      Estado  @default(ACTIVO)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  createdBy Usuario @relation("MateriaCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario @relation("MateriaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  asignaciones AsignacionMateria[]
+  turnos       Turno[]
+  examenes     ExamenMateria[]
+
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("materia")
+}
+
+// Quitar una materia = pasar a INACTIVO; reasignarla = reactivar esta misma fila.
+model AsignacionMateria {
+  id         Int    @id @default(autoincrement())
+  profesorId Int    @map("profesor_id")
+  materiaId  Int    @map("materia_id")
+  estado     Estado @default(ACTIVO)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  profesor  Profesor @relation(fields: [profesorId], references: [id], onDelete: Restrict)
+  materia   Materia  @relation(fields: [materiaId], references: [id], onDelete: Restrict)
+  createdBy Usuario  @relation("AsignacionMateriaCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario  @relation("AsignacionMateriaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  // El índice único (profesor_id, materia_id) cubre también las búsquedas por profesor_id.
+  @@unique([profesorId, materiaId])
+  @@index([materiaId])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("asignacion_materia")
+}
+
+// ---------- Agenda y turnos ----------
+
+// CHECK (a mano en la migración): dia_semana 1..7, hora_inicio 0..1439, hora_fin 1..1440,
+// hora_fin > hora_inicio, capacidad > 0.
+model BloqueAgenda {
+  id         Int    @id @default(autoincrement())
+  profesorId Int    @map("profesor_id")
+  diaSemana  Int    @map("dia_semana") // ISO: 1 = lunes … 7 = domingo
+  horaInicio Int    @map("hora_inicio") // minutos desde medianoche
+  horaFin    Int    @map("hora_fin") // minutos desde medianoche
+  capacidad  Int
+  estado     Estado @default(ACTIVO)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  profesor  Profesor @relation(fields: [profesorId], references: [id], onDelete: Restrict)
+  createdBy Usuario  @relation("BloqueAgendaCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario  @relation("BloqueAgendaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  turnos Turno[]
+
+  @@index([profesorId, diaSemana])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("bloque_agenda")
+}
+
+// Un recurrente guarda la regla (fechaInicio y fechaFin opcional); las ocurrencias se expanden
+// al consultar y las excepciones van en TurnoExcepcion. La prioridad no se persiste.
+// En una SESION_UNICA, fechaFin = fechaInicio.
+// CHECK (a mano en la migración): fecha_fin >= fecha_inicio; SESION_UNICA => fecha_fin = fecha_inicio.
+model Turno {
+  id             Int         @id @default(autoincrement())
+  bloqueAgendaId Int         @map("bloque_agenda_id")
+  alumnoId       Int         @map("alumno_id")
+  materiaId      Int         @map("materia_id")
+  tipo           TipoTurno
+  fechaInicio    DateTime    @map("fecha_inicio") @db.Date
+  fechaFin       DateTime?   @map("fecha_fin") @db.Date
+  motivoConsulta String?     @map("motivo_consulta")
+  estado         EstadoTurno @default(ACTIVO)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  bloqueAgenda BloqueAgenda @relation(fields: [bloqueAgendaId], references: [id], onDelete: Restrict)
+  alumno       Alumno       @relation(fields: [alumnoId], references: [id], onDelete: Restrict)
+  materia      Materia      @relation(fields: [materiaId], references: [id], onDelete: Restrict)
+  createdBy    Usuario      @relation("TurnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy    Usuario      @relation("TurnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  excepciones TurnoExcepcion[] @relation("TurnoExcepciones")
+  reemplazoDe TurnoExcepcion[] @relation("TurnoReemplazo")
+
+  @@index([bloqueAgendaId, fechaInicio])
+  @@index([alumnoId])
+  @@index([materiaId])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("turno")
+}
+
+// Una fecha en la que un turno recurrente no aplica; opcionalmente, el turno que lo reemplaza.
+model TurnoExcepcion {
+  id               Int      @id @default(autoincrement())
+  turnoId          Int      @map("turno_id")
+  fecha            DateTime @db.Date
+  turnoReemplazoId Int?     @map("turno_reemplazo_id")
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  turno          Turno   @relation("TurnoExcepciones", fields: [turnoId], references: [id], onDelete: Restrict)
+  turnoReemplazo Turno?  @relation("TurnoReemplazo", fields: [turnoReemplazoId], references: [id], onDelete: Restrict)
+  createdBy      Usuario @relation("TurnoExcepcionCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy      Usuario @relation("TurnoExcepcionModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  // El índice único (turno_id, fecha) cubre también las búsquedas por turno_id.
+  @@unique([turnoId, fecha])
+  @@index([turnoReemplazoId])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("turno_excepcion")
+}
+
+// Fecha de examen de un alumno en una materia: de ella depende la prioridad del turno.
+model ExamenMateria {
+  id        Int      @id @default(autoincrement())
+  alumnoId  Int      @map("alumno_id")
+  materiaId Int      @map("materia_id")
+  fecha     DateTime @db.Date
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  alumno    Alumno  @relation(fields: [alumnoId], references: [id], onDelete: Restrict)
+  materia   Materia @relation(fields: [materiaId], references: [id], onDelete: Restrict)
+  createdBy Usuario @relation("ExamenMateriaCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario @relation("ExamenMateriaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  // El índice único (alumno_id, materia_id, fecha) es también el índice pedido para esa consulta.
+  @@unique([alumnoId, materiaId, fecha])
+  @@index([materiaId])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("examen_materia")
 }

@@ -102,17 +102,23 @@ Jerarquía en `src/server/errors/`; todas las clases heredan de `AppError(messag
 
 ## Autenticación y autorización
 
-`src/lib/auth.ts` configura Better Auth con `emailAndPassword` y un campo extra:
+`src/lib/auth.ts` configura Better Auth con `emailAndPassword` sobre el modelo de dominio `Usuario`:
 
 ```ts
 user: {
+  modelName: 'usuario', // delegate de Prisma (prisma.usuario)
+  fields: { name: 'nombre' },
   additionalFields: {
-    role: { type: 'string', required: false, input: false },
+    role: { type: 'string', required: true, input: false },
+    // apellido, dni, busqueda, telefono y estado, igual (NOT NULL en la base)
   },
 },
 ```
 
-`input: false` impide que alguien se asigne un rol al registrarse. No tiene `defaultValue`: la cuenta se crea con su rol explícito. Los valores válidos son `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y `ALUMNO` (decisión T-17); la fuente en código es `ROLES` de `src/server/shared/actor.ts` (**A construir**, ver `convenciones-backend.md`). En la base, `role` es un texto; lo que no esté en `ROLES` se trata como "sin rol".
+- `Session`, `Account` y `Verification` conservan los nombres de modelo y de campo de Better Auth (son infraestructura); sus tablas y columnas se mapean a snake_case. `Usuario` no tiene contraseña: vive en `Account.password`, con `providerId: 'credential'` y `accountId` = id del usuario.
+- `input: false` impide que alguien se asigne un rol o un dato de dominio al registrarse; con `required: true`, un alta por la API pública responde 400 en lugar de fallar en la base. No hay `defaultValue` de rol: la cuenta se crea con su rol explícito.
+- `Usuario.role` es un FK de texto al catálogo `Rol` (`MESA_ENTRADAS`, `PROFESOR`, `GERENTE`, `ALUMNO`; decisión T-17), así la base rechaza valores inválidos. La fuente en código es `ROLES` de `src/server/shared/actor.ts` (**A construir**, ver `convenciones-backend.md`).
+- **Alta de cuentas:** no se usa `auth.api.signUpEmail` (queda bloqueado con `disableSignUp`). Se escriben `Usuario` y su `Account` credential, con la contraseña hasheada por `hashPassword()` de `src/lib/auth.ts`, que usa el mismo hasher que Better Auth (`(await auth.$context).password.hash`). Así lo hacen el seed y el alta de profesor (decisiones T-21 y T-22).
 
 Hay dos chequeos separados:
 
@@ -130,11 +136,15 @@ El registro público debe estar deshabilitado (**A construir**; detalle en `conv
 
 - `src/config/env.ts` es el único archivo que lee `process.env` (excepción: `prisma7.config.ts`, que corre fuera de Next y carga `.env` con `dotenv`).
 - Variable nueva = se agrega al schema de `env.ts` y a `.env.example`; los dos deben tener exactamente las mismas variables (`NODE_ENV` queda fuera del `.env`: tiene default y lo fija Next).
-- `env` se importa solo desde `src/lib/` y `src/config/`. Las features no dependen de la configuración; por eso sus tests no necesitan variables de entorno y el CI no las define.
+- `env` se importa solo desde `src/lib/` y `src/config/` (y desde `prisma/seed.ts`, que lee de ahí las variables `SEED_*`, opcionales para la app). Las features no dependen de la configuración; por eso sus tests no necesitan variables de entorno y el CI no las define.
 
 ## Prisma
 
 El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `globalThis` (para que el hot reload no abra pools nuevos) y el adaptador `@prisma/adapter-pg`. Se importa `prisma` de ahí, solo desde repositories (y desde `src/lib/auth.ts`). Nunca `new PrismaClient()` en otro archivo.
+
+- **Seed** (`prisma/seed.ts`): la otra excepción. Usa Prisma directo, `env` e `hashPassword()` de `src/lib/auth.ts`, y `normalizarBusqueda()` de `src/server/shared/`. Está fuera de `src/`, así que las reglas de ESLint por zona no lo alcanzan. Es idempotente (todo `upsert` por clave natural) y se corre con `pnpm db:seed`: en Prisma 7, `migrate dev` ya no lo ejecuta solo. Está registrado en `prisma7.config.ts` (`migrations.seed`).
+- **Restricciones `CHECK`** (`bloque_agenda`: día, horas y capacidad; `turno`: orden de fechas y sesión única): Prisma no las genera, así que se agregan a mano al `migration.sql` de la migración que crea esas tablas.
+- Tablas y columnas en snake_case (`@@map` / `@map`); modelos en PascalCase y campos en camelCase.
 
 ## Archivos
 

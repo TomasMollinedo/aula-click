@@ -38,6 +38,7 @@ Node 24.19.0 y pnpm 11.21.0 (`corepack enable`). Scripts de `package.json`:
 | `pnpm check`                                    | `typecheck` + `lint` + `test:run`. Debe pasar antes de cada push    |
 | `pnpm services:up` / `services:down`            | Levanta / baja Postgres y MinIO (Docker Compose)                    |
 | `pnpm db:migrate` / `db:generate` / `db:studio` | Migraciones, cliente Prisma, explorador visual                      |
+| `pnpm db:seed`                                  | Seed de desarrollo (idempotente; `migrate dev` no lo corre solo)    |
 
 `postinstall` genera el cliente Prisma y `prepare` instala husky. Hooks: `pre-commit` corre lint-staged (eslint --fix + prettier) y `pre-push` corre `pnpm check`. El CI (`.github/workflows/ci.yml`) corre `pnpm check` en push a `main` y en cada PR.
 
@@ -59,7 +60,7 @@ src/
 └── generated/prisma/      # cliente generado de Prisma: no se edita ni se commitea
 ```
 
-Fuera de `src/`: `prisma/schema.prisma`, `prisma7.config.ts` (config del CLI de Prisma), `docker-compose.yml`, `.env.example`, `vitest.config.mts`, `eslint.config.mjs`.
+Fuera de `src/`: `prisma/schema.prisma`, `prisma/seed.ts`, `prisma7.config.ts` (config del CLI de Prisma), `docker-compose.yml`, `.env.example`, `vitest.config.mts`, `eslint.config.mjs`.
 
 **Vocabulario.** "Feature de API" = `src/server/features/<dominio>/`. "Feature de UI" = `src/features/<entidad>/`. Usan el mismo nombre (plural, minúsculas, sin acentos: `alumnos`, `profesores`, `materias`, `turnos`), pero son independientes: se comunican solo por HTTP.
 
@@ -79,7 +80,7 @@ Fuera de `src/`: `prisma/schema.prisma`, `prisma7.config.ts` (config del CLI de 
 
 1. **Front y back se hablan solo por HTTP.** El frontend no importa nada de `src/server`, `src/lib`, `src/config` ni `src/generated` (lo hace cumplir ESLint). El contrato es `docs/contrato-api.md` más el OpenAPI de `/api/v1/openapi.json`.
 2. **La autorización vive en la API.** `src/proxy.ts` solo redirige a `/login` si no hay cookie de sesión. Los segmentos de URL por rol (`/mesa`, `/profesor`, `/gerente`, `/portal`) y el rol que ve el frontend sirven para armar la UI, nunca como seguridad. Cada endpoint declara su rol con `requireAuth()` + `requireRole(...)`.
-3. **Solo los repositories usan Prisma.** Excepciones: `src/lib/prisma.ts`, que lo instancia, y `src/lib/auth.ts`, que lo pasa al adaptador de Better Auth.
+3. **Solo los repositories usan Prisma.** Excepciones: `src/lib/prisma.ts`, que lo instancia, `src/lib/auth.ts`, que lo pasa al adaptador de Better Auth, y `prisma/seed.ts`, el seed de desarrollo.
 4. **`process.env` solo en `src/config/env.ts`** (excepción: `prisma7.config.ts`, que corre fuera de Next). Variable nueva = se agrega al schema de `env.ts` y a `.env.example`, que deben tener exactamente las mismas variables. Nunca leer ni abrir `.env`.
 5. **Idioma.** El dominio va en español (rutas, campos JSON, códigos de error como `BLOQUE_LLENO`, textos de la UI). La infraestructura y el código genérico van en inglés.
 6. **Piezas "A construir".** Lo marcado **A construir** en los docs (por ejemplo `src/server/shared/`, el `Actor`, `disableSignUp`, `AppShell`) todavía no existe. Si una tarea lo necesita, avisar a la persona antes de crearlo: se construye una sola vez, en un PR propio, con sus tests y según su especificación. Nunca se inventa una versión propia dentro de una feature.

@@ -13,6 +13,15 @@ const envSchema = z.object({
 
   BETTER_AUTH_SECRET: z.string().min(32, 'debe tener al menos 32 caracteres'),
   BETTER_AUTH_URL: z.url(),
+
+  // Solo para prisma/seed.ts (desarrollo). Opcionales: la app arranca sin ellas y el seed
+  // falla con un mensaje claro si falta alguna.
+  SEED_MESA_ENTRADAS_EMAIL: z.email().optional(),
+  SEED_MESA_ENTRADAS_PASSWORD: z.string().min(8).optional(),
+  SEED_PROFESOR_EMAIL: z.email().optional(),
+  SEED_PROFESOR_PASSWORD: z.string().min(8).optional(),
+  SEED_GERENTE_EMAIL: z.email().optional(),
+  SEED_GERENTE_PASSWORD: z.string().min(8).optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)
