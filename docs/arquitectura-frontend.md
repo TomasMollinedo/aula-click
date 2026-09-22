@@ -25,11 +25,11 @@ Cómo está armado el frontend y qué reglas sigue. Lo que se acuerda con el bac
 ## Quién importa a quién
 
 ```
-app/                  → features/, components/, hooks/, types/, utils/
-features/<X>/         → components/, hooks/, types/, utils/, y features/<Y>/hooks/* (solo hooks de otra feature)
-components/           → hooks/, types/, utils/            (nunca features/)
-hooks/, types/, utils/ → entre sí                          (nunca features/ ni components/)
-nadie del frontend    → server/, lib/, config/, generated/ (ESLint)
+app/                   → features/, components/, hooks/, types/, utils/
+features/<X>/          → components/, hooks/, types/, utils/, y features/<Y>/hooks/* (solo hooks de otra feature)
+components/            → hooks/, types/, utils/            (nunca features/: ESLint)
+hooks/, types/, utils/ → entre sí                          (nunca features/ ni components/: ESLint)
+nadie del frontend     → server/, lib/, config/, generated/ (ESLint, con alias o con ruta relativa)
 ```
 
 Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx` usa el hook `use-alumnos` de `features/alumnos/hooks/`; no llama a `alumnos.api.ts` ni importa `AlumnosTable`.
@@ -41,10 +41,10 @@ src/
 ├── app/
 │   ├── layout.tsx                      # layout raíz: solo <Providers> (sin Header ni Sidebar)
 │   ├── providers.tsx                   # QueryClientProvider (TanStack Query)
-│   ├── page.tsx                        # inicio "/" (protegida por proxy.ts)
-│   ├── login/page.tsx                  # pública; fuera de todo route group; usa features/auth
-│   ├── (personal-mesa-entradas)/
-│   │   ├── layout.tsx                  # <AppShell sidebar={<PersonalMesaEntradasSidebar />}>
+│   ├── page.tsx                        # "/": redirige al segmento del rol de la sesión (A construir)
+│   ├── login/page.tsx                  # pública; usa features/auth
+│   ├── mesa/                           # rol MESA_ENTRADAS → /mesa/...
+│   │   ├── layout.tsx                  # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
 │   │   ├── alumnos/
 │   │   │   ├── page.tsx                # listado
 │   │   │   ├── nuevo/page.tsx          # alta
@@ -53,12 +53,14 @@ src/
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
 │   │   └── calendario/page.tsx
+│   ├── profesor/  gerente/  portal/    # se crean con las HU de cada rol (portal: Sprint 3)
 │   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
 │   ├── auth/                           # A construir
 │   │   ├── auth-client.ts              # createAuthClient() de better-auth/react
-│   │   └── components/LoginForm.tsx
+│   │   ├── roles.ts                    # rol → segmento de URL (único lugar con esa correspondencia)
+│   │   └── components/{LoginForm.tsx, UserMenu.tsx}
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts
@@ -70,11 +72,11 @@ src/
 │   ├── ui/                             # primitivos de UI hechos a mano (D-08)
 │   └── layout/
 │       ├── app-shell.tsx               # A construir: Header + Sidebar + contenido
-│       ├── header.tsx                  # A construir: logo, menú de usuario, logout
-│       └── personal-mesa-entradas-sidebar.tsx
+│       ├── header.tsx                  # A construir: logo + lugar para el menú de usuario
+│       └── mesa-sidebar.tsx            # uno por rol: <segmento>-sidebar.tsx
 │
 ├── hooks/use-debounce.ts
-├── types/index.ts                      # PaginatedResponse<T>, Role (provisorio, D-01)
+├── types/index.ts                      # PaginatedResponse<T>, Role
 └── utils/{cn.ts, fetch-json.ts}
 ```
 
@@ -92,27 +94,30 @@ src/
 
 Nombres: archivos que no son componentes en kebab-case (`use-create-alumno.ts`); componentes en PascalCase (`AlumnoForm.tsx`). La feature va en plural (`alumnos`); lo que representa un solo objeto va en singular (`AlumnoForm`, `use-create-alumno`). `features/alumnos/` es la referencia de nombres y firmas. Una feature nueva se crea con `/nueva-feature-ui <plural> <singular>` (Claude Code) o copiando `alumnos` a mano.
 
-## Roles y route groups
+## Roles y URLs
 
-| Rol                          | Route group                | Estado             |
-| ---------------------------- | -------------------------- | ------------------ |
-| Personal de mesa de entradas | `(personal-mesa-entradas)` | Existe             |
-| Profesor                     | `(profesor)`               | Planificado        |
-| Gerente                      | `(gerente)`                | Planificado        |
-| Alumno                       | `(portal)`                 | A confirmar (D-02) |
+Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas cuelgan de ese segmento y comparten su layout.
 
-- Un route group agrupa páginas para compartir un layout (su Sidebar). **No valida sesión ni rol** y **no aparece en la URL**: `(personal-mesa-entradas)/alumnos/page.tsx` se sirve en `/alumnos`.
-- Por eso, **dos route groups nunca pueden definir la misma ruta**. Si existieran `(profesor)/calendario/page.tsx` y `(personal-mesa-entradas)/calendario/page.tsx`, las dos responderían en `/calendario` y el build falla.
-- Cómo se separan las URLs por rol es la decisión abierta **D-06**. Se resuelve antes de crear el segundo route group de rol.
-- Los nombres de route group son slugs de la UI. El valor técnico del rol en la API está pendiente (D-01); el tipo `Role` de `types/index.ts` es provisorio hasta entonces.
+| Rol              | `role` en la API | Segmento    | Layout y Sidebar                                   | Estado      |
+| ---------------- | ---------------- | ----------- | -------------------------------------------------- | ----------- |
+| Mesa de entradas | `MESA_ENTRADAS`  | `/mesa`     | `app/mesa/layout.tsx` + `mesa-sidebar.tsx`         | Sprint 1    |
+| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Planificado |
+| Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Planificado |
+| Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3    |
+
+- La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
+- El segmento **no es seguridad**. Si un profesor abre `/mesa/alumnos`, la página carga, pero la API responde 403 y la UI lo muestra. El layout de un segmento no valida sesión ni rol.
+- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts` (**A construir**). La usa `/`, que lee la sesión con `authClient.useSession()` y redirige al segmento del rol (**A construir**).
+- No se usan route groups para separar roles. Si alguna vez se usan para otra cosa (compartir un layout sin cambiar la URL), dos route groups nunca pueden definir la misma ruta: los paréntesis no aparecen en la URL y el build falla.
 
 ## Layout: Sidebar y Header
 
 - `app/layout.tsx` (raíz) solo monta `<Providers>`. No lleva Header: si lo llevara, también aparecería en `/login`.
-- `components/layout/app-shell.tsx` (**A construir**) arma el esqueleto de la app autenticada: Header arriba, Sidebar al costado y el contenido. Recibe el Sidebar por prop.
-- El `layout.tsx` de cada route group de rol monta `<AppShell sidebar={<PersonalMesaEntradasSidebar />}>{children}</AppShell>`.
-- **Sidebar:** uno por rol, en `components/layout/<rol>-sidebar.tsx`, porque cada rol navega a pantallas distintas.
-- **Header:** uno solo para todos los roles, en `components/layout/header.tsx` (logo, menú de usuario, logout).
+- `components/layout/app-shell.tsx` (**A construir**) arma el esqueleto de la app autenticada: Header arriba, Sidebar al costado y el contenido. Recibe por props el Sidebar (`sidebar`) y el menú de usuario (`userMenu`).
+- El `layout.tsx` de cada segmento de rol monta `<AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>{children}</AppShell>`.
+- **Sidebar:** uno por rol, en `components/layout/<segmento>-sidebar.tsx`, porque cada rol navega a pantallas distintas.
+- **Header:** uno solo para todos los roles, en `components/layout/header.tsx`: logo y el lugar donde va el menú de usuario.
+- **Menú de usuario** (nombre, cerrar sesión): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` y al Header por props, armado en el layout del segmento.
 
 ## Datos: Server y Client Components
 
@@ -146,7 +151,7 @@ Nombres: archivos que no son componentes en kebab-case (`use-create-alumno.ts`);
 ## Autenticación en el cliente
 
 - `features/auth/auth-client.ts` (**A construir**) crea el cliente con `createAuthClient` de `better-auth/react`. Verificar la API exacta en la versión instalada.
-- Login: `authClient.signIn.email(...)` desde `LoginForm` (en `/login`). Logout: `authClient.signOut()` desde el Header. Sesión y rol para la UI: `authClient.useSession()`.
+- Login: `authClient.signIn.email(...)` desde `LoginForm` (en `/login`). Logout: `authClient.signOut()` desde `UserMenu`. Sesión y rol para la UI: `authClient.useSession()`.
 - No se importa `@/lib/auth`: es la instancia del servidor y ESLint lo bloquea. Para que `role` salga tipado en el cliente, se declara del lado del cliente (plugin `inferAdditionalFields` con el campo `role`), sin importar tipos del servidor.
 - El rol en el cliente solo sirve para mostrar u ocultar navegación y acciones. La seguridad es la API.
 - No hay pantalla de registro: los usuarios los crea un gerente.

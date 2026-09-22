@@ -4,14 +4,15 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 
 ## Roles
 
-| Rol                          | Estado                                                   |
-| ---------------------------- | -------------------------------------------------------- |
-| Personal de mesa de entradas | Sprint 1                                                 |
-| Profesor                     | Planificado                                              |
-| Gerente                      | Planificado. Crea los usuarios (no hay registro público) |
-| Alumno                       | A confirmar si tiene usuario y portal (D-02)             |
+| Rol              | Valor técnico de `role` | Estado                                                   |
+| ---------------- | ----------------------- | -------------------------------------------------------- |
+| Mesa de entradas | `MESA_ENTRADAS`         | Sprint 1                                                 |
+| Profesor         | `PROFESOR`              | Planificado                                              |
+| Gerente          | `GERENTE`               | Planificado. Crea los usuarios (no hay registro público) |
+| Alumno           | `ALUMNO`                | Sprint 3 (portal)                                        |
 
-- Cada usuario tiene un rol. El valor técnico del campo `role` todavía no está definido (D-01).
+- Cada usuario tiene un solo rol.
+- Cómo se vincula la cuenta de un profesor o de un alumno con su registro, y quién la crea, está pendiente (D-10).
 - Cómo se crea el primer gerente con el registro público deshabilitado está pendiente (D-05).
 
 ## Alumnos

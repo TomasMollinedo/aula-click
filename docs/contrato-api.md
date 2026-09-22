@@ -96,6 +96,15 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 
+## Roles
+
+Valores del campo `role` de la sesión: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y `ALUMNO`. Un usuario tiene un solo rol.
+
+- Backend: `ROLES` en `src/server/shared/actor.ts` (**A construir**).
+- Frontend: el tipo `Role` de `src/types/index.ts`.
+
+Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de valor se hace en los dos archivos en el mismo PR.
+
 ## Autenticación
 
 - Login con email y contraseña contra `/api/auth/...`, siempre a través del `authClient`.

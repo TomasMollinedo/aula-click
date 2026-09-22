@@ -34,6 +34,7 @@ En `src/server/app.ts`: agregar el `import` de `<d>Routes` y **una sola línea**
 - Solo el repository puede importar Prisma (`@/lib/prisma`, `@/generated/*`). Los demás archivos, nunca.
 - Ningún archivo de la feature importa el `service`, `controller` ni `routes` de otra feature; de otra feature solo se importa su `repository` (lecturas).
 - Una feature puede importar de `@/server/shared/*` (nunca al revés), pero solo cuando esa pieza exista; si no existe, no crearla.
+- Dentro de la feature, los imports entre sus propios archivos son relativos (`./<d>.service`, `../<d>.service` desde `__tests__`).
 - Errores desde `@/server/errors`.
 - Nada de `process.env` ni de `@/config/env` en la feature (la configuración se usa solo en `src/lib/` y `src/config/`).
 

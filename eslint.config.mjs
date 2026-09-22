@@ -3,10 +3,24 @@ import nextVitals from 'eslint-config-next/core-web-vitals'
 import nextTs from 'eslint-config-next/typescript'
 import prettier from 'eslint-config-prettier/flat'
 
-// Reglas de arquitectura (ver AGENTS.md): solo el repository toca Prisma, una feature
-// solo importa el repository de otra, process.env solo se lee en config/env.ts y
-// OpenAPIHono solo se instancia en server/router.ts.
-// no-restricted-imports no se acumula entre bloques: cada bloque declara todo lo suyo.
+// Reglas de arquitectura. La fuente es AGENTS.md → "Reglas que hace cumplir ESLint":
+// si se cambia algo acá, se actualiza esa tabla en el mismo PR.
+//
+// no-restricted-imports NO se acumula entre bloques: si dos bloques aplican al mismo archivo,
+// gana el último. Por eso cada bloque declara todo lo suyo, y los bloques de "Imports por zona"
+// están armados para que cada archivo caiga en uno solo.
+//
+// Imports relativos:
+// - Dentro de una misma feature de API se importa con ruta relativa (./x.service, ../x.service
+//   desde __tests__). Con alias (@/server/features/<misma>/...) la regla entre features lo toma
+//   como si fuera otra feature.
+// - Las reglas de frontend usan además un regex para atrapar imports relativos que salen de su
+//   carpeta (../../server/...). Supone que dentro del frontend no hay carpetas llamadas server,
+//   lib, config, generated, features ni components más que las de src/.
+
+// dirs('@/x') → ['@/x', '@/x/*']: cubre el import de la carpeta y de todo lo que tiene adentro.
+const dirs = (...names) => names.flatMap((name) => [name, `${name}/*`])
+
 const prismaImports = {
   group: ['@/lib/prisma', '@/generated/*'],
   message: 'Solo el repository usa Prisma (@/lib/prisma, @/generated/*).',
@@ -23,12 +37,45 @@ const crossFeatureImports = {
     '../../*/*.controller',
     '../../*/*.routes',
   ],
-  message: 'Una feature solo puede importar el repository de otra (lecturas).',
+  message:
+    'Una feature solo puede importar el repository de otra (lecturas). Dentro de la propia feature, usar imports relativos.',
 }
-const serverFromFrontend = {
-  group: ['@/server/*', '@/lib/auth', '@/lib/storage'],
-  message: 'El frontend consume la API por fetch; no importa código de servidor.',
+const featuresFromShared = {
+  group: ['@/server/features/*', '../features/*', '../../features/*'],
+  message: 'shared/ no conoce a las features: son las features las que importan de shared.',
 }
+const frontendFromBackend = {
+  group: dirs('@/app', '@/features', '@/components', '@/hooks', '@/types', '@/utils'),
+  message: 'El backend no importa código del frontend: se comunican solo por HTTP.',
+}
+
+const backendMessage =
+  'El frontend consume la API por HTTP (fetchJson / authClient); no importa código de servidor.'
+const backendFromFrontend = [
+  { group: dirs('@/server', '@/lib', '@/config', '@/generated'), message: backendMessage },
+  { regex: '^(\\.\\./)+(server|lib|config|generated)(/|$)', message: backendMessage },
+]
+
+const componentsMessage = 'components/ es UI sin entidad: no importa de features/.'
+const featuresFromComponents = [
+  { group: dirs('@/features'), message: componentsMessage },
+  { regex: '^(\\.\\./)+features(/|$)', message: componentsMessage },
+]
+
+const genericMessage =
+  'hooks/, types/ y utils/ son genéricos: no importan de features/ ni de components/.'
+const uiFromGeneric = [
+  { group: dirs('@/features', '@/components'), message: genericMessage },
+  { regex: '^(\\.\\./)+(features|components)(/|$)', message: genericMessage },
+]
+
+const proxyMessage =
+  'proxy.ts corre separado de la app: no importa módulos del proyecto (solo next/* y better-auth/*).'
+const fromProxy = [
+  { group: ['@/*'], message: proxyMessage },
+  { regex: '^\\.', message: proxyMessage },
+]
+
 const openApiHonoImport = {
   name: '@hono/zod-openapi',
   importNames: ['OpenAPIHono'],
@@ -55,6 +102,8 @@ const eslintConfig = defineConfig([
     'next-env.d.ts',
     'src/generated/**',
   ]),
+
+  // process.env solo en config/env.ts.
   {
     files: ['src/**/*.{ts,tsx}'],
     ignores: ['src/config/env.ts'],
@@ -69,45 +118,104 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+
+  // Base: OpenAPIHono prohibido en todo src/. Lo que no cae en ninguna zona de abajo queda así.
   {
     files: ['src/**/*.{ts,tsx}'],
     rules: { 'no-restricted-imports': restrict() },
   },
+
+  // ---------- Imports por zona (cada archivo cae en un solo bloque) ----------
+
+  // Backend: lib/ y config/ (lib/prisma.ts y lib/auth.ts sí usan Prisma).
   {
-    files: [
-      'src/server/**/*.ts',
-      'src/app/**/*.{ts,tsx}',
-      'src/components/**/*.{ts,tsx}',
-      'src/features/**/*.{ts,tsx}',
+    files: ['src/lib/**/*.ts', 'src/config/**/*.ts'],
+    rules: { 'no-restricted-imports': restrict({ patterns: [frontendFromBackend] }) },
+  },
+  // Backend: server/ salvo features/, shared/, router.ts y app.ts (errors/, middlewares/).
+  {
+    files: ['src/server/**/*.ts'],
+    ignores: [
+      'src/server/features/**',
+      'src/server/shared/**',
+      'src/server/router.ts',
+      'src/server/app.ts',
     ],
-    ignores: ['src/server/**/*.repository.ts'],
-    rules: { 'no-restricted-imports': restrict({ patterns: [prismaImports] }) },
-  },
-  {
-    files: ['src/server/features/**/*.ts'],
-    ignores: ['src/server/**/*.repository.ts'],
     rules: {
-      'no-restricted-imports': restrict({ patterns: [prismaImports, crossFeatureImports] }),
+      'no-restricted-imports': restrict({ patterns: [prismaImports, frontendFromBackend] }),
     },
   },
+  // Backend: únicos archivos que pueden usar OpenAPIHono.
   {
-    files: ['src/server/features/**/*.repository.ts'],
-    rules: { 'no-restricted-imports': restrict({ patterns: [crossFeatureImports] }) },
-  },
-  {
-    files: ['src/app/**/*.{ts,tsx}', 'src/components/**/*.{ts,tsx}', 'src/features/**/*.{ts,tsx}'],
-    ignores: ['src/app/api/**'],
-    rules: {
-      'no-restricted-imports': restrict({ patterns: [prismaImports, serverFromFrontend] }),
-    },
-  },
-  {
-    // Únicos archivos que pueden usar OpenAPIHono.
     files: ['src/server/router.ts', 'src/server/app.ts'],
     rules: {
-      'no-restricted-imports': restrict({ patterns: [prismaImports], allowOpenApiHono: true }),
+      'no-restricted-imports': restrict({
+        patterns: [prismaImports, frontendFromBackend],
+        allowOpenApiHono: true,
+      }),
     },
   },
+  // Backend: shared/ no importa features ni Prisma.
+  {
+    files: ['src/server/shared/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrict({
+        patterns: [prismaImports, featuresFromShared, frontendFromBackend],
+      }),
+    },
+  },
+  // Backend: features, salvo repositories.
+  {
+    files: ['src/server/features/**/*.ts'],
+    ignores: ['src/server/features/**/*.repository.ts'],
+    rules: {
+      'no-restricted-imports': restrict({
+        patterns: [prismaImports, crossFeatureImports, frontendFromBackend],
+      }),
+    },
+  },
+  // Backend: repositories (únicos de las features que usan Prisma).
+  {
+    files: ['src/server/features/**/*.repository.ts'],
+    rules: {
+      'no-restricted-imports': restrict({ patterns: [crossFeatureImports, frontendFromBackend] }),
+    },
+  },
+  // Backend: adaptadores de Next para Hono y Better Auth.
+  {
+    files: ['src/app/api/**/*.ts'],
+    rules: {
+      'no-restricted-imports': restrict({ patterns: [prismaImports, frontendFromBackend] }),
+    },
+  },
+  // Frontend: app/ (salvo api/) y features/.
+  {
+    files: ['src/app/**/*.{ts,tsx}', 'src/features/**/*.{ts,tsx}'],
+    ignores: ['src/app/api/**'],
+    rules: { 'no-restricted-imports': restrict({ patterns: backendFromFrontend }) },
+  },
+  // Frontend: components/ (UI sin entidad).
+  {
+    files: ['src/components/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': restrict({
+        patterns: [...backendFromFrontend, ...featuresFromComponents],
+      }),
+    },
+  },
+  // Frontend: utilidades genéricas.
+  {
+    files: ['src/hooks/**/*.{ts,tsx}', 'src/types/**/*.{ts,tsx}', 'src/utils/**/*.{ts,tsx}'],
+    rules: {
+      'no-restricted-imports': restrict({ patterns: [...backendFromFrontend, ...uiFromGeneric] }),
+    },
+  },
+  // proxy.ts: independiente del resto del proyecto.
+  {
+    files: ['src/proxy.ts'],
+    rules: { 'no-restricted-imports': restrict({ patterns: fromProxy }) },
+  },
+
   prettier,
 ])
 

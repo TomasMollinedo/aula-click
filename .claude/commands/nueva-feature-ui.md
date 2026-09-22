@@ -32,7 +32,7 @@ En `src/features/$1/`, con el mismo contenido que los de `alumnos`, reemplazando
 
 ## 3. Lo que NO se hace
 
-- No crear páginas en `src/app/`, no tocar route groups, Sidebars, `AppShell` ni `proxy.ts` (dependen de las decisiones D-01 y D-06 de `docs/decisiones.md`; se deciden por separado).
+- No crear páginas en `src/app/` ni tocar layouts de rol, Sidebars, `AppShell` ni `proxy.ts`: qué roles ven la entidad, y bajo qué segmento, se define en la tarea de cada HU.
 - No crear la feature de API: eso es `/nueva-feature-api`.
 - No agregar dependencias.
 

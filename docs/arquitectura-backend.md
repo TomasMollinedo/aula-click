@@ -78,6 +78,8 @@ Una feature solo puede importar el **repository** de otra, y solo para lecturas;
 
 Un repository importa Prisma, `@/server/errors` y `@/server/shared/*`; no importa otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
 
+Dentro de una misma feature, los imports son relativos (`./alumnos.repository`, o `../alumnos.service` desde `__tests__`). Con alias (`@/server/features/alumnos/...`), ESLint no distingue la propia feature de otra y lo marca como error.
+
 ## Errores
 
 Jerarquía en `src/server/errors/`; todas las clases heredan de `AppError(message, statusCode = 500, { code?, details?, cause? })`. La tabla de clases, status y códigos es parte del contrato con el frontend y está en [`contrato-api.md` → Errores](./contrato-api.md#errores).
@@ -110,7 +112,7 @@ user: {
 },
 ```
 
-`input: false` impide que alguien se asigne un rol al registrarse. **Los valores del rol están pendientes** (decisión D-01 en `decisiones.md`): hasta decidirlo, `role` no tiene valores ni `defaultValue` y `requireRole` recibe `string[]`.
+`input: false` impide que alguien se asigne un rol al registrarse. No tiene `defaultValue`: la cuenta se crea con su rol explícito. Los valores válidos son `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y `ALUMNO` (decisión T-17); la fuente en código es `ROLES` de `src/server/shared/actor.ts` (**A construir**, ver `convenciones-backend.md`). En la base, `role` es un texto; lo que no esté en `ROLES` se trata como "sin rol".
 
 Hay dos chequeos separados:
 

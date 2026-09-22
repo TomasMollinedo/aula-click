@@ -69,7 +69,7 @@ Fuera de `src/`: `prisma/schema.prisma`, `prisma7.config.ts` (config del CLI de 
 | ---------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
 | [`docs/arquitectura-backend.md`](docs/arquitectura-backend.md)   | Capas, router, errores, auth, configuración, Prisma, archivos, tests                                      | tocar `src/server`, `src/lib`, `src/config`, `src/app/api` o `prisma/`                                   |
 | [`docs/convenciones-backend.md`](docs/convenciones-backend.md)   | Fechas, paginación, búsqueda, auditoría, concurrencia, seguridad de cuentas y especificación de `shared/` | implementar cualquier endpoint o repository                                                              |
-| [`docs/arquitectura-frontend.md`](docs/arquitectura-frontend.md) | Carpetas, features de UI, roles y route groups, datos, auth en el cliente, formularios, fechas, errores   | tocar `src/app` (salvo `api/`), `src/features`, `src/components`, `src/hooks`, `src/types` o `src/utils` |
+| [`docs/arquitectura-frontend.md`](docs/arquitectura-frontend.md) | Carpetas, features de UI, roles y URLs, datos, auth en el cliente, formularios, fechas, errores           | tocar `src/app` (salvo `api/`), `src/features`, `src/components`, `src/hooks`, `src/types` o `src/utils` |
 | [`docs/contrato-api.md`](docs/contrato-api.md)                   | Lo que front y back acuerdan: URLs, formatos, paginación, filtros, errores                                | cualquier cambio que cruce el límite HTTP                                                                |
 | [`docs/dominio.md`](docs/dominio.md)                             | Roles y reglas de negocio del Sprint 1                                                                    | implementar, validar o mostrar reglas de negocio                                                         |
 | [`docs/decisiones.md`](docs/decisiones.md)                       | Decisiones tomadas (con su porqué) y decisiones abiertas                                                  | implementar algo que dependa de una decisión                                                             |
@@ -78,7 +78,7 @@ Fuera de `src/`: `prisma/schema.prisma`, `prisma7.config.ts` (config del CLI de 
 ## Reglas transversales
 
 1. **Front y back se hablan solo por HTTP.** El frontend no importa nada de `src/server`, `src/lib`, `src/config` ni `src/generated` (lo hace cumplir ESLint). El contrato es `docs/contrato-api.md` más el OpenAPI de `/api/v1/openapi.json`.
-2. **La autorización vive en la API.** `src/proxy.ts` solo redirige a `/login` si no hay cookie de sesión. Los route groups y el rol que ve el frontend sirven para armar la UI, nunca como seguridad. Cada endpoint declara su rol con `requireAuth()` + `requireRole(...)`.
+2. **La autorización vive en la API.** `src/proxy.ts` solo redirige a `/login` si no hay cookie de sesión. Los segmentos de URL por rol (`/mesa`, `/profesor`, `/gerente`, `/portal`) y el rol que ve el frontend sirven para armar la UI, nunca como seguridad. Cada endpoint declara su rol con `requireAuth()` + `requireRole(...)`.
 3. **Solo los repositories usan Prisma.** Excepciones: `src/lib/prisma.ts`, que lo instancia, y `src/lib/auth.ts`, que lo pasa al adaptador de Better Auth.
 4. **`process.env` solo en `src/config/env.ts`** (excepción: `prisma7.config.ts`, que corre fuera de Next). Variable nueva = se agrega al schema de `env.ts` y a `.env.example`, que deben tener exactamente las mismas variables. Nunca leer ni abrir `.env`.
 5. **Idioma.** El dominio va en español (rutas, campos JSON, códigos de error como `BLOQUE_LLENO`, textos de la UI). La infraestructura y el código genérico van en inglés.
@@ -94,22 +94,24 @@ Fuera de `src/`: `prisma/schema.prisma`, `prisma7.config.ts` (config del CLI de 
 
 ## Reglas que hace cumplir ESLint
 
-Están en `eslint.config.mjs`. `pnpm lint` (y por lo tanto `pnpm check`, el pre-push y el CI) falla si se rompen:
+Están en `eslint.config.mjs`. `pnpm lint` (y por lo tanto `pnpm check`, el pre-push y el CI) falla si se rompen. "Carpeta" incluye importarla entera (`@/types`) o cualquier cosa adentro (`@/types/index`).
 
-| Regla                                           | Qué prohíbe                                                                                                    | Dónde aplica                                                                                                                  |
-| ----------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
-| `no-restricted-properties`                      | `process.env`                                                                                                  | todo `src/**`, salvo `src/config/env.ts`                                                                                      |
-| `no-restricted-imports` (Prisma)                | importar `@/lib/prisma` o `@/generated/*`                                                                      | `src/server/**`, `src/app/**` y `src/components/**`, salvo `*.repository.ts`                                                  |
-| `no-restricted-imports` (entre features de API) | importar `*.service`, `*.controller` o `*.routes` de otra feature (con alias `@/server/features/*/…` o `../…`) | `src/server/features/**` (el repository de otra feature sí se puede importar)                                                 |
-| `no-restricted-imports` (OpenAPIHono)           | importar `OpenAPIHono` de `@hono/zod-openapi` (los routers se crean con `createRouter()`)                      | todo `src/**`, salvo `src/server/router.ts` y `src/server/app.ts`                                                             |
-| `no-restricted-imports` (frontend → backend)    | importar `@/server/*`, `@/lib/*`, `@/config/*` o `@/generated/*`                                               | `src/app/**` (salvo `src/app/api/**`), `src/features/**`, `src/components/**`, `src/hooks/**`, `src/types/**`, `src/utils/**` |
+| Regla                      | Qué prohíbe                                                                                                           | Dónde aplica                                                                                                                  |
+| -------------------------- | --------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `no-restricted-properties` | `process.env`                                                                                                         | todo `src/**`, salvo `src/config/env.ts`                                                                                      |
+| OpenAPIHono                | importar `OpenAPIHono` de `@hono/zod-openapi` (los routers se crean con `createRouter()`)                             | todo `src/**`, salvo `src/server/router.ts` y `src/server/app.ts`                                                             |
+| Prisma                     | importar `@/lib/prisma` o `@/generated/*`                                                                             | `src/server/**` y `src/app/api/**`, salvo `*.repository.ts` (en `src/lib/` sí se permite)                                     |
+| Entre features de API      | importar `*.service`, `*.controller` o `*.routes` de otra feature (con alias `@/server/features/*/…` o `../…`)        | `src/server/features/**` (el repository de otra feature sí se puede importar)                                                 |
+| `shared` → features        | importar `@/server/features/*` o `../features/*` (y Prisma)                                                           | `src/server/shared/**`                                                                                                        |
+| Backend → frontend         | importar las carpetas `@/app`, `@/features`, `@/components`, `@/hooks`, `@/types` o `@/utils`                         | `src/server/**`, `src/lib/**`, `src/config/**` y `src/app/api/**`                                                             |
+| Frontend → backend         | importar las carpetas `@/server`, `@/lib`, `@/config` o `@/generated`, con alias o con ruta relativa (`../../server`) | `src/app/**` (salvo `src/app/api/**`), `src/features/**`, `src/components/**`, `src/hooks/**`, `src/types/**`, `src/utils/**` |
+| `components` → `features`  | importar la carpeta `@/features` (alias o relativo)                                                                   | `src/components/**`                                                                                                           |
+| Genéricos → UI             | importar las carpetas `@/features` o `@/components` (alias o relativo)                                                | `src/hooks/**`, `src/types/**`, `src/utils/**`                                                                                |
+| `proxy.ts` aislado         | importar cualquier módulo del proyecto (`@/…` o rutas relativas); solo `next/*` y paquetes como `better-auth/*`       | `src/proxy.ts`                                                                                                                |
 
-**A construir:**
+Dentro de una misma feature de API los imports son **relativos** (`./alumnos.service`, o `../alumnos.service` desde `__tests__`): con alias, la regla entre features lo toma como si fuera otra feature.
 
-- `src/server/shared/**` no importa de `src/server/features/**` (con alias o relativo) ni Prisma. Se agrega junto con `shared/`.
-- `src/components/**` no importa de `src/features/**`.
-
-ESLint no puede verificar el resto (por ejemplo `try/catch` en controllers, endpoints sin todos sus status codes o rutas repetidas entre route groups): eso se revisa en el PR.
+ESLint no puede verificar el resto (por ejemplo `try/catch` en controllers, endpoints sin todos sus status codes, que una feature de UI use de otra algo que no sean sus hooks, o páginas de un rol fuera de su segmento): eso se revisa en el PR.
 
 ## Flujo de trabajo del equipo
 
