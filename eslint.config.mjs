@@ -17,6 +17,9 @@ import prettier from 'eslint-config-prettier/flat'
 // - Las reglas de frontend usan además un regex para atrapar imports relativos que salen de su
 //   carpeta (../../server/...). Supone que dentro del frontend no hay carpetas llamadas server,
 //   lib, config, generated, features ni components más que las de src/.
+// - shared/ cierra también con regex las rutas relativas a features, lib/, config/ y generated/.
+//   La regla la prueba src/server/shared/__tests__/eslint-limites.test.ts: si otro bloque la
+//   pisa, ese test falla.
 
 // dirs('@/x') → ['@/x', '@/x/*']: cubre el import de la carpeta y de todo lo que tiene adentro.
 const dirs = (...names) => names.flatMap((name) => [name, `${name}/*`])
@@ -40,10 +43,22 @@ const crossFeatureImports = {
   message:
     'Una feature solo puede importar el repository de otra (lecturas). Dentro de la propia feature, usar imports relativos.',
 }
-const featuresFromShared = {
-  group: ['@/server/features/*', '../features/*', '../../features/*'],
-  message: 'shared/ no conoce a las features: son las features las que importan de shared.',
-}
+const sharedMessage =
+  'shared/ no conoce a las features: son las features las que importan de shared.'
+// Con alias, la carpeta entera o cualquier cosa adentro; relativo, desde cualquier profundidad
+// de shared/ (../features/..., ../../features/...).
+const featuresFromShared = [
+  { group: dirs('@/server/features'), message: sharedMessage },
+  { regex: '^(\\.\\./)+features(/|$)', message: sharedMessage },
+]
+// shared/ es código puro: nada de src/lib (Prisma, auth, storage), src/config ni el cliente
+// generado, con alias ni con ruta relativa. Reemplaza a prismaImports en ese bloque (lo incluye).
+const serverInfraMessage =
+  'shared/ es código puro: no importa src/lib (Prisma, auth, storage), src/config ni src/generated.'
+const serverInfraFromShared = [
+  { group: dirs('@/lib', '@/config', '@/generated'), message: serverInfraMessage },
+  { regex: '^(\\.\\./)+(lib|config|generated)(/|$)', message: serverInfraMessage },
+]
 const frontendFromBackend = {
   group: dirs('@/app', '@/features', '@/components', '@/hooks', '@/types', '@/utils'),
   message: 'El backend no importa código del frontend: se comunican solo por HTTP.',
@@ -155,12 +170,13 @@ const eslintConfig = defineConfig([
       }),
     },
   },
-  // Backend: shared/ no importa features ni Prisma.
+  // Backend: shared/ no importa features, lib/ (Prisma incluido), config/, generated/ ni frontend.
+  // Lo prueba shared/__tests__/eslint-limites.test.ts.
   {
     files: ['src/server/shared/**/*.ts'],
     rules: {
       'no-restricted-imports': restrict({
-        patterns: [prismaImports, featuresFromShared, frontendFromBackend],
+        patterns: [...serverInfraFromShared, ...featuresFromShared, frontendFromBackend],
       }),
     },
   },

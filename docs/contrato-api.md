@@ -108,7 +108,7 @@ Valores del campo `role` de la sesión: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y
 | `ALUMNO`        | Alumno           |
 
 - Base de datos: catálogo `rol` (lo carga el seed); `Usuario.role` es un FK a él.
-- Backend: `ROLES` en `src/server/shared/actor.ts` (**A construir**).
+- Backend: `ROLES` en `src/server/shared/actor.ts`.
 - Frontend: el tipo `Role` de `src/types/index.ts`.
 
 Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de valor se hace en el seed, en `actor.ts` y en `src/types/index.ts` en el mismo PR.

@@ -17,12 +17,12 @@ Crear el esqueleto de la feature de API **`$ARGUMENTS`** siguiendo EXACTAMENTE `
 En `src/server/features/<d>/`, con el mismo contenido que los de `alumnos`, reemplazando el nombre:
 
 - `<d>.routes.ts`: importa `createRouter` de `@/server/router` y exporta `export const <d>Routes = createRouter()`. **Nunca** `new OpenAPIHono()`. Sin endpoints.
-- `<d>.controller.ts`, `<d>.validation.ts`, `<d>.service.ts`, `<d>.repository.ts`: solo comentarios y `export {}`. **No inventar funciones, tipos ni schemas.** Cada archivo lleva el comentario de responsabilidad de su capa (el de `alumnos`) más la convención transversal que le toca, escrita como comentario (lo que se implementará cuando existan el modelo y `shared/`):
+- `<d>.controller.ts`, `<d>.validation.ts`, `<d>.service.ts`, `<d>.repository.ts`: solo comentarios y `export {}`. **No inventar funciones, tipos ni schemas.** Cada archivo lleva el comentario de responsabilidad de su capa (el de `alumnos`) más la convención transversal que le toca, escrita como comentario (lo que se implementará cuando se agreguen los endpoints):
   - `controller`: "Obtiene el Actor con `c.get('actor')` y lo pasa al service."
   - `validation`: "Los schemas de listado usan `paginacionQuerySchema` y `paginatedSchema(...)` de `@/server/shared/paginacion`."
   - `service`: "Recibe el `Actor` (`@/server/shared/actor`) y, si usa fechas, un reloj inyectable con `hoy()` de `@/server/shared/fechas` por defecto."
   - `repository`: "Expone un método de listado paginado: `findMany` y `count` en una sola transacción, orden con `id` como desempate y `calcularSkipTake` / `armarMeta` de `@/server/shared/paginacion`. Completa la auditoría (`createdById`, `updatedById`) con el Actor."
-  - Las piezas de `src/server/shared/` pueden no existir todavía (ver `docs/convenciones-backend.md` → Estado): **no importarlas ni crearlas**, solo mencionarlas en el comentario.
+  - Las piezas de `src/server/shared/` ya existen (`docs/convenciones-backend.md` → Especificación): el esqueleto las menciona en los comentarios como las que hay que usar, sin importarlas todavía (no hay código que las use) y **sin crear funciones propias en la feature**.
 - `__tests__/<d>.service.test.ts`: `describe('<d>.service', ...)` con los dos `it.todo` del modelo. Importar `describe` e `it` de `vitest`.
 
 ## 3. Registrar la feature
@@ -33,7 +33,7 @@ En `src/server/app.ts`: agregar el `import` de `<d>Routes` y **una sola línea**
 
 - Solo el repository puede importar Prisma (`@/lib/prisma`, `@/generated/*`). Los demás archivos, nunca.
 - Ningún archivo de la feature importa el `service`, `controller` ni `routes` de otra feature; de otra feature solo se importa su `repository` (lecturas).
-- Una feature puede importar de `@/server/shared/*` (nunca al revés), pero solo cuando esa pieza exista; si no existe, no crearla.
+- Una feature importa de `@/server/shared/*` (nunca al revés) y no reimplementa nada de lo que está ahí.
 - Dentro de la feature, los imports entre sus propios archivos son relativos (`./<d>.service`, `../<d>.service` desde `__tests__`).
 - Errores desde `@/server/errors`.
 - Nada de `process.env` ni de `@/config/env` en la feature (la configuración se usa solo en `src/lib/` y `src/config/`).
