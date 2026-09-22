@@ -1,6 +1,6 @@
 // Diacríticos combinantes (tildes, diéresis, virgulilla de la ñ) que quedan sueltos tras NFD.
 // Rango explícito en lugar de \p{M}: el tsconfig apunta a ES2017.
-const DIACRITICOS = /[̀-ͯ]/g
+const DIACRITICOS = /[\u0300-\u036f]/g
 
 /**
  * Texto de búsqueda sin mayúsculas ni tildes, con los espacios colapsados.

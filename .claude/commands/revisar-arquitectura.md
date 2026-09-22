@@ -18,7 +18,7 @@ Revisar los cambios de la rama actual contra las reglas de arquitectura del repo
 
 ### Backend
 
-1. **Prisma fuera de repositories:** imports de `@/lib/prisma` o `@/generated/*`, o `new PrismaClient()`, fuera de `*.repository.ts` (excepciones: `src/lib/prisma.ts` y `src/lib/auth.ts`).
+1. **Prisma fuera de repositories:** imports de `@/lib/prisma` o `@/generated/*`, o `new PrismaClient()`, fuera de `*.repository.ts` (excepciones: `src/lib/prisma.ts`, `src/lib/auth.ts` y `prisma/seed.ts`).
 2. **Dependencias entre features de API:** un archivo de una feature que importe el `service`, `controller` o `routes` de otra (por alias o por ruta relativa); un repository que importe otro repository o un service. Señalar además ciclos entre features.
 3. **`try/catch` en controllers:** cualquier `try/catch` en `*.controller.ts`.
 4. **Service que conoce HTTP o Prisma:** imports de `hono`, `@hono/*`, Prisma, `Response`/`Context`, o status codes numéricos en `*.service.ts`. Reglas de negocio dentro de controllers, routes o repositories. Errores lanzados que no sean `AppError` o subclases de `@/server/errors`.
@@ -32,7 +32,7 @@ Revisar los cambios de la rama actual contra las reglas de arquitectura del repo
 12. **Validaciones hechas a mano:** DNI, email, teléfono, fecha u hora validados con regex propias, `.length(...)`, `z.email()` / `z.string().email()` sueltos o similares, en lugar de `dni`, `email`, `telefono`, `fechaISO`, `horaHHmm` y `textoRequerido` de `@/server/shared/zod`.
 13. **Auth y archivos:** `proxy.ts` decidiendo roles o dependiendo de módulos compartidos; MinIO/S3 usado fuera de `src/lib/storage.ts`; URLs de archivos guardadas en la base en lugar de la clave del objeto; subida directa del navegador a MinIO.
 
-**Sobre los puntos 9 a 12 (dependen de `src/server/shared/`):** aplican como violación recién cuando esa carpeta existe. Si todavía no existe, reportar solo lo que el diff reimplementa a mano como "a confirmar: `shared/` aún no está construido" y sugerir construirlo en un PR propio, en lugar de reimplementar la lógica en la feature.
+**Sobre los puntos 9 a 12:** `src/server/shared/` ya existe, así que reimplementar a mano lo que ofrece es siempre una violación.
 
 ### Frontend
 

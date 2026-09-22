@@ -38,7 +38,7 @@ src/
 │   ├── router.ts                     # createRouter() y el tipo AppEnv
 │   ├── errors/                       # AppError y subclases, errorHandler, ErrorResponseSchema
 │   ├── middlewares/auth.ts           # requireAuth() + requireRole(...)
-│   ├── shared/                       # A construir (ver convenciones-backend.md)
+│   ├── shared/                       # actor, paginacion, zod, busqueda, fechas (ver convenciones-backend.md)
 │   └── features/<dominio>/
 │       ├── <dominio>.routes.ts
 │       ├── <dominio>.controller.ts
@@ -117,7 +117,7 @@ user: {
 
 - `Session`, `Account` y `Verification` conservan los nombres de modelo y de campo de Better Auth (son infraestructura); sus tablas y columnas se mapean a snake_case. `Usuario` no tiene contraseña: vive en `Account.password`, con `providerId: 'credential'` y `accountId` = id del usuario.
 - `input: false` impide que alguien se asigne un rol o un dato de dominio al registrarse; con `required: true`, un alta por la API pública responde 400 en lugar de fallar en la base. No hay `defaultValue` de rol: la cuenta se crea con su rol explícito.
-- `Usuario.role` es un FK de texto al catálogo `Rol` (`MESA_ENTRADAS`, `PROFESOR`, `GERENTE`, `ALUMNO`; decisión T-17), así la base rechaza valores inválidos. La fuente en código es `ROLES` de `src/server/shared/actor.ts` (**A construir**, ver `convenciones-backend.md`).
+- `Usuario.role` es un FK de texto al catálogo `Rol` (`MESA_ENTRADAS`, `PROFESOR`, `GERENTE`, `ALUMNO`; decisión T-17), así la base rechaza valores inválidos. La fuente en código es `ROLES` de `src/server/shared/actor.ts`.
 - **Alta de cuentas:** no se usa `auth.api.signUpEmail` (queda bloqueado con `disableSignUp`). Se escriben `Usuario` y su `Account` credential, con la contraseña hasheada por `hashPassword()` de `src/lib/auth.ts`, que usa el mismo hasher que Better Auth (`(await auth.$context).password.hash`). Así lo hacen el seed y el alta de profesor (decisiones T-21 y T-22).
 
 Hay dos chequeos separados:

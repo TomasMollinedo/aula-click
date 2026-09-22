@@ -13,4 +13,25 @@ describe('normalizarBusqueda', () => {
   it('hace chocar "Matemática" con "matematica"', () => {
     expect(normalizarBusqueda('Matemática')).toBe(normalizarBusqueda('matematica'))
   })
+
+  it('quita la diéresis', () => {
+    expect(normalizarBusqueda('Güemes')).toBe('guemes')
+  })
+
+  it('devuelve "" con un texto vacío', () => {
+    expect(normalizarBusqueda('')).toBe('')
+  })
+
+  it('no altera un DNI con puntos salvo los espacios', () => {
+    expect(normalizarBusqueda('30.123.456')).toBe('30.123.456')
+    expect(normalizarBusqueda(' 30.123.456 ')).toBe('30.123.456')
+  })
+
+  it.each(['González', '  Ñandú  Pérez ', 'Güemes', 'ya normalizado'])(
+    'es idempotente (%o)',
+    (texto) => {
+      const normalizado = normalizarBusqueda(texto)
+      expect(normalizarBusqueda(normalizado)).toBe(normalizado)
+    },
+  )
 })
