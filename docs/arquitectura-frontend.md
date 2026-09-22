@@ -45,6 +45,7 @@ src/
 │   ├── login/page.tsx                  # pública; usa features/auth
 │   ├── mesa/                           # rol MESA_ENTRADAS → /mesa/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
+│   │   ├── page.tsx                    # raíz del segmento: lleva a /mesa/alumnos
 │   │   ├── alumnos/
 │   │   │   ├── page.tsx                # listado
 │   │   │   ├── nuevo/page.tsx          # alta
@@ -55,6 +56,7 @@ src/
 │   │   └── calendario/page.tsx
 │   ├── profesor/                       # rol PROFESOR → /profesor/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
+│   │   ├── page.tsx                    # raíz del segmento: lleva a /profesor/agenda
 │   │   ├── agenda/page.tsx
 │   │   └── alumnos/page.tsx
 │   ├── gerente/  portal/               # se crean con las HU de cada rol (portal: Sprint 3)
@@ -65,8 +67,9 @@ src/
 │   │   ├── auth-client.ts              # createAuthClient() de better-auth/react
 │   │   ├── auth.schema.ts              # schema Zod del formulario de login
 │   │   ├── roles.ts                    # rol → segmento de URL (único lugar con esa correspondencia)
+│   │   ├── codigos-error.ts            # codes del contrato que el frontend reconoce
 │   │   ├── interpretar-error-login.ts  # único lugar que decide el mensaje de un login fallido
-│   │   ├── sesion-expirada.ts          # el motivo en la URL de /login, compartido con providers.tsx
+│   │   ├── sesion-expirada.ts          # los motivos en la URL de /login, compartidos con providers.tsx
 │   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
@@ -112,6 +115,7 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 | Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Planificado |
 | Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3    |
 
+- Cada segmento tiene su `page.tsx` en la raíz, que lleva a la primera pantalla del rol: ahí es donde caen el login, `/` y el logo del Header, así que sin esa página serían un 404.
 - La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
 - El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que manda al usuario al segmento de su propio rol: es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
 - La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `GERENTE` y `ALUMNO` no tienen segmento todavía: para ellos la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlos a un 404.
@@ -132,6 +136,8 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 - Todo componente que pide o modifica datos es Client Component (`'use client'`) y usa los hooks de su feature.
 - **Ningún Server Component hace `fetch` a `/api/v1`**: en el servidor una URL relativa no funciona y la cookie de sesión no viaja. Si alguna vez hace falta renderizar datos en el servidor, se decide aparte.
 - Páginas dinámicas (`[alumnoId]/page.tsx`): en Next 16 `params` es una `Promise`. Confirmar en `node_modules/next/dist/docs/` cómo leerlo en Server y en Client Components.
+- Los layouts y las páginas se tipan con los tipos que genera `next typegen` (`LayoutProps<'/mesa'>`, `PageProps<...>`), no con interfaces escritas a mano: `pnpm typecheck` los regenera antes de `tsc`.
+- Un Client Component que usa `useSearchParams` va envuelto en `<Suspense>` donde se monta (así se monta `AvisoSesionExpirada` en `/login`); sin eso falla el build de producción.
 - Los datos del servidor viven en la cache de TanStack Query; no se copian a `useState`. El estado de UI (filtros, modal abierto) es local y se sube solo lo necesario: datos hacia abajo por props, eventos hacia arriba.
 
 ## Llamadas a la API: `fetchJson` y `ApiError`
@@ -146,36 +152,28 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 
 `proxy.ts` (que protege todas las páginas salvo `/login`) solo garantiza que hay una cookie; no que la sesión sea válida ni que el rol alcance. Por eso cada componente con datos maneja `isError` con su propia UI y no asume que, si la página cargó, el usuario tiene permiso.
 
-| Caso                       | Qué hace la UI                                                                                                                                                            |
-| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400 `VALIDACION`           | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                                             |
-| 401                        | Sesión vencida o inválida: redirige a `/login`. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) — **A construir**                          |
-| 403                        | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                                           |
-| 403 `USUARIO_INHABILITADO` | El usuario fue dado de baja con la sesión abierta: cierra la sesión y lleva a `/login` con "Su usuario no está habilitado". Se centraliza junto al 401 en `providers.tsx` |
-| 404                        | Estado de "no encontrado"                                                                                                                                                 |
-| 409                        | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                                          |
-| 500 o error de red         | Mensaje genérico con opción de reintentar                                                                                                                                 |
-| Caso               | Qué hace la UI                                                                                                                                                                   |
-| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400 `VALIDACION`   | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                                                    |
-| 401                | Sesión vencida o inválida: redirige a `/login?motivo=sesion_expirada`, donde se muestra el aviso. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) |
-| 403                | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                                                  |
-| 404                | Estado de "no encontrado"                                                                                                                                                        |
-| 409                | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                                                 |
-| 500 o error de red | Mensaje genérico con opción de reintentar                                                                                                                                        |
+| Caso                       | Qué hace la UI                                                                                                                                                                   |
+| -------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400 `VALIDACION`           | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                                                    |
+| 401                        | Sesión vencida o inválida: redirige a `/login?motivo=sesion_expirada`, donde se muestra el aviso. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) |
+| 403 `SIN_PERMISO`          | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                                                  |
+| 403 `USUARIO_INHABILITADO` | El usuario fue dado de baja con la sesión abierta: cierra la sesión y lleva a `/login` con "Su usuario no está habilitado". Se centraliza junto al 401 en `providers.tsx`        |
+| 404                        | Estado de "no encontrado"                                                                                                                                                        |
+| 409                        | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                                                 |
+| 500 o error de red         | Mensaje genérico con opción de reintentar                                                                                                                                        |
+
+Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con el motivo en la URL: los valores están en `features/auth/sesion-expirada.ts` y los lee `AvisoSesionExpirada` en `/login`. Es el único lugar que conoce esos nombres.
 
 ## Autenticación en el cliente
 
 - `features/auth/auth-client.ts` crea el cliente con `createAuthClient` de `better-auth/react`.
 - Login: `authClient.signIn.email(...)` desde `LoginForm` (en `/login`). Logout: `authClient.signOut()` desde `UserMenu`. Sesión y rol para la UI: `authClient.useSession()`.
-- No se importa `@/lib/auth`: es la instancia del servidor y ESLint lo bloquea. Para que `role` salga tipado en el cliente, se declara del lado del cliente (plugin `inferAdditionalFields` con el campo `role`), sin importar tipos del servidor.
+- No se importa `@/lib/auth`: es la instancia del servidor y ESLint lo bloquea. Los campos extra de `Usuario` se redeclaran del lado del cliente con el plugin `inferAdditionalFields` (`role`, `apellido`, `dni`, `telefono` y `estado`), sin importar tipos del servidor; si cambian en `src/lib/auth.ts`, se cambian acá en el mismo PR. `busqueda` queda afuera: en el servidor tiene `returned: false` y nunca llega al cliente.
 - El rol en el cliente solo sirve para mostrar u ocultar navegación y acciones. La seguridad es la API.
-- Errores del login: `/api/auth` responde con el formato de Better Auth y el `authClient` los expone como `error.code` / `error.message`. El `message` viene en inglés: la UI elige el texto por `code` (`INVALID_EMAIL_OR_PASSWORD` → "Usuario o contraseña incorrectos"; `USUARIO_INHABILITADO` → "Su usuario no está habilitado"). Tabla completa en `contrato-api.md` → Autenticación.
-- El login no manda `rememberMe`: la sesión vence siempre por inactividad (60 min, decisión T-24) y la API ignora ese valor.
-- No hay pantalla de registro: las cuentas se crean desde el servidor (el seed y, para los profesores, mesa de entradas; `dominio.md` → Roles).
-- Un login fallido muestra un mensaje solo: `interpretar-error-login.ts`. Nunca dice qué campo falló ni si el email existe, y las reglas de quién puede entrar (por ejemplo, un profesor inactivo) las decide la API.
+- **Errores del login.** `/api/auth` responde con el formato de Better Auth, no con el de `/api/v1`: el `authClient` lo expone como `error.code` / `error.message`, y el `message` viene en inglés. El texto que ve el usuario se elige **por `code`**, en el único lugar que decide eso: `features/auth/interpretar-error-login.ts` (`INVALID_EMAIL_OR_PASSWORD` → "Usuario o contraseña incorrectos"; `USUARIO_INHABILITADO` → "Su usuario no está habilitado"; tabla completa en `contrato-api.md` → Autenticación). Un login fallido muestra un mensaje solo, que nunca dice qué campo falló ni si el email existe; quién puede entrar lo decide la API.
+- El login no manda `rememberMe`: la sesión vence siempre por inactividad (60 min, decisión T-24) y la API neutraliza ese valor igual.
 - Al cerrar sesión se vacía la cache de TanStack Query, para que volver con Atrás no muestre datos del usuario anterior.
-- No hay pantalla de registro ni recuperación de contraseña: los usuarios los crea un gerente.
+- No hay pantalla de registro ni de recuperación de contraseña: las cuentas se crean desde el servidor (el seed y, para los profesores, mesa de entradas; `dominio.md` → Roles).
 
 ## Formularios
 
@@ -199,4 +197,4 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren solo el backend (`pnpm test:run`).
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`. `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
