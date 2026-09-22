@@ -41,7 +41,7 @@ src/
 ├── app/
 │   ├── layout.tsx                      # layout raíz: solo <Providers> (sin Header ni Sidebar)
 │   ├── providers.tsx                   # QueryClientProvider (TanStack Query)
-│   ├── page.tsx                        # "/": redirige al segmento del rol de la sesión (A construir)
+│   ├── page.tsx                        # "/": redirige al segmento del rol de la sesión
 │   ├── login/page.tsx                  # pública; usa features/auth
 │   ├── mesa/                           # rol MESA_ENTRADAS → /mesa/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
@@ -53,14 +53,21 @@ src/
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
 │   │   └── calendario/page.tsx
-│   ├── profesor/  gerente/  portal/    # se crean con las HU de cada rol (portal: Sprint 3)
+│   ├── profesor/                       # rol PROFESOR → /profesor/...
+│   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
+│   │   ├── agenda/page.tsx
+│   │   └── alumnos/page.tsx
+│   ├── gerente/  portal/               # se crean con las HU de cada rol (portal: Sprint 3)
 │   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
-│   ├── auth/                           # A construir
+│   ├── auth/
 │   │   ├── auth-client.ts              # createAuthClient() de better-auth/react
+│   │   ├── auth.schema.ts              # schema Zod del formulario de login
 │   │   ├── roles.ts                    # rol → segmento de URL (único lugar con esa correspondencia)
-│   │   └── components/{LoginForm.tsx, UserMenu.tsx}
+│   │   ├── interpretar-error-login.ts  # único lugar que decide el mensaje de un login fallido
+│   │   ├── sesion-expirada.ts          # el motivo en la URL de /login, compartido con providers.tsx
+│   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts
@@ -71,9 +78,9 @@ src/
 ├── components/
 │   ├── ui/                             # primitivos de UI hechos a mano (D-08)
 │   └── layout/
-│       ├── app-shell.tsx               # A construir: Header + Sidebar + contenido
-│       ├── header.tsx                  # A construir: logo + lugar para el menú de usuario
-│       └── mesa-sidebar.tsx            # uno por rol: <segmento>-sidebar.tsx
+│       ├── app-shell.tsx               # Header + Sidebar + contenido
+│       ├── header.tsx                  # logo + lugar para el menú de usuario
+│       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx
 │
 ├── hooks/use-debounce.ts
 ├── types/index.ts                      # PaginatedResponse<T>, Role
@@ -101,19 +108,19 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 | Rol              | `role` en la API | Segmento    | Layout y Sidebar                                   | Estado      |
 | ---------------- | ---------------- | ----------- | -------------------------------------------------- | ----------- |
 | Mesa de entradas | `MESA_ENTRADAS`  | `/mesa`     | `app/mesa/layout.tsx` + `mesa-sidebar.tsx`         | Sprint 1    |
-| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Planificado |
+| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Sprint 1    |
 | Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Planificado |
 | Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3    |
 
 - La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
-- El segmento **no es seguridad**. Si un profesor abre `/mesa/alumnos`, la página carga, pero la API responde 403 y la UI lo muestra. El layout de un segmento no valida sesión ni rol.
-- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts` (**A construir**). La usa `/`, que lee la sesión con `authClient.useSession()` y redirige al segmento del rol (**A construir**).
+- El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que manda al usuario al segmento de su propio rol: es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
+- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `GERENTE` y `ALUMNO` no tienen segmento todavía: para ellos la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlos a un 404.
 - No se usan route groups para separar roles. Si alguna vez se usan para otra cosa (compartir un layout sin cambiar la URL), dos route groups nunca pueden definir la misma ruta: los paréntesis no aparecen en la URL y el build falla.
 
 ## Layout: Sidebar y Header
 
 - `app/layout.tsx` (raíz) solo monta `<Providers>`. No lleva Header: si lo llevara, también aparecería en `/login`.
-- `components/layout/app-shell.tsx` (**A construir**) arma el esqueleto de la app autenticada: Header arriba, Sidebar al costado y el contenido. Recibe por props el Sidebar (`sidebar`) y el menú de usuario (`userMenu`).
+- `components/layout/app-shell.tsx` arma el esqueleto de la app autenticada: Header arriba, Sidebar al costado y el contenido. Recibe por props el Sidebar (`sidebar`) y el menú de usuario (`userMenu`).
 - El `layout.tsx` de cada segmento de rol monta `<AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>{children}</AppShell>`.
 - **Sidebar:** uno por rol, en `components/layout/<segmento>-sidebar.tsx`, porque cada rol navega a pantallas distintas.
 - **Header:** uno solo para todos los roles, en `components/layout/header.tsx`: logo y el lugar donde va el menú de usuario.
@@ -139,22 +146,24 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 
 `proxy.ts` solo garantiza que hay una cookie; no que la sesión sea válida ni que el rol alcance. Por eso cada componente con datos maneja `isError` con su propia UI y no asume que, si la página cargó, el usuario tiene permiso.
 
-| Caso               | Qué hace la UI                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 400 `VALIDACION`   | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                    |
-| 401                | Sesión vencida o inválida: redirige a `/login`. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) — **A construir** |
-| 403                | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                  |
-| 404                | Estado de "no encontrado"                                                                                                                        |
-| 409                | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                 |
-| 500 o error de red | Mensaje genérico con opción de reintentar                                                                                                        |
+| Caso               | Qué hace la UI                                                                                                                                                                   |
+| ------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400 `VALIDACION`   | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                                                    |
+| 401                | Sesión vencida o inválida: redirige a `/login?motivo=sesion_expirada`, donde se muestra el aviso. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) |
+| 403                | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                                                  |
+| 404                | Estado de "no encontrado"                                                                                                                                                        |
+| 409                | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                                                 |
+| 500 o error de red | Mensaje genérico con opción de reintentar                                                                                                                                        |
 
 ## Autenticación en el cliente
 
-- `features/auth/auth-client.ts` (**A construir**) crea el cliente con `createAuthClient` de `better-auth/react`. Verificar la API exacta en la versión instalada.
+- `features/auth/auth-client.ts` crea el cliente con `createAuthClient` de `better-auth/react`.
 - Login: `authClient.signIn.email(...)` desde `LoginForm` (en `/login`). Logout: `authClient.signOut()` desde `UserMenu`. Sesión y rol para la UI: `authClient.useSession()`.
 - No se importa `@/lib/auth`: es la instancia del servidor y ESLint lo bloquea. Para que `role` salga tipado en el cliente, se declara del lado del cliente (plugin `inferAdditionalFields` con el campo `role`), sin importar tipos del servidor.
 - El rol en el cliente solo sirve para mostrar u ocultar navegación y acciones. La seguridad es la API.
-- No hay pantalla de registro: los usuarios los crea un gerente.
+- Un login fallido muestra un mensaje solo: `interpretar-error-login.ts`. Nunca dice qué campo falló ni si el email existe, y las reglas de quién puede entrar (por ejemplo, un profesor inactivo) las decide la API.
+- Al cerrar sesión se vacía la cache de TanStack Query, para que volver con Atrás no muestre datos del usuario anterior.
+- No hay pantalla de registro ni recuperación de contraseña: los usuarios los crea un gerente.
 
 ## Formularios
 
