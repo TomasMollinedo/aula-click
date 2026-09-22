@@ -10,6 +10,7 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 | ------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
 | Convenciones de idioma, nombres de query, formato de fechas y horas, paginación y respuestas     | **Vigentes**                                                                           |
 | `src/server/shared/` completo (`actor`, `paginacion`, `zod`, `busqueda`, `fechas`) con sus tests | **Construido**                                                                         |
+| Schema de salida de auditoría (`shared/auditoria.ts`) con sus tests                              | **Construido**                                                                         |
 | Regla de ESLint `shared` → `features` / Prisma                                                   | **Vigente** (`eslint.config.mjs`; la prueba `shared/__tests__/eslint-limites.test.ts`) |
 | `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                    | **Construido** (`src/server/middlewares/auth.ts`)                                      |
 | `disableSignUp: true` en `src/lib/auth.ts`                                                       | **Construido**                                                                         |
@@ -20,7 +21,7 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 
 ## `src/server/shared/`
 
-Contiene solo código **sin significado de negocio**: paginación, primitivas de Zod, normalización de búsqueda, fechas y el tipo `Actor`.
+Contiene solo código **sin significado de negocio**: paginación, primitivas de Zod, normalización de búsqueda, fechas, el tipo `Actor` y la forma de salida de la auditoría.
 
 - `shared` no importa de `features`. Las features sí importan de `shared`.
 - De entrada se construye solo lo que ya sabemos que se va a repetir. Cualquier otra cosa se extrae recién en la tercera repetición.
@@ -64,6 +65,11 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 - Si el usuario autenticado no tiene rol, o su rol no es uno de `ROLES` (se comprueba con `esRole`), `requireAuth()` responde 403 (`SIN_PERMISO`) y no deja nada en el contexto.
 - `requireRole(...roles)` recibe `[Role, ...Role[]]`: un rol mal escrito o una llamada sin roles no compila. Detalle en `arquitectura-backend.md` → Autenticación y autorización.
 - El detalle de una entidad devuelve quién la creó y quién la modificó por última vez (nombre y fecha/hora).
+- Esa salida sale de `shared/auditoria.ts` y es igual en todas las entidades:
+  - El schema de detalle la mezcla plana: `z.object({ ...campos, ...auditoriaSchema.shape })`. Queda `createdAt` / `updatedAt` (ISO 8601 UTC) y `createdBy` / `updatedBy` (`{ id, nombre, apellido }`, componente OpenAPI `UsuarioAuditoria`).
+  - El repository trae los usuarios con `include: { createdBy: { select: SELECT_USUARIO_AUDITORIA }, updatedBy: { select: SELECT_USUARIO_AUDITORIA } }`.
+  - La fila se convierte con `{ ...campos, ...armarAuditoria(fila) }`: pasa los `Date` a ISO y descarta lo que no es auditoría.
+  - `createdBy` / `updatedBy` son `null` solo cuando el registro lo creó el seed (caso de `Usuario`, cuyos `createdById` / `updatedById` son opcionales). En las entidades de negocio son obligatorios.
 
 ## Baja lógica
 
@@ -102,12 +108,14 @@ Cada archivo lleva su test en `shared/__tests__/`, con tests reales (no `it.todo
 | `zod.ts`        | `dni`: se limpian puntos y espacios y luego se valida 7 u 8 dígitos; **se guarda solo con dígitos**. `email`: trim, minúsculas, email válido de hasta 254 caracteres (medidos después del trim). `telefono`: trim; solo dígitos, espacios, `+`, `-` y paréntesis; entre 8 y 20 caracteres con al menos 8 dígitos; **se guarda como lo escribió el usuario**. `textoRequerido(max)`: trim, entre 1 y `max` (lanza `RangeError` si `max` no es un entero >= 1). `fechaISO`: `YYYY-MM-DD` y fecha real de calendario; sale como string. `horaHHmm`: `HH:mm` de 00:00 a 23:59. `horaAMinutos(hora)` / `minutosAHora(minutos)` (0 a 1439; lanzan `RangeError` si la entrada es inválida: `minutosAHora(1440)` también lanza). Los mensajes de error están en español. |
 | `busqueda.ts`   | `normalizarBusqueda(texto)`: minúsculas, sin tildes ni diacríticos, espacios colapsados y recortados. `"González"` → `"gonzalez"`; `"  Ñandú  Pérez "` → `"nandu perez"`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | `fechas.ts`     | `type Reloj = () => Date`, `ZONA_HORARIA = 'America/Argentina/Salta'`, `hoy(reloj?)` → `YYYY-MM-DD` en esa zona (`reloj` inyectable, por defecto el del sistema; es el único lugar que usa `new Date()`), `fechaADate` / `dateAFecha` entre `YYYY-MM-DD` y `Date` en UTC a medianoche (lo que Prisma devuelve para `@db.Date`; lanzan `RangeError` ante un formato inválido, una fecha inexistente o un `Invalid Date`) y `diaSemanaISO(fecha)` (1 = lunes … 7 = domingo).                                                                                                                                                                                                                                                                                       |
+| `auditoria.ts`  | `usuarioAuditoriaSchema` (`{ id, nombre, apellido }`, componente OpenAPI `UsuarioAuditoria`) y su tipo `UsuarioAuditoria`; `auditoriaSchema` (`{ createdAt, updatedAt, createdBy, updatedBy }`: instantes con `z.iso.datetime()`, usuarios con `usuarioAuditoriaSchema.nullable()`; se mezcla con `...auditoriaSchema.shape`) y su tipo `Auditoria`; `SELECT_USUARIO_AUDITORIA = { id: true, nombre: true, apellido: true } as const` (objeto plano, sin importar Prisma); `type FilaAuditable` (estructural: `createdAt` y `updatedAt` como `Date`, `createdBy` y `updatedBy` como `UsuarioAuditoria` o `null`) y `armarAuditoria(fila)` → `Auditoria` (instantes con `toISOString()`; ignora los campos extra; lanza `RangeError` ante un `Invalid Date`).     |
 
 Casos de test obligatorios: `hoy()` a las 23:30 hora Salta (02:30 UTC del día siguiente) devuelve el día correcto, y `normalizarBusqueda` con los dos ejemplos de arriba.
 
 Notas de implementación (verificadas con Zod 4.6.5, `@hono/zod-openapi` 1.6.3 y Node 24):
 
 - `z.iso.date()` ya rechaza fechas inexistentes (`2026-02-30`, `2026-02-29`).
+- `z.iso.datetime()` sin opciones exige la `Z` final: rechaza un instante con offset (`-03:00`). Es lo buscado, porque la salida siempre es `toISOString()`.
 - `dni` y `email` usan `.pipe()` y en el OpenAPI aparecen solo como `string`: agregarles `.openapi({ description, example })`.
 - El `tsconfig` apunta a ES2017: quitar tildes con `/[\u0300-\u036f]/g` (rango de diacríticos combinantes), no con `\p{M}`, y armar `hoy()` con `Intl.DateTimeFormat(...).formatToParts()` (no depender del formato del locale).
 - Con `createRouter()`, un query inválido llega como 400 `VALIDACION` (con `app.onError(errorHandler)` instalado).
