@@ -63,7 +63,28 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 ## Recursos individuales
 
 - Se devuelven directo, **sin** envoltorio `{ data }`.
-- El detalle de una entidad incluye quién la creó y quién la modificó por última vez (nombre y fecha/hora). La forma exacta está en el OpenAPI.
+- El detalle de una entidad incluye quién la creó y quién la modificó por última vez (nombre y fecha/hora), con la misma forma en todas las entidades. Son cuatro campos al mismo nivel que los demás (no van anidados):
+
+  | Campo       | Formato                                                                     |
+  | ----------- | --------------------------------------------------------------------------- |
+  | `createdAt` | instante ISO 8601 en UTC                                                    |
+  | `updatedAt` | instante ISO 8601 en UTC                                                    |
+  | `createdBy` | `{ id, nombre, apellido }` (componente OpenAPI `UsuarioAuditoria`) o `null` |
+  | `updatedBy` | `{ id, nombre, apellido }` o `null`                                         |
+
+  `createdBy` y `updatedBy` son `null` solo en registros creados por el seed (usuarios iniciales). Ejemplo del detalle de un alumno (campos propios abreviados):
+
+  ```json
+  {
+    "id": 12,
+    "nombre": "Lucía",
+    "apellido": "González",
+    "createdAt": "2026-09-22T13:45:00.000Z",
+    "updatedAt": "2026-09-23T10:02:17.000Z",
+    "createdBy": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+    "updatedBy": { "id": "usr_mesa_02", "nombre": "Luis", "apellido": "Gómez" }
+  }
+  ```
 
 ## Errores
 
