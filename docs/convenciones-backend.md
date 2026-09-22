@@ -9,13 +9,15 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 | Pieza                                                                                        | Estado                                                                          |
 | -------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- |
 | Convenciones de idioma, nombres de query, formato de fechas y horas, paginación y respuestas | **Vigentes**                                                                    |
-| `src/server/shared/` (`actor`, `paginacion`, `zod`, `busqueda`, `fechas`) con sus tests      | **A construir** (no depende del schema; es lo primero)                          |
+| `src/server/shared/busqueda.ts` con su test                                                  | **Construido**                                                                  |
+| El resto de `src/server/shared/` (`actor`, `paginacion`, `zod`, `fechas`) con sus tests      | **A construir** (no depende del schema; es lo primero)                          |
 | Regla de ESLint `shared` → `features`                                                        | **Vigente** (`eslint.config.mjs`)                                               |
 | `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                | **A construir**                                                                 |
 | `disableSignUp: true` en `src/lib/auth.ts`                                                   | **A construir** (una línea). **Hoy el registro público por email está abierto** |
-| Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría               | **A construir** (dependen del `schema.prisma`)                                  |
+| Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría en el schema  | **Construido** (`prisma/schema.prisma`)                                         |
 | Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`         | **A construir** (dependen de la feature `turnos`)                               |
-| Auditoría completada por el repository, y seed                                               | **A construir**                                                                 |
+| Seed (`prisma/seed.ts`)                                                                      | **Construido**                                                                  |
+| Auditoría completada por el repository                                                       | **A construir**                                                                 |
 
 ## `src/server/shared/`
 
@@ -49,7 +51,9 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Búsqueda sin tildes
 
-- `mode: 'insensitive'` de Prisma no resuelve tildes. Las entidades buscables (alumnos, profesores) tienen una columna `busqueda`, calculada al guardar con `normalizarBusqueda()` sobre apellido, nombre y DNI.
+- `mode: 'insensitive'` de Prisma no resuelve tildes. Las entidades buscables tienen una columna `busqueda`, calculada al guardar con `normalizarBusqueda()`:
+  - Alumnos y usuarios (los profesores buscan por su `Usuario`): sobre apellido, nombre y DNI.
+  - Materias: sobre el nombre. En materias la columna es **`UNIQUE`**: así la unicidad del nombre no distingue mayúsculas ni tildes ("Matemática" y "matematica" chocan).
 - La búsqueda normaliza `q` con la misma función y usa `contains` sobre `busqueda`. Si cambian nombre, apellido o DNI, se recalcula.
 - No se usa la extensión `unaccent` de Postgres.
 
@@ -64,9 +68,9 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Baja lógica
 
-- Profesores y materias tienen el enum `estado` (`ACTIVO` / `INACTIVO`). Nada se borra.
+- Materias, asignaciones de materias, bloques y alumnos tienen el enum `estado` (`ACTIVO` / `INACTIVO`). El profesor usa el `estado` de su `Usuario`. Nada se borra.
 - Sus listados aceptan `?estado=`, con `ACTIVO` por defecto.
-- Los alumnos no tienen baja lógica.
+- Los alumnos tienen `estado`, pero su baja no se implementa en este release: su listado no filtra por estado.
 
 ## Turno vigente
 
@@ -80,10 +84,10 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Seguridad de cuentas
 
-- El registro público debe estar deshabilitado (**A construir**; hoy está abierto). Los usuarios los crea un gerente (o el seed, en desarrollo). No se expone ningún endpoint de sign-up abierto.
+- El registro público debe estar deshabilitado (**A construir**; hoy está abierto). Las cuentas se crean desde el servidor escribiendo `Usuario` + `Account` con `hashPassword()` (decisión T-21): el seed en desarrollo y mesa de entradas al dar de alta un profesor (T-22). No se expone ningún endpoint de sign-up abierto.
 - La opción es `emailAndPassword.disableSignUp: true` en `src/lib/auth.ts` (existe en el tipo de Better Auth 1.7.5). Con ella, `POST /api/auth/sign-up/email` responde 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED`.
-- El chequeo no exime las llamadas desde el servidor: **`auth.api.signUpEmail` también queda bloqueado, así que el seed no puede usarlo** (ver decisión D-05).
-- Cómo verificarlo: mientras la base no tenga las tablas de Better Auth, el endpoint da 500 (`Prisma schema mismatch`) con o sin la opción, así que no prueba nada. Con el schema creado, `POST /api/auth/sign-up/email` con un cuerpo válido debe dar 400 y no crear la cuenta.
+- El chequeo no exime las llamadas desde el servidor: **`auth.api.signUpEmail` también queda bloqueado, así que el seed no puede usarlo** (ver decisión T-21).
+- Cómo verificarlo: mientras la base no tenga las tablas de Better Auth, el endpoint da 500 (`Prisma schema mismatch`) con o sin la opción, así que no prueba nada. Con el schema creado, `POST /api/auth/sign-up/email` con un cuerpo válido debe dar 400 **con el código `EMAIL_PASSWORD_SIGN_UP_DISABLED`** y no crear la cuenta. Un 400 solo no alcanza: los campos de dominio de `Usuario` están declarados en `additionalFields` con `required: true` e `input: false`, así que sin la opción el alta ya responde 400 (`<campo> is required`).
 - El campo `role` nunca lo define el usuario (`input: false`).
 
 ## Especificación de `src/server/shared/` (A construir)

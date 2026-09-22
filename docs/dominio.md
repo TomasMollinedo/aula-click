@@ -11,19 +11,20 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 | Gerente          | `GERENTE`               | Planificado. Crea los usuarios (no hay registro público) |
 | Alumno           | `ALUMNO`                | Sprint 3 (portal)                                        |
 
-- Cada usuario tiene un solo rol.
-- Cómo se vincula la cuenta de un profesor o de un alumno con su registro, y quién la crea, está pendiente (D-10).
-- Cómo se crea el primer gerente con el registro público deshabilitado está pendiente (D-05).
+- Cada usuario tiene un solo rol. Los valores técnicos son los de la tabla catálogo `rol`; la base rechaza cualquier otro (T-23).
+- No hay registro público. El primer gerente (y un usuario por rol, en desarrollo) lo crea el seed (T-21).
+- Cada profesor tiene su cuenta de usuario: mesa de entradas la crea con una contraseña inicial al dar de alta al profesor (T-22). La cuenta del alumno llega con el portal (Sprint 3).
 
 ## Alumnos
 
 - El DNI es único entre alumnos.
-- Los alumnos no tienen baja lógica.
+- Los alumnos tienen baja lógica (estado activo / inactivo, `ACTIVO` por defecto), pero la baja no se implementa en este release.
 
 ## Profesores y materias
 
 - DNI y matrícula son únicos entre profesores (activos e inactivos).
 - Profesores y materias tienen baja lógica (estado activo / inactivo); nada se borra.
+- La baja del profesor es la de su usuario: un profesor inactivo es un `Usuario` inactivo, que además no puede iniciar sesión.
 - Un profesor inactivo no recibe materias, bloques ni turnos nuevos.
 - No se puede dar de baja un profesor, quitarle una materia, dar de baja una materia que tiene profesores, ni editar o eliminar un bloque, si hay **turnos vigentes**.
 
@@ -35,7 +36,8 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - Un alumno no puede tener dos turnos superpuestos en fecha y horario.
 - **Capacidad del bloque:** se controla por cada fecha en que aplica el turno. Si una fecha puntual de un recurrente está llena, se informa qué fechas no pueden (`BLOQUE_LLENO`, con las fechas en `details`). Qué pasa con esas fechas (excepciones) está pendiente (D-04).
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen.
-- Cómo se modelan los recurrentes está pendiente (D-03).
+- Un recurrente se guarda como regla (fecha de inicio y fin opcional); las fechas en que no aplica se registran como excepciones y las ocurrencias se calculan al consultar (T-20). La prioridad tampoco se guarda: se calcula al leer.
+- Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por sus fechas, no por su estado.
 
 ## Auditoría
 

@@ -100,10 +100,18 @@ Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de 
 
 Valores del campo `role` de la sesión: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y `ALUMNO`. Un usuario tiene un solo rol.
 
+| Valor           | Rol              |
+| --------------- | ---------------- |
+| `MESA_ENTRADAS` | Mesa de entradas |
+| `PROFESOR`      | Profesor         |
+| `GERENTE`       | Gerente          |
+| `ALUMNO`        | Alumno           |
+
+- Base de datos: catálogo `rol` (lo carga el seed); `Usuario.role` es un FK a él.
 - Backend: `ROLES` en `src/server/shared/actor.ts` (**A construir**).
 - Frontend: el tipo `Role` de `src/types/index.ts`.
 
-Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de valor se hace en los dos archivos en el mismo PR.
+Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de valor se hace en el seed, en `actor.ts` y en `src/types/index.ts` en el mismo PR.
 
 ## Autenticación
 
