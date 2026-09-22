@@ -101,7 +101,7 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 | Rol              | `role` en la API | Segmento    | Layout y Sidebar                                   | Estado      |
 | ---------------- | ---------------- | ----------- | -------------------------------------------------- | ----------- |
 | Mesa de entradas | `MESA_ENTRADAS`  | `/mesa`     | `app/mesa/layout.tsx` + `mesa-sidebar.tsx`         | Sprint 1    |
-| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Planificado |
+| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Sprint 1    |
 | Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Planificado |
 | Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3    |
 
@@ -137,16 +137,17 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 
 ## Manejo de errores en la UI
 
-`proxy.ts` solo garantiza que hay una cookie; no que la sesión sea válida ni que el rol alcance. Por eso cada componente con datos maneja `isError` con su propia UI y no asume que, si la página cargó, el usuario tiene permiso.
+`proxy.ts` (que protege todas las páginas salvo `/login`) solo garantiza que hay una cookie; no que la sesión sea válida ni que el rol alcance. Por eso cada componente con datos maneja `isError` con su propia UI y no asume que, si la página cargó, el usuario tiene permiso.
 
-| Caso               | Qué hace la UI                                                                                                                                   |
-| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
-| 400 `VALIDACION`   | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                    |
-| 401                | Sesión vencida o inválida: redirige a `/login`. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) — **A construir** |
-| 403                | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                  |
-| 404                | Estado de "no encontrado"                                                                                                                        |
-| 409                | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                 |
-| 500 o error de red | Mensaje genérico con opción de reintentar                                                                                                        |
+| Caso                       | Qué hace la UI                                                                                                                                                            |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400 `VALIDACION`           | En formularios, marca cada campo con su mensaje (`setError` a partir de `details`). Fuera de un formulario, muestra `message`                                             |
+| 401                        | Sesión vencida o inválida: redirige a `/login`. Se centraliza en `providers.tsx` (`onError` de `QueryCache` y `MutationCache`) — **A construir**                          |
+| 403                        | Mensaje de "sin permiso" en el lugar del contenido; no redirige                                                                                                           |
+| 403 `USUARIO_INHABILITADO` | El usuario fue dado de baja con la sesión abierta: cierra la sesión y lleva a `/login` con "Su usuario no está habilitado". Se centraliza junto al 401 en `providers.tsx` |
+| 404                        | Estado de "no encontrado"                                                                                                                                                 |
+| 409                        | Muestra `message`. Si el `code` es específico (por ejemplo `BLOQUE_LLENO`), usa `details` (por ejemplo, lista las fechas llenas)                                          |
+| 500 o error de red         | Mensaje genérico con opción de reintentar                                                                                                                                 |
 
 ## Autenticación en el cliente
 
@@ -154,7 +155,9 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 - Login: `authClient.signIn.email(...)` desde `LoginForm` (en `/login`). Logout: `authClient.signOut()` desde `UserMenu`. Sesión y rol para la UI: `authClient.useSession()`.
 - No se importa `@/lib/auth`: es la instancia del servidor y ESLint lo bloquea. Para que `role` salga tipado en el cliente, se declara del lado del cliente (plugin `inferAdditionalFields` con el campo `role`), sin importar tipos del servidor.
 - El rol en el cliente solo sirve para mostrar u ocultar navegación y acciones. La seguridad es la API.
-- No hay pantalla de registro: los usuarios los crea un gerente.
+- Errores del login: `/api/auth` responde con el formato de Better Auth y el `authClient` los expone como `error.code` / `error.message`. El `message` viene en inglés: la UI elige el texto por `code` (`INVALID_EMAIL_OR_PASSWORD` → "Usuario o contraseña incorrectos"; `USUARIO_INHABILITADO` → "Su usuario no está habilitado"). Tabla completa en `contrato-api.md` → Autenticación.
+- El login no manda `rememberMe`: la sesión vence siempre por inactividad (60 min, decisión T-24) y la API ignora ese valor.
+- No hay pantalla de registro: las cuentas se crean desde el servidor (el seed y, para los profesores, mesa de entradas; `dominio.md` → Roles).
 
 ## Formularios
 

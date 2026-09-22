@@ -11,8 +11,8 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 | Convenciones de idioma, nombres de query, formato de fechas y horas, paginación y respuestas     | **Vigentes**                                                                           |
 | `src/server/shared/` completo (`actor`, `paginacion`, `zod`, `busqueda`, `fechas`) con sus tests | **Construido**                                                                         |
 | Regla de ESLint `shared` → `features` / Prisma                                                   | **Vigente** (`eslint.config.mjs`; la prueba `shared/__tests__/eslint-limites.test.ts`) |
-| `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                    | **A construir**                                                                        |
-| `disableSignUp: true` en `src/lib/auth.ts`                                                       | **A construir** (una línea). **Hoy el registro público por email está abierto**        |
+| `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                    | **Construido** (`src/server/middlewares/auth.ts`)                                      |
+| `disableSignUp: true` en `src/lib/auth.ts`                                                       | **Construido**                                                                         |
 | Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría en el schema      | **Construido** (`prisma/schema.prisma`)                                                |
 | Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`             | **A construir** (dependen de la feature `turnos`)                                      |
 | Seed (`prisma/seed.ts`)                                                                          | **Construido**                                                                         |
@@ -59,10 +59,10 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 ## Auditoría y Actor
 
 - Toda entidad de negocio lleva `createdById`, `updatedById`, `createdAt` y `updatedAt`.
-- `requireAuth()` deja el `Actor` (`{ userId, role }`) en el contexto de Hono con `c.set('actor', ...)`. Se agrega `actor: Actor` a `AppEnv` en `src/server/router.ts`, así `c.get('actor')` sale tipado en los controllers.
+- `requireAuth()` deja el `Actor` (`{ userId, role }`) en el contexto de Hono con `c.set('actor', ...)`. `AppEnv` (`src/server/router.ts`) declara `actor: Actor`, así `c.get('actor')` sale tipado en los controllers.
 - El controller pasa el `Actor` al service y el service al repository, que completa los campos. No se usan extensiones de Prisma ni magia.
-- Si el usuario autenticado no tiene rol, o su rol no es uno de `ROLES` (se comprueba con `esRole`), `requireAuth()` responde 403 (`SIN_PERMISO`). Siguen en el contexto `user` y `session`.
-- `shared/actor.ts` ya existe; que `requireRole(...roles)` pase de `string[]` a `Role[]` (así un rol mal escrito no compila) es parte de T-03.
+- Si el usuario autenticado no tiene rol, o su rol no es uno de `ROLES` (se comprueba con `esRole`), `requireAuth()` responde 403 (`SIN_PERMISO`) y no deja nada en el contexto.
+- `requireRole(...roles)` recibe `[Role, ...Role[]]`: un rol mal escrito o una llamada sin roles no compila. Detalle en `arquitectura-backend.md` → Autenticación y autorización.
 - El detalle de una entidad devuelve quién la creó y quién la modificó por última vez (nombre y fecha/hora).
 
 ## Baja lógica
@@ -83,11 +83,13 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Seguridad de cuentas
 
-- El registro público debe estar deshabilitado (**A construir**; hoy está abierto). Las cuentas se crean desde el servidor escribiendo `Usuario` + `Account` con `hashPassword()` (decisión T-21): el seed en desarrollo y mesa de entradas al dar de alta un profesor (T-22). No se expone ningún endpoint de sign-up abierto.
-- La opción es `emailAndPassword.disableSignUp: true` en `src/lib/auth.ts` (existe en el tipo de Better Auth 1.7.5). Con ella, `POST /api/auth/sign-up/email` responde 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED`.
+- El registro público está deshabilitado. Las cuentas se crean desde el servidor escribiendo `Usuario` + `Account` con `hashPassword()` (decisión T-21): el seed en desarrollo y mesa de entradas al dar de alta un profesor (T-22). No se expone ningún endpoint de sign-up abierto.
+- La opción es `emailAndPassword.disableSignUp: true` en `src/lib/auth.ts`. Con ella, `POST /api/auth/sign-up/email` responde 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED`.
 - El chequeo no exime las llamadas desde el servidor: **`auth.api.signUpEmail` también queda bloqueado, así que el seed no puede usarlo** (ver decisión T-21).
 - Cómo verificarlo: mientras la base no tenga las tablas de Better Auth, el endpoint da 500 (`Prisma schema mismatch`) con o sin la opción, así que no prueba nada. Con el schema creado, `POST /api/auth/sign-up/email` con un cuerpo válido debe dar 400 **con el código `EMAIL_PASSWORD_SIGN_UP_DISABLED`** y no crear la cuenta. Un 400 solo no alcanza: los campos de dominio de `Usuario` están declarados en `additionalFields` con `required: true` e `input: false`, así que sin la opción el alta ya responde 400 (`<campo> is required`).
 - El campo `role` nunca lo define el usuario (`input: false`).
+- La contraseña de una cuenta nueva se valida con `LARGO_MINIMO_PASSWORD` / `LARGO_MAXIMO_PASSWORD` de `src/lib/auth-reglas.ts`, los mismos que usa Better Auth.
+- Un usuario con `estado` distinto de `ACTIVO` no puede iniciar sesión ni usar `/api/v1` (403 `USUARIO_INHABILITADO`). Al darlo de baja se revocan sus sesiones. Detalle en `arquitectura-backend.md` → Usuario inactivo.
 
 ## Especificación de `src/server/shared/`
 
