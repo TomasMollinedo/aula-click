@@ -90,9 +90,10 @@ Todo error responde con este cuerpo (`details` es opcional):
 
 Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega acá):
 
-| Status | `code`         | `details`                                       |
-| ------ | -------------- | ----------------------------------------------- |
-| 409    | `BLOQUE_LLENO` | Lista de fechas en las que el bloque está lleno |
+| Status | `code`                 | Mensaje / `details`                                                                                                                                         |
+| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 403    | `USUARIO_INHABILITADO` | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación) |
+| 409    | `BLOQUE_LLENO`         | `details`: lista de fechas en las que el bloque está lleno                                                                                                  |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 
@@ -116,5 +117,16 @@ Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de 
 ## Autenticación
 
 - Login con email y contraseña contra `/api/auth/...`, siempre a través del `authClient`.
-- No hay registro público: los usuarios los crea un gerente. Hasta que se active `disableSignUp` (**A construir**), el endpoint de registro existe, pero el frontend no lo usa ni tiene pantalla de registro.
-- Los endpoints de `/api/v1` responden 401 sin sesión válida y 403 si el rol no alcanza (ver tabla de errores).
+- No hay registro público: las cuentas se crean desde el servidor (el seed crea los usuarios de desarrollo y mesa de entradas crea la cuenta de cada profesor al darlo de alta). `POST /api/auth/sign-up/email` responde 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED` y el frontend no tiene pantalla de registro.
+- `/api/auth/*` responde con el **formato de Better Auth**, `{ "code", "message" }` (el `authClient` lo expone como `error.code` / `error.message`), no con `{ "error": { … } }`. El `message` de Better Auth viene en inglés: la UI elige el texto según el `code`.
+- Códigos que la UI maneja en el login (`POST /api/auth/sign-in/email`):
+
+  | Status | `code`                      | Cuándo                                                                                        | Texto en la UI                     |
+  | ------ | --------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+  | 401    | `INVALID_EMAIL_OR_PASSWORD` | Email inexistente o contraseña incorrecta (siempre el mismo, sin indicar cuál falló)          | "Usuario o contraseña incorrectos" |
+  | 403    | `USUARIO_INHABILITADO`      | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
+  | 400    | `INVALID_EMAIL`             | El email no tiene formato válido (el formulario lo valida antes de enviarlo)                  | Error de formato del campo         |
+
+- La sesión vence por inactividad (60 minutos sin pedidos) y se renueva sola con el uso. `rememberMe` no cambia la duración. Una sesión vencida se ve en `/api/v1` como 401 `NO_AUTENTICADO`.
+- Los endpoints de `/api/v1` responden 401 sin sesión válida, 403 `USUARIO_INHABILITADO` si el usuario fue dado de baja y 403 `SIN_PERMISO` si el rol no alcanza (ver tabla de errores).
+- De qué capa sale cada respuesta: `arquitectura-backend.md` → Autenticación y autorización → Qué responde cada falla.
