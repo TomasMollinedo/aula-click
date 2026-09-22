@@ -19,6 +19,10 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 ## Alumnos
 
 - El DNI es único entre alumnos.
+- Datos obligatorios del alta: nombre, apellido, DNI, fecha de nacimiento, email y teléfono. Si es menor de edad (menos de 18 años a la fecha de hoy), además nombre, apellido, teléfono y email del tutor (el DNI del tutor es opcional). El resto (datos escolares, colegio, observaciones) se completa después (T-25).
+- Cumple 18 el día de su cumpleaños: ese día ya es mayor. Quien nació un 29 de febrero cumple 18 el 1 de marzo.
+- La fecha de nacimiento no puede ser posterior a hoy.
+- La regla del tutor vale también al editar, sobre el alumno resultante: no se puede borrar un dato obligatorio del tutor de un menor. Los datos del tutor de un mayor se conservan.
 - Los alumnos tienen baja lógica (estado activo / inactivo, `ACTIVO` por defecto), pero la baja no se implementa en este release.
 
 ## Profesores y materias

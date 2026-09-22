@@ -54,11 +54,11 @@ Respuesta:
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 
-| Query       | Qué hace                                                                                               |
-| ----------- | ------------------------------------------------------------------------------------------------------ |
-| `q`         | Búsqueda por texto. No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González")              |
-| `estado`    | `ACTIVO` o `INACTIVO`. Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO` |
-| `materiaId` | Filtra por materia                                                                                     |
+| Query       | Qué hace                                                                                                                                                                                                                                                                                                                  |
+| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `q`         | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras |
+| `estado`    | `ACTIVO` o `INACTIVO`. Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                    |
+| `materiaId` | Filtra por materia                                                                                                                                                                                                                                                                                                        |
 
 ## Recursos individuales
 
@@ -94,20 +94,20 @@ Todo error responde con este cuerpo (`details` es opcional):
 {
   "error": {
     "code": "CONFLICTO",
-    "message": "DNI ya registrado",
-    "details": {}
+    "message": "Ya existe un alumno con ese DNI",
+    "details": [{ "path": ["dni"], "message": "Ya existe un alumno con ese DNI" }]
   }
 }
 ```
 
-| Status | `code` por defecto | Clase en el backend              | Cuándo                                                                                                     |
-| ------ | ------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------- |
-| 400    | `VALIDACION`       | `ValidationError`                | Entrada inválida. `details` trae las issues de Zod (cada una con `path` y `message`)                       |
-| 401    | `NO_AUTENTICADO`   | `UnauthorizedError`              | No hay sesión o la sesión no es válida                                                                     |
-| 403    | `SIN_PERMISO`      | `ForbiddenError`                 | El rol no alcanza para el endpoint, o el usuario no tiene rol                                              |
-| 404    | `NO_ENCONTRADO`    | `NotFoundError`                  | El recurso no existe, o la ruta de `/api/v1` no existe                                                     |
-| 409    | `CONFLICTO`        | `ConflictError`                  | Conflicto con el estado actual (DNI duplicado, solapamiento de turno, turnos vigentes que impiden la baja) |
-| 500    | `ERROR_INTERNO`    | `AppError` o error no controlado | Error inesperado; no expone detalles                                                                       |
+| Status | `code` por defecto | Clase en el backend              | Cuándo                                                                                                                                                                                                                         |
+| ------ | ------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | `VALIDACION`       | `ValidationError`                | Entrada inválida. `details` trae las issues de Zod (cada una con `path` y `message`). Un 400 que arma un service por una regla (por ejemplo, datos del tutor de un menor) usa la misma forma, así la UI marca los campos igual |
+| 401    | `NO_AUTENTICADO`   | `UnauthorizedError`              | No hay sesión o la sesión no es válida                                                                                                                                                                                         |
+| 403    | `SIN_PERMISO`      | `ForbiddenError`                 | El rol no alcanza para el endpoint, o el usuario no tiene rol                                                                                                                                                                  |
+| 404    | `NO_ENCONTRADO`    | `NotFoundError`                  | El recurso no existe, o la ruta de `/api/v1` no existe                                                                                                                                                                         |
+| 409    | `CONFLICTO`        | `ConflictError`                  | Conflicto con el estado actual (DNI duplicado, solapamiento de turno, turnos vigentes que impiden la baja). Si el conflicto es de un campo (DNI), `details` lo marca con la misma forma que el 400 (`path` + `message`)        |
+| 500    | `ERROR_INTERNO`    | `AppError` o error no controlado | Error inesperado; no expone detalles                                                                                                                                                                                           |
 
 Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega acá):
 

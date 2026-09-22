@@ -17,7 +17,7 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 | Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría en el schema      | **Construido** (`prisma/schema.prisma`)                                                |
 | Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`             | **A construir** (dependen de la feature `turnos`)                                      |
 | Seed (`prisma/seed.ts`)                                                                          | **Construido**                                                                         |
-| Auditoría completada por el repository                                                           | **A construir**                                                                        |
+| Auditoría completada por el repository                                                           | **Construido** (patrón en `alumnos.repository`)                                        |
 
 ## `src/server/shared/`
 
@@ -54,14 +54,16 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 - `mode: 'insensitive'` de Prisma no resuelve tildes. Las entidades buscables tienen una columna `busqueda`, calculada al guardar con `normalizarBusqueda()`:
   - Alumnos y usuarios (los profesores buscan por su `Usuario`): sobre apellido, nombre y DNI.
   - Materias: sobre el nombre. En materias la columna es **`UNIQUE`**: así la unicidad del nombre no distingue mayúsculas ni tildes ("Matemática" y "matematica" chocan).
-- La búsqueda normaliza `q` con la misma función y usa `contains` sobre `busqueda`. Si cambian nombre, apellido o DNI, se recalcula.
+- La búsqueda es **por palabras**: `q` se normaliza con la misma función, se le quitan los puntos (`30.123` encuentra el DNI `30123456`) y se parte en palabras (hasta 5; el resto se ignora). Cada palabra es un `contains` sobre `busqueda` y se combinan con AND: `"juan gonz"` encuentra a "González, Juan". `q` admite hasta 100 caracteres.
+- `busqueda` se recalcula en cada alta y edición con el estado resultante (aunque cambie solo uno de los datos).
+- Los listados con buscador se ordenan por `busqueda` y luego `id`: como `busqueda` empieza por el apellido normalizado, el orden es por apellido y nombre sin depender de la collation de Postgres con las tildes ("Álvarez" no queda después de "Zapata").
 - No se usa la extensión `unaccent` de Postgres.
 
 ## Auditoría y Actor
 
 - Toda entidad de negocio lleva `createdById`, `updatedById`, `createdAt` y `updatedAt`.
 - `requireAuth()` deja el `Actor` (`{ userId, role }`) en el contexto de Hono con `c.set('actor', ...)`. `AppEnv` (`src/server/router.ts`) declara `actor: Actor`, así `c.get('actor')` sale tipado en los controllers.
-- El controller pasa el `Actor` al service y el service al repository, que completa los campos. No se usan extensiones de Prisma ni magia.
+- El controller pasa el `Actor` al service y el service al repository, que completa los campos: en el alta `createdById` y `updatedById` con `actor.userId`, en la edición solo `updatedById` (`updatedAt` lo pone Prisma con `@updatedAt`). No se usan extensiones de Prisma ni magia. Patrón en `alumnos.repository`.
 - Si el usuario autenticado no tiene rol, o su rol no es uno de `ROLES` (se comprueba con `esRole`), `requireAuth()` responde 403 (`SIN_PERMISO`) y no deja nada en el contexto.
 - `requireRole(...roles)` recibe `[Role, ...Role[]]`: un rol mal escrito o una llamada sin roles no compila. Detalle en `arquitectura-backend.md` → Autenticación y autorización.
 - El detalle de una entidad devuelve quién la creó y quién la modificó por última vez (nombre y fecha/hora).

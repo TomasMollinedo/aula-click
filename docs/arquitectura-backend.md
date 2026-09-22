@@ -46,7 +46,9 @@ src/
 │       ├── <dominio>.validation.ts
 │       ├── <dominio>.service.ts
 │       ├── <dominio>.repository.ts
-│       └── __tests__/<dominio>.service.test.ts
+│       ├── <dominio>.ejemplos.ts      # opcional: ejemplos del OpenAPI
+│       ├── <regla>.ts                 # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
+│       └── __tests__/                 # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```
 
@@ -54,13 +56,13 @@ Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignada
 
 ## Capas de una feature
 
-| Capa       | Hace                                                                                                                                              | No hace                                                   |
-| ---------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
-| routes     | Contrato HTTP: path, método, schemas, status codes y middlewares de auth. Cada endpoint se declara con `createRoute()` y es la fuente del OpenAPI | Lógica                                                    |
-| controller | Recibe el dato ya validado, obtiene el `Actor` con `c.get('actor')`, llama al service y arma la respuesta (200, 201, 204…)                        | Acceder a la base, aplicar reglas de negocio, `try/catch` |
-| validation | Schemas Zod de entrada, salida y params                                                                                                           | Reglas de negocio                                         |
-| service    | Reglas de negocio y de dominio. Lanza `AppError` o sus subclases                                                                                  | Conocer HTTP (Hono, `Context`, status codes) ni Prisma    |
-| repository | Operaciones con Prisma; traduce errores del motor (`P2002` → `ConflictError`); completa la auditoría con el `Actor`                               | Reglas de negocio                                         |
+| Capa       | Hace                                                                                                                                                                                                                                                  | No hace                                                   |
+| ---------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- |
+| routes     | Contrato HTTP: path, método, schemas, status codes y middlewares de auth. Cada endpoint se declara con `createRoute()` y es la fuente del OpenAPI                                                                                                     | Lógica                                                    |
+| controller | Recibe el dato ya validado, obtiene el `Actor` con `c.get('actor')`, llama al service y arma la respuesta (200, 201, 204…)                                                                                                                            | Acceder a la base, aplicar reglas de negocio, `try/catch` |
+| validation | Schemas Zod de entrada, salida y params                                                                                                                                                                                                               | Reglas de negocio                                         |
+| service    | Reglas de negocio y de dominio. Lanza `AppError` o sus subclases                                                                                                                                                                                      | Conocer HTTP (Hono, `Context`, status codes) ni Prisma    |
+| repository | Operaciones con Prisma; traduce errores del motor (`P2002` → `ConflictError`); completa la auditoría con el `Actor`; devuelve DTOs (tipos de `<dominio>.validation.ts`, fechas ya convertidas, auditoría con `armarAuditoria`), nunca tipos de Prisma | Reglas de negocio                                         |
 
 Flujo: cliente → routes (valida con Zod) → controller → service → repository → Postgres. Cualquier error lanzado lo captura `app.onError`.
 
@@ -99,7 +101,8 @@ Jerarquía en `src/server/errors/`; todas las clases heredan de `AppError(messag
 - Los schemas viven en `<dominio>.validation.ts` y usan el `z` de `@hono/zod-openapi`, para poder llamar a `.openapi({ description, example })`.
 - Los tipos se derivan de los schemas; no se duplican a mano.
 - Cada endpoint declara todos sus status codes: 200/201/204 según corresponda; 400 si valida entrada; 401 y 403 si usa `requireAuth()`/`requireRole()`; 404 si busca por id; 409 si puede haber conflicto.
-- Swagger UI queda en `/api/v1/docs` y el JSON en `/api/v1/openapi.json`. Si los ejemplos ensucian el archivo de rutas, se mueven a otro.
+- Swagger UI queda en `/api/v1/docs` y el JSON en `/api/v1/openapi.json`. Si los ejemplos ensucian el archivo de rutas, se mueven a `<dominio>.ejemplos.ts`, tipados con `satisfies` contra los tipos de la validation. Se usan desde las rutas (`example` / `examples` del `content`), no desde `.openapi()` de los schemas: si la validation importa los ejemplos y los ejemplos sus tipos, TypeScript no puede inferir el tipo (referencia circular).
+- Un campo armado con `.pipe()` (como `dni`, `email` o un opcional que convierte `""` en `null`) aparece en el OpenAPI solo como `string`: se le agrega con `.openapi({ description, example, enum, maxLength })` lo que se pierde, aplicado **antes** de `.nullable()` (si se declara `type` a mano, el generador deja de marcarlo `nullable`).
 
 ## Autenticación y autorización
 
@@ -269,6 +272,7 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 - **Seed** (`prisma/seed.ts`): la otra excepción. Usa Prisma directo, `env` e `hashPassword()` de `src/lib/auth.ts`, y `normalizarBusqueda()` de `src/server/shared/`. Está fuera de `src/`, así que las reglas de ESLint por zona no lo alcanzan. Es idempotente (todo `upsert` por clave natural) y se corre con `pnpm db:seed`: en Prisma 7, `migrate dev` ya no lo ejecuta solo. Está registrado en `prisma7.config.ts` (`migrations.seed`).
 - **Restricciones `CHECK`** (`bloque_agenda`: día, horas y capacidad; `turno`: orden de fechas y sesión única): Prisma no las genera, así que se agregan a mano al `migration.sql` de la migración que crea esas tablas.
 - Tablas y columnas en snake_case (`@@map` / `@map`); modelos en PascalCase y campos en camelCase.
+- **Errores del motor con Prisma 7 + `@prisma/adapter-pg`** (verificado en el runtime 7.10): se importa `Prisma` de `@/generated/prisma/client` y se compara con `error instanceof Prisma.PrismaClientKnownRequestError` y `error.code`. En un `P2002`, `meta` no trae `target` (eso era del engine clásico): trae `{ modelName, driverAdapterError }`, y la restricción está en `meta.driverAdapterError.cause.constraint`, como `{ index: '<tabla>_<campo>_key' }` (el nombre del índice único; `pg` lo informa siempre) o `{ fields: [...] }` si no hay nombre. Si la tabla tiene un solo `UNIQUE` y la forma no se puede leer, se asume ese campo. `P2025` (registro inexistente en un `update`) se traduce a `NotFoundError`. Ejemplo en `alumnos.repository`.
 
 ## Archivos
 
@@ -281,6 +285,9 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 
 - Vitest, un archivo por service dentro de su feature: `server/features/<dominio>/__tests__/<dominio>.service.test.ts`. Se ejecutan con `pnpm test:run` (`pnpm test` es modo watch).
 - El repository se reemplaza por un mock: sin Docker ni Postgres. Los tests no importan `@/config/env`.
+- **Patrón del service:** `<dominio>.service.ts` exporta una fábrica `crear<Dominio>Service({ repository, reloj })` (`reloj` opcional; por defecto el del sistema, vía `hoy(reloj)`) y la instancia por defecto `<dominio>Service = crear<Dominio>Service({ repository: <dominio>Repository })`, que usa el controller. El test crea el service con un repository falso (un objeto de `vi.fn<Repository['metodo']>()`) y un reloj fijo.
+- Como la instancia por defecto importa el repository real (y este, Prisma y `@/config/env`, que falla sin variables de entorno), el test corta esa importación con `vi.mock('../<dominio>.repository', () => ({ <dominio>Repository: {} }))`.
+- Opcional: `<dominio>.routes.test.ts` prueba el contrato HTTP (validación de Zod, 401/403, que el OpenAPI declare todos los status codes) con el repository y `@/lib/auth` mockeados. Referencia: `alumnos/__tests__/`.
 - Casos mínimos: el camino feliz + uno por cada error que el service puede lanzar (uno por cada 4xx que declara su ruta). Un `it.todo` no cuenta como cobertura.
 - Las funciones puras (por ejemplo `prioridad.ts` en `turnos`) se testean directo.
 - Tests del middleware de auth (`server/middlewares/__tests__/auth.test.ts`): `vi.mock('@/lib/auth')` con `vi.hoisted`, sin base ni variables de entorno.

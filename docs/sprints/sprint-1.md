@@ -193,8 +193,8 @@ Completar la feature `src/server/features/alumnos/`, que hoy es el esqueleto mod
 1. `GET /api/v1/alumnos`: paginado, orden por apellido (con `id` como desempate), `q` con `contains` sobre `busqueda`. Cada ítem trae id, apellido y nombre. Sin filtro de estado.
 2. `GET /api/v1/alumnos/{id}`: detalle con datos identificatorios, de contacto, del tutor, escolares, observaciones y auditoría (quién creó y quién modificó por última vez, con fecha y hora). Exámenes (HU-08) y turnos (HU-07) se suman cuando se implementen esas HU.
 3. `POST /api/v1/alumnos` y `PATCH /api/v1/alumnos/{id}`, con las primitivas de `shared/zod`:
-   - Obligatorios: nombre, apellido, DNI, fecha de nacimiento, teléfono, email y nivel de escolaridad (nivel y grado o año).
-   - Opcionales: colegio y observaciones.
+   - Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (decisión T-25).
+   - Opcionales: nivel de escolaridad, grado o año, colegio, observaciones y datos del tutor.
    - Si es menor de edad, son obligatorios nombre, apellido, teléfono y email del tutor. La edad la calcula el service con `hoy()` (reloj inyectable) y devuelve 400 `VALIDACION` con el detalle por campo.
 4. `busqueda` se recalcula en cada alta y edición.
 5. DNI único: el repository traduce `P2002` a 409 `CONFLICTO`, en el alta y en la edición.
@@ -226,7 +226,7 @@ Completar `src/features/alumnos/` (feature modelo del frontend) y sus páginas e
 2. Buscador por DNI, nombre o apellido con `use-debounce`. Sin coincidencias: aviso y botón para dar de alta un alumno.
 3. El buscador se arma como componente reutilizable de la feature, expuesto mediante su hook, porque lo usa la pantalla de registrar turno (HU-07).
 4. Botón "+ Nuevo alumno" y formulario de alta y edición en secciones: identificatorios, contacto, tutor, escolares y observaciones.
-   - El schema del frontend valida sólo formato (DNI, email, teléfono, fecha `YYYY-MM-DD`).
+   - El schema del frontend valida sólo formato (DNI, email, teléfono, fecha `YYYY-MM-DD`) y marca como obligatorios solo nombre, apellido, DNI, fecha de nacimiento, email y teléfono (decisión T-25). Los del tutor se marcan cuando la API responde 400.
    - Si el alumno es menor y faltan los datos del tutor, la API responde 400 y el formulario marca esos campos. La edad no se calcula en el cliente.
    - Un 409 por DNI repetido se muestra sobre el campo DNI.
 5. Detalle con todos los datos, auditoría formateada en hora local y botón "Editar". Secciones "Exámenes" y "Turnos" visibles como "Próximamente".
