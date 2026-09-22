@@ -30,7 +30,7 @@ Node 24.19.0 y pnpm 11.21.0 (`corepack enable`). Scripts de `package.json`:
 | Comando                                         | Qué hace                                                            |
 | ----------------------------------------------- | ------------------------------------------------------------------- |
 | `pnpm dev` / `build` / `start`                  | Servidor de desarrollo / build / servidor de producción             |
-| `pnpm typecheck`                                | `tsc --noEmit`                                                      |
+| `pnpm typecheck`                                | `next typegen` + `tsc --noEmit`                                     |
 | `pnpm lint`                                     | ESLint (incluye las reglas de arquitectura)                         |
 | `pnpm format`                                   | Prettier sobre todo el repo (`--write`)                             |
 | `pnpm test`                                     | Vitest en **modo watch** (uso interactivo local)                    |

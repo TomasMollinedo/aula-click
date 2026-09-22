@@ -93,9 +93,11 @@ Si la app no arranca con `Variables de entorno inválidas o faltantes`, falta al
 
 ```
 src/
-├── app/            # páginas (solo consumen la API por fetch) y rutas de Next
+├── app/            # páginas y layouts (solo componen lo de features/ y components/)
 │   └── api/        # v1/[[...route]] (Hono) y auth/[...all] (Better Auth)
-├── components/     # componentes, agrupados por entidad
+├── features/       # todo lo de una entidad: types, schema, api, hooks y components
+├── components/     # UI que no pertenece a ninguna entidad (ui/, layout/)
+├── hooks/ types/ utils/  # utilidades genéricas del frontend
 ├── config/env.ts   # variables de entorno validadas (único lugar que lee process.env)
 ├── proxy.ts        # redirige a /login si no hay sesión
 ├── server/         # app.ts, router.ts, middlewares/, errors/ y features/<dominio>/
