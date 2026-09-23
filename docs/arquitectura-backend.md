@@ -39,7 +39,7 @@ src/
 │   ├── router.ts                     # createRouter() y el tipo AppEnv
 │   ├── errors/                       # AppError y subclases, errorHandler, ErrorResponseSchema
 │   ├── middlewares/auth.ts           # requireAuth() + requireRole(...)
-│   ├── shared/                       # actor, paginacion, zod, busqueda, fechas (ver convenciones-backend.md)
+│   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, auditoria (ver convenciones-backend.md)
 │   └── features/<dominio>/
 │       ├── <dominio>.routes.ts
 │       ├── <dominio>.controller.ts
@@ -48,7 +48,7 @@ src/
 │       ├── <dominio>.repository.ts
 │       ├── <dominio>.ejemplos.ts      # opcional: ejemplos del OpenAPI
 │       ├── <regla>.ts                 # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
-│       └── __tests__/                 # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts
+│       └── __tests__/                 # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts, <dominio>.repository.test.ts (excepcional)
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```
 
@@ -299,6 +299,7 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 - Opcional: `<dominio>.routes.test.ts` prueba el contrato HTTP (validación de Zod, 401/403, que el OpenAPI declare todos los status codes) con el repository y `@/lib/auth` mockeados. Referencia: `alumnos/__tests__/`.
 - Casos mínimos: el camino feliz + uno por cada error que el service puede lanzar (uno por cada 4xx que declara su ruta). Un `it.todo` no cuenta como cobertura.
 - Las funciones puras (por ejemplo `prioridad.ts` en `turnos`) se testean directo.
+- Excepcional: `<dominio>.repository.test.ts`, solo cuando una **condición de consulta** es una regla del dominio que otras features reutilizan y hay que fijarla con casos (la de turno vigente: `turnos/__tests__/turnos.repository.test.ts`). Mockea `@/lib/prisma` con `vi.hoisted` y verifica el `where` que recibe Prisma; no usa base. No reemplaza al test del service: las reglas se siguen probando ahí.
 - Tests del middleware de auth (`server/middlewares/__tests__/auth.test.ts`): `vi.mock('@/lib/auth')` con `vi.hoisted`, sin base ni variables de entorno.
 - Las reglas de auth (`src/lib/__tests__/auth-reglas.test.ts`) se testean directo: `auth-reglas.ts` no importa `env` ni Prisma.
 - El `matcher` de `src/proxy.ts` se prueba en `src/__tests__/proxy.test.ts` con `unstable_doesMiddlewareMatch` de `next/experimental/testing/server` (en Next 16.3.5 se llama así, aunque la guía nombre `unstable_doesProxyMatch`).

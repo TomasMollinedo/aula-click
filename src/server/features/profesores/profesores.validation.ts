@@ -1,4 +1,5 @@
 import { z } from '@hono/zod-openapi'
+import type { Estado } from '@/server/shared/estado'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio.
 
@@ -57,8 +58,6 @@ export const quitarMateriasSchema = z
   .openapi('QuitarMaterias')
 
 export type QuitarMaterias = z.infer<typeof quitarMateriasSchema>
-
-type Estado = 'ACTIVO' | 'INACTIVO'
 
 /**
  * Lo que el service necesita del profesor para asignar o quitar materias: su estado (el de su

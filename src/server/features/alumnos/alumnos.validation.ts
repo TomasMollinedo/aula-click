@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { auditoriaSchema } from '@/server/shared/auditoria'
+import { ESTADOS } from '@/server/shared/estado'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import { dni, email, fechaISO, telefono, textoRequerido } from '@/server/shared/zod'
 
@@ -16,9 +17,6 @@ export const NIVELES_ESCOLARIDAD = [
   'TERCIARIO',
   'UNIVERSITARIO',
 ] as const
-
-/** Valores del enum `Estado` (el repository comprueba que coincidan con Prisma). */
-export const ESTADOS = ['ACTIVO', 'INACTIVO'] as const
 
 export const nivelEscolaridadSchema = z
   .enum(NIVELES_ESCOLARIDAD, {
