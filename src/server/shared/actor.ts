@@ -1,6 +1,6 @@
 // Valores del campo `role` (fuente: docs/contrato-api.md → Roles). Un cambio se hace en el mismo PR
 // en el seed (catálogo `rol`), en este archivo y en src/types/index.ts (el frontend no importa este).
-export const ROLES = ['MESA_ENTRADAS', 'PROFESOR', 'GERENTE', 'ALUMNO', 'ADMIN'] as const
+export const ROLES = ['MESA_ENTRADAS', 'PROFESOR', 'GERENTE', 'ALUMNO'] as const
 
 /** Uno de los valores de `ROLES`. */
 export type Role = (typeof ROLES)[number]
