@@ -20,6 +20,7 @@ const ROLES = [
   { id: 'PROFESOR', nombre: 'Profesor', descripcion: 'Consulta su agenda y sus alumnos' },
   { id: 'GERENTE', nombre: 'Gerente', descripcion: 'Crea los usuarios y consulta indicadores' },
   { id: 'ALUMNO', nombre: 'Alumno', descripcion: 'Accede al portal del alumno' },
+  { id: 'ADMIN', nombre: 'Administrador', descripcion: 'Acceso completo al sistema' },
 ]
 
 const MATERIAS = ['Matemática', 'Física', 'Química', 'Lengua', 'Inglés', 'Contabilidad']
