@@ -15,7 +15,8 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 | `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                    | **Construido** (`src/server/middlewares/auth.ts`)                                      |
 | `disableSignUp: true` en `src/lib/auth.ts`                                                       | **Construido**                                                                         |
 | Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría en el schema      | **Construido** (`prisma/schema.prisma`)                                                |
-| Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`             | **A construir** (dependen de la feature `turnos`)                                      |
+| Consulta de "turno vigente" en `turnos.repository`                                               | **Construido** (`condicionTurnoVigente` y `contarVigentesPorMateria`)                  |
+| Transacción con bloqueo de fila en `turnos.repository`                                           | **A construir** (depende de la feature `turnos`)                                       |
 | Seed (`prisma/seed.ts`)                                                                          | **Construido**                                                                         |
 | Auditoría completada por el repository                                                           | **Construido** (patrón en `alumnos.repository`)                                        |
 
@@ -81,7 +82,8 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Turno vigente
 
-- La definición de "vigente" está en [`dominio.md`](./dominio.md#turnos). Se implementa **una sola vez**, en una consulta de `turnos.repository`.
+- La definición de "vigente" está en [`dominio.md`](./dominio.md#turnos). Se implementa **una sola vez**, en `turnos.repository`: `condicionTurnoVigente(fechaHoy)` arma la condición (`fechaFin` nula o >= hoy, y estado `ACTIVO`) y `contarVigentesPorMateria({ fechaHoy, profesorId?, materiaIds? })` cuenta los vigentes por materia. Una consulta nueva de vigentes reutiliza `condicionTurnoVigente`.
+- `fechaHoy` la calcula el service con `hoy()` y su reloj inyectable, y se la pasa al repository.
 - Profesores y materias la usan desde sus services (HU-03 a HU-06), importando ese repository. Está prohibido reescribir la condición en otro lado.
 
 ## Concurrencia en la capacidad de un bloque

@@ -2,7 +2,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
-import type { MateriasAsignadas, ProfesorParaAsignar } from './profesores.validation'
+import type { MateriasAsignadas, ProfesorConAsignaciones } from './profesores.validation'
 
 // Único lugar de la feature que usa Prisma. Traduce errores del motor (P2002 -> ConflictError),
 // completa la auditoría con el Actor y devuelve DTOs: ningún tipo de Prisma sale de acá.
@@ -28,24 +28,33 @@ export const profesoresRepository = {
   },
 
   /**
-   * Estado del profesor (el de su `Usuario`) y sus asignaciones de esas materias, activas o no.
-   * `null` si el profesor no existe.
+   * Estado del profesor (el de su `Usuario`) y sus asignaciones de esas materias, activas o no,
+   * con el nombre de la materia. `null` si el profesor no existe.
    */
-  async buscarParaAsignar(
+  async buscarConAsignaciones(
     profesorId: number,
     materiaIds: number[],
-  ): Promise<ProfesorParaAsignar | null> {
+  ): Promise<ProfesorConAsignaciones | null> {
     const profesor = await prisma.profesor.findUnique({
       where: { id: profesorId },
       select: {
         usuario: { select: { estado: true } },
         asignaciones: {
           where: { materiaId: { in: materiaIds } },
-          select: { materiaId: true, estado: true },
+          select: { materiaId: true, estado: true, materia: { select: { nombre: true } } },
         },
       },
     })
-    return profesor && { estado: profesor.usuario.estado, asignaciones: profesor.asignaciones }
+    return (
+      profesor && {
+        estado: profesor.usuario.estado,
+        asignaciones: profesor.asignaciones.map(({ materiaId, estado, materia }) => ({
+          materiaId,
+          nombre: materia.nombre,
+          estado,
+        })),
+      }
+    )
   },
 
   /**
@@ -79,6 +88,18 @@ export const profesoresRepository = {
       }
       throw error
     }
+  },
+
+  /**
+   * Baja lógica de las asignaciones activas de esas materias (`estado = INACTIVO`), nunca borrado
+   * físico: reasignar la materia reactiva la misma fila. Un solo UPDATE: todas o ninguna.
+   * Auditoría: `updatedById` con el actor.
+   */
+  async quitarMaterias(profesorId: number, materiaIds: number[], actor: Actor): Promise<void> {
+    await prisma.asignacionMateria.updateMany({
+      where: { profesorId, materiaId: { in: materiaIds }, estado: 'ACTIVO' },
+      data: { estado: 'INACTIVO', updatedById: actor.userId },
+    })
   },
 }
 

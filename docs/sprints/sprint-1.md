@@ -374,7 +374,7 @@ Agregar a la feature `profesores` la gestión de sus materias asignadas (`arquit
    - Cada materia debe existir y estar `ACTIVA` (lectura por `materias.repository`): si no, 404 o 409 `MATERIA_INACTIVA`.
    - Una materia ya asignada y activa → 409 `CONFLICTO`.
    - Si existe una asignación previa en estado `INACTIVO` para ese par profesor–materia, se reactiva en lugar de insertar una fila nueva (el par es único y la baja es lógica).
-3. `DELETE /api/v1/profesores/{id}/materias/{materiaId}`: baja lógica de la asignación (`estado = INACTIVO`), nunca borrado físico.
+3. `DELETE /api/v1/profesores/{id}/materias` con `materiaIds` (una o varias, igual que el alta), en una sola operación: se quitan todas o ninguna. Baja lógica de la asignación (`estado = INACTIVO`), nunca borrado físico.
    - Si el profesor tiene turnos vigentes de esa materia, 409 `TURNOS_VIGENTES` y no se quita. En `details` va la cantidad de turnos.
 4. Turno vigente (`dominio.md` → Turnos; `convenciones-backend.md` → Turno vigente):
    - Crear el esqueleto de `turnos` con `/nueva-feature-api turnos` e implementar en `turnos.repository` **sólo** la consulta de turnos vigentes filtrable por profesor y materia: recurrentes sin fecha de fin o con fin >= hoy, y sesiones únicas con fecha >= hoy.

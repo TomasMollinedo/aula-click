@@ -111,12 +111,13 @@ Todo error responde con este cuerpo (`details` es opcional):
 
 Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega acá):
 
-| Status | `code`                 | Mensaje / `details`                                                                                                                                         |
-| ------ | ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 403    | `USUARIO_INHABILITADO` | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación) |
-| 409    | `BLOQUE_LLENO`         | `details`: lista de fechas en las que el bloque está lleno                                                                                                  |
-| 409    | `PROFESOR_INACTIVO`    | "El profesor está inactivo: no se le pueden asignar materias". Sin `details`                                                                                |
-| 409    | `MATERIA_INACTIVA`     | `details`: una entrada por cada materia inactiva pedida, con `path` `["materiaIds", <posición>]`                                                            |
+| Status | `code`                 | Mensaje / `details`                                                                                                                                                      |
+| ------ | ---------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 403    | `USUARIO_INHABILITADO` | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación)              |
+| 409    | `BLOQUE_LLENO`         | `details`: lista de fechas en las que el bloque está lleno                                                                                                               |
+| 409    | `PROFESOR_INACTIVO`    | "El profesor está inactivo: no se le pueden asignar materias". Sin `details`                                                                                             |
+| 409    | `TURNOS_VIGENTES`      | `details`: una entrada por cada materia con turnos vigentes (no cancelados), con `path` `["materiaIds", <posición>]`, `message` y `cantidad` (número de turnos vigentes) |
+| 409    | `MATERIA_INACTIVA`     | `details`: una entrada por cada materia inactiva pedida, con `path` `["materiaIds", <posición>]`                                                                         |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 

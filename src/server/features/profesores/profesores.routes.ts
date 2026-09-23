@@ -7,6 +7,7 @@ import {
   asignarMateriasSchema,
   materiasAsignadasSchema,
   profesorIdParamsSchema,
+  quitarMateriasSchema,
 } from './profesores.validation'
 
 // Contrato HTTP de profesores: cada endpoint se declara con createRoute() y se registra acá.
@@ -97,6 +98,58 @@ export const asignarMateriasRoute = createRoute({
   },
 })
 
+export const quitarMateriasRoute = createRoute({
+  method: 'delete',
+  path: '/{id}/materias',
+  tags,
+  summary: 'Quitar materias a un profesor',
+  description:
+    'Baja lógica de una o varias asignaciones (`estado = INACTIVO`), nunca borrado físico: se quitan todas o ninguna. Cada materia debe estar asignada y activa, y el profesor no debe tener turnos vigentes (no cancelados) de ella. Volver a asignarla reactiva la misma asignación. Cada error informa en `details` todas las materias que lo causan (`path` = posición en `materiaIds`).',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    params: profesorIdParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': { schema: quitarMateriasSchema, example: { materiaIds: [2] } },
+      },
+    },
+  },
+  responses: {
+    200: materiasAsignadas('Materias asignadas del profesor, ya actualizadas'),
+    ...errores,
+    404: respuestaError(
+      'El profesor no existe o alguna materia no le está asignada (NO_ENCONTRADO)',
+      {
+        error: {
+          code: 'NO_ENCONTRADO',
+          message: 'Materia no asignada al profesor',
+          details: [
+            { path: ['materiaIds', 0], message: 'La materia 9 no está asignada al profesor' },
+          ],
+        },
+      },
+    ),
+    409: respuestaError(
+      'Alguna materia tiene turnos vigentes del profesor (TURNOS_VIGENTES). `details` trae la cantidad de cada una',
+      {
+        error: {
+          code: 'TURNOS_VIGENTES',
+          message: 'No se pueden quitar materias con turnos vigentes',
+          details: [
+            {
+              path: ['materiaIds', 0],
+              message: 'La materia Matemática tiene 3 turnos vigentes con el profesor',
+              cantidad: 3,
+            },
+          ],
+        },
+      },
+    ),
+  },
+})
+
 export const profesoresRoutes = createRouter()
   .openapi(listarMateriasAsignadasRoute, profesoresController.listarMateriasAsignadas)
   .openapi(asignarMateriasRoute, profesoresController.asignarMaterias)
+  .openapi(quitarMateriasRoute, profesoresController.quitarMaterias)

@@ -1,7 +1,12 @@
 import type { RouteHandler } from '@hono/zod-openapi'
 import { materiasRepository } from '@/server/features/materias/materias.repository'
+import { turnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { AppEnv } from '@/server/router'
-import type { asignarMateriasRoute, listarMateriasAsignadasRoute } from './profesores.routes'
+import type {
+  asignarMateriasRoute,
+  listarMateriasAsignadasRoute,
+  quitarMateriasRoute,
+} from './profesores.routes'
 import { profesoresRepository } from './profesores.repository'
 import { crearProfesoresService } from './profesores.service'
 
@@ -13,6 +18,7 @@ import { crearProfesoresService } from './profesores.service'
 const profesoresService = crearProfesoresService({
   repository: profesoresRepository,
   materiasRepository,
+  turnosRepository,
 })
 
 export const listarMateriasAsignadas: RouteHandler<
@@ -29,4 +35,14 @@ export const asignarMaterias: RouteHandler<typeof asignarMateriasRoute, AppEnv> 
       c.get('actor'),
     ),
     201,
+  )
+
+export const quitarMaterias: RouteHandler<typeof quitarMateriasRoute, AppEnv> = async (c) =>
+  c.json(
+    await profesoresService.quitarMaterias(
+      c.req.valid('param').id,
+      c.req.valid('json'),
+      c.get('actor'),
+    ),
+    200,
   )
