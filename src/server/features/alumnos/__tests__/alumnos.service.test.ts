@@ -5,10 +5,8 @@ import type { AlumnosRepository } from '../alumnos.repository'
 import { crearAlumnosService } from '../alumnos.service'
 import type { AlumnoGuardado, CrearAlumno } from '../alumnos.validation'
 
-// El repository se reemplaza por un falso: sin Docker ni Postgres. El vi.mock evita que al
-// importar el service se cargue el repository real (Prisma → @/config/env); los tests usan
-// crearAlumnosService con el repository falso.
-vi.mock('../alumnos.repository', () => ({ alumnosRepository: {} }))
+// El repository se reemplaza por un falso: sin Docker ni Postgres. El service importa el
+// repository solo como tipo, así que no hace falta mockear el módulo real.
 
 const actor: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
 

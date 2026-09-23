@@ -2,7 +2,7 @@ import { NotFoundError, ValidationError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { normalizarBusqueda } from '@/server/shared/busqueda'
 import { hoy, type Reloj } from '@/server/shared/fechas'
-import { alumnosRepository, type AlumnosRepository } from './alumnos.repository'
+import type { AlumnosRepository } from './alumnos.repository'
 import type {
   AlumnoDetalle,
   AlumnoGuardado,
@@ -70,8 +70,9 @@ function sinOmitidos<T extends object>(cambios: T): Partial<T> {
 }
 
 /**
- * Crea el service con sus dependencias. Los tests inyectan un repository falso y un reloj fijo;
- * la app usa `alumnosService`.
+ * Crea el service con sus dependencias. El controller arma la instancia con el repository real;
+ * los tests, con un repository falso y un reloj fijo. Importa el repository solo como tipo, así
+ * el service no carga Prisma ni `@/config/env`.
  */
 export function crearAlumnosService({
   repository,
@@ -80,9 +81,10 @@ export function crearAlumnosService({
   repository: AlumnosRepository
   reloj?: Reloj
 }) {
-  const conEdad = (alumno: AlumnoGuardado): AlumnoDetalle => ({
+  // `fechaHoy` se calcula una vez por operación: validación y `menorDeEdad` usan el mismo día.
+  const conEdad = (alumno: AlumnoGuardado, fechaHoy: string): AlumnoDetalle => ({
     ...alumno,
-    menorDeEdad: esMenorDeEdad(alumno.fechaNacimiento, hoy(reloj)),
+    menorDeEdad: esMenorDeEdad(alumno.fechaNacimiento, fechaHoy),
   })
 
   return {
@@ -97,13 +99,14 @@ export function crearAlumnosService({
     async obtener(id: number): Promise<AlumnoDetalle> {
       const alumno = await repository.buscarPorId(id)
       if (!alumno) throw new NotFoundError('Alumno no encontrado')
-      return conEdad(alumno)
+      return conEdad(alumno, hoy(reloj))
     },
 
     async crear(datos: CrearAlumno, actor: Actor): Promise<AlumnoDetalle> {
-      validarReglas(datos, hoy(reloj))
+      const fechaHoy = hoy(reloj)
+      validarReglas(datos, fechaHoy)
       const alumno = await repository.crear({ ...datos, busqueda: calcularBusqueda(datos) }, actor)
-      return conEdad(alumno)
+      return conEdad(alumno, fechaHoy)
     },
 
     /** Las reglas se aplican sobre el estado resultante (actual + cambios). */
@@ -111,18 +114,17 @@ export function crearAlumnosService({
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError('Alumno no encontrado')
 
+      const fechaHoy = hoy(reloj)
       const resultado = { ...actual, ...sinOmitidos(cambios) }
-      validarReglas(resultado, hoy(reloj))
+      validarReglas(resultado, fechaHoy)
       const alumno = await repository.actualizar(
         id,
         { ...cambios, busqueda: calcularBusqueda(resultado) },
         actor,
       )
-      return conEdad(alumno)
+      return conEdad(alumno, fechaHoy)
     },
   }
 }
 
 export type AlumnosService = ReturnType<typeof crearAlumnosService>
-
-export const alumnosService = crearAlumnosService({ repository: alumnosRepository })

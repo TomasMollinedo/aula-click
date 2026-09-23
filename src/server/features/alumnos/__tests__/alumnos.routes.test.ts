@@ -130,6 +130,13 @@ describe('POST /alumnos', () => {
     })
   })
 
+  it('tutorDni con puntos y espacios se guarda solo con dígitos', async () => {
+    const res = await pedir('', 'POST', { ...minimo, tutorDni: ' 20.111.222 ' })
+
+    expect(res.status).toBe(201)
+    expect(repository.crear.mock.calls[0][0].tutorDni).toBe('20111222')
+  })
+
   it('los opcionales con formato se validan con su primitiva', async () => {
     const res = await pedir('', 'POST', { ...minimo, tutorEmail: 'no-es-email', tutorDni: '12' })
     const paths = (await res.json()).error.details.map((d: { path: string[] }) => d.path[0])
