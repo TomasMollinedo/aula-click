@@ -42,7 +42,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - **Capacidad del bloque:** se controla por cada fecha en que aplica el turno. Si una fecha puntual de un recurrente está llena, se informa qué fechas no pueden (`BLOQUE_LLENO`, con las fechas en `details`). Qué pasa con esas fechas (excepciones) está pendiente (D-04).
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen.
 - Un recurrente se guarda como regla (fecha de inicio y fin opcional); las fechas en que no aplica se registran como excepciones y las ocurrencias se calculan al consultar (T-20). La prioridad tampoco se guarda: se calcula al leer.
-- Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por sus fechas, no por su estado.
+- Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no cuenta como vigente: no impide ninguna baja.
 
 ## Auditoría
 
