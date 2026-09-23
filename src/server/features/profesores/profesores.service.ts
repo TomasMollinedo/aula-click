@@ -118,7 +118,15 @@ export function crearProfesoresService({
       return conFotoUrl(profesor)
     },
 
-    /** Edición parcial. `busqueda` se recalcula sobre el estado resultante (actual + cambios). */
+    /**
+     * Edición parcial. `busqueda` se recalcula sobre el estado resultante (actual + cambios).
+     *
+     * Pendiente (HU-05/HU-07, ver decisiones.md → D-12): cuando existan turnos reales, si
+     * `cambios.capacidad` es menor a la ocupación simultánea máxima vigente del profesor en
+     * alguna franja, esta función debe rechazar la edición (ConflictError). Hoy no hay bloques ni
+     * turnos cargados para calcular esa ocupación, así que no se implementa: no hay datos con los
+     * que decidir, y agregar la validación ahora obligaría a inventar un cálculo.
+     */
     async editar(id: number, cambios: EditarProfesor, actor: Actor): Promise<ProfesorDetalle> {
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)

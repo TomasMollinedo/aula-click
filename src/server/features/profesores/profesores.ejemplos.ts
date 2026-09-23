@@ -18,6 +18,7 @@ export const ejemploAlta = {
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
+  capacidad: 5,
   password: 'inicial-2026',
 } satisfies CrearProfesor
 
@@ -48,6 +49,7 @@ export const ejemploDetalle = {
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
+  capacidad: 5,
   estado: 'ACTIVO',
   fotoUrl: null,
   createdAt: '2026-09-22T13:45:00.000Z',

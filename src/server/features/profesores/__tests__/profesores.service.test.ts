@@ -41,6 +41,7 @@ const GUARDADO: ProfesorGuardado = {
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
+  capacidad: 5,
   estado: 'ACTIVO',
   avatarKey: null,
   createdAt: '2026-09-01T12:00:00.000Z',
@@ -118,6 +119,7 @@ const ALTA = {
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
+  capacidad: 5,
   password: 'inicial-2026',
 }
 

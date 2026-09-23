@@ -12,6 +12,20 @@ const NOMBRE_MAX = 100
 const TITULO_MAX = 150
 const MATRICULA_MAX = 50
 
+/**
+ * Cantidad máxima de alumnos que el profesor puede atender a la vez en una franja de una hora
+ * (HU-02, decisión T-27 de `decisiones.md`). Entero obligatorio >= 1.
+ */
+const capacidad = z
+  .number({ error: 'Debe ser un número' })
+  .int({ error: 'Debe ser un número entero' })
+  .min(1, { error: 'Debe ser mayor o igual a 1' })
+  .openapi({
+    description:
+      'Cantidad máxima de alumnos que el profesor puede atender simultáneamente en una misma franja horaria de una hora',
+    example: 5,
+  })
+
 /** `id` del path. Uno no numérico, cero o negativo responde 400. */
 export const profesorIdParamsSchema = z.object({
   id: z.coerce
@@ -92,6 +106,7 @@ const camposProfesor = {
     description: 'Matrícula profesional. Única entre profesores',
     example: 'MP-1234',
   }),
+  capacidad,
 }
 
 export const crearProfesorSchema = z
@@ -136,6 +151,7 @@ export const profesorDetalleSchema = z
     email: z.string(),
     titulo: z.string(),
     matricula: z.string(),
+    capacidad: z.number().int(),
     estado: z.enum(ESTADOS),
     fotoUrl: z.string().nullable().openapi({
       description: 'URL prefirmada de lectura de la foto (900 s de TTL), o null si no tiene',

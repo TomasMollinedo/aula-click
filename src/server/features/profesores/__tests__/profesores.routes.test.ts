@@ -64,6 +64,7 @@ const GUARDADO = {
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
+  capacidad: 5,
   estado: 'ACTIVO',
   avatarKey: null,
   createdAt: '2026-09-01T12:00:00.000Z',
@@ -80,6 +81,7 @@ const ALTA = {
   email: 'Martin.Perez@AulaClick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
+  capacidad: 5,
   password: 'inicial-2026',
 }
 
@@ -164,7 +166,12 @@ describe('GET /profesores/{id}', () => {
   it('responde 200 con el detalle', async () => {
     const res = await pedir('/3')
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ id: 3, apellido: 'Pérez', fotoUrl: null })
+    expect(await res.json()).toMatchObject({
+      id: 3,
+      apellido: 'Pérez',
+      capacidad: 5,
+      fotoUrl: null,
+    })
   })
 
   it('profesor inexistente → 404 NO_ENCONTRADO', async () => {
@@ -198,18 +205,47 @@ describe('POST /profesores', () => {
     expect(body).toMatchObject({ id: 3, matricula: 'MP-0001' })
   })
 
-  it.each(['nombre', 'apellido', 'dni', 'telefono', 'email', 'titulo', 'matricula', 'password'])(
-    'sin %s → 400',
-    async (campo) => {
-      const res = await pedir('', 'POST', { ...ALTA, [campo]: undefined })
-      expect(res.status).toBe(400)
-      expect((await res.json()).error.code).toBe('VALIDACION')
-    },
-  )
+  it.each([
+    'nombre',
+    'apellido',
+    'dni',
+    'telefono',
+    'email',
+    'titulo',
+    'matricula',
+    'capacidad',
+    'password',
+  ])('sin %s → 400', async (campo) => {
+    const res = await pedir('', 'POST', { ...ALTA, [campo]: undefined })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
 
   it('contraseña de menos de 8 caracteres → 400', async () => {
     const res = await pedir('', 'POST', { ...ALTA, password: '1234567' })
     expect(res.status).toBe(400)
+  })
+
+  it.each([
+    ['capacidad 0', 0],
+    ['capacidad negativa', -1],
+    ['capacidad decimal', 1.5],
+  ])('%s → 400 VALIDACION, sin llegar al service', async (_caso, capacidad) => {
+    const res = await pedir('', 'POST', { ...ALTA, capacidad })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+    expect(repository.crear).not.toHaveBeenCalled()
+  })
+
+  it('capacidad como texto → 400', async () => {
+    const res = await pedir('', 'POST', { ...ALTA, capacidad: '5' })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('la respuesta del alta incluye la capacidad', async () => {
+    const res = await pedir('', 'POST', ALTA)
+    expect((await res.json()).capacidad).toBe(5)
   })
 
   it.each([
@@ -279,6 +315,31 @@ describe('PATCH /profesores/{id}', () => {
     )
     const res = await pedir('/3', 'PATCH', { matricula: 'MP-0002' })
     expect(res.status).toBe(409)
+  })
+
+  it('capacidad válida → 200, se pasa al repository', async () => {
+    repository.actualizar.mockResolvedValue({ ...GUARDADO, capacidad: 8 })
+
+    const res = await pedir('/3', 'PATCH', { capacidad: 8 })
+
+    expect(res.status).toBe(200)
+    expect(repository.actualizar).toHaveBeenCalledWith(
+      3,
+      expect.objectContaining({ capacidad: 8 }),
+      { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+    )
+    expect((await res.json()).capacidad).toBe(8)
+  })
+
+  it.each([
+    ['capacidad 0', 0],
+    ['capacidad negativa', -1],
+    ['capacidad decimal', 1.5],
+  ])('%s → 400 VALIDACION, sin llegar al service', async (_caso, capacidad) => {
+    const res = await pedir('/3', 'PATCH', { capacidad })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+    expect(repository.actualizar).not.toHaveBeenCalled()
   })
 })
 

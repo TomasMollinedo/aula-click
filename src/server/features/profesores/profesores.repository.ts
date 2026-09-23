@@ -64,6 +64,7 @@ function aGuardado(fila: FilaProfesor): ProfesorGuardado {
     email: fila.usuario.email,
     titulo: fila.titulo,
     matricula: fila.matricula,
+    capacidad: fila.capacidad,
     estado,
     avatarKey: fila.usuario.avatarKey,
     ...armarAuditoria(fila.usuario),
@@ -188,7 +189,7 @@ export const profesoresRepository = {
     datos: CrearProfesor & { busqueda: string },
     actor: Actor,
   ): Promise<ProfesorGuardado> {
-    const { password, titulo, matricula, ...usuarioDatos } = datos
+    const { password, titulo, matricula, capacidad, ...usuarioDatos } = datos
     const usuarioId = randomUUID()
     const hash = await hashPassword(password)
     try {
@@ -207,7 +208,7 @@ export const profesoresRepository = {
               password: hash,
             },
           },
-          profesor: { create: { titulo, matricula } },
+          profesor: { create: { titulo, matricula, capacidad } },
         },
         select: { profesor: { select: { id: true } } },
       })
@@ -230,13 +231,14 @@ export const profesoresRepository = {
     cambios: EditarProfesor & { busqueda?: string },
     actor: Actor,
   ): Promise<ProfesorGuardado> {
-    const { titulo, matricula, ...usuarioCambios } = cambios
+    const { titulo, matricula, capacidad, ...usuarioCambios } = cambios
     try {
       await prisma.profesor.update({
         where: { id },
         data: {
           ...(titulo === undefined ? {} : { titulo }),
           ...(matricula === undefined ? {} : { matricula }),
+          ...(capacidad === undefined ? {} : { capacidad }),
           usuario: { update: { ...usuarioCambios, updatedById: actor.userId } },
         },
         select: { id: true },
