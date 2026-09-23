@@ -139,4 +139,4 @@ La fuente de las reglas (capas, errores, autenticación, tests, reglas de domini
 
 - No commitear el `.env`.
 - Si pnpm muestra `ERR_PNPM_IGNORED_BUILDS`, ejecutar `pnpm approve-builds`.
-- Postgres y MinIO se publican solo en `127.0.0.1`. Si el puerto 5432 está ocupado por un Postgres local, cambiar el mapeo a `127.0.0.1:5433:5432` en `docker-compose.yml` y el puerto en el `DATABASE_URL`.
+- Postgres y MinIO se publican solo en `127.0.0.1`. Postgres usa el puerto **5434** del host (no el 5432) para no chocar con un Postgres instalado localmente; el `DATABASE_URL` de `.env.example` ya apunta ahí. Si también está ocupado, cambiar el mapeo en `docker-compose.yml` y el puerto en el `DATABASE_URL`.
