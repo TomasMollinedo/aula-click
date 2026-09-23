@@ -68,3 +68,10 @@ export type ProfesorConAsignaciones = {
   estado: Estado
   asignaciones: { materiaId: number; nombre: string; estado: Estado }[]
 }
+
+/**
+ * Profesor que dicta una materia (asignación activa), tal como lo leen otras features: el detalle
+ * y la baja de materias (T-09) y el registro de turnos (HU-07). `id` es el de `Profesor`; los
+ * datos personales y el `estado` son los de su `Usuario`. No viaja por HTTP desde acá.
+ */
+export type ProfesorDeMateria = { id: number; apellido: string; nombre: string; estado: Estado }

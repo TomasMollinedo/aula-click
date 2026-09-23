@@ -39,6 +39,9 @@ function crearRepositories() {
       buscarConAsignaciones: vi.fn<ProfesoresRepository['buscarConAsignaciones']>(),
       asignarMaterias: vi.fn<ProfesoresRepository['asignarMaterias']>(),
       quitarMaterias: vi.fn<ProfesoresRepository['quitarMaterias']>(),
+      listarProfesoresDeMateria: vi.fn<ProfesoresRepository['listarProfesoresDeMateria']>(),
+      listarProfesoresActivosDeMateria:
+        vi.fn<ProfesoresRepository['listarProfesoresActivosDeMateria']>(),
     },
     materiasRepository: { buscarPorIds: vi.fn<MateriasRepository['buscarPorIds']>() },
     turnosRepository: {

@@ -2,11 +2,37 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
-import type { MateriasAsignadas, ProfesorConAsignaciones } from './profesores.validation'
+import type {
+  MateriasAsignadas,
+  ProfesorConAsignaciones,
+  ProfesorDeMateria,
+} from './profesores.validation'
 
 // Único lugar de la feature que usa Prisma. Traduce errores del motor (P2002 -> ConflictError),
 // completa la auditoría con el Actor y devuelve DTOs: ningún tipo de Prisma sale de acá.
 // Sin reglas de negocio.
+
+/** Profesores con asignación activa de la materia; con `soloActivos`, además usuario `ACTIVO`. */
+async function profesoresDeMateria({
+  materiaId,
+  soloActivos = false,
+}: {
+  materiaId: number
+  soloActivos?: boolean
+}): Promise<ProfesorDeMateria[]> {
+  const filas = await prisma.profesor.findMany({
+    where: {
+      asignaciones: { some: { materiaId, estado: 'ACTIVO' } },
+      ...(soloActivos ? { usuario: { estado: 'ACTIVO' } } : {}),
+    },
+    select: {
+      id: true,
+      usuario: { select: { apellido: true, nombre: true, estado: true } },
+    },
+    orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
+  })
+  return filas.map(({ id, usuario }) => ({ id, ...usuario }))
+}
 
 export const profesoresRepository = {
   /**
@@ -88,6 +114,23 @@ export const profesoresRepository = {
       }
       throw error
     }
+  },
+
+  /**
+   * Profesores con asignación `ACTIVO` de la materia, activos o no (con su `estado`), ordenados
+   * por apellido y nombre (`busqueda` del usuario) y luego `id`. Lectura para otras features:
+   * detalle de materias (quién la dicta) y baja de materias (T-09: no se puede con profesores).
+   */
+  async listarProfesoresDeMateria(materiaId: number): Promise<ProfesorDeMateria[]> {
+    return profesoresDeMateria({ materiaId })
+  },
+
+  /**
+   * Como `listarProfesoresDeMateria`, pero solo profesores activos: los que pueden recibir un
+   * turno nuevo de esa materia (HU-07).
+   */
+  async listarProfesoresActivosDeMateria(materiaId: number): Promise<ProfesorDeMateria[]> {
+    return profesoresDeMateria({ materiaId, soloActivos: true })
   },
 
   /**
