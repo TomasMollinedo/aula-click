@@ -79,11 +79,12 @@ src/
 │       └── components/{AlumnosTable.tsx, AlumnoForm.tsx}
 │
 ├── components/
-│   ├── ui/                             # primitivos de UI hechos a mano (D-08)
+│   ├── ui/                             # primitivos de UI hechos a mano (D-08/T-25)
 │   └── layout/
-│       ├── app-shell.tsx               # Header + Sidebar + contenido
-│       ├── header.tsx                  # logo + lugar para el menú de usuario
-│       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx
+│       ├── app-shell.tsx               # columna del Sidebar (logo + nav + usuario) + contenido
+│       ├── sidebar-logo.tsx            # isotipo + wordmark, arriba de la columna (no es un link)
+│       ├── sidebar-nav.tsx             # nav genérico (label + links con ícono); lo usan los de abajo
+│       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
 ├── hooks/use-debounce.ts
 ├── types/index.ts                      # PaginatedResponse<T>, Role
@@ -115,20 +116,22 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 | Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Planificado |
 | Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3    |
 
-- Cada segmento tiene su `page.tsx` en la raíz, que lleva a la primera pantalla del rol: ahí es donde caen el login, `/` y el logo del Header, así que sin esa página serían un 404.
+- Cada segmento tiene su `page.tsx` en la raíz, que lleva a la primera pantalla del rol: ahí es donde caen el login y `/`, así que sin esa página serían un 404.
 - La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
 - El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que manda al usuario al segmento de su propio rol: es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
 - La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `GERENTE` y `ALUMNO` no tienen segmento todavía: para ellos la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlos a un 404.
 - No se usan route groups para separar roles. Si alguna vez se usan para otra cosa (compartir un layout sin cambiar la URL), dos route groups nunca pueden definir la misma ruta: los paréntesis no aparecen en la URL y el build falla.
 
-## Layout: Sidebar y Header
+## Layout: Sidebar
 
-- `app/layout.tsx` (raíz) solo monta `<Providers>`. No lleva Header: si lo llevara, también aparecería en `/login`.
-- `components/layout/app-shell.tsx` arma el esqueleto de la app autenticada: Header arriba, Sidebar al costado y el contenido. Recibe por props el Sidebar (`sidebar`) y el menú de usuario (`userMenu`).
+No hay una barra de Header separada: todo lo fijo de la app autenticada vive en una única columna (el Sidebar), y el contenido de la pantalla ocupa el resto.
+
+- `app/layout.tsx` (raíz) solo monta `<Providers>`. No lleva el Sidebar: si lo llevara, también aparecería en `/login`.
+- `components/layout/app-shell.tsx` arma esa columna, de arriba a abajo: `SidebarLogo` (isotipo, fijo), el `sidebar` que recibe por props (nav del rol, con scroll propio si no entra) y el `userMenu` que recibe por props (fijo, abajo, separado por un borde). El contenido va a la derecha.
 - El `layout.tsx` de cada segmento de rol monta `<AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>{children}</AppShell>`.
-- **Sidebar:** uno por rol, en `components/layout/<segmento>-sidebar.tsx`, porque cada rol navega a pantallas distintas.
-- **Header:** uno solo para todos los roles, en `components/layout/header.tsx`: logo y el lugar donde va el menú de usuario.
-- **Menú de usuario** (nombre, cerrar sesión): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` y al Header por props, armado en el layout del segmento.
+- **`sidebar-logo.tsx`:** isotipo + "AulaClick", uno solo para todos los roles. No es un link: no hay una pantalla propia de "/" para un usuario logueado (`/` solo redirige según el rol).
+- **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx` y `profesor-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
+- **Menú de usuario** (avatar, nombre, rol y un menú con "Cerrar sesión"): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` por props, armado en el layout del segmento.
 
 ## Datos: Server y Client Components
 
@@ -192,7 +195,14 @@ Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con e
 ## Estilos y UI
 
 - Tailwind v4. Las clases condicionales se arman con `cn()` de `utils/cn.ts`.
-- `components/ui/`: primitivos hechos a mano, con la misma API que tendrían en shadcn/ui por si se adopta después (D-08).
+- **Paleta de marca**, definida como tokens de color en `src/app/globals.css` (`@theme`), a partir del Figma:
+  - Página: `cobalto` (marca y foco), `blanco`, `tinta` (texto), `piedra` (neutro cálido), `dorado` (acentos), `oscuro` (interfaz), `luminoso` (fondo claro).
+  - Acciones: `confirmado`, `cancelado`, `urgente`, `pendiente`.
+  - Semánticos (los usan los primitivos): `background`, `foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, todos mapeados a la paleta de marca. Sin variante de modo oscuro: el Figma no define una.
+- `components/ui/`: primitivos con la API de shadcn/ui, escritos a mano (T-25, antes D-08: no se usa el CLI de shadcn porque su preset actual genera `src/lib/utils.ts`, zona backend, y un `cn` propio que reemplazaría a `utils/cn.ts`). Usan `class-variance-authority` para variantes y, donde hace falta accesibilidad de teclado/foco, un primitivo de `@radix-ui/react-*` (`Dialog`, `Select`, `Avatar`, `DropdownMenu`, `Label`, `Checkbox`, `Tabs`, `Tooltip`, y `Slot` para el `asChild` de `Button`).
+  - Disponibles: `Button`, `Input`, `Label`, `Textarea`, `Checkbox`, `Badge` (con variantes `confirmado`/`cancelado`/`urgente`/`pendiente`), `Avatar`, `Card`, `Table`, `Select`, `Tabs`, `Tooltip`, `Dialog`, `DropdownMenu`, `Pagination`, `Alert` (variantes `default`/`destructive`, para los estados de error de la tabla de arriba), `Skeleton` (estado de carga).
+  - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
+  - `src/app/ui-showcase/page.tsx` los muestra todos juntos, con la paleta aplicada; es una página de referencia para revisarlos, no una pantalla del sprint.
 - Íconos: `lucide-react`.
 
 ## Tests

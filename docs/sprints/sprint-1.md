@@ -23,6 +23,7 @@ Día 1 (en paralelo):
 ```
 
 - **T-01 y T-02 son bloqueantes y arrancan el día 1.** T-02 no depende del schema (`convenciones-backend.md` → Estado), así que no espera a T-01.
+- **T-13** (paleta, tokens y primitivos de UI) tampoco depende del schema y puede arrancar el día 1 en paralelo. No bloquea a nadie, pero conviene que esté mergeada antes de que T-06, T-08 y T-10 construyan sus pantallas, para no reescribirlas después.
 - Nadie genera migraciones propias hasta que T-01 esté mergeada.
 - Las APIs necesitan T-01, T-02 y T-03. Las pantallas pueden empezar en paralelo con su API, contra el contrato de `docs/contrato-api.md` y el OpenAPI (`/api/v1/docs`), y se conectan cuando la API se mergea.
 - `alumnos` es la feature modelo que copian las demás (`/nueva-feature-api`, `/nueva-feature-ui`). Conviene que T-05 y T-06 abran su PR temprano para que profesores y materias sigan el mismo patrón.
@@ -374,7 +375,7 @@ Agregar a la feature `profesores` la gestión de sus materias asignadas (`arquit
    - Cada materia debe existir y estar `ACTIVA` (lectura por `materias.repository`): si no, 404 o 409 `MATERIA_INACTIVA`.
    - Una materia ya asignada y activa → 409 `CONFLICTO`.
    - Si existe una asignación previa en estado `INACTIVO` para ese par profesor–materia, se reactiva en lugar de insertar una fila nueva (el par es único y la baja es lógica).
-3. `DELETE /api/v1/profesores/{id}/materias/{materiaId}`: baja lógica de la asignación (`estado = INACTIVO`), nunca borrado físico.
+3. `DELETE /api/v1/profesores/{id}/materias` con `materiaIds` (una o varias, igual que el alta), en una sola operación: se quitan todas o ninguna. Baja lógica de la asignación (`estado = INACTIVO`), nunca borrado físico.
    - Si el profesor tiene turnos vigentes de esa materia, 409 `TURNOS_VIGENTES` y no se quita. En `details` va la cantidad de turnos.
 4. Turno vigente (`dominio.md` → Turnos; `convenciones-backend.md` → Turno vigente):
    - Crear el esqueleto de `turnos` con `/nueva-feature-api turnos` e implementar en `turnos.repository` **sólo** la consulta de turnos vigentes filtrable por profesor y materia: recurrentes sin fecha de fin o con fin >= hoy, y sesiones únicas con fecha >= hoy.
@@ -417,3 +418,32 @@ Completar en `src/features/profesores/` la sección "Materias" del detalle del p
 - Recorrido completo: asignar dos materias, ver al profesor en el detalle de ambas, quitar una y ver que desaparece de ese detalle.
 - La materia quitada vuelve a estar disponible en el selector.
 - Un profesor inactivo no ofrece la opción de asignar.
+
+---
+
+## T-13 · [Front] Sistema de diseño: paleta de colores, tokens y primitivos de UI
+
+- **HU:** Transversal (habilita todas las pantallas del frontend)
+- **Área:** Frontend
+- **Rama:** `feat/ui-primitivos`
+- **Prioridad:** No bloqueante, pero conviene mergearla antes que T-06, T-08 y T-10 empiecen a construir sus tablas y formularios, para que nazcan con los primitivos en lugar de reescribirlos después
+
+**Descripción**
+Resolver la decisión D-08 (ahora T-25 en `decisiones.md`: shadcn/ui sobre Radix) y construir la base visual que reutilizan todas las features: la paleta de marca (Figma), los tokens de color de Tailwind y los primitivos de `components/ui/`. **No incluye** tocar `/login`: lo está trabajando Alvaro y se re-skinnea en un PR aparte, chico, una vez mergeada esta tarea.
+
+**Alcance**
+
+1. Instalar shadcn/ui con su CLI (copia el código a `components/ui/`, no queda como dependencia opaca). Agregar a `docs/dependencias.md`, en el mismo PR, cada paquete que suma el CLI (`class-variance-authority`, `@radix-ui/react-*` por primitivo instalado) — acordado con el equipo (`AGENTS.md`, regla 8).
+2. Tokens de color en `src/app/globals.css` con `@theme` (Tailwind v4), a partir de la paleta de marca:
+   - Página: `cobalto` `#3552CC` (marca y foco), `blanco` `#FFFFFF` (superficies), `tinta` `#20241F` (texto), `piedra` `#C5BEAA` (neutro cálido), `dorado` `#DDAF69` (acentos), `oscuro` `#777C92` (interfaz), `luminoso` `#E0E1E4` (fondo claro).
+   - Acciones: `confirmado` `#2C5540` (éxito), `cancelado` `#6F1F2A` (error), `urgente` `#B5852C` (prioridad), `pendiente` `#2E5069` (información).
+   - Sacar el boilerplate de modo oscuro de `create-next-app`: el Figma no define una variante oscura; si hace falta más adelante, se decide aparte.
+3. Primitivos en `components/ui/` con la API de shadcn, estilados con los tokens nuevos (no con los colores por defecto de shadcn): `Button`, `Input`, `Badge`, `Avatar`, `Card`, `Table`, `Select`, `Dialog`, `Pagination`.
+4. Re-skin de `components/layout/{app-shell,header,mesa-sidebar,profesor-sidebar}.tsx` con los tokens (sidebar oscuro con ítem activo, según el Figma).
+5. Actualizar `docs/arquitectura-frontend.md` → "Estilos y UI" con la lista final de primitivos, los nombres de los tokens y la referencia a T-25 en lugar de D-08.
+
+**Criterios de aceptación**
+
+- `pnpm check` pasa.
+- `/mesa/alumnos` y `/profesor` se ven con la paleta nueva (Header, Sidebar, botones, tabla) sin que cambie ningún comportamiento existente.
+- `/login` sigue exactamente igual (queda para el PR de Alvaro).

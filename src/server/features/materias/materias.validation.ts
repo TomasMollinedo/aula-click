@@ -1,23 +1,24 @@
 import { z } from '@hono/zod-openapi'
 import { auditoriaSchema } from '@/server/shared/auditoria'
+import { qBusqueda } from '@/server/shared/busqueda'
+import { ESTADOS, type Estado } from '@/server/shared/estado'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import { textoRequerido } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio:
 // la unicidad del nombre la hace cumplir la base y los profesores asignados los trae el service.
 
-const Q_MAX = 100
 const NOMBRE_MAX = 100
 const DESCRIPCION_MAX = 500
 
-/** Valores del enum `Estado` (el repository comprueba que coincidan con Prisma). */
-export const ESTADOS = ['ACTIVO', 'INACTIVO'] as const
-
-/** `ACTIVO` o `INACTIVO`: el estado con el que se guarda una materia. */
-export type EstadoMateria = (typeof ESTADOS)[number]
-
 /** Valores del filtro `estado` del listado: los de `Estado` más `TODOS` (sin filtrar). */
 export const ESTADOS_FILTRO = [...ESTADOS, 'TODOS'] as const
+
+/**
+ * Materia con su estado, tal como la leen otras features (asignación de materias al profesor).
+ * No viaja por HTTP: es lo que devuelve `materiasRepository.buscarPorIds`.
+ */
+export type MateriaConEstado = { id: number; nombre: string; estado: Estado }
 
 const VACIO = 'Opcional: acepta null, y "" o solo espacios se guarda como null'
 
@@ -55,17 +56,10 @@ export const materiaIdParamsSchema = z.object({
 
 /** Query del listado: paginación + `q` (búsqueda por palabras sobre el nombre) + `estado`. */
 export const listarMateriasQuerySchema = paginacionQuerySchema.extend({
-  q: z
-    .string({ error: 'Debe ser un texto' })
-    .trim()
-    .max(Q_MAX, { error: `No puede superar los ${Q_MAX} caracteres` })
-    .optional()
-    .openapi({
-      param: { name: 'q', in: 'query' },
-      description:
-        'Búsqueda por nombre. Cada palabra coincide en forma parcial y todas deben coincidir; no distingue mayúsculas ni tildes',
-      example: 'mate',
-    }),
+  q: qBusqueda.openapi({
+    description:
+      'Búsqueda por nombre. Cada palabra coincide en forma parcial y todas deben coincidir; no distingue mayúsculas ni tildes y usa las primeras 5 palabras (hasta 100 caracteres)',
+  }),
   estado: z
     .enum(ESTADOS_FILTRO, {
       error: `Estado inválido: debe ser ${ESTADOS_FILTRO.join(', ')}`,
@@ -122,7 +116,10 @@ export const crearMateriaSchema = z
 
 export type CrearMateria = z.infer<typeof crearMateriaSchema>
 
-/** Profesor que dicta la materia. Los datos personales y el estado son los de su `Usuario`. */
+/**
+ * Profesor que dicta la materia, para el detalle. Es la forma de salida del `ProfesorDeMateria`
+ * que devuelve `profesores.repository`: los datos personales y el estado son los de su `Usuario`.
+ */
 export const materiaProfesorSchema = z
   .object({
     id: z.number().int(),

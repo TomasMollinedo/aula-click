@@ -14,7 +14,7 @@ const { repository, profesoresRepository, getSession } = vi.hoisted(() => ({
     crear: vi.fn(),
     darDeBaja: vi.fn(),
   },
-  profesoresRepository: { listarActivosPorMateria: vi.fn() },
+  profesoresRepository: { listarProfesoresDeMateria: vi.fn() },
   getSession: vi.fn(),
 }))
 vi.mock('../materias.repository', () => ({ materiasRepository: repository }))
@@ -58,7 +58,7 @@ beforeEach(() => {
   repository.buscarPorId.mockResolvedValue(guardada)
   repository.crear.mockResolvedValue(guardada)
   repository.darDeBaja.mockResolvedValue({ ...guardada, estado: 'INACTIVO' })
-  profesoresRepository.listarActivosPorMateria.mockResolvedValue([])
+  profesoresRepository.listarProfesoresDeMateria.mockResolvedValue([])
 })
 
 describe('auth', () => {
@@ -173,7 +173,7 @@ describe('PATCH /materias/{id}/baja', () => {
   })
 
   it('con profesores asignados → 409 MATERIA_CON_PROFESORES', async () => {
-    profesoresRepository.listarActivosPorMateria.mockResolvedValue([
+    profesoresRepository.listarProfesoresDeMateria.mockResolvedValue([
       { id: 8, apellido: 'Gómez', nombre: 'Luis', estado: 'ACTIVO' },
     ])
 

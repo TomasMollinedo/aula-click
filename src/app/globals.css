@@ -1,26 +1,91 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Paleta de marca  */
+  --color-cobalto: #3552cc;
+  --color-blanco: #ffffff;
+  --color-tinta: #20241f;
+  --color-piedra: #c5beaa;
+  --color-dorado: #ddaf69;
+  --color-oscuro: #777c92;
+  --color-luminoso: #e0e1e4;
+
+  /* Acciones */
+  --color-confirmado: #2c5540;
+  --color-cancelado: #6f1f2a;
+  --color-urgente: #b5852c;
+  --color-pendiente: #2e5069;
+
+  /* Tokens semánticos que usan los primitivos de components/ui/ */
+  --background: var(--color-blanco);
+  --foreground: var(--color-tinta);
+  --card: var(--color-blanco);
+  --card-foreground: var(--color-tinta);
+  --popover: var(--color-blanco);
+  --popover-foreground: var(--color-tinta);
+  --primary: var(--color-cobalto);
+  --primary-foreground: var(--color-blanco);
+  --secondary: var(--color-luminoso);
+  --secondary-foreground: var(--color-tinta);
+  --muted: var(--color-luminoso);
+  --muted-foreground: var(--color-oscuro);
+  --accent: var(--color-dorado);
+  --accent-foreground: var(--color-tinta);
+  --destructive: var(--color-cancelado);
+  --destructive-foreground: var(--color-blanco);
+  --border: color-mix(in srgb, var(--color-oscuro) 35%, transparent);
+  --input: color-mix(in srgb, var(--color-oscuro) 45%, transparent);
+  --ring: var(--color-cobalto);
+  --radius: 0.5rem;
+
+  /* Fondo del Sidebar (components/layout/app-shell.tsx). Propio: no es la paleta de página. */
+  --sidebar: #1c1f35;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+
+  --color-cobalto: var(--color-cobalto);
+  --color-blanco: var(--color-blanco);
+  --color-tinta: var(--color-tinta);
+  --color-piedra: var(--color-piedra);
+  --color-dorado: var(--color-dorado);
+  --color-oscuro: var(--color-oscuro);
+  --color-luminoso: var(--color-luminoso);
+  --color-confirmado: var(--color-confirmado);
+  --color-cancelado: var(--color-cancelado);
+  --color-urgente: var(--color-urgente);
+  --color-pendiente: var(--color-pendiente);
+
+  --radius-sm: calc(var(--radius) - 0.25rem);
+  --radius-md: calc(var(--radius) - 0.125rem);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 0.25rem);
+
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
 }

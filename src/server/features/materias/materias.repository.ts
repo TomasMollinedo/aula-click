@@ -1,12 +1,13 @@
-import { Prisma, type Estado } from '@/generated/prisma/client'
+import { Prisma, type Estado as EstadoPrisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError, NotFoundError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
+import type { Estado } from '@/server/shared/estado'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import type {
   CrearMateria,
-  EstadoMateria,
+  MateriaConEstado,
   MateriaGuardada,
   MateriaSelectorItem,
   MateriasListado,
@@ -17,7 +18,7 @@ import type {
 // Sin reglas de negocio.
 
 // `A` si los dos tipos tienen exactamente los mismos valores; si no, `never`, y la asignación
-// de `aGuardada` deja de compilar. Así el enum de la validation no se desalinea de Prisma.
+// de `aGuardada` deja de compilar. Así el enum de shared no se desalinea de Prisma.
 type MismosValores<A, B> = [A] extends [B] ? ([B] extends [A] ? A : never) : never
 
 const INCLUDE_AUDITORIA = {
@@ -33,7 +34,7 @@ const MENSAJE_NO_ENCONTRADA = 'Materia no encontrada'
 const INDICE_BUSQUEDA = 'materia_busqueda_key'
 
 function aGuardada(fila: FilaMateria): MateriaGuardada {
-  const estado: MismosValores<EstadoMateria, Estado> = fila.estado
+  const estado: MismosValores<Estado, EstadoPrisma> = fila.estado
   return {
     id: fila.id,
     nombre: fila.nombre,
@@ -87,7 +88,7 @@ export const materiasRepository = {
     page: number
     pageSize: number
     terminos: string[]
-    estado?: EstadoMateria
+    estado?: Estado
   }): Promise<MateriasListado> {
     const where = {
       AND: parametros.terminos.map((termino) => ({ busqueda: { contains: termino } })),
@@ -114,6 +115,17 @@ export const materiasRepository = {
       where: { estado: 'ACTIVO' },
       select: { id: true, nombre: true },
       orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+    })
+  },
+
+  /**
+   * Materias con esos ids, con su estado. Las que no existen no vienen: quien llama compara.
+   * La usa `profesores` para validar las materias que se asignan (T-11).
+   */
+  async buscarPorIds(ids: number[]): Promise<MateriaConEstado[]> {
+    return prisma.materia.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, nombre: true, estado: true },
     })
   },
 

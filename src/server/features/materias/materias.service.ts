@@ -1,7 +1,7 @@
 import { ConflictError, NotFoundError } from '@/server/errors'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
-import { normalizarBusqueda } from '@/server/shared/busqueda'
+import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
 import type { MateriasRepository } from './materias.repository'
 import type {
   CrearMateria,
@@ -13,25 +13,11 @@ import type {
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
 
-const MAX_TERMINOS = 5
 const MENSAJE_NO_ENCONTRADA = 'Materia no encontrada'
 const MENSAJE_CON_PROFESORES = 'No se puede dar de baja una materia con profesores asignados'
 
 /** Código del 409 al dar de baja una materia con asignaciones activas (`contrato-api.md`). */
 export const CODIGO_MATERIA_CON_PROFESORES = 'MATERIA_CON_PROFESORES'
-
-/**
- * `q` → palabras para buscar en `busqueda`: normalizado, sin puntos y hasta 5 palabras (el resto
- * se ignora). Igual que el de `alumnos.service`: se extrae a `shared/` en la tercera repetición
- * (`convenciones-backend.md` → `src/server/shared/`).
- */
-function terminosDeBusqueda(q: string | undefined): string[] {
-  if (!q) return []
-  return normalizarBusqueda(q.replace(/\./g, ''))
-    .split(' ')
-    .filter((termino) => termino !== '')
-    .slice(0, MAX_TERMINOS)
-}
 
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
@@ -43,7 +29,7 @@ export function crearMateriasService({
   profesoresRepository,
 }: {
   repository: MateriasRepository
-  profesoresRepository: Pick<ProfesoresRepository, 'listarActivosPorMateria'>
+  profesoresRepository: Pick<ProfesoresRepository, 'listarProfesoresDeMateria'>
 }) {
   const conProfesores = (
     materia: MateriaGuardada,
@@ -69,7 +55,8 @@ export function crearMateriasService({
     async obtener(id: number): Promise<MateriaDetalle> {
       const materia = await repository.buscarPorId(id)
       if (!materia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
-      return conProfesores(materia, await profesoresRepository.listarActivosPorMateria(id))
+      // Activos o no: el detalle muestra a todos los que la dictan, con su estado.
+      return conProfesores(materia, await profesoresRepository.listarProfesoresDeMateria(id))
     },
 
     async crear(datos: CrearMateria, actor: Actor): Promise<MateriaDetalle> {
@@ -92,7 +79,7 @@ export function crearMateriasService({
       const materia = await repository.buscarPorId(id)
       if (!materia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
 
-      const profesores = await profesoresRepository.listarActivosPorMateria(id)
+      const profesores = await profesoresRepository.listarProfesoresDeMateria(id)
       if (profesores.length > 0) {
         throw new ConflictError(MENSAJE_CON_PROFESORES, {
           code: CODIGO_MATERIA_CON_PROFESORES,

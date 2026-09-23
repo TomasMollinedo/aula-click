@@ -1,31 +1,17 @@
-import Link from 'next/link'
+'use client'
+
+import { BookOpen, CalendarClock, CalendarPlus, User, Users } from 'lucide-react'
+
+import { SidebarNav } from '@/components/layout/sidebar-nav'
 
 const links = [
-  { href: '/mesa/alumnos', label: 'Alumnos' },
-  { href: '/mesa/profesores', label: 'Profesores' },
-  { href: '/mesa/materias', label: 'Materias' },
-  { href: '/mesa/turnos', label: 'Turnos' },
-  { href: '/mesa/calendario', label: 'Calendario' },
+  { href: '/mesa/alumnos', label: 'Alumnos', icon: User },
+  { href: '/mesa/profesores', label: 'Profesores', icon: Users },
+  { href: '/mesa/materias', label: 'Materias', icon: BookOpen },
+  { href: '/mesa/turnos', label: 'Registrar turno', icon: CalendarPlus },
+  { href: '/mesa/calendario', label: 'Agenda del centro', icon: CalendarClock },
 ]
 
 export function MesaSidebar() {
-  return (
-    <nav className="w-56 shrink-0 border-r border-slate-200 p-4">
-      <p className="mb-4 text-xs font-medium tracking-wide text-slate-400 uppercase">
-        Personal de mesa de entradas
-      </p>
-      <ul className="space-y-1">
-        {links.map((link) => (
-          <li key={link.href}>
-            <Link
-              href={link.href}
-              className="block rounded-md px-3 py-2 text-sm text-slate-700 hover:bg-slate-100"
-            >
-              {link.label}
-            </Link>
-          </li>
-        ))}
-      </ul>
-    </nav>
-  )
+  return <SidebarNav label="Centro de atención" links={links} />
 }

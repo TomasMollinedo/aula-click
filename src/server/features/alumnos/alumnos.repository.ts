@@ -1,11 +1,12 @@
 import {
   Prisma,
-  type Estado,
+  type Estado as EstadoPrisma,
   type NivelEscolaridad as NivelPrisma,
 } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError, NotFoundError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
+import type { Estado } from '@/server/shared/estado'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
@@ -14,7 +15,6 @@ import type {
   AlumnosListado,
   CrearAlumno,
   EditarAlumno,
-  ESTADOS,
   NivelEscolaridad,
 } from './alumnos.validation'
 
@@ -40,7 +40,7 @@ const INDICE_DNI = 'alumno_dni_key'
 function aGuardado(fila: FilaAlumno): AlumnoGuardado {
   const nivelEscolaridad: MismosValores<NivelEscolaridad, NivelPrisma> | null =
     fila.nivelEscolaridad
-  const estado: MismosValores<(typeof ESTADOS)[number], Estado> = fila.estado
+  const estado: MismosValores<Estado, EstadoPrisma> = fila.estado
   return {
     id: fila.id,
     nombre: fila.nombre,

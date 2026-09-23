@@ -36,6 +36,8 @@ function crearRepository() {
   return {
     listar: vi.fn<MateriasRepository['listar']>(),
     listarActivas: vi.fn<MateriasRepository['listarActivas']>(),
+    // La usa profesores (T-11), no materias: está para completar el tipo del repository.
+    buscarPorIds: vi.fn<MateriasRepository['buscarPorIds']>(),
     buscarPorId: vi.fn<MateriasRepository['buscarPorId']>(),
     crear: vi.fn<MateriasRepository['crear']>(),
     darDeBaja: vi.fn<MateriasRepository['darDeBaja']>(),
@@ -43,7 +45,7 @@ function crearRepository() {
 }
 
 function crearProfesoresRepository() {
-  return { listarActivosPorMateria: vi.fn<ProfesoresRepository['listarActivosPorMateria']>() }
+  return { listarProfesoresDeMateria: vi.fn<ProfesoresRepository['listarProfesoresDeMateria']>() }
 }
 
 let repository: ReturnType<typeof crearRepository>
@@ -53,7 +55,7 @@ let service: ReturnType<typeof crearMateriasService>
 beforeEach(() => {
   repository = crearRepository()
   profesoresRepository = crearProfesoresRepository()
-  profesoresRepository.listarActivosPorMateria.mockResolvedValue([])
+  profesoresRepository.listarProfesoresDeMateria.mockResolvedValue([])
   service = crearMateriasService({ repository, profesoresRepository })
 })
 
@@ -112,12 +114,12 @@ describe('listarActivas', () => {
 describe('obtener', () => {
   it('agrega los profesores con asignación activa al detalle', async () => {
     repository.buscarPorId.mockResolvedValue(guardada())
-    profesoresRepository.listarActivosPorMateria.mockResolvedValue([profesor])
+    profesoresRepository.listarProfesoresDeMateria.mockResolvedValue([profesor])
 
     const materia = await service.obtener(1)
 
     expect(repository.buscarPorId).toHaveBeenCalledWith(1)
-    expect(profesoresRepository.listarActivosPorMateria).toHaveBeenCalledWith(1)
+    expect(profesoresRepository.listarProfesoresDeMateria).toHaveBeenCalledWith(1)
     expect(materia).toEqual({ ...guardada(), profesores: [profesor] })
   })
 
@@ -130,7 +132,7 @@ describe('obtener', () => {
     repository.buscarPorId.mockResolvedValue(null)
 
     await expect(service.obtener(99)).rejects.toThrow(NotFoundError)
-    expect(profesoresRepository.listarActivosPorMateria).not.toHaveBeenCalled()
+    expect(profesoresRepository.listarProfesoresDeMateria).not.toHaveBeenCalled()
   })
 })
 
@@ -147,7 +149,7 @@ describe('crear', () => {
       actor,
     )
     expect(materia).toEqual({ ...guardada(), profesores: [] })
-    expect(profesoresRepository.listarActivosPorMateria).not.toHaveBeenCalled()
+    expect(profesoresRepository.listarProfesoresDeMateria).not.toHaveBeenCalled()
   })
 
   it.each([
@@ -183,7 +185,7 @@ describe('darDeBaja', () => {
   })
 
   it('con profesores asignados → 409 MATERIA_CON_PROFESORES con los profesores en details', async () => {
-    profesoresRepository.listarActivosPorMateria.mockResolvedValue([profesor])
+    profesoresRepository.listarProfesoresDeMateria.mockResolvedValue([profesor])
 
     const error = await service.darDeBaja(1, actor).catch((e: unknown) => e)
 
