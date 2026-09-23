@@ -15,3 +15,16 @@ export function segmentoDeRol(role: string | null | undefined): string | null {
   if (!role) return null
   return SEGMENTO_POR_ROL[role as Role] ?? null
 }
+
+const LABEL_POR_ROL: Record<Role, string> = {
+  MESA_ENTRADAS: 'Mesa de Entradas',
+  PROFESOR: 'Profesor',
+  GERENTE: 'Gerente',
+  ALUMNO: 'Alumno',
+}
+
+// Texto legible del rol para la UI (por ejemplo, debajo del nombre en UserMenu).
+export function rolLabel(role: string | null | undefined): string {
+  if (!role) return ''
+  return LABEL_POR_ROL[role as Role] ?? role
+}
