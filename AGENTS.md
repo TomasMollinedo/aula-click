@@ -62,7 +62,7 @@ src/
 
 Fuera de `src/`: `prisma/schema.prisma`, `prisma/seed.ts`, `prisma7.config.ts` (config del CLI de Prisma), `docker-compose.yml`, `.env.example`, `vitest.config.mts`, `eslint.config.mjs`.
 
-**Vocabulario.** "Feature de API" = `src/server/features/<dominio>/`. "Feature de UI" = `src/features/<entidad>/`. Usan el mismo nombre (plural, minúsculas, sin acentos: `alumnos`, `profesores`, `materias`, `turnos`), pero son independientes: se comunican solo por HTTP.
+**Vocabulario.** "Feature de API" = `src/server/features/<dominio>/`. "Feature de UI" = `src/features/<entidad>/`. Usan el mismo nombre (plural, minúsculas, sin acentos: `alumnos`, `profesores`, `materias`, `turnos`), pero son independientes: se comunican solo por HTTP. Una feature es un **concepto del negocio**, no un rol ni una tabla: `profesores` existe aparte de `Usuario` porque el profesor tiene datos y reglas propias (criterio completo en `docs/arquitectura-backend.md` → Qué es una feature).
 
 ## Documentación
 

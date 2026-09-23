@@ -54,6 +54,16 @@ src/
 
 Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignadas y bloques de clase), `materias` y `turnos` (prioridad, capacidad, solapamientos, agenda). La referencia para copiar el patrón es `alumnos`; una feature nueva se crea con `/nueva-feature-api <dominio>` (Claude Code) o copiando `alumnos` a mano.
 
+### Qué es una feature
+
+Una feature agrupa las reglas de **un concepto del negocio**, no de una tabla ni de un rol. El rol dice qué puede hacer alguien (se declara en la ruta con `requireRole(...)`); la feature dice de qué trata la regla.
+
+- **Rol ≠ feature.** `PROFESOR` es un rol de `Usuario`, pero `Profesor` es una entidad propia (1:1 con `Usuario`) con datos y reglas que otros usuarios no tienen: título, matrícula, materias asignadas y bloques de clase. Por eso vive en `profesores` y no en una feature `usuarios`. Sus URLs usan `Profesor.id` (`/profesores/{id}/materias`), no `Usuario.id`.
+- **Todo lo del concepto va en su feature, aunque toque otras tablas.** El alta de un profesor escribe `Usuario`, `Account` y `Profesor`, y su baja cambia `Usuario.estado`: las dos son reglas de profesores y van en `profesores`. Lo mismo las asignaciones (`AsignacionMateria`), que son del profesor aunque tengan su propia tabla.
+- **`Usuario`, `Session` y `Account` son infraestructura de autenticación**: los maneja Better Auth (`src/lib/auth.ts`) y no forman una feature por sí solos.
+- **Una feature `usuarios` solo se crea para lo que vale para cualquier usuario sin importar su rol** (cambiar la contraseña propia, que un gerente habilite o inhabilite cuentas, listar todos los usuarios). Convive con `profesores`, no la reemplaza.
+- **Criterio para una feature nueva:** tiene datos o reglas propias que el resto no tiene. Un rol nuevo que solo cambia permisos no es una feature: es un valor más en `requireRole(...)`.
+
 ## Capas de una feature
 
 | Capa       | Hace                                                                                                                                                                                                                                                  | No hace                                                   |
