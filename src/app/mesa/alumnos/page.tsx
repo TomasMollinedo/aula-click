@@ -1,20 +1,26 @@
+import { Suspense } from 'react'
 import Link from 'next/link'
+import { Plus } from 'lucide-react'
 
-import { AlumnosTable } from '@/features/alumnos/components/AlumnosTable'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { AlumnosListado } from '@/features/alumnos/components/AlumnosListado'
 
 export default function AlumnosPage() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-semibold">Alumnos</h1>
-        <Link
-          href="/mesa/alumnos/nuevo"
-          className="inline-flex h-10 items-center rounded-md bg-slate-900 px-4 text-sm font-medium text-white"
-        >
-          Nuevo alumno
-        </Link>
+        <Button asChild>
+          <Link href="/mesa/alumnos/nuevo">
+            <Plus className="size-4" />
+            Nuevo alumno
+          </Link>
+        </Button>
       </div>
-      <AlumnosTable />
+      <Suspense fallback={<Skeleton className="h-64 w-full" />}>
+        <AlumnosListado />
+      </Suspense>
     </div>
   )
 }

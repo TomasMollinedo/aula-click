@@ -1,12 +1,60 @@
-import { AlumnoForm } from '@/features/alumnos/components/AlumnoForm'
+'use client'
 
-// AL-02/AL-04 (editar). Placeholder de ruta — AlumnoForm todavía no tiene modo edición
-// ni existe use-alumno.ts (detalle) / use-update-alumno.ts. Ver mapa-hu-frontend.md.
-export default function EditarAlumnoPage() {
+import { use } from 'react'
+import Link from 'next/link'
+import { AlertCircle } from 'lucide-react'
+
+import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Button } from '@/components/ui/button'
+import { Skeleton } from '@/components/ui/skeleton'
+import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
+import { useAlumno } from '@/features/alumnos/hooks/use-alumno'
+
+export default function DetalleAlumnoPage({ params }: { params: Promise<{ alumnoId: string }> }) {
+  const { alumnoId } = use(params)
+  const id = Number(alumnoId)
+
+  if (!Number.isFinite(id) || id <= 0 || !Number.isInteger(id)) {
+    return <NoEncontrado />
+  }
+
+  return <DetalleContenido id={id} />
+}
+
+function DetalleContenido({ id }: { id: number }) {
+  const { data: alumno, isLoading, isError, error } = useAlumno(id)
+
+  if (isLoading) {
+    return (
+      <div className="space-y-4">
+        <Skeleton className="h-8 w-48" />
+        <Skeleton className="h-64 w-full" />
+      </div>
+    )
+  }
+
+  if (isError) {
+    if (error?.status === 404) return <NoEncontrado />
+    return (
+      <Alert variant="destructive">
+        <AlertCircle className="size-4" />
+        <AlertDescription>{error?.message ?? 'Ocurrió un error inesperado'}</AlertDescription>
+      </Alert>
+    )
+  }
+
+  if (!alumno) return <NoEncontrado />
+
+  return <AlumnoDetalle alumno={alumno} />
+}
+
+function NoEncontrado() {
   return (
-    <div className="max-w-lg space-y-6">
-      <h1 className="text-2xl font-semibold">Editar alumno</h1>
-      <AlumnoForm />
+    <div className="flex flex-col items-center gap-4 py-12 text-center">
+      <p className="text-muted-foreground">Alumno no encontrado</p>
+      <Button variant="outline" asChild>
+        <Link href="/mesa/alumnos">Volver al listado</Link>
+      </Button>
     </div>
   )
 }

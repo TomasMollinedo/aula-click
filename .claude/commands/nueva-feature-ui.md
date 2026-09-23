@@ -23,7 +23,7 @@ En `src/features/$1/`, con el mismo contenido que los de `alumnos`, reemplazando
 | `api/alumnos.api.ts`          | `api/$1.api.ts`                          |
 | `api/alumnos.keys.ts`         | `api/$1.keys.ts`                         |
 | `hooks/use-alumnos.ts`        | `hooks/use-$1.ts`                        |
-| `hooks/use-create-alumno.ts`  | `hooks/use-create-$2.ts`                 |
+| `hooks/use-crear-alumno.ts`   | `hooks/use-crear-$2.ts`                  |
 | `components/AlumnosTable.tsx` | `components/<$1 con mayúscula>Table.tsx` |
 | `components/AlumnoForm.tsx`   | `components/<$2 con mayúscula>Form.tsx`  |
 

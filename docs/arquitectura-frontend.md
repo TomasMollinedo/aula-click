@@ -47,9 +47,11 @@ src/
 │   │   ├── layout.tsx                  # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /mesa/alumnos
 │   │   ├── alumnos/
-│   │   │   ├── page.tsx                # listado
+│   │   │   ├── page.tsx                # listado (q y page en la URL)
 │   │   │   ├── nuevo/page.tsx          # alta
-│   │   │   └── [alumnoId]/page.tsx     # edición
+│   │   │   └── [alumnoId]/
+│   │   │       ├── page.tsx            # detalle
+│   │   │       └── editar/page.tsx     # edición
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
@@ -73,10 +75,11 @@ src/
 │   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
-│       ├── alumnos.schema.ts
+│       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
+│       ├── errores-api.ts               # helper: mapea ApiError a errores del formulario
 │       ├── api/{alumnos.api.ts, alumnos.keys.ts}
-│       ├── hooks/{use-alumnos.ts, use-create-alumno.ts}
-│       └── components/{AlumnosTable.tsx, AlumnoForm.tsx}
+│       ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts}
+│       └── components/{AlumnosListado.tsx, AlumnosTable.tsx, AlumnoForm.tsx, AlumnoDetalle.tsx, BuscadorAlumnos.tsx, SinResultados.tsx}
 │
 ├── components/
 │   ├── ui/                             # primitivos de UI hechos a mano (D-08/T-25)
@@ -93,17 +96,19 @@ src/
 
 ## Anatomía de una feature de UI
 
-| Archivo                                     | Responsabilidad                                                                                         |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `<entidad>.types.ts`                        | Tipos de lo que la API recibe y devuelve para esta entidad, según el OpenAPI y `contrato-api.md` (D-07) |
-| `<entidad>.schema.ts`                       | Schemas Zod de los formularios de la entidad                                                            |
-| `api/<entidad>.api.ts`                      | Funciones que llaman a `/api/v1` con `fetchJson`. Es el único archivo de la entidad que conoce URLs     |
-| `api/<entidad>.keys.ts`                     | Query keys de TanStack Query de la entidad (fábrica de keys)                                            |
-| `hooks/use-<entidad>.ts`                    | `useQuery` de listado o detalle                                                                         |
-| `hooks/use-create-<singular>.ts` (y afines) | `useMutation` que, al terminar bien, invalida las keys de la entidad                                    |
-| `components/`                               | Componentes de la entidad (`<Entidad>Table.tsx`, `<Singular>Form.tsx`…)                                 |
+| Archivo                                    | Responsabilidad                                                                                                                                                                                                                                         |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<entidad>.types.ts`                       | Tipos de lo que la API recibe y devuelve para esta entidad, según el OpenAPI y `contrato-api.md` (D-07)                                                                                                                                                 |
+| `<entidad>.schema.ts`                      | Schemas Zod de los formularios de la entidad                                                                                                                                                                                                            |
+| `api/<entidad>.api.ts`                     | Funciones que llaman a `/api/v1` con `fetchJson`. Es el único archivo de la entidad que conoce URLs                                                                                                                                                     |
+| `api/<entidad>.keys.ts`                    | Query keys de TanStack Query de la entidad (fábrica de keys)                                                                                                                                                                                            |
+| `hooks/use-<entidad>.ts`                   | `useQuery` de listado o detalle                                                                                                                                                                                                                         |
+| `hooks/use-crear-<singular>.ts` (y afines) | `useMutation` que, al terminar bien, invalida las keys de la entidad                                                                                                                                                                                    |
+| `hooks/use-buscador-<entidad>.ts`          | Hook reutilizable de búsqueda: texto, debounce, paginación, delegado al hook de listado. Acepta estado controlado (q, page, onCambio) para que la página maneje la URL, o estado interno para otros consumidores (por ejemplo, el formulario de turnos) |
+| `errores-api.ts`                           | Helper que mapea un `ApiError` a errores del formulario (`setError`) y/o error general. Verifica que el `path` sea un campo válido del schema antes de marcar el campo                                                                                  |
+| `components/`                              | Componentes de la entidad (`<Entidad>Table.tsx`, `<Singular>Form.tsx`…)                                                                                                                                                                                 |
 
-Nombres: archivos que no son componentes en kebab-case (`use-create-alumno.ts`); componentes en PascalCase (`AlumnoForm.tsx`). La feature va en plural (`alumnos`); lo que representa un solo objeto va en singular (`AlumnoForm`, `use-create-alumno`). `features/alumnos/` es la referencia de nombres y firmas. Una feature nueva se crea con `/nueva-feature-ui <plural> <singular>` (Claude Code) o copiando `alumnos` a mano.
+Nombres: archivos que no son componentes en kebab-case (`use-crear-alumno.ts`); componentes en PascalCase (`AlumnoForm.tsx`). La feature va en plural (`alumnos`); lo que representa un solo objeto va en singular (`AlumnoForm`, `use-crear-alumno`). `features/alumnos/` es la referencia de nombres y firmas. Una feature nueva se crea con `/nueva-feature-ui <plural> <singular>` (Claude Code) o copiando `alumnos` a mano.
 
 ## Roles y URLs
 
@@ -142,6 +147,15 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - Los layouts y las páginas se tipan con los tipos que genera `next typegen` (`LayoutProps<'/mesa'>`, `PageProps<...>`), no con interfaces escritas a mano: `pnpm typecheck` los regenera antes de `tsc`.
 - Un Client Component que usa `useSearchParams` va envuelto en `<Suspense>` donde se monta (así se monta `AvisoSesionExpirada` en `/login`); sin eso falla el build de producción.
 - Los datos del servidor viven en la cache de TanStack Query; no se copian a `useState`. El estado de UI (filtros, modal abierto) es local y se sube solo lo necesario: datos hacia abajo por props, eventos hacia arriba.
+
+## Filtros del listado en la URL
+
+Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&page=…`) con `router.replace`, para que el botón Atrás del navegador conserve la búsqueda y la página. El patrón:
+
+- La página del listado es un Server Component que envuelve en `<Suspense>` un Client Component (por ejemplo `AlumnosListado`).
+- Ese Client Component lee `useSearchParams` para obtener los valores iniciales y llama a `router.replace` solo cuando el `q` debounceado o la `page` cambian, evitando un replace por cada tecla.
+- Escribir en el buscador vuelve a la página 1.
+- El hook `use-buscador-<entidad>` acepta un estado controlado (`{ q, page, onCambio }`) para este caso, o estado interno para otros consumidores (por ejemplo, un selector de alumnos en el formulario de turnos que no necesita persistir en la URL).
 
 ## Llamadas a la API: `fetchJson` y `ApiError`
 
