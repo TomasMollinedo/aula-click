@@ -1,12 +1,11 @@
 import { z } from '@hono/zod-openapi'
 import { auditoriaSchema } from '@/server/shared/auditoria'
+import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import { dni, email, fechaISO, telefono, textoRequerido } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio:
 // la edad y el tutor de los menores los decide el service.
-
-const Q_MAX = 100
 
 /** Valores del enum `NivelEscolaridad` (el repository comprueba que coincidan con Prisma). */
 export const NIVELES_ESCOLARIDAD = [
@@ -71,17 +70,10 @@ export const alumnoIdParamsSchema = z.object({
 
 /** Query del listado: paginación + `q` (búsqueda por palabras sobre apellido, nombre y DNI). */
 export const listarAlumnosQuerySchema = paginacionQuerySchema.extend({
-  q: z
-    .string({ error: 'Debe ser un texto' })
-    .trim()
-    .max(Q_MAX, { error: `No puede superar los ${Q_MAX} caracteres` })
-    .optional()
-    .openapi({
-      param: { name: 'q', in: 'query' },
-      description:
-        'Búsqueda por apellido, nombre o DNI. Cada palabra coincide en forma parcial y todas deben coincidir; no distingue mayúsculas ni tildes y los puntos se ignoran',
-      example: 'juan gonz',
-    }),
+  q: qBusqueda.openapi({
+    description:
+      'Búsqueda por apellido, nombre o DNI. Cada palabra coincide en forma parcial y todas deben coincidir; no distingue mayúsculas ni tildes, ignora los puntos y usa las primeras 5 palabras (hasta 100 caracteres)',
+  }),
 })
 
 export type ListarAlumnosQuery = z.infer<typeof listarAlumnosQuerySchema>
