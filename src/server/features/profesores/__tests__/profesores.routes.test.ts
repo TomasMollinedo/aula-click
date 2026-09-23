@@ -4,13 +4,20 @@ import { createRouter } from '@/server/router'
 import { profesoresRoutes } from '../profesores.routes'
 
 // Contrato HTTP de profesores: validación de Zod, auth y OpenAPI. Sin base ni variables de
-// entorno: el repository y Better Auth se reemplazan por mocks. Las reglas se prueban en el service.
+// entorno: los repositories y Better Auth se reemplazan por mocks. Las reglas se prueban en el
+// service.
 
-const { repository, getSession } = vi.hoisted(() => ({
-  repository: { listarMateriasAsignadas: vi.fn() },
+const { repository, materiasRepository, getSession } = vi.hoisted(() => ({
+  repository: {
+    listarMateriasAsignadas: vi.fn(),
+    buscarParaAsignar: vi.fn(),
+    asignarMaterias: vi.fn(),
+  },
+  materiasRepository: { buscarPorIds: vi.fn() },
   getSession: vi.fn(),
 }))
 vi.mock('../profesores.repository', () => ({ profesoresRepository: repository }))
+vi.mock('@/server/features/materias/materias.repository', () => ({ materiasRepository }))
 vi.mock('@/lib/auth', () => ({ auth: { api: { getSession } } }))
 
 const app = createRouter().basePath('/api/v1')
@@ -24,14 +31,23 @@ function sesion(role = 'MESA_ENTRADAS') {
   }
 }
 
-function pedir(path: string) {
-  return app.request(`/api/v1/profesores${path}`)
+function pedir(path: string, metodo = 'GET', body?: unknown) {
+  return app.request(`/api/v1/profesores${path}`, {
+    method: metodo,
+    headers: { 'content-type': 'application/json' },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  })
 }
 
 beforeEach(() => {
   vi.clearAllMocks()
   getSession.mockResolvedValue(sesion())
   repository.listarMateriasAsignadas.mockResolvedValue([{ id: 2, nombre: 'Matemática' }])
+  repository.buscarParaAsignar.mockResolvedValue({ estado: 'ACTIVO', asignaciones: [] })
+  repository.asignarMaterias.mockResolvedValue(undefined)
+  materiasRepository.buscarPorIds.mockResolvedValue([
+    { id: 2, nombre: 'Matemática', estado: 'ACTIVO' },
+  ])
 })
 
 describe('GET /profesores/{id}/materias', () => {
@@ -66,17 +82,73 @@ describe('GET /profesores/{id}/materias', () => {
   })
 })
 
+describe('POST /profesores/{id}/materias', () => {
+  it('responde 201 con las materias asignadas actualizadas y pasa el actor', async () => {
+    const res = await pedir('/3/materias', 'POST', { materiaIds: [2] })
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual([{ id: 2, nombre: 'Matemática' }])
+    expect(repository.asignarMaterias).toHaveBeenCalledWith(3, [2], {
+      userId: 'usr_mesa',
+      role: 'MESA_ENTRADAS',
+    })
+  })
+
+  it('profesor inactivo → 409 PROFESOR_INACTIVO', async () => {
+    repository.buscarParaAsignar.mockResolvedValue({ estado: 'INACTIVO', asignaciones: [] })
+    const res = await pedir('/3/materias', 'POST', { materiaIds: [2] })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error.code).toBe('PROFESOR_INACTIVO')
+  })
+
+  it('materia inexistente → 404 con details por posición', async () => {
+    const res = await pedir('/3/materias', 'POST', { materiaIds: [2, 99] })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toMatchObject({
+      code: 'NO_ENCONTRADO',
+      details: [{ path: ['materiaIds', 1], message: 'La materia 99 no existe' }],
+    })
+  })
+
+  it('sin body → 400 (SOLICITUD_INVALIDA: Hono lo rechaza antes de validar), sin llegar al service', async () => {
+    const res = await pedir('/3/materias', 'POST')
+    expect(res.status).toBe(400)
+    expect(repository.buscarParaAsignar).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['sin materiaIds', {}],
+    ['lista vacía', { materiaIds: [] }],
+    ['ids repetidos', { materiaIds: [2, 2] }],
+    ['id no entero', { materiaIds: [1.5] }],
+    ['id como texto', { materiaIds: ['2'] }],
+    ['id cero', { materiaIds: [0] }],
+    ['más de 50 materias', { materiaIds: Array.from({ length: 51 }, (_, i) => i + 1) }],
+  ])('%s → 400 VALIDACION, sin llegar al service', async (_caso, body) => {
+    const res = await pedir('/3/materias', 'POST', body)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+    expect(repository.buscarParaAsignar).not.toHaveBeenCalled()
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('/3/materias', 'POST', { materiaIds: [2] })).status).toBe(403)
+  })
+})
+
 describe('OpenAPI', () => {
   const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
+  const status = (metodo: 'get' | 'post') =>
+    Object.keys(doc.paths['/api/v1/profesores/{id}/materias']?.[metodo]?.responses ?? {}).sort()
 
-  it('declara el endpoint con todos sus status codes', () => {
-    const responses = doc.paths['/api/v1/profesores/{id}/materias']?.get?.responses ?? {}
-    expect(Object.keys(responses).sort()).toEqual(['200', '400', '401', '403', '404'])
+  it('declara los endpoints con todos sus status codes', () => {
+    expect(status('get')).toEqual(['200', '400', '401', '403', '404'])
+    expect(status('post')).toEqual(['201', '400', '401', '403', '404', '409'])
   })
 
   it('registra los componentes de materias asignadas', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['MateriaAsignada', 'MateriasAsignadas']),
+      expect.arrayContaining(['MateriaAsignada', 'MateriasAsignadas', 'AsignarMaterias']),
     )
   })
 })
