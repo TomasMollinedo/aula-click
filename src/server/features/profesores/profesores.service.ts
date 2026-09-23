@@ -2,9 +2,37 @@ import { ConflictError, NotFoundError } from '@/server/errors'
 import type { MateriasRepository } from '@/server/features/materias/materias.repository'
 import type { TurnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { Actor } from '@/server/shared/actor'
+import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { ProfesoresRepository } from './profesores.repository'
-import type { AsignarMaterias, MateriasAsignadas, QuitarMaterias } from './profesores.validation'
+import type {
+  AsignarMaterias,
+  CrearProfesor,
+  EditarProfesor,
+  FotoMimeType,
+  ListarProfesoresQuery,
+  MateriasAsignadas,
+  ProfesorDetalle,
+  ProfesorGuardado,
+  ProfesorListadoFila,
+  ProfesorListadoItem,
+  ProfesoresListado,
+  QuitarMaterias,
+} from './profesores.validation'
+
+const MENSAJE_NO_ENCONTRADO = 'Profesor no encontrado'
+
+// Mismo formato que el seed y alumnos usan para los usuarios: apellido, nombre y DNI.
+function calcularBusqueda(datos: { apellido: string; nombre: string; dni: string }): string {
+  return normalizarBusqueda(`${datos.apellido} ${datos.nombre} ${datos.dni}`)
+}
+
+// Solo los campos que vienen en la edición (undefined = no cambia).
+function sinOmitidos<T extends object>(cambios: T): Partial<T> {
+  return Object.fromEntries(
+    Object.entries(cambios).filter(([, valor]) => valor !== undefined),
+  ) as Partial<T>
+}
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
 
@@ -30,19 +58,33 @@ function detallesDe(
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
  * reales; los tests, con falsos y un reloj fijo (`reloj` opcional: por defecto el del sistema, vía
  * `hoy(reloj)`). Los importa solo como tipo, así el service no carga Prisma ni `@/config/env`.
- * De `materias` y `turnos` solo lee: nunca usa sus reglas.
+ * De `materias` y `turnos` solo lee: nunca usa sus reglas. `getPresignedUrl` se inyecta (en vez de
+ * importar `@/lib/storage` directo) por la misma razón: así el service no carga `@/config/env`.
  */
 export function crearProfesoresService({
   repository,
   materiasRepository,
   turnosRepository,
+  getPresignedUrl,
   reloj,
 }: {
   repository: ProfesoresRepository
   materiasRepository: Pick<MateriasRepository, 'buscarPorIds'>
   turnosRepository: Pick<TurnosRepository, 'contarVigentesPorMateria'>
+  getPresignedUrl: (key: string) => Promise<string>
   reloj?: Reloj
 }) {
+  /** `avatarKey` (interno) → `fotoUrl` (URL prefirmada, o `null` si no tiene). */
+  async function conFotoUrl(profesor: ProfesorGuardado): Promise<ProfesorDetalle> {
+    const { avatarKey, ...resto } = profesor
+    return { ...resto, fotoUrl: avatarKey ? await getPresignedUrl(avatarKey) : null }
+  }
+
+  async function conFotoUrlListado(fila: ProfesorListadoFila): Promise<ProfesorListadoItem> {
+    const { avatarKey, ...resto } = fila
+    return { ...resto, fotoUrl: avatarKey ? await getPresignedUrl(avatarKey) : null }
+  }
+
   async function listarMateriasAsignadas(profesorId: number): Promise<MateriasAsignadas> {
     const materias = await repository.listarMateriasAsignadas(profesorId)
     if (!materias) throw new NotFoundError('Profesor no encontrado')
@@ -50,6 +92,63 @@ export function crearProfesoresService({
   }
 
   return {
+    async listar(query: ListarProfesoresQuery): Promise<ProfesoresListado> {
+      const { data, meta } = await repository.listar({
+        page: query.page,
+        pageSize: query.pageSize,
+        terminos: terminosDeBusqueda(query.q),
+        // `TODOS` es "sin filtro": el repository solo conoce los valores de `Estado`.
+        estado: query.estado === 'TODOS' ? undefined : query.estado,
+        materiaId: query.materiaId,
+      })
+      return { data: await Promise.all(data.map(conFotoUrlListado)), meta }
+    },
+
+    async obtener(id: number): Promise<ProfesorDetalle> {
+      const profesor = await repository.buscarPorId(id)
+      if (!profesor) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+      return conFotoUrl(profesor)
+    },
+
+    async crear(datos: CrearProfesor, actor: Actor): Promise<ProfesorDetalle> {
+      const profesor = await repository.crear(
+        { ...datos, busqueda: calcularBusqueda(datos) },
+        actor,
+      )
+      return conFotoUrl(profesor)
+    },
+
+    /** Edición parcial. `busqueda` se recalcula sobre el estado resultante (actual + cambios). */
+    async editar(id: number, cambios: EditarProfesor, actor: Actor): Promise<ProfesorDetalle> {
+      const actual = await repository.buscarPorId(id)
+      if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+
+      const resultado = { ...actual, ...sinOmitidos(cambios) }
+      const profesor = await repository.actualizar(
+        id,
+        { ...cambios, busqueda: calcularBusqueda(resultado) },
+        actor,
+      )
+      return conFotoUrl(profesor)
+    },
+
+    /** Sube o reemplaza la foto (JPG o PNG, ya validados por el schema). */
+    async subirFoto(id: number, foto: File, actor: Actor): Promise<ProfesorDetalle> {
+      // El tipo ya lo validó subirFotoSchema (solo JPG o PNG llegan hasta acá).
+      const mimeType = foto.type as FotoMimeType
+      const bytes = new Uint8Array(await foto.arrayBuffer())
+      const profesor = await repository.actualizarFoto(id, { bytes, mimeType }, actor)
+      if (!profesor) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+      return conFotoUrl(profesor)
+    },
+
+    /** Quita la foto, si tiene. Sin foto no es un error: es idempotente. */
+    async quitarFoto(id: number, actor: Actor): Promise<ProfesorDetalle> {
+      const profesor = await repository.quitarFoto(id, actor)
+      if (!profesor) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+      return conFotoUrl(profesor)
+    },
+
     /** Materias con asignación activa. Se listan aunque el profesor esté inactivo. */
     listarMateriasAsignadas,
 
