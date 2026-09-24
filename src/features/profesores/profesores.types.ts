@@ -8,6 +8,7 @@ export type ProfesorListadoItem = {
   id: number
   apellido: string
   nombre: string
+  dni: string
   estado: Estado
   fotoUrl: string | null
 }

@@ -129,8 +129,22 @@ describe('listar', () => {
   it('pagina, busca por palabras y arma la URL prefirmada de la foto', async () => {
     repository.listar.mockResolvedValue({
       data: [
-        { id: 3, apellido: 'Pérez', nombre: 'Martín', estado: 'ACTIVO', avatarKey: 'k1' },
-        { id: 7, apellido: 'Gómez', nombre: 'Luis', estado: 'ACTIVO', avatarKey: null },
+        {
+          id: 3,
+          apellido: 'Pérez',
+          nombre: 'Martín',
+          dni: '28333444',
+          estado: 'ACTIVO',
+          avatarKey: 'k1',
+        },
+        {
+          id: 7,
+          apellido: 'Gómez',
+          nombre: 'Luis',
+          dni: '30111222',
+          estado: 'ACTIVO',
+          avatarKey: null,
+        },
       ],
       meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
     })
@@ -154,10 +168,18 @@ describe('listar', () => {
         id: 3,
         apellido: 'Pérez',
         nombre: 'Martín',
+        dni: '28333444',
         estado: 'ACTIVO',
         fotoUrl: 'https://minio.local/k1',
       },
-      { id: 7, apellido: 'Gómez', nombre: 'Luis', estado: 'ACTIVO', fotoUrl: null },
+      {
+        id: 7,
+        apellido: 'Gómez',
+        nombre: 'Luis',
+        dni: '30111222',
+        estado: 'ACTIVO',
+        fotoUrl: null,
+      },
     ])
   })
 

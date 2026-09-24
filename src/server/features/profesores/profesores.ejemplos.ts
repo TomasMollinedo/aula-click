@@ -31,6 +31,7 @@ export const ejemploListadoItem = {
   id: 3,
   apellido: 'Pérez',
   nombre: 'Martín',
+  dni: '28333444',
   estado: 'ACTIVO',
   fotoUrl: null,
 } satisfies ProfesorListadoItem

@@ -99,13 +99,13 @@ export function ProfesoresListado({ rutaBase }: ProfesoresListadoProps) {
   return (
     <Card className="gap-0 overflow-hidden p-0">
       <div className="flex flex-col gap-3 p-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex flex-col gap-3 sm:flex-1 sm:flex-row sm:items-center">
           <BuscadorProfesores
             texto={buscador.texto}
             onChange={buscador.setTexto}
-            className="w-full sm:max-w-xs"
+            className="w-full min-w-0 sm:max-w-md sm:flex-1"
           />
-          <div className="flex gap-3">
+          <div className="flex shrink-0 gap-3">
             <FiltroEstadoProfesores value={buscador.estado} onChange={buscador.setEstado} />
             <FiltroMateriaProfesores value={buscador.materiaId} onChange={buscador.setMateriaId} />
           </div>

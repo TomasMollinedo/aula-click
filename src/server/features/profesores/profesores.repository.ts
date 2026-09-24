@@ -160,7 +160,9 @@ export const profesoresRepository = {
         where,
         select: {
           id: true,
-          usuario: { select: { apellido: true, nombre: true, estado: true, avatarKey: true } },
+          usuario: {
+            select: { apellido: true, nombre: true, dni: true, estado: true, avatarKey: true },
+          },
         },
         orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
         ...calcularSkipTake(parametros),
@@ -171,6 +173,7 @@ export const profesoresRepository = {
       id,
       apellido: usuario.apellido,
       nombre: usuario.nombre,
+      dni: usuario.dni,
       estado: usuario.estado,
       avatarKey: usuario.avatarKey,
     }))
