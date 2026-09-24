@@ -29,8 +29,8 @@ Todo es mismo origen: la sesión viaja en una cookie y no hay tokens que manejar
 | Instante (auditoría: `createdAt`, `updatedAt`) | string ISO 8601 en UTC                                                   | `2026-09-22T13:45:00.000Z` |
 | DNI                                            | se devuelve solo con dígitos; en la entrada se aceptan puntos y espacios | `30123456`                 |
 | Email                                          | se guarda en minúsculas y sin espacios alrededor                         | `ana.perez@mail.com`       |
-| Teléfono                                       | se devuelve tal como lo escribió el usuario                              | `(387) 15-412-3456`        |
-| Nombre y apellido de una persona               | letras (con tildes, ñ, ü), espacios, apóstrofos y guiones; sin números   | `O'Connor-Pérez`           |
+| Teléfono                                       | solo dígitos, de 8 a 20 (sin `+`, `-`, espacios ni paréntesis)           | `387154123456`             |
+| Nombre y apellido de una persona               | letras (con tildes, ñ, ü) y espacios; sin números, guiones ni apóstrofos | `María José Pérez`         |
 
 La zona horaria del negocio es `America/Argentina/Salta`. Qué fecha es "hoy" para las reglas (vigencia, prioridad) lo decide la API.
 
@@ -65,11 +65,12 @@ Uno nuevo se agrega a esta tabla.
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 
-| Query       | Qué hace                                                                                                                                                                                                                                                                                                                  |
-| ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `q`         | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras |
-| `estado`    | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                               |
-| `materiaId` | Filtra por materia                                                                                                                                                                                                                                                                                                        |
+| Query        | Qué hace                                                                                                                                                                                                                                                                                                                  |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `q`          | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras |
+| `estado`     | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                               |
+| `materiaId`  | Filtra por materia                                                                                                                                                                                                                                                                                                        |
+| `profesorId` | Filtra por profesor                                                                                                                                                                                                                                                                                                       |
 
 ## Recursos individuales
 
@@ -122,14 +123,17 @@ Todo error responde con este cuerpo (`details` es opcional):
 
 Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega acá):
 
-| Status | `code`                   | Mensaje / `details`                                                                                                                                                                                             |
-| ------ | ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 403    | `USUARIO_INHABILITADO`   | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación)                                                     |
-| 409    | `BLOQUE_LLENO`           | `details`: lista de fechas en las que el bloque está lleno                                                                                                                                                      |
-| 409    | `PROFESOR_INACTIVO`      | "El profesor está inactivo: no se le pueden asignar materias". Sin `details`                                                                                                                                    |
-| 409    | `TURNOS_VIGENTES`        | `details`: una entrada por cada materia con turnos vigentes (no cancelados), con `path` `["materiaIds", <posición>]`, `message` y `cantidad` (número de turnos vigentes)                                        |
-| 409    | `MATERIA_INACTIVA`       | `details`: una entrada por cada materia inactiva pedida, con `path` `["materiaIds", <posición>]`                                                                                                                |
-| 409    | `MATERIA_CON_PROFESORES` | "No se puede dar de baja una materia con profesores asignados". `details`: los profesores con una asignación activa, `[{ "id", "apellido", "nombre", "estado" }]`, para que la UI los liste y enlace a su ficha |
+| Status | `code`                   | Mensaje / `details`                                                                                                                                                                                                                                                                       |
+| ------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 403    | `USUARIO_INHABILITADO`   | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación)                                                                                                                               |
+| 409    | `BLOQUE_LLENO`           | `details`: lista de fechas en las que el bloque está lleno                                                                                                                                                                                                                                |
+| 409    | `PROFESOR_INACTIVO`      | "El profesor está inactivo: no se le pueden asignar materias". Sin `details`                                                                                                                                                                                                              |
+| 409    | `TURNOS_VIGENTES`        | `details` según el recurso: al quitar materias de un profesor, una entrada por cada una con turnos vigentes (no cancelados), con `path` `["materiaIds", <posición>]`, `message` y `cantidad`; al editar o dar de baja un bloque (un solo recurso, no una lista), `{ "cantidad" }` directo |
+| 409    | `MATERIA_INACTIVA`       | `details`: una entrada por cada materia inactiva pedida, con `path` `["materiaIds", <posición>]`                                                                                                                                                                                          |
+| 409    | `MATERIA_CON_PROFESORES` | "No se puede dar de baja una materia con profesores asignados". `details`: los profesores con una asignación activa, `[{ "id", "apellido", "nombre", "estado" }]`, para que la UI los liste y enlace a su ficha                                                                           |
+| 409    | `PROFESOR_SIN_MATERIAS`  | "El profesor no tiene materias asignadas: no se le puede cargar un bloque". Sin `details`                                                                                                                                                                                                 |
+| 409    | `BLOQUE_SUPERPUESTO`     | `details`: una entrada por cada hora en conflicto, `[{ "diaSemana", "horaInicio", "horaFin", "bloqueExistenteId" }]`                                                                                                                                                                      |
+| 409    | `AULA_OCUPADA`           | "No hay un aula disponible en ese horario. Por favor, elija otro horario." `details`: una entrada por cada hora en conflicto, `[{ "diaSemana", "horaInicio", "horaFin", "profesorId" }]` (quién ocupa el aula a esa hora)                                                                 |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 

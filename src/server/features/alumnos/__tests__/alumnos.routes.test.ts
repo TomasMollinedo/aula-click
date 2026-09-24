@@ -23,7 +23,7 @@ const minimo = {
   dni: '30.123.456',
   fechaNacimiento: '1990-05-14',
   email: 'Juan.Gonzalez@Mail.com',
-  telefono: '(387) 15-412-3456',
+  telefono: '387154123456',
 }
 
 const guardado = {
@@ -153,7 +153,11 @@ describe('POST /alumnos', () => {
     ['dni', '30A23456'],
     ['tutorDni', '2011122B'],
     ['telefono', '387 412 ABCD'],
+    ['telefono', '+54 3874123456'],
     ['tutorTelefono', '387-15-XXXX-99'],
+    ['tutorTelefono', '(387) 4123456'],
+    ['nombre', 'Ana-María'],
+    ['tutorApellido', "O'Connor"],
   ])('%s con caracteres no permitidos (%o) → 400 sobre ese campo', async (campo, valor) => {
     const res = await pedir('', 'POST', { ...minimo, [campo]: valor })
 
@@ -162,13 +166,13 @@ describe('POST /alumnos', () => {
     expect(repository.crear).not.toHaveBeenCalled()
   })
 
-  it('nombres con tildes, espacios, apóstrofos y guiones → 201', async () => {
+  it('nombres con tildes y espacios → 201', async () => {
     const res = await pedir('', 'POST', {
       ...minimo,
       nombre: 'María José',
-      apellido: "O'Connor-Pérez",
+      apellido: 'Pérez Gil',
       tutorNombre: 'Ñusta',
-      tutorApellido: 'D’Angelo',
+      tutorApellido: 'Müller',
     })
 
     expect(res.status).toBe(201)

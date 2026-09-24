@@ -119,7 +119,7 @@ const camposOpcionales = {
   tutorDni: opcional(dni, { description: 'DNI del tutor (7 u 8 dígitos)', example: '20111222' }),
   tutorTelefono: opcional(telefono, {
     description: 'Teléfono del tutor. Obligatorio si el alumno es menor',
-    example: '(387) 15-433-9876',
+    example: '387154339876',
   }),
   tutorEmail: opcional(email, {
     description: 'Email del tutor. Obligatorio si el alumno es menor',

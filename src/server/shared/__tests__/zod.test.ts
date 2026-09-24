@@ -54,27 +54,24 @@ describe('email', () => {
 })
 
 describe('telefono', () => {
-  it('devuelve lo que escribió el usuario, solo recortado', () => {
-    expect(telefono.parse('  (387) 15-412-3456 ')).toBe('(387) 15-412-3456')
-    expect(telefono.parse('+54 387 4123456')).toBe('+54 387 4123456')
+  it('acepta solo dígitos y los devuelve recortados', () => {
+    expect(telefono.parse('  3874123456 ')).toBe('3874123456')
   })
 
-  it('rechaza 7 dígitos aunque tenga 8 caracteres', () => {
-    const resultado = telefono.safeParse('123-4567')
-    expect(resultado.success).toBe(false)
-    expect(mensaje(resultado)).toBe('El teléfono debe tener al menos 8 dígitos')
-  })
+  it.each(['+54 387 4123456', '(387) 4123456', '387-412-3456', '387 412 3456', '387 412 ABCD'])(
+    'rechaza %o con mensaje en español',
+    (valor) => {
+      expect(mensaje(telefono.safeParse(valor))).toBe('El teléfono solo puede tener números')
+    },
+  )
 
-  it('rechaza letras', () => {
-    expect(mensaje(telefono.safeParse('387 412 ABCD'))).toBe(
-      'El teléfono solo puede tener dígitos, espacios, +, - y paréntesis',
-    )
-  })
-
-  it('acepta de 8 a 20 caracteres', () => {
-    expect(telefono.safeParse('1234567').success).toBe(false)
+  it('acepta de 8 a 20 dígitos', () => {
+    expect(mensaje(telefono.safeParse('1234567'))).toBe('El teléfono debe tener al menos 8 dígitos')
+    expect(telefono.parse('12345678')).toBe('12345678')
     expect(telefono.parse('1'.repeat(20))).toBe('1'.repeat(20))
-    expect(telefono.safeParse('1'.repeat(21)).success).toBe(false)
+    expect(mensaje(telefono.safeParse('1'.repeat(21)))).toBe(
+      'El teléfono no puede superar los 20 dígitos',
+    )
   })
 })
 
@@ -95,12 +92,9 @@ describe('textoRequerido', () => {
 })
 
 describe('nombrePersona', () => {
-  it.each(['Lucía', 'María José', "O'Connor", 'D’Angelo', 'Pérez-Gil', 'Müller', 'Ñandú'])(
-    'acepta %o',
-    (valor) => {
-      expect(nombrePersona(100).parse(valor)).toBe(valor)
-    },
-  )
+  it.each(['Lucía', 'María José', 'Pérez Gil', 'Müller', 'Ñandú'])('acepta %o', (valor) => {
+    expect(nombrePersona(100).parse(valor)).toBe(valor)
+  })
 
   it('recorta y respeta el máximo, como textoRequerido', () => {
     expect(nombrePersona(5).parse('  Ana  ')).toBe('Ana')
@@ -108,14 +102,19 @@ describe('nombrePersona', () => {
     expect(mensaje(nombrePersona(10).safeParse('   '))).toBe('Campo obligatorio')
   })
 
-  it.each(['Juan2', '1234', 'Ana_María', 'Ana.', 'Juan\tPérez', 'Ana@'])('rechaza %o', (valor) => {
-    expect(mensaje(nombrePersona(100).safeParse(valor))).toBe(
-      'Solo puede tener letras, espacios, apóstrofos y guiones',
-    )
-  })
-
-  it('exige al menos una letra', () => {
-    expect(mensaje(nombrePersona(100).safeParse("- '"))).toBe('Debe tener al menos una letra')
+  it.each([
+    'Juan2',
+    '1234',
+    'Ana_María',
+    'Ana.',
+    'Juan\tPérez',
+    'Ana@',
+    'Pérez-Gil',
+    "O'Connor",
+    'D’Angelo',
+    "- '",
+  ])('rechaza %o', (valor) => {
+    expect(mensaje(nombrePersona(100).safeParse(valor))).toBe('Solo puede tener letras y espacios')
   })
 })
 

@@ -116,7 +116,7 @@ async function main() {
     nombre: 'Laura',
     apellido: 'Gómez',
     dni: '30111222',
-    telefono: '387 4111222',
+    telefono: '3874111222',
   })
 
   const profesor = await upsertUsuario({
@@ -126,7 +126,7 @@ async function main() {
     nombre: 'Martín',
     apellido: 'Pérez',
     dni: '28333444',
-    telefono: '387 4333444',
+    telefono: '3874333444',
   })
   await prisma.profesor.upsert({
     where: { usuarioId: profesor.id },
@@ -146,7 +146,7 @@ async function main() {
     nombre: 'Ana',
     apellido: 'Rodríguez',
     dni: '25555666',
-    telefono: '387 4555666',
+    telefono: '3874555666',
   })
 
   for (const nombre of MATERIAS) {

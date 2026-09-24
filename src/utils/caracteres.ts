@@ -5,11 +5,13 @@
 export type TipoDeCaracteres = 'nombre' | 'dni' | 'telefono'
 
 const PERMITIDO: Record<TipoDeCaracteres, RegExp> = {
-  // Letras de cualquier alfabeto con sus acentos, espacio, apóstrofo (recto o tipográfico) y guion.
-  nombre: /^[\p{L}\p{M} '’-]$/u,
+  // Letras de cualquier alfabeto con sus acentos y espacio. Sin guiones, apóstrofos ni otros
+  // símbolos.
+  nombre: /^[\p{L}\p{M} ]$/u,
   // Solo dígitos: la API acepta puntos y espacios, pero el formulario pide el DNI sin puntos.
   dni: /^\d$/,
-  telefono: /^[\d +\-()]$/,
+  // Solo dígitos: sin +, guiones, espacios ni paréntesis.
+  telefono: /^\d$/,
 }
 
 const ALGUNA_LETRA = /\p{L}/u
@@ -27,7 +29,7 @@ export function tieneSoloCaracteres(valor: string, tipo: TipoDeCaracteres): bool
   return filtrarCaracteres(valor, tipo) === valor
 }
 
-/** `true` si tiene al menos una letra: un nombre no puede ser solo espacios, guiones o apóstrofos. */
+/** `true` si tiene al menos una letra: un nombre no puede ser solo espacios. */
 export function tieneAlgunaLetra(valor: string): boolean {
   return ALGUNA_LETRA.test(valor)
 }
