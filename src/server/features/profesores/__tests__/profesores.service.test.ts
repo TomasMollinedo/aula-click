@@ -37,7 +37,7 @@ const GUARDADO: ProfesorGuardado = {
   nombre: 'Martín',
   apellido: 'Pérez',
   dni: '28333444',
-  telefono: '387 4333444',
+  telefono: '3874333444',
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
@@ -117,7 +117,7 @@ const ALTA = {
   nombre: 'Martín',
   apellido: 'Pérez',
   dni: '28333444',
-  telefono: '387 4333444',
+  telefono: '3874333444',
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
@@ -244,7 +244,7 @@ describe('editar', () => {
   it('profesor inexistente → NotFoundError, sin llamar a actualizar', async () => {
     repository.buscarPorId.mockResolvedValue(null)
 
-    const error = await errorDe(service.editar(99, { telefono: '387 4000000' }, actor))
+    const error = await errorDe(service.editar(99, { telefono: '3874000000' }, actor))
 
     expect(error).toBeInstanceOf(NotFoundError)
     expect(repository.actualizar).not.toHaveBeenCalled()

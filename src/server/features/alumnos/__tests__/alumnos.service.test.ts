@@ -22,13 +22,13 @@ const adulto = {
   dni: '30123456',
   fechaNacimiento: '1990-05-14',
   email: 'juan.gonzalez@mail.com',
-  telefono: '(387) 15-412-3456',
+  telefono: '387154123456',
 } satisfies CrearAlumno
 
 const tutor = {
   tutorNombre: 'Marta',
   tutorApellido: 'Álvarez',
-  tutorTelefono: '(387) 15-433-9876',
+  tutorTelefono: '387154339876',
   tutorEmail: 'marta.alvarez@mail.com',
 }
 
