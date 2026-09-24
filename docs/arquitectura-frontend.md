@@ -40,7 +40,7 @@ Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx`
 src/
 ├── app/
 │   ├── layout.tsx                      # layout raíz: solo <Providers> (sin Header ni Sidebar)
-│   ├── providers.tsx                   # QueryClientProvider (TanStack Query)
+│   ├── providers.tsx                   # QueryClientProvider (TanStack Query) + ToastProvider
 │   ├── page.tsx                        # "/": redirige al segmento del rol de la sesión
 │   ├── login/page.tsx                  # pública; usa features/auth
 │   ├── mesa/                           # rol MESA_ENTRADAS → /mesa/...
@@ -108,7 +108,7 @@ src/
 │       ├── sidebar-nav.tsx             # nav genérico (label + links con ícono); lo usan los de abajo
 │       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
-├── hooks/use-debounce.ts
+├── hooks/{use-debounce.ts, use-toast.ts}   # use-toast: contexto y hook de los toasts
 ├── types/index.ts                      # PaginatedResponse<T>, Role
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts}
 ```
@@ -220,6 +220,30 @@ El **detalle** de una entidad es una **página** (`[id]/page.tsx`), con tabs: en
 
 Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con el motivo en la URL: los valores están en `features/auth/sesion-expirada.ts` y los lee `AvisoSesionExpirada` en `/login`. Es el único lugar que conoce esos nombres.
 
+## Notificaciones (toasts)
+
+Avisos efímeros abajo a la derecha, sin librería externa. Se muestran con `useToast()` desde cualquier componente de `features/` o `components/`:
+
+```tsx
+const toast = useToast()
+mutation.mutate(datos, {
+  onSuccess: (alumno) => {
+    toast.success(`Se registró a ${alumno.nombre} ${alumno.apellido}`)
+    onCreado(alumno)
+  },
+})
+```
+
+- **Piezas.** `hooks/use-toast.ts`: tipos, contexto y `useToast()` (sin componentes, así cualquiera lo importa sin romper Fast Refresh). `components/ui/toast.tsx`: `ToastProvider` (estado, ids, autocierre y la pila en pantalla) y la UI de cada toast. `app/providers.tsx` lo monta una sola vez para toda la app, y sobrevive a la navegación (por ejemplo, al `router.back()` que cierra un modal).
+- **API.** `toast.success | error | warning | info(mensaje, { duracion? })` devuelve el id; `toast.cerrar(id)` lo cierra antes. Por defecto dura 4 s (`success`), 5 s (`info`), 6 s (`warning`) y 8 s (`error`); `duracion: Infinity` lo deja hasta que se cierre con la X. Hay como máximo 5 en pantalla: los más viejos se descartan. El objeto `toast` es estable entre renders: se puede poner en las dependencias de un `useEffect`.
+- **Colores:** `confirmado` (éxito), `cancelado` (error), `urgente` (advertencia) y `cobalto` (información).
+- **Quién lo dispara.** El componente de la feature que ejecuta la mutación, en el `onSuccess`/`onError` del `mutate` (como `AlumnoNuevo` y `AlumnoEditar`). Los hooks `use-crear-*` / `use-editar-*` **no** muestran toasts: solo invalidan la cache, para que cada pantalla decida qué avisar.
+- **Solo texto.** El toast no conoce la API: convertir un `ApiError` en un mensaje legible le toca a quien lo llama.
+- **Cuándo no usarlo.** Los errores de un formulario (400 por campo, 409, error general) se muestran en el formulario, no en un toast: el usuario los corrige ahí. Tampoco reemplaza el estado de error, 403 o 404 de una pantalla con datos (ver Manejo de errores en la UI). El toast confirma una acción que terminó bien, o avisa el error de una acción que no tiene un lugar propio donde mostrarlo (por ejemplo, un botón en una fila).
+- **Accesibilidad.** El contenedor es `aria-live="polite"` y está siempre montado (un `aria-live` que aparece junto con su contenido no se anuncia). El autocierre se pausa con el mouse encima o con el foco adentro. Respeta `prefers-reduced-motion`.
+- **Con un modal abierto.** El contenedor está en `z-60`, por encima de `Dialog` y `Panel` (`z-50`), y `DialogContent` ignora los clics sobre un toast: cerrarlo no cierra el modal.
+- Las animaciones (`animate-toast-in`, `animate-toast-out`) están en `globals.css`; la duración de `toast-out` tiene que coincidir con `DURACION_SALIDA` de `toast.tsx`.
+
 ## Autenticación en el cliente
 
 - `features/auth/auth-client.ts` crea el cliente con `createAuthClient` de `better-auth/react`.
@@ -262,6 +286,7 @@ Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con e
     - `Field`: label (con `*` si es obligatorio o "(opcional)"), control y mensaje de error, con `htmlFor` y `fieldErrorId()` para el `aria-describedby`.
     - `SearchInput`: input de búsqueda con lupa y botón para limpiar.
     - `EmptyState`: ícono en círculo, título, descripción y una acción (listados sin resultados o sin datos).
+    - `ToastProvider` (`toast.tsx`): la pila de notificaciones. Se usa con `useToast()` de `hooks/use-toast.ts` (ver Notificaciones (toasts)).
   - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
 - Íconos: `lucide-react`.
 

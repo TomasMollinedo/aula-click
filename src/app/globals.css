@@ -90,6 +90,35 @@
   --font-mono: var(--font-geist-mono);
 }
 
+/* Entrada y salida de los toasts (components/ui/toast.tsx). La duración de toast-out tiene que
+   coincidir con DURACION_SALIDA de ese archivo. */
+@theme {
+  --animate-toast-in: toast-in 200ms ease-out;
+  --animate-toast-out: toast-out 150ms ease-in forwards;
+
+  @keyframes toast-in {
+    from {
+      opacity: 0;
+      transform: translateY(0.5rem);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  @keyframes toast-out {
+    from {
+      opacity: 1;
+      transform: translateX(0);
+    }
+    to {
+      opacity: 0;
+      transform: translateX(1rem);
+    }
+  }
+}
+
 body {
   background: var(--background);
   color: var(--foreground);

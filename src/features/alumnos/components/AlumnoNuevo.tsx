@@ -1,6 +1,7 @@
 'use client'
 
 import { Panel, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel'
+import { useToast } from '@/hooks/use-toast'
 
 import type { AlumnoDetalle } from '../alumnos.types'
 import { useCrearAlumno } from '../hooks/use-crear-alumno'
@@ -14,6 +15,7 @@ type AlumnoNuevoProps = {
 
 export function AlumnoNuevo({ mode, onCerrar, onCreado }: AlumnoNuevoProps) {
   const mutation = useCrearAlumno()
+  const toast = useToast()
 
   return (
     <Panel mode={mode} onClose={onCerrar} dismissOnInteractOutside={false}>
@@ -25,7 +27,14 @@ export function AlumnoNuevo({ mode, onCerrar, onCreado }: AlumnoNuevoProps) {
       </PanelHeader>
       <AlumnoForm
         modo="crear"
-        onSubmit={(datos) => mutation.mutate(datos, { onSuccess: onCreado })}
+        onSubmit={(datos) =>
+          mutation.mutate(datos, {
+            onSuccess: (alumno) => {
+              toast.success(`Se registró a ${alumno.nombre} ${alumno.apellido}`)
+              onCreado(alumno)
+            },
+          })
+        }
         onCancelar={onCerrar}
         isPending={mutation.isPending}
         error={mutation.error}

@@ -1,6 +1,7 @@
 'use client'
 
 import { Panel, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel'
+import { useToast } from '@/hooks/use-toast'
 
 import { detalleAValoresForm, parsearAlumnoId } from '../alumnos.schema'
 import { useAlumno } from '../hooks/use-alumno'
@@ -22,6 +23,7 @@ export function AlumnoEditar({ alumnoId, mode, onCerrar, onGuardado }: AlumnoEdi
   const id = parsearAlumnoId(alumnoId)
   const { data: alumno, isLoading, isError, error, refetch } = useAlumno(id ?? 0)
   const mutation = useEditarAlumno(id ?? 0)
+  const toast = useToast()
 
   const estado = { mode, onCerrar, titulo: TITULO }
   if (id === null) return <AlumnoPanelEstado {...estado} estado="no-encontrado" />
@@ -51,7 +53,14 @@ export function AlumnoEditar({ alumnoId, mode, onCerrar, onGuardado }: AlumnoEdi
         onSubmit={(cambios) => {
           // Cambios que se deshicieron a mano: no hay nada que mandar.
           if (!cambios) return onCerrar()
-          mutation.mutate(cambios, { onSuccess: onGuardado })
+          mutation.mutate(cambios, {
+            onSuccess: (actualizado) => {
+              toast.success(
+                `Se guardaron los cambios de ${actualizado.nombre} ${actualizado.apellido}`,
+              )
+              onGuardado()
+            },
+          })
         }}
         onCancelar={onCerrar}
         isPending={mutation.isPending}

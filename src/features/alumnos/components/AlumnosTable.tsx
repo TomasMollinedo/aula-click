@@ -6,7 +6,6 @@ import { useRouter } from 'next/navigation'
 import { Eye, Pencil } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -35,6 +34,10 @@ type AlumnosTableProps = {
   /** Lo que se muestra debajo del encabezado si no hay filas. */
   vacio: ReactNode
 }
+
+/** Acciones de cada fila (ver detalle, editar): ícono sin relleno; el color lo pone cada una. */
+const accionDeFila =
+  'focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2'
 
 export function AlumnosTable({
   rutaBase,
@@ -106,25 +109,25 @@ export function AlumnosTable({
                       href={href}
                       aria-label={`Ver detalle de ${alumno.nombre} ${alumno.apellido}`}
                       title="Ver detalle"
-                      className="text-cobalto hover:bg-cobalto/10 focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none focus-visible:ring-2"
+                      className={cn(accionDeFila, 'text-cobalto hover:bg-cobalto/10')}
                     >
                       <Eye className="size-5" />
                     </Link>
-                    {/* Dorado, como el "Editar" del detalle: la acción de editar. */}
-                    <Button variant="accent" size="icon" className="rounded-lg" asChild>
-                      <Link
-                        href={hrefEditar(alumno.id)}
-                        scroll={false}
-                        onClick={(e) => {
-                          // Cmd/Ctrl/Shift+clic abre otra pestaña: esta no abrió el modal.
-                          if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) onEditar()
-                        }}
-                        aria-label={`Editar a ${alumno.nombre} ${alumno.apellido}`}
-                        title="Editar"
-                      >
-                        <Pencil />
-                      </Link>
-                    </Button>
+                    {/* Dorado, como el "Editar" del detalle. Con `urgente`, el dorado oscuro de la
+                        paleta: el `dorado` sobre blanco no llega al contraste 3:1 de un ícono. */}
+                    <Link
+                      href={hrefEditar(alumno.id)}
+                      scroll={false}
+                      onClick={(e) => {
+                        // Cmd/Ctrl/Shift+clic abre otra pestaña: esta no abrió el modal.
+                        if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) onEditar()
+                      }}
+                      aria-label={`Editar a ${alumno.nombre} ${alumno.apellido}`}
+                      title="Editar"
+                      className={cn(accionDeFila, 'text-urgente hover:bg-dorado/15')}
+                    >
+                      <Pencil className="size-5" />
+                    </Link>
                   </div>
                 </TableCell>
               </TableRow>

@@ -25,6 +25,7 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  onInteractOutside,
   ...props
 }: ComponentProps<typeof DialogPrimitive.Content> & {
   /** En `false`, quien lo usa pone su propio `DialogClose` (por ejemplo, junto a otras acciones). */
@@ -39,6 +40,13 @@ function DialogContent({
           'border-border bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border p-6 shadow-lg duration-200',
           className,
         )}
+        onInteractOutside={(e) => {
+          // Los toasts (toast.tsx) quedan encima del modal: cerrar uno no es salir del modal.
+          if (e.target instanceof Element && e.target.closest('[data-slot="toast-viewport"]')) {
+            e.preventDefault()
+          }
+          onInteractOutside?.(e)
+        }}
         {...props}
       >
         {children}
