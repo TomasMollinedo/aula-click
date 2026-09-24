@@ -89,7 +89,7 @@ src/
 │   │   ├── aulas.types.ts, api/{aulas.api.ts, aulas.keys.ts}
 │   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
-│   │                                   # HorarioProfesor, BloquePanel, BloqueForm, ConfirmarBajaBloque
+│   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
@@ -114,8 +114,8 @@ src/
 │       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
 ├── hooks/{use-debounce.ts, use-toast.ts}   # use-toast: contexto y hook de los toasts
-├── types/index.ts                      # PaginatedResponse<T>, Role
-└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts}
+├── types/index.ts                      # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
+└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, auditoria.ts}
 ```
 
 ## Anatomía de una feature de UI
@@ -185,7 +185,9 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 ## Modales con URL propia
 
-El **detalle** de una entidad es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+El **detalle de una entidad sencilla** (una hora del horario, y a futuro materias y otras con pocos datos y sin secciones propias) no es una página: es un **modal de solo lectura** con `DetalleModal` de `components/ui/` (decisión T-34). La feature solo arma sus datos con `Datos` / `Dato` y le pasa la query (`cargando`, `error`, `onReintentar`) y la auditoría: el modal resuelve la carga, el 404, el 403, la sección "Trazabilidad" y el pie con "Cerrar" y las acciones (por ejemplo, un link a la edición). Se abre con un parámetro de la pantalla que queda de fondo, con el mismo criterio que `?editar=<id>` (en el horario del profesor, `?tab=horario&detalle=<id>`), y se cierra también con un clic afuera: no hay nada que perder.
+
+El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
 - Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
 - **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
@@ -299,10 +301,13 @@ mutation.mutate(datos, {
     - `Field`: label (con `*` si es obligatorio o "(opcional)"), control y mensaje de error, con `htmlFor` y `fieldErrorId()` para el `aria-describedby`.
     - `SearchInput`: input de búsqueda con lupa y botón para limpiar.
     - `EmptyState`: ícono en círculo, título, descripción y una acción (listados sin resultados o sin datos).
+    - `Datos` / `Dato` (`datos.tsx`): lista de datos de solo lectura (`<dl>`) en dos columnas; un dato sin valor muestra `—`. La usan todos los detalles, página o modal.
+    - `Trazabilidad`: quién creó el registro y quién lo modificó por última vez, con fecha y hora local (`utils/auditoria.ts`). Recibe los cuatro campos de auditoría del contrato (tipo `Auditoria` de `types/index.ts`); cualquier detalle (`AlumnoDetalle`, `ProfesorDetalle`…) se le pasa entero.
+    - `DetalleModal`: el detalle de solo lectura de una entidad sencilla (ver Modales con URL propia): encabezado, datos, trazabilidad, pie con "Cerrar" y acciones, y los estados de carga, 404, 403 y error con reintentar.
     - `ToastProvider` (`toast.tsx`): la pila de notificaciones. Se usa con `useToast()` de `hooks/use-toast.ts` (ver Notificaciones (toasts)).
   - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
 - Íconos: `lucide-react`.
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.

@@ -1,14 +1,8 @@
-import type { PaginatedResponse } from '@/types'
+import type { Auditoria, PaginatedResponse } from '@/types'
 
 export type Estado = 'ACTIVO' | 'INACTIVO'
 
 export type EstadoFiltro = Estado | 'TODOS'
-
-export type UsuarioAuditoria = {
-  id: string
-  nombre: string
-  apellido: string
-}
 
 export type ProfesorListadoItem = {
   id: number
@@ -30,11 +24,7 @@ export type ProfesorDetalle = {
   capacidad: number
   estado: Estado
   fotoUrl: string | null
-  createdAt: string
-  updatedAt: string
-  createdBy: UsuarioAuditoria | null
-  updatedBy: UsuarioAuditoria | null
-}
+} & Auditoria
 
 export type ProfesorCrear = {
   nombre: string
@@ -108,3 +98,13 @@ export type BloquesLote = {
   cantidad: number
   bloques: Bloque[]
 }
+
+/**
+ * Detalle de una hora (`GET /api/v1/bloques/{bloqueId}`): lo del horario más su estado (puede
+ * estar dada de baja), el aula con su capacidad, el profesor y la auditoría.
+ */
+export type BloqueDetalle = Omit<BloqueHorario, 'aula'> & {
+  estado: Estado
+  aula: BloqueAula & { capacidad: number }
+  profesor: { id: number; nombre: string; apellido: string }
+} & Auditoria

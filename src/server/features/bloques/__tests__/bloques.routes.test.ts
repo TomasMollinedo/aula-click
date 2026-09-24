@@ -16,6 +16,7 @@ const { repository, profesoresRepository, turnosRepository, getSession } = vi.ho
     aulasOcupadas: vi.fn(),
     buscarPorIds: vi.fn(),
     eliminarBloques: vi.fn(),
+    buscarDetalle: vi.fn(),
   },
   profesoresRepository: { buscarParaBloque: vi.fn(), buscarCapacidad: vi.fn() },
   turnosRepository: {
@@ -393,6 +394,67 @@ describe('DELETE /bloques/{bloqueId}', () => {
   })
 })
 
+describe('GET /bloques/{bloqueId}', () => {
+  const DETALLE_GUARDADO = {
+    id: 10,
+    diaSemana: 1,
+    horaInicio: 840,
+    horaFin: 900,
+    estado: 'ACTIVO',
+    aula: { id: 7, nombre: 'Aula 3', capacidad: 4 },
+    profesor: { id: 3, nombre: 'Sofía', apellido: 'Herrera', capacidad: 6 },
+    createdAt: '2026-09-20T13:00:00.000Z',
+    updatedAt: '2026-09-21T10:30:00.000Z',
+    createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+    updatedBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+  }
+
+  it('responde 200 con el detalle y la auditoría, sin la capacidad del profesor', async () => {
+    repository.buscarDetalle.mockResolvedValue(DETALLE_GUARDADO)
+
+    const res = await pedir('/10', 'GET')
+
+    expect(res.status).toBe(200)
+    const cuerpo = await res.json()
+    expect(cuerpo).toMatchObject({
+      id: 10,
+      horaInicio: '14:00',
+      horaFin: '15:00',
+      estado: 'ACTIVO',
+      aula: { id: 7, nombre: 'Aula 3', capacidad: 4 },
+      profesor: { id: 3, nombre: 'Sofía', apellido: 'Herrera' },
+      capacidadEfectiva: 4,
+      ocupacion: 0,
+      createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      updatedAt: '2026-09-21T10:30:00.000Z',
+    })
+    expect(cuerpo.profesor).not.toHaveProperty('capacidad')
+  })
+
+  it('bloque inexistente → 404 NO_ENCONTRADO', async () => {
+    repository.buscarDetalle.mockResolvedValue(null)
+    const res = await pedir('/99', 'GET')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
+  })
+
+  it('bloqueId inválido en el path → 400', async () => {
+    const res = await pedir('/abc', 'GET')
+    expect(res.status).toBe(400)
+    expect(repository.buscarDetalle).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('/10', 'GET')).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('/10', 'GET')).status).toBe(403)
+  })
+})
+
 describe('DELETE /bloques', () => {
   const GUARDADOS = [BLOQUE_ACTUAL, { ...BLOQUE_ACTUAL, id: 11, horaInicio: 900, horaFin: 960 }]
   const RESPUESTA = [
@@ -499,6 +561,9 @@ describe('OpenAPI', () => {
       '409',
     ])
 
+    const respuestasDetalle = doc.paths['/api/v1/bloques/{bloqueId}']?.get?.responses ?? {}
+    expect(Object.keys(respuestasDetalle).sort()).toEqual(['200', '400', '401', '403', '404'])
+
     const respuestasPatch = doc.paths['/api/v1/bloques/{bloqueId}']?.patch?.responses ?? {}
     expect(Object.keys(respuestasPatch).sort()).toEqual(['200', '400', '401', '403', '404', '409'])
 
@@ -515,6 +580,7 @@ describe('OpenAPI', () => {
         'BloqueHorario',
         'BloquesLote',
         'BloquesEliminar',
+        'BloqueDetalle',
       ]),
     )
   })

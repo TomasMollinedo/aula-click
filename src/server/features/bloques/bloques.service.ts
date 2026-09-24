@@ -8,6 +8,7 @@ import { horaAMinutos, minutosAHora, partirEnHoras } from '@/server/shared/zod'
 import type { BloquesRepository } from './bloques.repository'
 import type {
   Bloque,
+  BloqueDetalle,
   BloqueHorario,
   BloquesLote,
   CrearBloque,
@@ -71,6 +72,29 @@ export function crearBloquesService({
     }
   }
 
+  /**
+   * Próxima fecha de cada fila (la de su día de la semana a partir de hoy, hoy incluido: es un
+   * horario semanal, no una agenda) y su ocupación en esa fecha, en una sola consulta para todas.
+   * Devuelve una función que da `{ proximaFecha, ocupacion }` por id de fila (0 si no hay turnos).
+   */
+  async function ocupacionEnProximaFecha(filas: readonly { id: number; diaSemana: number }[]) {
+    const fechaHoy = hoy(reloj)
+    const proximas = new Map(
+      filas.map((fila) => [fila.id, proximaFechaDelDia(fila.diaSemana, fechaHoy)]),
+    )
+    const cantidades = new Map(
+      (
+        await turnosRepository.contarOcupacionPorBloque(
+          [...proximas].map(([bloqueAgendaId, fecha]) => ({ bloqueAgendaId, fecha })),
+        )
+      ).map((grupo) => [`${grupo.bloqueAgendaId}|${grupo.fecha}`, grupo.cantidad]),
+    )
+    return (id: number) => {
+      const proximaFecha = proximas.get(id) ?? fechaHoy
+      return { proximaFecha, ocupacion: cantidades.get(`${id}|${proximaFecha}`) ?? 0 }
+    }
+  }
+
   return {
     /**
      * Horario semanal del profesor: sus filas activas, ordenadas por día y hora, sin paginar
@@ -90,19 +114,8 @@ export function crearBloquesService({
       const capacidadProfesor = await profesoresRepository.buscarCapacidad(profesorId)
       if (capacidadProfesor === null) throw new NotFoundError('Profesor no encontrado')
 
-      const fechaHoy = hoy(reloj)
-      const filas = (await repository.listarPorProfesor(profesorId)).map((fila) => ({
-        ...fila,
-        proximaFecha: proximaFechaDelDia(fila.diaSemana, fechaHoy),
-      }))
-
-      const ocupacion = new Map(
-        (
-          await turnosRepository.contarOcupacionPorBloque(
-            filas.map((fila) => ({ bloqueAgendaId: fila.id, fecha: fila.proximaFecha })),
-          )
-        ).map((grupo) => [`${grupo.bloqueAgendaId}|${grupo.fecha}`, grupo.cantidad]),
-      )
+      const filas = await repository.listarPorProfesor(profesorId)
+      const ocupacion = await ocupacionEnProximaFecha(filas)
 
       return filas.map((fila) => ({
         id: fila.id,
@@ -111,9 +124,30 @@ export function crearBloquesService({
         horaFin: minutosAHora(fila.horaFin),
         aula: { id: fila.aula.id, nombre: fila.aula.nombre },
         capacidadEfectiva: Math.min(capacidadProfesor, fila.aula.capacidad),
-        proximaFecha: fila.proximaFecha,
-        ocupacion: ocupacion.get(`${fila.id}|${fila.proximaFecha}`) ?? 0,
+        ...ocupacion(fila.id),
       }))
+    },
+
+    /**
+     * Detalle de una fila (una hora), activa o no: lo mismo que el horario (capacidad efectiva,
+     * próxima fecha y ocupación, calculadas igual) más su estado, el profesor, la capacidad del
+     * aula y la auditoría. 404 si la fila no existe.
+     */
+    async obtener(id: number): Promise<BloqueDetalle> {
+      const fila = await repository.buscarDetalle(id)
+      if (!fila) throw new NotFoundError('Bloque no encontrado')
+
+      const ocupacion = await ocupacionEnProximaFecha([fila])
+      const { profesor, horaInicio, horaFin, ...resto } = fila
+
+      return {
+        ...resto,
+        horaInicio: minutosAHora(horaInicio),
+        horaFin: minutosAHora(horaFin),
+        profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
+        capacidadEfectiva: Math.min(profesor.capacidad, fila.aula.capacidad),
+        ...ocupacion(fila.id),
+      }
     },
 
     /**

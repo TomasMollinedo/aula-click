@@ -10,4 +10,7 @@ export const profesoresKeys = {
   materias: (id: number) => [...profesoresKeys.all, 'materias', id] as const,
   /** Horario semanal del profesor (`GET /bloques?profesorId=`). */
   horario: (id: number) => [...profesoresKeys.all, 'horario', id] as const,
+  /** Detalles de horas del horario (`GET /bloques/{bloqueId}`). */
+  bloques: () => [...profesoresKeys.all, 'bloques'] as const,
+  bloque: (bloqueId: number) => [...profesoresKeys.bloques(), bloqueId] as const,
 }

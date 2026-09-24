@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
-import type { Estado } from '@/server/shared/estado'
+import { type Auditoria, auditoriaSchema } from '@/server/shared/auditoria'
+import { ESTADOS, type Estado } from '@/server/shared/estado'
 import { diaSemana, fechaISO, horaHHmm, rangoHorasEnPunto } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio.
@@ -138,6 +139,27 @@ export type BloqueHorario = z.infer<typeof bloqueHorarioSchema>
 export const horarioSchema = z.array(bloqueHorarioSchema)
 
 /**
+ * Detalle de una fila (`GET /api/v1/bloques/{bloqueId}`): lo mismo que en el horario, más su
+ * estado (también se puede ver una hora dada de baja), el profesor, la capacidad del aula y la
+ * auditoría (quién la cargó y quién la modificó por última vez).
+ */
+export const bloqueDetalleSchema = z
+  .object({
+    ...bloqueHorarioSchema.shape,
+    estado: z.enum(ESTADOS),
+    aula: z
+      .object({ id: z.number().int(), nombre: z.string(), capacidad: z.number().int() })
+      .openapi('BloqueDetalleAula'),
+    profesor: z
+      .object({ id: z.number().int(), nombre: z.string(), apellido: z.string() })
+      .openapi('BloqueProfesor'),
+    ...auditoriaSchema.shape,
+  })
+  .openapi('BloqueDetalle')
+
+export type BloqueDetalle = z.infer<typeof bloqueDetalleSchema>
+
+/**
  * Respuesta de las operaciones sobre varias filas a la vez (el alta de un rango y la baja de
  * varias horas): cuántas filas se afectaron y el detalle de cada una.
  */
@@ -223,3 +245,18 @@ export type BloqueConAula = {
   horaFin: number
   aula: { id: number; nombre: string; capacidad: number }
 }
+
+/**
+ * Una fila con todo lo que necesita su detalle, tal como la lee `bloques.repository`: horas en
+ * minutos, la capacidad del profesor (para la capacidad efectiva) y la auditoría ya armada. El
+ * service le agrega la próxima fecha y la ocupación. No viaja por HTTP así.
+ */
+export type BloqueDetalleGuardado = {
+  id: number
+  diaSemana: number
+  horaInicio: number
+  horaFin: number
+  estado: Estado
+  aula: { id: number; nombre: string; capacidad: number }
+  profesor: { id: number; nombre: string; apellido: string; capacidad: number }
+} & Auditoria

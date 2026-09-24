@@ -3,6 +3,7 @@ import { fetchJson } from '@/utils/fetch-json'
 import type {
   Bloque,
   BloqueCrear,
+  BloqueDetalle,
   BloqueEditar,
   BloqueHorario,
   BloquesLote,
@@ -76,6 +77,11 @@ const BLOQUES = '/api/v1/bloques'
 /** Filas activas del profesor (una por hora), ordenadas por día y hora, sin paginar. */
 export function listarHorarioProfesor(profesorId: number): Promise<BloqueHorario[]> {
   return fetchJson<BloqueHorario[]>(`${BLOQUES}?profesorId=${profesorId}`)
+}
+
+/** Una hora del horario, activa o dada de baja, con su auditoría. */
+export function obtenerBloque(bloqueId: number): Promise<BloqueDetalle> {
+  return fetchJson<BloqueDetalle>(`${BLOQUES}/${bloqueId}`)
 }
 
 export function crearBloque(datos: BloqueCrear): Promise<BloquesLote> {

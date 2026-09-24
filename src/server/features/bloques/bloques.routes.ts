@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as bloquesController from './bloques.controller'
 import {
+  bloqueDetalleSchema,
   bloqueIdParamsSchema,
   bloqueSchema,
   bloquesLoteSchema,
@@ -132,6 +133,45 @@ export const crearBloqueRoute = createRoute({
 })
 
 const noEncontrado = respuestaError('El bloque no existe (NO_ENCONTRADO)')
+
+export const obtenerBloqueRoute = createRoute({
+  method: 'get',
+  path: '/{bloqueId}',
+  tags,
+  summary: 'Detalle de un bloque de horario',
+  description:
+    'Una hora del horario, activa o dada de baja: día, horario, aula (con su capacidad), profesor, estado, capacidad efectiva, ocupación de la próxima fecha y la auditoría (quién la cargó y quién la modificó por última vez).',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: bloqueIdParamsSchema },
+  responses: {
+    200: {
+      description: 'Detalle del bloque',
+      content: {
+        'application/json': {
+          schema: bloqueDetalleSchema,
+          example: {
+            id: 10,
+            diaSemana: 1,
+            horaInicio: '14:00',
+            horaFin: '15:00',
+            estado: 'ACTIVO',
+            aula: { id: 3, nombre: 'Aula 3', capacidad: 4 },
+            profesor: { id: 2, nombre: 'Sofía', apellido: 'Herrera' },
+            capacidadEfectiva: 4,
+            proximaFecha: '2026-09-28',
+            ocupacion: 0,
+            createdAt: '2026-09-22T13:45:00.000Z',
+            updatedAt: '2026-09-23T10:02:17.000Z',
+            createdBy: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+            updatedBy: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+          },
+        },
+      },
+    },
+    ...errores,
+    404: noEncontrado,
+  },
+})
 
 export const editarBloqueRoute = createRoute({
   method: 'patch',
@@ -306,5 +346,6 @@ export const bloquesRoutes = createRouter()
   .openapi(listarBloquesRoute, bloquesController.listar)
   .openapi(crearBloqueRoute, bloquesController.crear)
   .openapi(eliminarBloquesRoute, bloquesController.eliminarVarios)
+  .openapi(obtenerBloqueRoute, bloquesController.obtener)
   .openapi(editarBloqueRoute, bloquesController.editar)
   .openapi(eliminarBloqueRoute, bloquesController.eliminar)

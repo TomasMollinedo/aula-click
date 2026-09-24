@@ -6,7 +6,13 @@ import type { TurnosRepository } from '@/server/features/turnos/turnos.repositor
 import type { Actor } from '@/server/shared/actor'
 import type { BloquesRepository } from '../bloques.repository'
 import { crearBloquesService } from '../bloques.service'
-import type { Bloque, BloqueConAula, BloqueGuardado, CrearBloque } from '../bloques.validation'
+import type {
+  Bloque,
+  BloqueConAula,
+  BloqueDetalleGuardado,
+  BloqueGuardado,
+  CrearBloque,
+} from '../bloques.validation'
 
 // El repository de bloques y los de profesores/turnos (solo lectura, cross-feature) se reemplazan
 // por falsos: sin Docker ni Postgres. El service los importa solo como tipo.
@@ -48,6 +54,7 @@ function crearRepositories() {
       aulasOcupadas: vi.fn<BloquesRepository['aulasOcupadas']>(),
       buscarPorIds: vi.fn<BloquesRepository['buscarPorIds']>(),
       eliminarBloques: vi.fn<BloquesRepository['eliminarBloques']>(),
+      buscarDetalle: vi.fn<BloquesRepository['buscarDetalle']>(),
     },
     profesoresRepository: {
       buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>(),
@@ -599,5 +606,68 @@ describe('eliminarVarios', () => {
     repository.eliminarBloques.mockRejectedValue(noEncontrado)
 
     await expect(service.eliminarVarios({ bloqueIds: [10, 11] }, actor)).rejects.toBe(noEncontrado)
+  })
+})
+
+describe('obtener', () => {
+  const AUDITORIA = {
+    createdAt: '2026-09-20T13:00:00.000Z',
+    updatedAt: '2026-09-21T10:30:00.000Z',
+    createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+    updatedBy: { id: 'usr_mesa_2', nombre: 'Luis', apellido: 'Paz' },
+  }
+  const DETALLE: BloqueDetalleGuardado = {
+    id: 10,
+    diaSemana: 1,
+    horaInicio: 840,
+    horaFin: 900,
+    estado: 'ACTIVO',
+    aula: { id: 7, nombre: 'Aula 3', capacidad: 4 },
+    profesor: { id: 3, nombre: 'Sofía', apellido: 'Herrera', capacidad: 6 },
+    ...AUDITORIA,
+  }
+
+  it('arma el detalle: horas, capacidad efectiva, ocupación de la próxima fecha y auditoría', async () => {
+    repository.buscarDetalle.mockResolvedValue(DETALLE)
+    turnosRepository.contarOcupacionPorBloque.mockResolvedValue([
+      { bloqueAgendaId: 10, fecha: '2026-09-28', cantidad: 2 },
+    ])
+
+    const resultado = await service.obtener(10)
+
+    expect(turnosRepository.contarOcupacionPorBloque).toHaveBeenCalledWith([
+      { bloqueAgendaId: 10, fecha: '2026-09-28' }, // HOY es martes 22: el próximo lunes
+    ])
+    expect(resultado).toEqual({
+      id: 10,
+      diaSemana: 1,
+      horaInicio: '14:00',
+      horaFin: '15:00',
+      estado: 'ACTIVO',
+      aula: { id: 7, nombre: 'Aula 3', capacidad: 4 },
+      profesor: { id: 3, nombre: 'Sofía', apellido: 'Herrera' },
+      capacidadEfectiva: 4, // min(6, 4)
+      proximaFecha: '2026-09-28',
+      ocupacion: 2,
+      ...AUDITORIA,
+    })
+  })
+
+  it('una hora dada de baja también se puede ver, con su estado', async () => {
+    repository.buscarDetalle.mockResolvedValue({ ...DETALLE, estado: 'INACTIVO' })
+
+    const resultado = await service.obtener(10)
+
+    expect(resultado).toMatchObject({ estado: 'INACTIVO', ocupacion: 0 })
+  })
+
+  it('bloque inexistente → NotFoundError, sin consultar turnos', async () => {
+    repository.buscarDetalle.mockResolvedValue(null)
+
+    const error = await errorDe(service.obtener(99))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error).toMatchObject({ message: 'Bloque no encontrado' })
+    expect(turnosRepository.contarOcupacionPorBloque).not.toHaveBeenCalled()
   })
 })

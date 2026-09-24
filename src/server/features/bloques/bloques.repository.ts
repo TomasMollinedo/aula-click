@@ -2,10 +2,12 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError, NotFoundError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
+import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { minutosAHora } from '@/server/shared/zod'
 import type {
   Bloque,
   BloqueConAula,
+  BloqueDetalleGuardado,
   BloqueGuardado,
   DatosCrearBloques,
   DatosEditarBloque,
@@ -194,6 +196,51 @@ export const bloquesRepository = {
       excluirId: filtro.excluirBloqueId,
     })
     return [...new Set(filas.map((fila) => fila.aulaId))]
+  },
+
+  /**
+   * La fila para su detalle, activa o no (también se puede ver una hora dada de baja), con el aula,
+   * el profesor (su nombre es el de su `Usuario`) y la auditoría. `null` si no existe.
+   */
+  async buscarDetalle(id: number): Promise<BloqueDetalleGuardado | null> {
+    const fila = await prisma.bloqueAgenda.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        diaSemana: true,
+        horaInicio: true,
+        horaFin: true,
+        estado: true,
+        aula: { select: { id: true, nombre: true, capacidad: true } },
+        profesor: {
+          select: {
+            id: true,
+            capacidad: true,
+            usuario: { select: { nombre: true, apellido: true } },
+          },
+        },
+        createdAt: true,
+        updatedAt: true,
+        createdBy: { select: SELECT_USUARIO_AUDITORIA },
+        updatedBy: { select: SELECT_USUARIO_AUDITORIA },
+      },
+    })
+    if (!fila) return null
+    return {
+      id: fila.id,
+      diaSemana: fila.diaSemana,
+      horaInicio: fila.horaInicio,
+      horaFin: fila.horaFin,
+      estado: fila.estado,
+      aula: fila.aula,
+      profesor: {
+        id: fila.profesor.id,
+        nombre: fila.profesor.usuario.nombre,
+        apellido: fila.profesor.usuario.apellido,
+        capacidad: fila.profesor.capacidad,
+      },
+      ...armarAuditoria(fila),
+    }
   },
 
   /** La fila con sus datos en minutos, o `null` si no existe. Para editar o dar de baja. */

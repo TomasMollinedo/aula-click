@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { format } from 'date-fns'
-import { AlertCircle, CalendarClock, Info, Pencil, Plus, Trash2 } from 'lucide-react'
+import { AlertCircle, CalendarClock, Eye, Info, Pencil, Plus, Trash2 } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -19,6 +19,7 @@ import { parsearParamBloque } from '../profesores.schema'
 import type { ProfesorDetalle } from '../profesores.types'
 import { useHorarioProfesor } from '../hooks/use-horario-profesor'
 import { useMateriasAsignadas } from '../hooks/use-materias-asignadas'
+import { BloqueDetalleModal } from './BloqueDetalleModal'
 import { BloquePanel } from './BloquePanel'
 import { type BajaDeBloque, ConfirmarBajaBloque } from './ConfirmarBajaBloque'
 
@@ -34,8 +35,8 @@ const accionDeFila =
 
 // Sección "Horario de atención" de la ficha del profesor. El alta y la edición se abren como modal
 // con URL propia, `?tab=horario&bloque=nuevo|<id>`, con el mismo criterio que `?editar=<id>` del
-// listado (docs/arquitectura-frontend.md → Modales con URL propia). La baja se confirma en un
-// Dialog sin URL.
+// listado (docs/arquitectura-frontend.md → Modales con URL propia). El detalle de una hora también
+// es un modal, `?tab=horario&detalle=<id>`. La baja se confirma en un Dialog sin URL.
 export function HorarioProfesor({ profesor, rutaDetalle }: HorarioProfesorProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -43,16 +44,22 @@ export function HorarioProfesor({ profesor, rutaDetalle }: HorarioProfesorProps)
   const materias = useMateriasAsignadas(profesor.id)
   const [baja, setBaja] = useState<BajaDeBloque | null>(null)
 
-  // Formulario abierto desde un link de esta sección (hay historial): cerrarlo es volver atrás.
-  const abiertoDesdeSeccion = useRef(false)
+  // Modales (formulario o detalle) abiertos con un link de esta sección que siguen en el historial:
+  // cada link suma uno y cerrar vuelve atrás mientras queden. Así, detalle → Editar → cerrar vuelve
+  // al detalle, y cerrarlo vuelve a la sección sin dejar entradas repetidas. Entrando por URL no
+  // hay historial propio: cerrar reemplaza la URL.
+  const modalesAbiertos = useRef(0)
   const bloqueParam = parsearParamBloque(searchParams.get('bloque'))
+  const detalleParam = parsearParamBloque(searchParams.get('detalle'))
+  const detalleId = typeof detalleParam === 'number' ? detalleParam : null
   const hrefBloque = (valor: 'nuevo' | number) => `${rutaDetalle}?tab=horario&bloque=${valor}`
+  const hrefDetalle = (bloqueId: number) => `${rutaDetalle}?tab=horario&detalle=${bloqueId}`
   const marcarAbierto = () => {
-    abiertoDesdeSeccion.current = true
+    modalesAbiertos.current += 1
   }
-  const cerrarFormulario = () => {
-    if (abiertoDesdeSeccion.current) {
-      abiertoDesdeSeccion.current = false
+  const cerrarModal = () => {
+    if (modalesAbiertos.current > 0) {
+      modalesAbiertos.current -= 1
       router.back()
       return
     }
@@ -151,7 +158,8 @@ export function HorarioProfesor({ profesor, rutaDetalle }: HorarioProfesorProps)
           hoy={format(new Date(), 'yyyy-MM-dd')}
           puedeEditar={activo}
           hrefEditar={hrefBloque}
-          onEditar={marcarAbierto}
+          hrefDetalle={hrefDetalle}
+          onAbrir={marcarAbierto}
           onEliminar={setBaja}
         />
       ) : (
@@ -166,7 +174,16 @@ export function HorarioProfesor({ profesor, rutaDetalle }: HorarioProfesorProps)
       )}
 
       {bloqueParam !== null && formularioPermitido && (
-        <BloquePanel profesorId={profesor.id} bloque={bloqueParam} onCerrar={cerrarFormulario} />
+        <BloquePanel profesorId={profesor.id} bloque={bloqueParam} onCerrar={cerrarModal} />
+      )}
+      {detalleId !== null && (
+        <BloqueDetalleModal
+          bloqueId={detalleId}
+          profesorId={profesor.id}
+          onCerrar={cerrarModal}
+          hrefEditar={activo ? hrefBloque(detalleId) : undefined}
+          onEditar={marcarAbierto}
+        />
       )}
       <ConfirmarBajaBloque profesorId={profesor.id} baja={baja} onCerrar={() => setBaja(null)} />
     </Card>
@@ -187,7 +204,9 @@ type ListaDeBloquesProps = {
   hoy: string
   puedeEditar: boolean
   hrefEditar: (bloqueId: number) => string
-  onEditar: () => void
+  hrefDetalle: (bloqueId: number) => string
+  /** Al abrir un modal con un link de la lista (detalle o edición). */
+  onAbrir: () => void
   onEliminar: (baja: BajaDeBloque) => void
 }
 
@@ -196,7 +215,8 @@ function ListaDeBloques({
   hoy,
   puedeEditar,
   hrefEditar,
-  onEditar,
+  hrefDetalle,
+  onAbrir,
   onEliminar,
 }: ListaDeBloquesProps) {
   return (
@@ -240,10 +260,20 @@ function ListaDeBloques({
                       alumnos · {etiquetaProximaFecha(hora.proximaFecha, hora.diaSemana, hoy)}
                     </span>
                     <span className="flex justify-end gap-1">
+                      <Link
+                        href={hrefDetalle(hora.id)}
+                        onClick={onAbrir}
+                        scroll={false}
+                        aria-label={`Ver el detalle de la hora de ${rango}`}
+                        title="Ver detalle"
+                        className={cn(accionDeFila, 'text-cobalto hover:bg-cobalto/10')}
+                      >
+                        <Eye className="size-5" />
+                      </Link>
                       {puedeEditar && (
                         <Link
                           href={hrefEditar(hora.id)}
-                          onClick={onEditar}
+                          onClick={onAbrir}
                           scroll={false}
                           aria-label={`Editar la hora de ${rango}`}
                           title="Editar esta hora"

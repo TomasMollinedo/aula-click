@@ -2,7 +2,6 @@
 
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { format, parseISO } from 'date-fns'
 import {
   AlertCircle,
   ArrowLeft,
@@ -24,12 +23,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Dato, Datos } from '@/components/ui/datos'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Trazabilidad } from '@/components/ui/trazabilidad'
 import { getInitials } from '@/utils/initials'
 
 import { parsearProfesorId } from '../profesores.schema'
-import type { ProfesorDetalle as ProfesorDetalleType, UsuarioAuditoria } from '../profesores.types'
+import type { ProfesorDetalle as ProfesorDetalleType } from '../profesores.types'
 import { useProfesor } from '../hooks/use-profesor'
 import { HorarioProfesor } from './HorarioProfesor'
 
@@ -219,15 +220,7 @@ function DatosProfesor({ profesor }: { profesor: ProfesorDetalleType }) {
         </Seccion>
       </div>
 
-      <div className="text-muted-foreground space-y-1 text-xs">
-        <p>
-          Creado por {nombreAuditoria(profesor.createdBy)} · {formatoInstante(profesor.createdAt)}
-        </p>
-        <p>
-          Última modificación por {nombreAuditoria(profesor.updatedBy)} ·{' '}
-          {formatoInstante(profesor.updatedAt)}
-        </p>
-      </div>
+      <Trazabilidad auditoria={profesor} />
     </div>
   )
 }
@@ -252,28 +245,4 @@ function Seccion({
       {children}
     </Card>
   )
-}
-
-function Datos({ children }: { children: React.ReactNode }) {
-  return <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">{children}</dl>
-}
-
-function Dato({ label, valor }: { label: string; valor: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-        {label}
-      </dt>
-      <dd className="mt-1 text-sm break-words">{valor ?? '—'}</dd>
-    </div>
-  )
-}
-
-// Instante de auditoría (ISO en UTC) en hora local: parseISO respeta la "Z".
-function formatoInstante(instante: string): string {
-  return format(parseISO(instante), 'dd/MM/yyyy, HH:mm')
-}
-
-function nombreAuditoria(usuario: UsuarioAuditoria | null): string {
-  return usuario ? `${usuario.nombre} ${usuario.apellido}` : 'Sistema'
 }
