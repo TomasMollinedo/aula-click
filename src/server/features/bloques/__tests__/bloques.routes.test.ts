@@ -13,10 +13,15 @@ const { repository, profesoresRepository, turnosRepository, getSession } = vi.ho
     buscarPorId: vi.fn(),
     editarBloque: vi.fn(),
     eliminarBloque: vi.fn(),
+    aulasOcupadas: vi.fn(),
+    buscarPorIds: vi.fn(),
+    eliminarBloques: vi.fn(),
   },
   profesoresRepository: { buscarParaBloque: vi.fn(), buscarCapacidad: vi.fn() },
   turnosRepository: {
     contarVigentesPorBloque: vi.fn(),
+    contarVigentesPorBloques: vi.fn(),
+    contarOcupacionPorBloque: vi.fn(),
   },
   getSession: vi.fn(),
 }))
@@ -73,6 +78,8 @@ beforeEach(() => {
   })
   profesoresRepository.buscarCapacidad.mockResolvedValue(10)
   turnosRepository.contarVigentesPorBloque.mockResolvedValue(0)
+  turnosRepository.contarVigentesPorBloques.mockResolvedValue([])
+  turnosRepository.contarOcupacionPorBloque.mockResolvedValue([])
   repository.listarPorProfesor.mockResolvedValue([])
   repository.crearBloques.mockResolvedValue([BLOQUE_RESPUESTA])
   repository.buscarPorId.mockResolvedValue(BLOQUE_ACTUAL)
@@ -81,7 +88,7 @@ beforeEach(() => {
 })
 
 describe('GET /bloques', () => {
-  it('responde 200 con el horario y la capacidad efectiva', async () => {
+  it('responde 200 con el horario, la capacidad efectiva y la ocupación de la próxima fecha', async () => {
     repository.listarPorProfesor.mockResolvedValue([
       {
         id: 10,
@@ -103,8 +110,12 @@ describe('GET /bloques', () => {
         horaFin: '15:00',
         aula: { id: 7, nombre: 'Aula 3' },
         capacidadEfectiva: 10,
+        // El controller usa el reloj del sistema: acá solo importa el formato.
+        proximaFecha: expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+        ocupacion: 0,
       },
     ])
+    expect(turnosRepository.contarOcupacionPorBloque).toHaveBeenCalledTimes(1)
   })
 
   it('sin bloques activos, responde un arreglo vacío', async () => {
@@ -382,6 +393,92 @@ describe('DELETE /bloques/{bloqueId}', () => {
   })
 })
 
+describe('DELETE /bloques', () => {
+  const GUARDADOS = [BLOQUE_ACTUAL, { ...BLOQUE_ACTUAL, id: 11, horaInicio: 900, horaFin: 960 }]
+  const RESPUESTA = [
+    BLOQUE_RESPUESTA,
+    { ...BLOQUE_RESPUESTA, id: 11, horaInicio: '15:00', horaFin: '16:00' },
+  ]
+
+  beforeEach(() => {
+    repository.buscarPorIds.mockResolvedValue(GUARDADOS)
+    repository.eliminarBloques.mockResolvedValue(RESPUESTA)
+  })
+
+  it('responde 200 con la cantidad y el detalle, y pasa el actor al service', async () => {
+    const res = await pedir('', 'DELETE', { bloqueIds: [10, 11] })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ cantidad: 2, bloques: RESPUESTA })
+    expect(repository.eliminarBloques).toHaveBeenCalledWith([10, 11], {
+      userId: 'usr_mesa',
+      role: 'MESA_ENTRADAS',
+    })
+  })
+
+  it('acepta hasta 24 bloques (las horas de un día)', async () => {
+    const ids = Array.from({ length: 24 }, (_, i) => i + 1)
+    repository.buscarPorIds.mockResolvedValue(
+      ids.map((id) => ({ ...BLOQUE_ACTUAL, id, horaInicio: (id - 1) * 60, horaFin: id * 60 })),
+    )
+    const res = await pedir('', 'DELETE', { bloqueIds: ids })
+    expect(res.status).toBe(200)
+  })
+
+  it('una fila inexistente → 404 con details por posición', async () => {
+    const res = await pedir('', 'DELETE', { bloqueIds: [10, 11, 99] })
+    expect(res.status).toBe(404)
+    expect((await res.json()).error).toMatchObject({
+      code: 'NO_ENCONTRADO',
+      details: [{ path: ['bloqueIds', 2] }],
+    })
+  })
+
+  it('filas de dos profesores → 400 VALIDACION', async () => {
+    repository.buscarPorIds.mockResolvedValue([GUARDADOS[0], { ...GUARDADOS[1], profesorId: 9 }])
+    const res = await pedir('', 'DELETE', { bloqueIds: [10, 11] })
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('con turnos vigentes → 409 TURNOS_VIGENTES por posición, sin dar de baja', async () => {
+    turnosRepository.contarVigentesPorBloques.mockResolvedValue([
+      { bloqueAgendaId: 11, cantidad: 2 },
+    ])
+    const res = await pedir('', 'DELETE', { bloqueIds: [10, 11] })
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toMatchObject({
+      code: 'TURNOS_VIGENTES',
+      details: [{ path: ['bloqueIds', 1], cantidad: 2 }],
+    })
+    expect(repository.eliminarBloques).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['sin body', undefined],
+    ['sin bloqueIds', {}],
+    ['lista vacía', { bloqueIds: [] }],
+    ['ids repetidos', { bloqueIds: [10, 10] }],
+    ['id no entero', { bloqueIds: [1.5] }],
+    ['id como texto', { bloqueIds: ['10'] }],
+    ['id cero', { bloqueIds: [0] }],
+    ['más de 24 bloques', { bloqueIds: Array.from({ length: 25 }, (_, i) => i + 1) }],
+  ])('%s → 400, sin llegar al service', async (_caso, body) => {
+    const res = await pedir('', 'DELETE', body)
+    expect(res.status).toBe(400)
+    expect(repository.buscarPorIds).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('', 'DELETE', { bloqueIds: [10] })).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('', 'DELETE', { bloqueIds: [10] })).status).toBe(403)
+  })
+})
+
 describe('OpenAPI', () => {
   const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
 
@@ -391,6 +488,16 @@ describe('OpenAPI', () => {
 
     const respuestasPost = doc.paths['/api/v1/bloques']?.post?.responses ?? {}
     expect(Object.keys(respuestasPost).sort()).toEqual(['201', '400', '401', '403', '404', '409'])
+
+    const respuestasDeleteLote = doc.paths['/api/v1/bloques']?.delete?.responses ?? {}
+    expect(Object.keys(respuestasDeleteLote).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
+      '409',
+    ])
 
     const respuestasPatch = doc.paths['/api/v1/bloques/{bloqueId}']?.patch?.responses ?? {}
     expect(Object.keys(respuestasPatch).sort()).toEqual(['200', '400', '401', '403', '404', '409'])
@@ -406,7 +513,8 @@ describe('OpenAPI', () => {
         'BloqueEditar',
         'Bloque',
         'BloqueHorario',
-        'BloquesCreados',
+        'BloquesLote',
+        'BloquesEliminar',
       ]),
     )
   })

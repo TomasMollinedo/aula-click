@@ -586,6 +586,7 @@ Crear la feature `bloques` (horario de atención del profesor: día, horario y a
 
 1. `GET /api/v1/bloques?profesorId=`: las filas activas de ese profesor, ordenadas por día y hora, sin paginar (es un horario semanal). Cada fila trae día, hora de inicio y fin (siempre una hora), aula (id y nombre) y su capacidad efectiva.
    - Capacidad efectiva = `min(profesor.capacidad, aula.capacidad)`, calculada al leer. No trae ocupación: se descartó por la ambigüedad entre "turnos vigentes en general" y "turnos de hoy" en un bloque recurrente: queda para cuando se defina junto con `turnos`.
+   - **Actualización (cierre de T-17, decisión T-33):** la ocupación se agregó con otra definición. Con T-30 ya no hay recurrentes, así que cada fila trae `proximaFecha` (la próxima fecha de su día de la semana, hoy incluido) y `ocupacion` (turnos `ACTIVO` de esa fila en esa fecha). En el mismo cierre se agregó `DELETE /api/v1/bloques` (baja de varias horas juntas, todo o nada, mismo profesor).
 2. Feature de API `aulas` con `/nueva-feature-api aulas`, sólo de lectura (las aulas no tienen ABM, HU-05):
    - `GET /api/v1/aulas/disponibles?diaSemana&horaInicio&horaFin&excluirBloqueId?`: las aulas libres **durante todo** ese horario ese día de la semana. Devuelve un arreglo (es un selector, no se pagina).
    - La ocupación de un aula se calcula sobre `bloque_agenda`, que pertenece a la feature `bloques`: se lee importando `bloques.repository` (única dependencia permitida entre features). `excluirBloqueId` sirve para la edición, para que la fila no se choque consigo misma.

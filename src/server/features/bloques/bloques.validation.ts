@@ -1,29 +1,10 @@
 import { z } from '@hono/zod-openapi'
 import type { Estado } from '@/server/shared/estado'
-import { horaAMinutos, horaHHmm } from '@/server/shared/zod'
-
-/**
- * `horaAMinutos` sin excepción: si el formato ya es inválido, `horaHHmm` lo reporta solo (su
- * propio mensaje de formato); acá alcanza con no volver a fallar el `.refine()` por lo mismo.
- */
-function minutosSeguro(hora: string | undefined): number | null {
-  if (hora === undefined) return null
-  try {
-    return horaAMinutos(hora)
-  } catch {
-    return null
-  }
-}
+import { diaSemana, fechaISO, horaHHmm, rangoHorasEnPunto } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio.
-
-/** Día de la semana, ISO: 1 = lunes … 7 = domingo (contrato-api.md → Formatos). */
-export const diaSemanaSchema = z
-  .number({ error: 'Debe ser un número' })
-  .int({ error: 'Debe ser un número entero' })
-  .min(1, { error: 'Debe ser un día de la semana válido (1 a 7)' })
-  .max(7, { error: 'Debe ser un día de la semana válido (1 a 7)' })
-  .openapi({ description: 'Día de la semana, ISO: 1 = lunes … 7 = domingo', example: 1 })
+// El día de la semana y el rango de horas en punto salen de `shared/zod.ts`: `aulas` valida su
+// query con las mismas piezas.
 
 const profesorId = z
   .number({ error: 'Debe ser un número' })
@@ -79,28 +60,12 @@ export const bloqueIdParamsSchema = z.object({
 export const crearBloqueSchema = z
   .object({
     profesorId,
-    diaSemana: diaSemanaSchema,
+    diaSemana,
     horaInicio: horaHHmm.openapi({ example: '14:00' }),
     horaFin: horaHHmm.openapi({ example: '18:00' }),
     aulaId,
   })
-  .refine((datos) => (minutosSeguro(datos.horaInicio) ?? 0) % 60 === 0, {
-    error: 'Debe ser una hora en punto (por ejemplo 14:00)',
-    path: ['horaInicio'],
-  })
-  .refine((datos) => (minutosSeguro(datos.horaFin) ?? 0) % 60 === 0, {
-    error: 'Debe ser una hora en punto (por ejemplo 15:00)',
-    path: ['horaFin'],
-  })
-  .refine(
-    (datos) => {
-      const inicio = minutosSeguro(datos.horaInicio)
-      const fin = minutosSeguro(datos.horaFin)
-      // Si alguna hora ya tiene formato inválido, ese error alcanza: no se compara.
-      return inicio === null || fin === null || fin > inicio
-    },
-    { error: 'La hora de fin debe ser posterior a la de inicio', path: ['horaFin'] },
-  )
+  .superRefine(rangoHorasEnPunto({ finPosterior: true }))
   .openapi('BloqueCrear')
 
 export type CrearBloque = z.infer<typeof crearBloqueSchema>
@@ -113,7 +78,7 @@ export type CrearBloque = z.infer<typeof crearBloqueSchema>
  */
 export const editarBloqueSchema = z
   .object({
-    diaSemana: diaSemanaSchema,
+    diaSemana,
     horaInicio: horaHHmm.openapi({ example: '14:00' }),
     horaFin: horaHHmm.openapi({ example: '15:00' }),
     aulaId,
@@ -122,14 +87,8 @@ export const editarBloqueSchema = z
   .refine((cambios) => Object.values(cambios).some((valor) => valor !== undefined), {
     error: 'Debe enviar al menos un campo',
   })
-  .refine((cambios) => (minutosSeguro(cambios.horaInicio) ?? 0) % 60 === 0, {
-    error: 'Debe ser una hora en punto (por ejemplo 14:00)',
-    path: ['horaInicio'],
-  })
-  .refine((cambios) => (minutosSeguro(cambios.horaFin) ?? 0) % 60 === 0, {
-    error: 'Debe ser una hora en punto (por ejemplo 15:00)',
-    path: ['horaFin'],
-  })
+  // Sin `finPosterior`: puede llegar una sola de las horas; el orden lo valida el service.
+  .superRefine(rangoHorasEnPunto({ finPosterior: false }))
   .openapi('BloqueEditar')
 
 export type EditarBloque = z.infer<typeof editarBloqueSchema>
@@ -138,7 +97,7 @@ export type EditarBloque = z.infer<typeof editarBloqueSchema>
 export const bloqueSchema = z
   .object({
     id: z.number().int(),
-    diaSemana: diaSemanaSchema,
+    diaSemana,
     horaInicio: horaHHmm,
     horaFin: horaHHmm,
     aula: bloqueAulaSchema,
@@ -149,19 +108,27 @@ export type Bloque = z.infer<typeof bloqueSchema>
 
 /**
  * Una fila del horario semanal (`GET /api/v1/bloques?profesorId=`, T-17 punto 1): además de lo de
- * `Bloque`, trae la capacidad máxima de esa hora (`min(profesor.capacidad, aula.capacidad)`),
- * calculada al leer.
+ * `Bloque`, trae la capacidad máxima de esa hora (`min(profesor.capacidad, aula.capacidad)`) y su
+ * ocupación en la próxima fecha de ese día de la semana, las dos calculadas al leer.
  */
 export const bloqueHorarioSchema = z
   .object({
     id: z.number().int(),
-    diaSemana: diaSemanaSchema,
+    diaSemana,
     horaInicio: horaHHmm,
     horaFin: horaHHmm,
     aula: bloqueAulaSchema,
     capacidadEfectiva: z.number().int().openapi({
       description: 'min(profesor.capacidad, aula.capacidad), calculada al leer',
       example: 10,
+    }),
+    proximaFecha: fechaISO.openapi({
+      description: 'Próxima fecha de ese día de la semana, a partir de hoy (hoy incluido)',
+      example: '2026-09-28',
+    }),
+    ocupacion: z.number().int().openapi({
+      description: 'Turnos ACTIVO de esta hora en `proximaFecha` (los cancelados no cuentan)',
+      example: 0,
     }),
   })
   .openapi('BloqueHorario')
@@ -170,15 +137,50 @@ export type BloqueHorario = z.infer<typeof bloqueHorarioSchema>
 
 export const horarioSchema = z.array(bloqueHorarioSchema)
 
-/** Respuesta del alta: cuántas filas se crearon y el detalle de cada una. */
-export const bloquesCreadosSchema = z
+/**
+ * Respuesta de las operaciones sobre varias filas a la vez (el alta de un rango y la baja de
+ * varias horas): cuántas filas se afectaron y el detalle de cada una.
+ */
+export const bloquesLoteSchema = z
   .object({
-    cantidad: z.number().int().openapi({ description: 'Cantidad de filas creadas', example: 4 }),
+    cantidad: z
+      .number()
+      .int()
+      .openapi({ description: 'Cantidad de filas creadas o dadas de baja', example: 4 }),
     bloques: z.array(bloqueSchema),
   })
-  .openapi('BloquesCreados')
+  .openapi('BloquesLote')
 
-export type BloquesCreados = z.infer<typeof bloquesCreadosSchema>
+export type BloquesLote = z.infer<typeof bloquesLoteSchema>
+
+/**
+ * Body de la baja de varias horas juntas (el bloque que la UI muestra agrupado): los ids de las
+ * filas, explícitos, nunca un rango (así no se da de baja nada que el usuario no haya visto).
+ * Uno o varios, sin repetir, hasta `MAX_BLOQUES_BAJA` (las horas de un día). Que existan, estén
+ * activas, sean del mismo profesor y no tengan turnos vigentes lo decide el service.
+ */
+const MAX_BLOQUES_BAJA = 24
+
+export const eliminarBloquesSchema = z
+  .object({
+    bloqueIds: z
+      .array(
+        z
+          .number({ error: 'Debe ser un número' })
+          .int({ error: 'Debe ser un número entero' })
+          .positive({ error: 'Debe ser mayor a 0' }),
+        { error: 'Debe ser una lista de ids de bloques' },
+      )
+      .min(1, { error: 'Debe enviar al menos un bloque' })
+      .max(MAX_BLOQUES_BAJA, {
+        error: `No puede enviar más de ${MAX_BLOQUES_BAJA} bloques`,
+      })
+      .refine((ids) => new Set(ids).size === ids.length, { error: 'No puede repetir bloques' })
+      .openapi({ description: 'Ids de las filas (horas) a dar de baja', example: [10, 11, 12] }),
+  })
+  .openapi('BloquesEliminar')
+
+export type EliminarBloques = z.infer<typeof eliminarBloquesSchema>
 
 /** Una hora ya partida, en minutos desde medianoche (uso interno: no viaja por HTTP). */
 export type HoraPedida = { horaInicio: number; horaFin: number }

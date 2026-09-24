@@ -6,9 +6,10 @@ import * as bloquesController from './bloques.controller'
 import {
   bloqueIdParamsSchema,
   bloqueSchema,
-  bloquesCreadosSchema,
+  bloquesLoteSchema,
   crearBloqueSchema,
   editarBloqueSchema,
+  eliminarBloquesSchema,
   horarioSchema,
   listarBloquesQuerySchema,
 } from './bloques.validation'
@@ -38,7 +39,7 @@ export const listarBloquesRoute = createRoute({
   tags,
   summary: 'Horario semanal de un profesor',
   description:
-    'Filas activas del profesor, ordenadas por día y hora, sin paginar (es un horario semanal). Cada una trae su capacidad efectiva (`min` profesor/aula), calculada al leer.',
+    'Filas activas del profesor, ordenadas por día y hora, sin paginar (es un horario semanal). Cada una trae, calculadas al leer, su capacidad efectiva (`min` profesor/aula), `proximaFecha` (la próxima fecha de ese día de la semana, hoy incluido) y `ocupacion` (turnos ACTIVO de esa hora en `proximaFecha`).',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: listarBloquesQuerySchema },
   responses: {
@@ -55,6 +56,8 @@ export const listarBloquesRoute = createRoute({
               horaFin: '15:00',
               aula: { id: 3, nombre: 'Aula 3' },
               capacidadEfectiva: 10,
+              proximaFecha: '2026-09-28',
+              ocupacion: 0,
             },
           ],
         },
@@ -97,7 +100,7 @@ export const crearBloqueRoute = createRoute({
       description: 'Filas creadas (una por hora)',
       content: {
         'application/json': {
-          schema: bloquesCreadosSchema,
+          schema: bloquesLoteSchema,
           example: {
             cantidad: 4,
             bloques: [
@@ -218,8 +221,90 @@ export const eliminarBloqueRoute = createRoute({
   },
 })
 
+export const eliminarBloquesRoute = createRoute({
+  method: 'delete',
+  path: '/',
+  tags,
+  summary: 'Dar de baja varias horas juntas',
+  description:
+    'Baja lógica (`estado = INACTIVO`) de varias filas del horario de un profesor (el bloque que la UI muestra agrupado), por ids explícitos, nunca por rango: se dan de baja todas o ninguna. Cada fila debe existir y estar activa, todas deben ser del mismo profesor y ninguna puede tener turnos vigentes. Cada error informa en `details` todas las filas que lo causan (`path` = posición en `bloqueIds`). Se puede dar de baja aunque el profesor esté inactivo.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    body: {
+      required: true,
+      content: {
+        'application/json': { schema: eliminarBloquesSchema, example: { bloqueIds: [10, 11] } },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Filas dadas de baja, ordenadas por día y hora',
+      content: {
+        'application/json': {
+          schema: bloquesLoteSchema,
+          example: {
+            cantidad: 2,
+            bloques: [
+              {
+                id: 10,
+                diaSemana: 1,
+                horaInicio: '14:00',
+                horaFin: '15:00',
+                aula: { id: 3, nombre: 'Aula 3' },
+              },
+              {
+                id: 11,
+                diaSemana: 1,
+                horaInicio: '15:00',
+                horaFin: '16:00',
+                aula: { id: 3, nombre: 'Aula 3' },
+              },
+            ],
+          },
+        },
+      },
+    },
+    400: respuestaError('Datos de entrada inválidos, o filas de más de un profesor (VALIDACION)', {
+      error: {
+        code: 'VALIDACION',
+        message: 'Todas las horas deben ser del mismo profesor',
+        details: [{ path: ['bloqueIds'], message: 'Todas las horas deben ser del mismo profesor' }],
+      },
+    }),
+    401: errores[401],
+    403: errores[403],
+    404: respuestaError('Alguna fila no existe o ya fue dada de baja (NO_ENCONTRADO)', {
+      error: {
+        code: 'NO_ENCONTRADO',
+        message: 'Bloque no encontrado',
+        details: [
+          { path: ['bloqueIds', 1], message: 'El bloque 99 no existe o ya fue dado de baja' },
+        ],
+      },
+    }),
+    409: respuestaError(
+      'Alguna fila tiene turnos vigentes (TURNOS_VIGENTES). `details` trae la cantidad de cada una',
+      {
+        error: {
+          code: 'TURNOS_VIGENTES',
+          message: 'No se puede modificar un bloque con turnos vigentes',
+          details: [
+            {
+              path: ['bloqueIds', 0],
+              message: 'La hora de 14:00 a 15:00 tiene 2 turnos vigentes',
+              cantidad: 2,
+            },
+          ],
+        },
+      },
+    ),
+  },
+})
+
 export const bloquesRoutes = createRouter()
   .openapi(listarBloquesRoute, bloquesController.listar)
   .openapi(crearBloqueRoute, bloquesController.crear)
+  .openapi(eliminarBloquesRoute, bloquesController.eliminarVarios)
   .openapi(editarBloqueRoute, bloquesController.editar)
   .openapi(eliminarBloqueRoute, bloquesController.eliminar)

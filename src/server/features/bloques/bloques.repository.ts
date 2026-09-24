@@ -11,24 +11,43 @@ import type {
   DatosEditarBloque,
 } from './bloques.validation'
 
-// Único lugar de la feature que usa Prisma. También lee `Aula` directo (`prisma.aula`): todavía
-// no tiene una feature propia (T-17 punto 2 la va a crear, sólo de lectura, y va a leer de acá).
-// Sin reglas de negocio propias: las de profesor (activo, con materias) y turnos vigentes las
-// decide el service con lecturas de `profesores.repository` y `turnos.repository`. Lo que sí vive
-// acá es lo que tiene que ser atómico con el `INSERT`/`UPDATE` (superposición y ocupación), porque
-// no hay forma de garantizarlo si se separa.
+// Único lugar de la feature que usa Prisma. El catálogo de aulas es de la feature `aulas` (que lo
+// lee en `aulas.repository`); acá solo se lee `Aula` dentro de las transacciones del alta y la
+// edición (existencia y `SELECT ... FOR UPDATE`), porque eso tiene que ser atómico con el
+// `INSERT`/`UPDATE`. Sin reglas de negocio propias: las de profesor (activo, con materias) y
+// turnos vigentes las decide el service con lecturas de `profesores.repository` y
+// `turnos.repository`. Lo que sí vive acá es lo que tiene que ser atómico con la escritura
+// (superposición y ocupación del aula), porque no hay forma de garantizarlo si se separa.
 
 const MENSAJE_AULA_OCUPADA =
   'No hay un aula disponible en ese horario. Por favor, elija otro horario.'
 
-type ConflictoFila = { id: number; horaInicio: number; horaFin: number; profesorId: number }
+const SELECT_BLOQUE_GUARDADO = {
+  id: true,
+  profesorId: true,
+  aulaId: true,
+  diaSemana: true,
+  horaInicio: true,
+  horaFin: true,
+  estado: true,
+} satisfies Prisma.BloqueAgendaSelect
+
+type ConflictoFila = {
+  id: number
+  horaInicio: number
+  horaFin: number
+  profesorId: number
+  aulaId: number
+}
 
 /**
- * Filas activas que ya ocupan alguna de `horasPedidas` ese día, para el profesor y/o el aula
- * dados (al menos uno de los dos). `excluirId` saca la propia fila de la búsqueda (edición).
+ * Filas activas que ya ocupan alguna de `horasPedidas` ese día, opcionalmente solo las del
+ * profesor y/o el aula dados. `excluirId` saca una fila de la búsqueda (la propia, al editar).
+ * Es la **única** definición de "hora ocupada": la usan el alta y la edición (dentro de su
+ * transacción) y la lectura de aulas ocupadas que consume `aulas` (con el cliente común).
  */
 async function buscarConflictos(
-  tx: Prisma.TransactionClient,
+  db: Prisma.TransactionClient,
   filtro: {
     diaSemana: number
     horasPedidas: number[]
@@ -37,7 +56,7 @@ async function buscarConflictos(
     excluirId?: number
   },
 ): Promise<ConflictoFila[]> {
-  return tx.bloqueAgenda.findMany({
+  return db.bloqueAgenda.findMany({
     where: {
       diaSemana: filtro.diaSemana,
       estado: 'ACTIVO',
@@ -46,7 +65,7 @@ async function buscarConflictos(
       ...(filtro.aulaId === undefined ? {} : { aulaId: filtro.aulaId }),
       ...(filtro.excluirId === undefined ? {} : { id: { not: filtro.excluirId } }),
     },
-    select: { id: true, horaInicio: true, horaFin: true, profesorId: true },
+    select: { id: true, horaInicio: true, horaFin: true, profesorId: true, aulaId: true },
   })
 }
 
@@ -157,19 +176,39 @@ export const bloquesRepository = {
     })
   },
 
+  /**
+   * Ids de las aulas con alguna fila activa en alguna de `horasPedidas` (minutos de inicio) ese
+   * día, de cualquier profesor, sin repetir. `excluirBloqueId` saca esa fila de la cuenta (la
+   * edición: la propia fila no ocupa su aula). Lectura para otras features: la usa `aulas`
+   * (aulas disponibles, T-17) y la va a usar `turnos` (T-21). No bloquea filas: es para mostrar
+   * opciones; el alta y la edición vuelven a chequear con lock.
+   */
+  async aulasOcupadas(filtro: {
+    diaSemana: number
+    horasPedidas: number[]
+    excluirBloqueId?: number
+  }): Promise<number[]> {
+    const filas = await buscarConflictos(prisma, {
+      diaSemana: filtro.diaSemana,
+      horasPedidas: filtro.horasPedidas,
+      excluirId: filtro.excluirBloqueId,
+    })
+    return [...new Set(filas.map((fila) => fila.aulaId))]
+  },
+
   /** La fila con sus datos en minutos, o `null` si no existe. Para editar o dar de baja. */
   async buscarPorId(id: number): Promise<BloqueGuardado | null> {
-    return prisma.bloqueAgenda.findUnique({
-      where: { id },
-      select: {
-        id: true,
-        profesorId: true,
-        aulaId: true,
-        diaSemana: true,
-        horaInicio: true,
-        horaFin: true,
-        estado: true,
-      },
+    return prisma.bloqueAgenda.findUnique({ where: { id }, select: SELECT_BLOQUE_GUARDADO })
+  },
+
+  /**
+   * Las filas con esos ids, activas o no, con sus datos en minutos. Las que no existen no vienen:
+   * quien llama compara. Para la baja de varias horas juntas.
+   */
+  async buscarPorIds(ids: number[]): Promise<BloqueGuardado[]> {
+    return prisma.bloqueAgenda.findMany({
+      where: { id: { in: ids } },
+      select: SELECT_BLOQUE_GUARDADO,
     })
   },
 
@@ -260,6 +299,43 @@ export const bloquesRepository = {
       }
       throw error
     }
+  },
+
+  /**
+   * Baja lógica (`estado = INACTIVO`) de varias filas, todas o ninguna, en una transacción, con
+   * el mismo criterio que `eliminarBloque`: el service ya validó que existan, estén activas, sean
+   * del mismo profesor y no tengan turnos vigentes, y acá no se repite la lectura de turnos. Si
+   * entre la validación y el `UPDATE` alguna fila dejó de estar activa (otra baja simultánea), no
+   * se actualiza ninguna y se lanza `NotFoundError`. Devuelve las filas ordenadas por día y hora.
+   * Auditoría: `updatedById` con el actor.
+   */
+  async eliminarBloques(ids: number[], actor: Actor): Promise<Bloque[]> {
+    return prisma.$transaction(async (tx) => {
+      const { count } = await tx.bloqueAgenda.updateMany({
+        where: { id: { in: ids }, estado: 'ACTIVO' },
+        data: { estado: 'INACTIVO', updatedById: actor.userId },
+      })
+      if (count !== ids.length) throw new NotFoundError('Bloque no encontrado')
+
+      const filas = await tx.bloqueAgenda.findMany({
+        where: { id: { in: ids } },
+        select: {
+          id: true,
+          diaSemana: true,
+          horaInicio: true,
+          horaFin: true,
+          aula: { select: { id: true, nombre: true } },
+        },
+        orderBy: [{ diaSemana: 'asc' }, { horaInicio: 'asc' }, { id: 'asc' }],
+      })
+      return filas.map((fila) => ({
+        id: fila.id,
+        diaSemana: fila.diaSemana,
+        horaInicio: minutosAHora(fila.horaInicio),
+        horaFin: minutosAHora(fila.horaFin),
+        aula: fila.aula,
+      }))
+    })
   },
 }
 

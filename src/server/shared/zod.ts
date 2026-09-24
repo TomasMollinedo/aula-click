@@ -130,3 +130,88 @@ export function minutosAHora(minutos: number): string {
   const resto = String(minutos % 60).padStart(2, '0')
   return `${horas}:${resto}`
 }
+
+/**
+ * Parte un rango `[horaInicio, horaFin)` de horas en punto (`HH:mm`) en tramos de una hora, en
+ * minutos (`"14:00"`–`"16:00"` → `[{ 840, 900 }, { 900, 960 }]`). Quien llama ya validó el rango
+ * con `rangoHorasEnPunto({ finPosterior: true })`, así que siempre es múltiplo de 60 minutos.
+ * Lanza `RangeError` si alguna hora no es `HH:mm` válida.
+ */
+export function partirEnHoras(
+  horaInicio: string,
+  horaFin: string,
+): { horaInicio: number; horaFin: number }[] {
+  const inicio = horaAMinutos(horaInicio)
+  const fin = horaAMinutos(horaFin)
+  const horas: { horaInicio: number; horaFin: number }[] = []
+  for (let minuto = inicio; minuto < fin; minuto += 60) {
+    horas.push({ horaInicio: minuto, horaFin: minuto + 60 })
+  }
+  return horas
+}
+
+const MENSAJE_DIA_SEMANA = 'Debe ser un día de la semana válido (1 a 7)'
+
+// Mismas reglas y mensajes para el body (número) y el query (texto que se coerciona).
+function conRangoDiaSemana(numero: z.ZodNumber): z.ZodNumber
+function conRangoDiaSemana(numero: z.ZodCoercedNumber): z.ZodCoercedNumber
+function conRangoDiaSemana(numero: z.ZodNumber | z.ZodCoercedNumber) {
+  return numero
+    .int({ error: 'Debe ser un número entero' })
+    .min(1, { error: MENSAJE_DIA_SEMANA })
+    .max(7, { error: MENSAJE_DIA_SEMANA })
+    .openapi({ description: 'Día de la semana, ISO: 1 = lunes … 7 = domingo', example: 1 })
+}
+
+/** Día de la semana ISO en un body: entero de 1 (lunes) a 7 (domingo). */
+export const diaSemana = conRangoDiaSemana(z.number({ error: 'Debe ser un número' }))
+
+/** Como `diaSemana`, pero para el query: llega como texto y se coerciona a número. */
+export const diaSemanaQuery = conRangoDiaSemana(z.coerce.number({ error: 'Debe ser un número' }))
+
+/**
+ * `horaAMinutos` sin excepción: si el formato ya es inválido, `horaHHmm` lo reporta solo (su
+ * propio mensaje de formato); acá alcanza con no volver a marcar el campo por lo mismo.
+ */
+function minutosSeguro(hora: string | undefined): number | null {
+  if (hora === undefined) return null
+  try {
+    return horaAMinutos(hora)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Refinamiento de un objeto con `horaInicio` / `horaFin` (`HH:mm`, opcionales) para usar con
+ * `.superRefine(...)`: cada hora presente tiene que ser en punto y, con `finPosterior`, `horaFin`
+ * tiene que ser posterior a `horaInicio` (si las dos llegan con formato válido). Los errores
+ * quedan en el campo (`path: ['horaInicio']` / `['horaFin']`), como cualquier issue de Zod.
+ */
+export function rangoHorasEnPunto({ finPosterior }: { finPosterior: boolean }) {
+  return (datos: { horaInicio?: string; horaFin?: string }, ctx: z.RefinementCtx) => {
+    const inicio = minutosSeguro(datos.horaInicio)
+    const fin = minutosSeguro(datos.horaFin)
+    if (inicio !== null && inicio % 60 !== 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Debe ser una hora en punto (por ejemplo 14:00)',
+        path: ['horaInicio'],
+      })
+    }
+    if (fin !== null && fin % 60 !== 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Debe ser una hora en punto (por ejemplo 15:00)',
+        path: ['horaFin'],
+      })
+    }
+    if (finPosterior && inicio !== null && fin !== null && fin <= inicio) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'La hora de fin debe ser posterior a la de inicio',
+        path: ['horaFin'],
+      })
+    }
+  }
+}

@@ -8,6 +8,7 @@ import type {
   crearBloqueRoute,
   editarBloqueRoute,
   eliminarBloqueRoute,
+  eliminarBloquesRoute,
   listarBloquesRoute,
 } from './bloques.routes'
 
@@ -36,3 +37,6 @@ export const editar: RouteHandler<typeof editarBloqueRoute, AppEnv> = async (c) 
 
 export const eliminar: RouteHandler<typeof eliminarBloqueRoute, AppEnv> = async (c) =>
   c.json(await bloquesService.eliminar(c.req.valid('param').bloqueId, c.get('actor')), 200)
+
+export const eliminarVarios: RouteHandler<typeof eliminarBloquesRoute, AppEnv> = async (c) =>
+  c.json(await bloquesService.eliminarVarios(c.req.valid('json'), c.get('actor')), 200)

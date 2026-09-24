@@ -2,6 +2,7 @@ import { swaggerUI } from '@hono/swagger-ui'
 import { errorHandler, notFoundHandler } from './errors'
 import { createRouter } from './router'
 import { alumnosRoutes } from './features/alumnos/alumnos.routes'
+import { aulasRoutes } from './features/aulas/aulas.routes'
 import { bloquesRoutes } from './features/bloques/bloques.routes'
 import { materiasRoutes } from './features/materias/materias.routes'
 import { profesoresRoutes } from './features/profesores/profesores.routes'
@@ -24,3 +25,4 @@ app.route('/profesores', profesoresRoutes)
 app.route('/materias', materiasRoutes)
 app.route('/turnos', turnosRoutes)
 app.route('/bloques', bloquesRoutes)
+app.route('/aulas', aulasRoutes)
