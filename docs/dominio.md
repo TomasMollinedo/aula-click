@@ -40,16 +40,27 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - El nombre es único. La capacidad es un entero obligatorio, mínimo 1.
 - Tienen baja lógica (estado activo / inactivo, `ACTIVO` por defecto), aunque en este release nada la cambia salvo el seed.
 
+## Bloques de clase
+
+- Un bloque es una hora exacta de atención de un profesor en un aula, un día de la semana. Se pide como un rango múltiplo de una hora (por ejemplo 14:00 a 18:00) y el sistema lo guarda como varias filas de una hora cada una (T-17, T-29): no hay una fila que abarque varias horas.
+- Las horas son siempre en punto; la de fin es posterior a la de inicio.
+- No se puede cargar un bloque a un profesor inactivo, ni a un profesor sin ninguna materia asignada activa.
+- Un profesor no puede tener dos bloques activos a la misma hora el mismo día.
+- Un aula no puede tener dos bloques activos a la misma hora el mismo día, sin importar de qué profesor sean.
+- Un pedido de varias horas se crea todo junto o nada: si alguna hora del rango ya está tomada (por el profesor o por el aula), no se crea ninguna.
+- **Capacidad efectiva** de cada hora: `min(profesor.capacidad, aula.capacidad)` (T-27/T-28), calculada al leer, nunca guardada.
+- Tienen baja lógica (estado activo / inactivo); no se puede editar ni eliminar un bloque con turnos vigentes (ver Profesores y materias).
+- **Editar un bloque** cambia el día, el horario y/o el aula de esa hora puntual; el profesor no se edita (para moverlo a otro profesor hay que dar de baja esa hora y cargar una nueva). El resultado tiene que seguir siendo una hora exacta, y las mismas reglas de superposición y aula libre valen para la edición, sin contar la propia fila como un conflicto consigo misma.
+
 ## Turnos
 
 - Un turno une a un alumno con un bloque de un profesor e indica la materia. La materia debe estar asignada a ese profesor.
-- Tipos: `RECURRENTE` (fecha de inicio y fin opcional) o `SESION_UNICA` (una fecha). Las fechas deben coincidir con el día de la semana del bloque.
-- **Turno vigente:** un recurrente sin fecha de fin o con fin >= hoy, o una sesión única con fecha >= hoy.
+- Un turno es siempre de una fecha puntual (`SESION_UNICA`); no hay turnos recurrentes en este release (T-30). La fecha debe coincidir con el día de la semana del bloque.
+- **Turno vigente:** su fecha es >= hoy.
 - Un alumno no puede tener dos turnos superpuestos en fecha y horario.
-- **Capacidad del bloque:** se controla por cada fecha en que aplica el turno, contra la capacidad efectiva de esa hora (T-27: `min(profesor.capacidad, aula.capacidad)`, con `Aula` como catálogo propio; no es un valor fijo guardado en el bloque). Si una fecha puntual de un recurrente está llena, se informa qué fechas no pueden (`BLOQUE_LLENO`, con las fechas en `details`). Qué pasa con esas fechas (excepciones) está pendiente (D-04); el mecanismo de bloqueo concurrente sobre esta capacidad se define al implementar `turnos` (HU-07; ver `convenciones-backend.md` → Concurrencia en la capacidad de un bloque).
-- **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen.
-- Un recurrente se guarda como regla (fecha de inicio y fin opcional); las fechas en que no aplica se registran como excepciones y las ocurrencias se calculan al consultar (T-20). La prioridad tampoco se guarda: se calcula al leer.
-- Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no cuenta como vigente: no impide ninguna baja.
+- **Capacidad del bloque:** se controla contra la capacidad efectiva de esa hora (T-27: `min(profesor.capacidad, aula.capacidad)`, con `Aula` como catálogo propio; no es un valor fijo guardado en el bloque). Si la hora está llena, se rechaza con `BLOQUE_LLENO`; el mecanismo de bloqueo concurrente sobre esta capacidad se define al implementar `turnos` (HU-07; ver `convenciones-backend.md` → Concurrencia en la capacidad de un bloque).
+- **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
+- Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por su fecha, no por su estado. Un turno `CANCELADO` no cuenta como vigente: no impide ninguna baja.
 
 ## Auditoría
 

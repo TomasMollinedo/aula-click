@@ -17,6 +17,7 @@ import {
   type ProfesorConAsignaciones,
   type ProfesorDeMateria,
   type ProfesorGuardado,
+  type ProfesorParaBloque,
   type ProfesorListadoFila,
   type ProfesoresListado,
 } from './profesores.validation'
@@ -355,6 +356,39 @@ export const profesoresRepository = {
         })),
       }
     )
+  },
+
+  /**
+   * Estado del profesor (el de su `Usuario`) y si tiene al menos una materia asignada activa.
+   * `null` si el profesor no existe. Lectura para otras features: la usa `bloques` (HU-05) para
+   * decidir `PROFESOR_INACTIVO` y `PROFESOR_SIN_MATERIAS` antes de cargar un bloque.
+   */
+  async buscarParaBloque(profesorId: number): Promise<ProfesorParaBloque | null> {
+    const profesor = await prisma.profesor.findUnique({
+      where: { id: profesorId },
+      select: {
+        usuario: { select: { estado: true } },
+        asignaciones: { where: { estado: 'ACTIVO' }, select: { id: true }, take: 1 },
+      },
+    })
+    return (
+      profesor && {
+        estado: profesor.usuario.estado,
+        tieneMateriaActiva: profesor.asignaciones.length > 0,
+      }
+    )
+  },
+
+  /**
+   * Capacidad del profesor, o `null` si no existe. Lectura para otras features: la usa `bloques`
+   * (T-17) para calcular la capacidad efectiva de cada hora del horario (`min` con la del aula).
+   */
+  async buscarCapacidad(profesorId: number): Promise<number | null> {
+    const profesor = await prisma.profesor.findUnique({
+      where: { id: profesorId },
+      select: { capacidad: true },
+    })
+    return profesor?.capacidad ?? null
   },
 
   /**

@@ -5,8 +5,8 @@ import { condicionTurnoVigente, turnosRepository } from '../turnos.repository'
 // reemplaza por un mock y se verifica la condición que recibe. Que Postgres la evalúe bien lo
 // garantiza el `gte` sobre una columna @db.Date.
 
-const { groupBy } = vi.hoisted(() => ({ groupBy: vi.fn() }))
-vi.mock('@/lib/prisma', () => ({ prisma: { turno: { groupBy } } }))
+const { groupBy, count } = vi.hoisted(() => ({ groupBy: vi.fn(), count: vi.fn() }))
+vi.mock('@/lib/prisma', () => ({ prisma: { turno: { groupBy, count } } }))
 
 const HOY = '2026-09-22'
 const MEDIANOCHE_HOY = new Date('2026-09-22T00:00:00.000Z')
@@ -14,6 +14,7 @@ const MEDIANOCHE_HOY = new Date('2026-09-22T00:00:00.000Z')
 beforeEach(() => {
   vi.clearAllMocks()
   groupBy.mockResolvedValue([])
+  count.mockResolvedValue(0)
 })
 
 describe('condicionTurnoVigente', () => {
@@ -70,5 +71,18 @@ describe('contarVigentesPorMateria', () => {
     expect(groupBy).toHaveBeenCalledWith(
       expect.objectContaining({ where: condicionTurnoVigente(HOY) }),
     )
+  })
+})
+
+describe('contarVigentesPorBloque', () => {
+  it('cuenta los turnos vigentes de ese bloque puntual', async () => {
+    count.mockResolvedValue(2)
+
+    const resultado = await turnosRepository.contarVigentesPorBloque(10, HOY)
+
+    expect(resultado).toBe(2)
+    expect(count).toHaveBeenCalledWith({
+      where: { ...condicionTurnoVigente(HOY), bloqueAgendaId: 10 },
+    })
   })
 })

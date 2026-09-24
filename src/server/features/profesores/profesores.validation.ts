@@ -254,3 +254,9 @@ export type ProfesorConAsignaciones = {
  * datos personales y el `estado` son los de su `Usuario`. No viaja por HTTP desde acá.
  */
 export type ProfesorDeMateria = { id: number; apellido: string; nombre: string; estado: Estado }
+
+/**
+ * Lo que la feature `bloques` necesita del profesor para cargarle un bloque: su estado (el de su
+ * `Usuario`) y si tiene al menos una materia asignada activa. No viaja por HTTP.
+ */
+export type ProfesorParaBloque = { estado: Estado; tieneMateriaActiva: boolean }
