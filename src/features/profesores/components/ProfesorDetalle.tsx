@@ -1,6 +1,5 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -62,7 +61,6 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
     router.replace(valor === 'datos' ? rutaDetalle : `${rutaDetalle}?tab=${valor}`, {
       scroll: false,
     })
-  const [tab, setTab] = useState<'datos' | 'materias' | 'horario'>('datos')
 
   const volver = (
     <Link
@@ -164,7 +162,6 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
       />
 
       <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
-      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="space-y-6">
         <TabsList>
           <TabsTrigger value="datos" className="px-4">
             <UserRound />
