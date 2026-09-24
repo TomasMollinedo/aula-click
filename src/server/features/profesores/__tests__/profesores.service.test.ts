@@ -74,10 +74,13 @@ function crearRepositories() {
       listarProfesoresDeMateria: vi.fn<ProfesoresRepository['listarProfesoresDeMateria']>(),
       listarProfesoresActivosDeMateria:
         vi.fn<ProfesoresRepository['listarProfesoresActivosDeMateria']>(),
+      darDeBaja: vi.fn<ProfesoresRepository['darDeBaja']>(),
+      reactivar: vi.fn<ProfesoresRepository['reactivar']>(),
     },
     materiasRepository: { buscarPorIds: vi.fn<MateriasRepository['buscarPorIds']>() },
     turnosRepository: {
       contarVigentesPorMateria: vi.fn<TurnosRepository['contarVigentesPorMateria']>(),
+      listarVigentesPorProfesor: vi.fn<TurnosRepository['listarVigentesPorProfesor']>(),
     },
     getPresignedUrl: vi.fn<(key: string) => Promise<string>>(),
   }
@@ -532,5 +535,77 @@ describe('quitarMaterias', () => {
     expect(error).toMatchObject({
       details: [expect.objectContaining({ message: expect.stringContaining('1 turno vigente') })],
     })
+  })
+})
+
+const TURNO_VIGENTE = {
+  alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
+  materia: { id: 2, nombre: 'Matemática' },
+  fecha: '2026-09-25',
+  horaInicio: '09:00',
+  horaFin: '10:00',
+}
+
+describe('darDeBaja', () => {
+  beforeEach(() => {
+    repository.buscarPorId.mockResolvedValue(GUARDADO)
+    repository.darDeBaja.mockResolvedValue({ ...GUARDADO, estado: 'INACTIVO' })
+    turnosRepository.listarVigentesPorProfesor.mockResolvedValue([])
+  })
+
+  it('sin turnos vigentes: pasa a INACTIVO y devuelve el detalle', async () => {
+    repository.darDeBaja.mockResolvedValue({ ...GUARDADO, estado: 'INACTIVO' })
+
+    const resultado = await service.darDeBaja(3, actor)
+
+    expect(repository.darDeBaja).toHaveBeenCalledWith(3, actor)
+    expect(resultado.estado).toBe('INACTIVO')
+  })
+
+  it('consulta los turnos vigentes con la fecha de hoy del reloj', async () => {
+    await service.darDeBaja(3, actor)
+
+    expect(turnosRepository.listarVigentesPorProfesor).toHaveBeenCalledWith(3, HOY)
+  })
+
+  it('con turnos vigentes → 409 TURNOS_VIGENTES con cada uno en details, sin dar de baja', async () => {
+    turnosRepository.listarVigentesPorProfesor.mockResolvedValue([TURNO_VIGENTE])
+
+    const error = await errorDe(service.darDeBaja(3, actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error).toMatchObject({ code: 'TURNOS_VIGENTES', details: [TURNO_VIGENTE] })
+    expect(repository.darDeBaja).not.toHaveBeenCalled()
+  })
+
+  it('profesor inexistente → NotFoundError, sin consultar turnos ni dar de baja', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.darDeBaja(99, actor))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(turnosRepository.listarVigentesPorProfesor).not.toHaveBeenCalled()
+    expect(repository.darDeBaja).not.toHaveBeenCalled()
+  })
+})
+
+describe('reactivar', () => {
+  it('vuelve a ACTIVO y devuelve el detalle, sin revalidar nada', async () => {
+    repository.buscarPorId.mockResolvedValue({ ...GUARDADO, estado: 'INACTIVO' })
+    repository.reactivar.mockResolvedValue({ ...GUARDADO, estado: 'ACTIVO' })
+
+    const resultado = await service.reactivar(3, actor)
+
+    expect(repository.reactivar).toHaveBeenCalledWith(3, actor)
+    expect(resultado.estado).toBe('ACTIVO')
+  })
+
+  it('profesor inexistente → NotFoundError, sin reactivar', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.reactivar(99, actor))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repository.reactivar).not.toHaveBeenCalled()
   })
 })

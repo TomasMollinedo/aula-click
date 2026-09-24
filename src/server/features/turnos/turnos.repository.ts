@@ -1,7 +1,8 @@
 import type { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
-import { fechaADate } from '@/server/shared/fechas'
-import type { TurnosVigentesPorMateria } from './turnos.validation'
+import { dateAFecha, fechaADate } from '@/server/shared/fechas'
+import { minutosAHora } from '@/server/shared/zod'
+import type { TurnosVigentesPorMateria, TurnoVigentePorProfesor } from './turnos.validation'
 
 // Único lugar de la feature que usa Prisma. Traduce errores del motor (P2002 -> ConflictError).
 // Sin reglas de negocio.
@@ -56,6 +57,34 @@ export const turnosRepository = {
     return prisma.turno.count({
       where: { ...condicionTurnoVigente(fechaHoy), bloqueAgendaId },
     })
+  },
+
+  /**
+   * Turnos vigentes del profesor (de cualquiera de sus bloques), con los datos que HU-06 pide
+   * mostrar antes de la baja: alumno, materia, fecha y horario. La usa `profesores` para decidir
+   * `TURNOS_VIGENTES` antes de dar de baja. Ordenados por fecha y luego id.
+   */
+  async listarVigentesPorProfesor(
+    profesorId: number,
+    fechaHoy: string,
+  ): Promise<TurnoVigentePorProfesor[]> {
+    const filas = await prisma.turno.findMany({
+      where: { ...condicionTurnoVigente(fechaHoy), bloqueAgenda: { profesorId } },
+      select: {
+        alumno: { select: { id: true, nombre: true, apellido: true } },
+        materia: { select: { id: true, nombre: true } },
+        fechaInicio: true,
+        bloqueAgenda: { select: { horaInicio: true, horaFin: true } },
+      },
+      orderBy: [{ fechaInicio: 'asc' }, { id: 'asc' }],
+    })
+    return filas.map((fila) => ({
+      alumno: fila.alumno,
+      materia: fila.materia,
+      fecha: dateAFecha(fila.fechaInicio),
+      horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
+      horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
+    }))
   },
 }
 

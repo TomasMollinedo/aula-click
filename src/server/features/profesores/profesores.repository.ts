@@ -455,6 +455,55 @@ export const profesoresRepository = {
       data: { estado: 'INACTIVO', updatedById: actor.userId },
     })
   },
+
+  /**
+   * Baja lógica del profesor: pasa el `Usuario` a `INACTIVO` y revoca sus sesiones abiertas (no
+   * puede seguir usando una que ya tenía; tampoco puede iniciar una nueva, por la guarda del
+   * login). No toca materias, bloques ni turnos. El service ya validó que no tenga turnos
+   * vigentes. `NotFoundError` si el profesor no existe (P2025).
+   */
+  async darDeBaja(id: number, actor: Actor): Promise<ProfesorGuardado> {
+    let usuarioId: string
+    try {
+      const profesor = await prisma.profesor.update({
+        where: { id },
+        data: { usuario: { update: { estado: 'INACTIVO', updatedById: actor.userId } } },
+        select: { usuarioId: true },
+      })
+      usuarioId = profesor.usuarioId
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundError(MENSAJE_NO_ENCONTRADO, { cause: error })
+      }
+      throw error
+    }
+    await prisma.session.deleteMany({ where: { userId: usuarioId } })
+    const guardado = await buscarPorId(id)
+    if (!guardado) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+    return guardado
+  },
+
+  /**
+   * Reactivación: pasa el `Usuario` del profesor a `ACTIVO`. No revalida nada: sus materias y
+   * bloques quedan intactos. `NotFoundError` si el profesor no existe (P2025).
+   */
+  async reactivar(id: number, actor: Actor): Promise<ProfesorGuardado> {
+    try {
+      await prisma.profesor.update({
+        where: { id },
+        data: { usuario: { update: { estado: 'ACTIVO', updatedById: actor.userId } } },
+        select: { id: true },
+      })
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundError(MENSAJE_NO_ENCONTRADO, { cause: error })
+      }
+      throw error
+    }
+    const guardado = await buscarPorId(id)
+    if (!guardado) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+    return guardado
+  },
 }
 
 export type ProfesoresRepository = typeof profesoresRepository
