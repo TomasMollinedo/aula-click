@@ -7,12 +7,6 @@ import { AlumnoNuevo } from '@/features/alumnos/components/AlumnoNuevo'
 export default function NuevoAlumnoModal() {
   const router = useRouter()
 
-  return (
-    <AlumnoNuevo
-      mode="modal"
-      onCerrar={() => router.back()}
-      // replace: Atrás desde la página del alumno creado vuelve al listado, no al alta.
-      onCreado={(alumno) => router.replace(`/mesa/alumnos/${alumno.id}`)}
-    />
-  )
+  // Cerrar o crear vuelve al listado con su q y su page; tras crear, el listado ya se invalidó.
+  return <AlumnoNuevo mode="modal" onCerrar={() => router.back()} onCreado={() => router.back()} />
 }

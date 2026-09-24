@@ -1,5 +1,5 @@
-// El detalle es una página, sin modal. Esta ruta vacía cierra el modal de alta cuando, tras crear,
-// se navega a la página del alumno (sin ella, el slot conservaría el último modal abierto).
+// El detalle es una página, sin modal del listado encima. Sin esta ruta vacía, al ir del listado al
+// detalle en una navegación del cliente el slot conservaría el último modal que tuvo.
 export default function SinModalEnDetalle() {
   return null
 }

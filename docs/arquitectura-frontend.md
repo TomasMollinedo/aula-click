@@ -58,13 +58,12 @@ src/
 │   │   │   │       ├── default.tsx, page.tsx   # null (igual que en el slot del listado)
 │   │   │   │       ├── (.)editar/page.tsx      # navegando desde el detalle (intercepción)
 │   │   │   │       └── editar/page.tsx         # entrando por URL o al recargar
-│   │   │   └── @modal/                 # alta (y edición desde una fila), como modal sobre el listado
+│   │   │   └── @modal/                 # alta, siempre como modal sobre el listado
 │   │   │       ├── default.tsx         # null: sin modal al cargar por URL una ruta que el slot no define
 │   │   │       ├── page.tsx            # null: cierra el modal al volver al listado con un Link
 │   │   │       ├── (.)nuevo/page.tsx   # navegando desde el listado (intercepción)
-│   │   │       ├── (.)[alumnoId]/editar/page.tsx  # lápiz de una fila del listado (intercepción)
 │   │   │       ├── nuevo/page.tsx      # entrando por URL o al recargar
-│   │   │       └── [alumnoId]/page.tsx # null: cierra el alta al ir a la página del alumno creado
+│   │   │       └── [alumnoId]/page.tsx # null: sin modal del listado al ir al detalle
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
@@ -181,16 +180,18 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 ## Modales con URL propia
 
-El **detalle** de una entidad es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, el alta queda sobre el listado y la edición sobre el detalle. Las URLs son las mismas en los dos casos (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`), así que se pueden compartir y otras features pueden enlazarlas. Es el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+El **detalle** de una entidad es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
-- Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
-- **Navegando:** interceptan la navegación y muestran el componente de la feature con `mode="modal"` `@modal/(.)nuevo/page.tsx` y `@modal/(.)[id]/editar/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle). Next elige la del slot de la pantalla en la que se está. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
-- Después de crear, mover o borrar carpetas de rutas, **reiniciar `pnpm dev`**: con el árbol de rutas viejo en memoria, las rutas interceptadas se comportan mal (por ejemplo, el parámetro llega como `"(.)12"`).
+- Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
+- **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
+- **Nunca una carpeta interceptora con parámetro dinámico** (`@modal/(.)[id]/…`). En Next 16, con `pnpm dev`, cada recompilación le vuelve a agregar el `(.)` al parámetro (`Invalid interception route: /mesa/alumnos/(.)(.)(.)2/editar`, o `alumnoId` llega como `"(.)2"`). La navegación del cliente falla con un 500 y el navegador recarga la página entera, sin intercepción. Recién reiniciado funciona, así que el error aparece y desaparece.
+- **Edición desde el lápiz del listado:** por eso no es una ruta interceptada, sino un parámetro del listado, `?editar=<id>` (se suma a `q` y `page`). `<Entidad>Listado` lo lee y muestra `<Singular>Editar` con `mode="modal"`. El lápiz lo agrega con un `Link` (`push`, así Atrás cierra el modal); cerrar o guardar es `router.back()` si se abrió con el lápiz en esa pestaña, o `router.replace` sin `editar` si se entró por URL.
+- Después de crear, mover o borrar carpetas de rutas, **reiniciar `pnpm dev`**: con el árbol de rutas viejo en memoria, las rutas nuevas o borradas se comportan mal.
 - **Entrando por URL o al recargar:** no hay intercepción. `nuevo/page.tsx` renderiza el listado de fondo (`<Entidad>Pantalla`, el mismo componente que usa `page.tsx`) y `[id]/editar/page.tsx` el detalle; el modal lo ponen `@modal/nuevo/page.tsx` y `[id]/@modal/editar/page.tsx`, las rutas de cada slot sin `(.)`.
-- Rutas del slot que devuelven `null`: `default.tsx`, para la carga por URL de una ruta que el slot no define; `page.tsx`, para que volver a la pantalla de fondo (un `Link` al listado, como el del Sidebar, o `router.replace` al detalle) cierre el modal; y `@modal/[id]/page.tsx` en el slot del listado, que cierra el alta al ir a la página del alumno creado. Sin ellas, en una navegación del cliente el slot conserva el último modal abierto.
-- `AlumnoNuevo` y `AlumnoEditar` se arman con `Panel` de `components/ui/` y **no navegan solos**. La página del slot les pasa qué hacer al cerrar o al guardar:
-  - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`, o al detalle, según desde dónde se abrió); guardar una edición también. Tras un alta, `router.replace` a la página de detalle, así Atrás vuelve al listado y no al alta.
-  - **Por URL:** puede no haber historial dentro de la app, así que cerrar el alta va al listado con `router.push`, y cerrar o guardar la edición vuelve al detalle con `router.replace` (Atrás no reabre el formulario). Tras un alta, `router.replace` al detalle.
+- Rutas del slot que devuelven `null`: `default.tsx`, para la carga por URL de una ruta que el slot no define; `page.tsx`, para que volver a la pantalla de fondo (un `Link` al listado, como el del Sidebar, o `router.replace` al detalle) cierre el modal; y `@modal/[id]/page.tsx` en el slot del listado, para que ir al detalle no deje un modal del listado abierto. Sin ellas, en una navegación del cliente el slot conserva el último modal abierto.
+- `AlumnoNuevo` y `AlumnoEditar` se arman con `Panel` de `components/ui/` y **no navegan solos**. Quien los monta les pasa qué hacer al cerrar o al guardar:
+  - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`, o al detalle); guardar también, tanto el alta como la edición. Tras un alta se vuelve al listado, que ya se invalidó y muestra al alumno nuevo.
+  - **Por URL:** puede no haber historial dentro de la app. Cerrar el alta va al listado con `router.push` y crear, con `router.replace` (Atrás no reabre el formulario). Cerrar o guardar la edición vuelve al detalle con `router.replace`.
 - `Panel` conserva `mode="page"` (tarjeta dentro de la página) para pantallas que no sean modales.
 - El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
 - Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.

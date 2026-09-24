@@ -24,6 +24,10 @@ import type { AlumnoListadoItem } from '../alumnos.types'
 type AlumnosTableProps = {
   /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
   rutaBase: string
+  /** URL que abre la edición de un alumno como modal encima del listado. */
+  hrefEditar: (id: number) => string
+  /** Se llama al abrir la edición con el lápiz en esta pestaña (no con Cmd/Ctrl+clic). */
+  onEditar: () => void
   data?: AlumnoListadoItem[]
   isLoading: boolean
   /** Hay datos en pantalla y se está pidiendo otra página o búsqueda. */
@@ -32,7 +36,15 @@ type AlumnosTableProps = {
   vacio: ReactNode
 }
 
-export function AlumnosTable({ rutaBase, data, isLoading, isFetching, vacio }: AlumnosTableProps) {
+export function AlumnosTable({
+  rutaBase,
+  hrefEditar,
+  onEditar,
+  data,
+  isLoading,
+  isFetching,
+  vacio,
+}: AlumnosTableProps) {
   const router = useRouter()
 
   return (
@@ -101,7 +113,12 @@ export function AlumnosTable({ rutaBase, data, isLoading, isFetching, vacio }: A
                     {/* Dorado, como el "Editar" del detalle: la acción de editar. */}
                     <Button variant="accent" size="icon" className="rounded-lg" asChild>
                       <Link
-                        href={`${href}/editar`}
+                        href={hrefEditar(alumno.id)}
+                        scroll={false}
+                        onClick={(e) => {
+                          // Cmd/Ctrl/Shift+clic abre otra pestaña: esta no abrió el modal.
+                          if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) onEditar()
+                        }}
                         aria-label={`Editar a ${alumno.nombre} ${alumno.apellido}`}
                         title="Editar"
                       >

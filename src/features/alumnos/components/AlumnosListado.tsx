@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback } from 'react'
+import { useCallback, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowDownAZ } from 'lucide-react'
 
@@ -9,6 +9,7 @@ import { Card } from '@/components/ui/card'
 import { PaginationControls } from '@/components/ui/pagination'
 
 import { useBuscadorAlumnos } from '../hooks/use-buscador-alumnos'
+import { AlumnoEditar } from './AlumnoEditar'
 import { AlumnosTable } from './AlumnosTable'
 import { BuscadorAlumnos } from './BuscadorAlumnos'
 import { SinResultados } from './SinResultados'
@@ -38,6 +39,35 @@ export function AlumnosListado({ rutaBase }: AlumnosListadoProps) {
     },
     [router, rutaBase],
   )
+
+  // Edición desde el lápiz de una fila: modal encima del listado, con ?editar=<id> en la URL (Atrás
+  // lo cierra y recargar lo mantiene). No es la ruta [alumnoId]/editar interceptada: una carpeta
+  // interceptora con parámetro dinámico rompe en Next 16 (docs/arquitectura-frontend.md → Modales
+  // con URL propia).
+  const editarId = searchParams.get('editar')
+  // Abierto con el lápiz en esta pestaña: cerrar es Atrás. Entrando por URL no hay a dónde volver.
+  const abiertoConLapiz = useRef(false)
+
+  const hrefEditar = useCallback(
+    (id: number) => {
+      const params = new URLSearchParams(searchParams.toString())
+      params.set('editar', String(id))
+      return `${rutaBase}?${params}`
+    },
+    [searchParams, rutaBase],
+  )
+
+  const cerrarEdicion = () => {
+    if (abiertoConLapiz.current) {
+      abiertoConLapiz.current = false
+      router.back()
+      return
+    }
+    const params = new URLSearchParams(searchParams.toString())
+    params.delete('editar')
+    const qs = params.toString()
+    router.replace(qs ? `${rutaBase}?${qs}` : rutaBase, { scroll: false })
+  }
 
   const buscador = useBuscadorAlumnos({
     controlado: { q: qUrl, page: pageUrl, onCambio },
@@ -74,6 +104,10 @@ export function AlumnosListado({ rutaBase }: AlumnosListadoProps) {
       ) : (
         <AlumnosTable
           rutaBase={rutaBase}
+          hrefEditar={hrefEditar}
+          onEditar={() => {
+            abiertoConLapiz.current = true
+          }}
           data={buscador.data}
           isLoading={buscador.isLoading}
           isFetching={buscador.isFetching}
@@ -94,6 +128,15 @@ export function AlumnosListado({ rutaBase }: AlumnosListadoProps) {
             onPageChange={buscador.setPage}
           />
         </div>
+      )}
+
+      {editarId && (
+        <AlumnoEditar
+          alumnoId={editarId}
+          mode="modal"
+          onCerrar={cerrarEdicion}
+          onGuardado={cerrarEdicion}
+        />
       )}
     </Card>
   )
