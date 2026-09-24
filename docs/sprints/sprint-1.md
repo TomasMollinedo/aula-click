@@ -429,7 +429,7 @@ Completar en `src/features/profesores/` la sección "Materias" del detalle del p
 - **Prioridad:** No bloqueante, pero conviene mergearla antes que T-06, T-08 y T-10 empiecen a construir sus tablas y formularios, para que nazcan con los primitivos en lugar de reescribirlos después
 
 **Descripción**
-Resolver la decisión D-08 (ahora T-25 en `decisiones.md`: shadcn/ui sobre Radix) y construir la base visual que reutilizan todas las features: la paleta de marca (Figma), los tokens de color de Tailwind y los primitivos de `components/ui/`. **No incluye** tocar `/login`: lo está trabajando Alvaro y se re-skinnea en un PR aparte, chico, una vez mergeada esta tarea.
+Resolver la decisión D-08 (ahora T-26 en `decisiones.md`: shadcn/ui sobre Radix) y construir la base visual que reutilizan todas las features: la paleta de marca (Figma), los tokens de color de Tailwind y los primitivos de `components/ui/`. **No incluye** tocar `/login`: lo está trabajando Alvaro y se re-skinnea en un PR aparte, chico, una vez mergeada esta tarea.
 
 **Alcance**
 
@@ -440,7 +440,7 @@ Resolver la decisión D-08 (ahora T-25 en `decisiones.md`: shadcn/ui sobre Radix
    - Sacar el boilerplate de modo oscuro de `create-next-app`: el Figma no define una variante oscura; si hace falta más adelante, se decide aparte.
 3. Primitivos en `components/ui/` con la API de shadcn, estilados con los tokens nuevos (no con los colores por defecto de shadcn): `Button`, `Input`, `Badge`, `Avatar`, `Card`, `Table`, `Select`, `Dialog`, `Pagination`.
 4. Re-skin de `components/layout/{app-shell,header,mesa-sidebar,profesor-sidebar}.tsx` con los tokens (sidebar oscuro con ítem activo, según el Figma).
-5. Actualizar `docs/arquitectura-frontend.md` → "Estilos y UI" con la lista final de primitivos, los nombres de los tokens y la referencia a T-25 en lugar de D-08.
+5. Actualizar `docs/arquitectura-frontend.md` → "Estilos y UI" con la lista final de primitivos, los nombres de los tokens y la referencia a T-26 en lugar de D-08.
 
 **Criterios de aceptación**
 
