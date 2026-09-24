@@ -5,8 +5,8 @@
 // - Fechas de calendario con @db.Date; horas en minutos desde medianoche (Int); día de la semana ISO 1..7.
 // - Auditoría en cada entidad de negocio: createdById, updatedById, createdAt, updatedAt.
 // - Baja lógica con el enum Estado: nada se borra.
-// - Las restricciones CHECK (bloque_agenda, turno, profesor) no las genera Prisma: se agregan a mano
-//   en el migration.sql de la migración inicial.
+// - Las restricciones CHECK (bloque_agenda, turno, profesor, aula) no las genera Prisma: se agregan
+//   a mano en el migration.sql de la migración que crea o modifica esas tablas.
 
 generator client {
   provider = "prisma-client"
@@ -288,17 +288,30 @@ model AsignacionMateria {
 
 // ---------- Agenda y turnos ----------
 
+// Catálogo que carga el seed (T-14, HU-05): sin ABM en este release, sólo lectura. Sin auditoría,
+// igual que Rol. CHECK (a mano en la migración): capacidad > 0.
+model Aula {
+  id        Int    @id @default(autoincrement())
+  nombre    String @unique
+  capacidad Int
+  estado    Estado @default(ACTIVO)
+
+  bloques BloqueAgenda[]
+
+  @@map("aula")
+}
+
 // CHECK (a mano en la migración): dia_semana 1..7, hora_inicio 0..1439, hora_fin 1..1440,
-// hora_fin > hora_inicio, capacidad > 0.
-// D-12 (abierta, decisiones.md): esta capacidad puede quedar redundante con Profesor.capacidad
-// (T-27); hoy no tiene filas ni código que la use. No se toca hasta que se decida D-12.
+// hora_fin > hora_inicio.
+// La capacidad efectiva de la hora es min(profesor.capacidad, aula.capacidad) (T-14, resuelve
+// D-12): no se persiste acá, se calcula al leer, igual que las ocurrencias de un recurrente.
 model BloqueAgenda {
   id         Int    @id @default(autoincrement())
   profesorId Int    @map("profesor_id")
+  aulaId     Int    @map("aula_id")
   diaSemana  Int    @map("dia_semana") // ISO: 1 = lunes … 7 = domingo
   horaInicio Int    @map("hora_inicio") // minutos desde medianoche
   horaFin    Int    @map("hora_fin") // minutos desde medianoche
-  capacidad  Int
   estado     Estado @default(ACTIVO)
 
   createdById String   @map("usuario_creador_id")
@@ -307,12 +320,15 @@ model BloqueAgenda {
   updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
 
   profesor  Profesor @relation(fields: [profesorId], references: [id], onDelete: Restrict)
+  aula      Aula     @relation(fields: [aulaId], references: [id], onDelete: Restrict)
   createdBy Usuario  @relation("BloqueAgendaCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy Usuario  @relation("BloqueAgendaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
   turnos Turno[]
 
   @@index([profesorId, diaSemana])
+  @@index([aulaId])
+  @@index([aulaId, diaSemana])
   @@index([createdById])
   @@index([updatedById])
   @@map("bloque_agenda")
