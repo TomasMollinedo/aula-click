@@ -298,7 +298,6 @@ model BloqueAgenda {
   diaSemana  Int    @map("dia_semana") // ISO: 1 = lunes … 7 = domingo
   horaInicio Int    @map("hora_inicio") // minutos desde medianoche
   horaFin    Int    @map("hora_fin") // minutos desde medianoche
-  capacidad  Int
   estado     Estado @default(ACTIVO)
 
   createdById String   @map("usuario_creador_id")
