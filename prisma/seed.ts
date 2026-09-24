@@ -1,5 +1,5 @@
 // Seed de desarrollo: roles, un usuario por rol (salvo ALUMNO, que llega con el portal en el
-// Sprint 3) y materias de ejemplo. Idempotente: todo es upsert por clave natural.
+// Sprint 3), materias y aulas de ejemplo. Idempotente: todo es upsert por clave natural.
 //
 // Se corre con `pnpm db:seed` (Prisma 7 no lo ejecuta solo después de `migrate dev`).
 // Es la única excepción, fuera de los repositories, que usa Prisma directo (AGENTS.md, regla 3).
@@ -23,6 +23,19 @@ const ROLES = [
 ]
 
 const MATERIAS = ['Matemática', 'Física', 'Química', 'Lengua', 'Inglés', 'Contabilidad']
+
+// Aulas: catálogo cargado por el seed, sin ABM en este release (HU-05, dominio.md → Aulas).
+const AULAS = [
+  { nombre: 'Aula 1', capacidad: 8 },
+  { nombre: 'Aula 2', capacidad: 6 },
+  { nombre: 'Aula 3', capacidad: 4 },
+  { nombre: 'Aula 4', capacidad: 5 },
+  { nombre: 'Aula 5', capacidad: 6 },
+  { nombre: 'Aula 6', capacidad: 7 },
+  { nombre: 'Aula 7', capacidad: 5 },
+  { nombre: 'Aula 8', capacidad: 8 },
+  { nombre: 'Aula 9', capacidad: 10 },
+]
 
 type UsuarioSeed = {
   role: string
@@ -145,7 +158,17 @@ async function main() {
     })
   }
 
-  console.log(`Seed completo: ${ROLES.length} roles, 3 usuarios y ${MATERIAS.length} materias.`)
+  for (const { nombre, capacidad } of AULAS) {
+    await prisma.aula.upsert({
+      where: { nombre },
+      create: { nombre, capacidad },
+      update: { capacidad },
+    })
+  }
+
+  console.log(
+    `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias y ${AULAS.length} aulas.`,
+  )
 }
 
 main()
