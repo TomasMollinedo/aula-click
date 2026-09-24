@@ -8,7 +8,9 @@ import type {
   crearBloqueRoute,
   editarBloqueRoute,
   eliminarBloqueRoute,
+  eliminarBloquesRoute,
   listarBloquesRoute,
+  obtenerBloqueRoute,
 } from './bloques.routes'
 
 // Recibe el dato ya validado, llama al service y arma la respuesta (201, 204...).
@@ -36,3 +38,9 @@ export const editar: RouteHandler<typeof editarBloqueRoute, AppEnv> = async (c) 
 
 export const eliminar: RouteHandler<typeof eliminarBloqueRoute, AppEnv> = async (c) =>
   c.json(await bloquesService.eliminar(c.req.valid('param').bloqueId, c.get('actor')), 200)
+
+export const eliminarVarios: RouteHandler<typeof eliminarBloquesRoute, AppEnv> = async (c) =>
+  c.json(await bloquesService.eliminarVarios(c.req.valid('json'), c.get('actor')), 200)
+
+export const obtener: RouteHandler<typeof obtenerBloqueRoute, AppEnv> = async (c) =>
+  c.json(await bloquesService.obtener(c.req.valid('param').bloqueId), 200)

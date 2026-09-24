@@ -62,3 +62,18 @@ export function diaSemanaISO(fecha: string): number {
   const dia = fechaADate(fecha).getUTCDay()
   return dia === 0 ? 7 : dia
 }
+
+const MS_POR_DIA = 24 * 60 * 60 * 1000
+
+/**
+ * Próxima fecha (`YYYY-MM-DD`) que cae en `diaSemana` (ISO: 1 = lunes … 7 = domingo) a partir de
+ * `desde`, **incluido**: si `desde` ya es ese día, lo devuelve. Lanza `RangeError` si `diaSemana`
+ * no es un entero de 1 a 7 o si `desde` es inválida.
+ */
+export function proximaFechaDelDia(diaSemana: number, desde: string): string {
+  if (!Number.isInteger(diaSemana) || diaSemana < 1 || diaSemana > 7) {
+    throw new RangeError(`Día de la semana inválido: ${diaSemana} (se espera un entero de 1 a 7)`)
+  }
+  const dias = (diaSemana - diaSemanaISO(desde) + 7) % 7
+  return dateAFecha(new Date(fechaADate(desde).getTime() + dias * MS_POR_DIA))
+}

@@ -1,6 +1,6 @@
 'use client'
 
-import { use } from 'react'
+import { Suspense, use } from 'react'
 
 import { ProfesorDetalle } from '@/features/profesores/components/ProfesorDetalle'
 
@@ -9,5 +9,10 @@ export default function DetalleProfesorPage({
   params,
 }: PageProps<'/mesa/profesores/[profesorId]'>) {
   const { profesorId } = use(params)
-  return <ProfesorDetalle profesorId={profesorId} rutaBase="/mesa/profesores" />
+  // Suspense: el detalle lee el tab de la URL con useSearchParams.
+  return (
+    <Suspense>
+      <ProfesorDetalle profesorId={profesorId} rutaBase="/mesa/profesores" />
+    </Suspense>
+  )
 }

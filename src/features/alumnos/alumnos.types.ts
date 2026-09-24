@@ -1,4 +1,4 @@
-import type { PaginatedResponse } from '@/types'
+import type { Auditoria, PaginatedResponse } from '@/types'
 
 export type NivelEscolaridad = 'INICIAL' | 'PRIMARIO' | 'SECUNDARIO' | 'TERCIARIO' | 'UNIVERSITARIO'
 
@@ -8,12 +8,6 @@ export const NIVEL_ESCOLARIDAD_LABEL: Record<NivelEscolaridad, string> = {
   SECUNDARIO: 'Secundario',
   TERCIARIO: 'Terciario',
   UNIVERSITARIO: 'Universitario',
-}
-
-export type UsuarioAuditoria = {
-  id: string
-  nombre: string
-  apellido: string
 }
 
 export type AlumnoListadoItem = {
@@ -42,11 +36,7 @@ export type AlumnoDetalle = {
   tutorEmail: string | null
   estado: 'ACTIVO' | 'INACTIVO'
   menorDeEdad: boolean
-  createdAt: string
-  updatedAt: string
-  createdBy: UsuarioAuditoria | null
-  updatedBy: UsuarioAuditoria | null
-}
+} & Auditoria
 
 export type AlumnoCrear = {
   nombre: string

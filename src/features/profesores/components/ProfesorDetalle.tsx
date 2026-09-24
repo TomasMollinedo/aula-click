@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
 import Link from 'next/link'
-import { format, parseISO } from 'date-fns'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle,
   ArrowLeft,
@@ -24,13 +23,16 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Dato, Datos } from '@/components/ui/datos'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Trazabilidad } from '@/components/ui/trazabilidad'
 import { getInitials } from '@/utils/initials'
 
 import { parsearProfesorId } from '../profesores.schema'
-import type { ProfesorDetalle as ProfesorDetalleType, UsuarioAuditoria } from '../profesores.types'
+import type { ProfesorDetalle as ProfesorDetalleType } from '../profesores.types'
 import { useProfesor } from '../hooks/use-profesor'
+import { HorarioProfesor } from './HorarioProfesor'
 
 type ProfesorDetalleProps = {
   /** `profesorId` tal como llega en la URL. */
@@ -39,12 +41,26 @@ type ProfesorDetalleProps = {
   rutaBase: string
 }
 
+const TABS = ['datos', 'materias', 'horario'] as const
+type Tab = (typeof TABS)[number]
+
 // Página de detalle del profesor, con tabs. "Editar" abre la edición como modal encima de esta
-// página (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia.
+// página (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia. El tab va en la URL
+// (`?tab=`), así el formulario de la sección "Horario" (`&bloque=…`) tiene URL propia.
 export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) {
   const id = parsearProfesorId(profesorId)
   const { data: profesor, isLoading, isError, error, refetch } = useProfesor(id ?? 0)
-  const [tab, setTab] = useState<'datos' | 'materias' | 'horario'>('datos')
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const rutaDetalle = `${rutaBase}/${profesorId}`
+
+  const tabParam = searchParams.get('tab')
+  const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'datos'
+  // replace: cambiar de tab no suma entradas al historial (Atrás sale del detalle).
+  const cambiarTab = (valor: string) =>
+    router.replace(valor === 'datos' ? rutaDetalle : `${rutaDetalle}?tab=${valor}`, {
+      scroll: false,
+    })
 
   const volver = (
     <Link
@@ -145,7 +161,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         }
       />
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="space-y-6">
+      <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="datos" className="px-4">
             <UserRound />
@@ -176,13 +192,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         </TabsContent>
 
         <TabsContent value="horario">
-          <Card className="p-0">
-            <EmptyState
-              icon={Construction}
-              title="Próximamente"
-              description="Pronto vas a poder ver acá el horario de atención del profesor."
-            />
-          </Card>
+          <HorarioProfesor profesor={profesor} rutaDetalle={rutaDetalle} />
         </TabsContent>
       </Tabs>
     </div>
@@ -212,15 +222,7 @@ function DatosProfesor({ profesor }: { profesor: ProfesorDetalleType }) {
         </Seccion>
       </div>
 
-      <div className="text-muted-foreground space-y-1 text-xs">
-        <p>
-          Creado por {nombreAuditoria(profesor.createdBy)} · {formatoInstante(profesor.createdAt)}
-        </p>
-        <p>
-          Última modificación por {nombreAuditoria(profesor.updatedBy)} ·{' '}
-          {formatoInstante(profesor.updatedAt)}
-        </p>
-      </div>
+      <Trazabilidad auditoria={profesor} />
     </div>
   )
 }
@@ -245,28 +247,4 @@ function Seccion({
       {children}
     </Card>
   )
-}
-
-function Datos({ children }: { children: React.ReactNode }) {
-  return <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">{children}</dl>
-}
-
-function Dato({ label, valor }: { label: string; valor: React.ReactNode }) {
-  return (
-    <div className="min-w-0">
-      <dt className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-        {label}
-      </dt>
-      <dd className="mt-1 text-sm break-words">{valor ?? '—'}</dd>
-    </div>
-  )
-}
-
-// Instante de auditoría (ISO en UTC) en hora local: parseISO respeta la "Z".
-function formatoInstante(instante: string): string {
-  return format(parseISO(instante), 'dd/MM/yyyy, HH:mm')
-}
-
-function nombreAuditoria(usuario: UsuarioAuditoria | null): string {
-  return usuario ? `${usuario.nombre} ${usuario.apellido}` : 'Sistema'
 }

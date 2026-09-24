@@ -49,8 +49,11 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - Un aula no puede tener dos bloques activos a la misma hora el mismo día, sin importar de qué profesor sean.
 - Un pedido de varias horas se crea todo junto o nada: si alguna hora del rango ya está tomada (por el profesor o por el aula), no se crea ninguna.
 - **Capacidad efectiva** de cada hora: `min(profesor.capacidad, aula.capacidad)` (T-27/T-28), calculada al leer, nunca guardada.
+- **Ocupación** de cada hora (T-33): la cantidad de turnos `ACTIVO` de esa hora en su **próxima ocurrencia**, es decir, la próxima fecha de ese día de la semana a partir de hoy, hoy incluido (aunque la hora de hoy ya haya pasado: es un horario semanal, no una agenda). Como todo turno es de una fecha puntual (T-30), sumar todos los turnos futuros de una hora no se puede comparar con su capacidad efectiva. Es la misma cuenta ("turnos que ocupan lugar en esa hora en esa fecha") que controla `BLOQUE_LLENO` al registrar un turno.
+- Un aula está **disponible** para un horario si está activa y ninguna de las horas pedidas ese día está ocupada por un bloque activo (de cualquier profesor). Al editar una hora, la propia fila no ocupa su aula.
 - Tienen baja lógica (estado activo / inactivo); no se puede editar ni eliminar un bloque con turnos vigentes (ver Profesores y materias).
 - **Editar un bloque** cambia el día, el horario y/o el aula de esa hora puntual; el profesor no se edita (para moverlo a otro profesor hay que dar de baja esa hora y cargar una nueva). El resultado tiene que seguir siendo una hora exacta, y las mismas reglas de superposición y aula libre valen para la edición, sin contar la propia fila como un conflicto consigo misma.
+- **Dar de baja un bloque completo** (varias horas juntas, T-33): se piden las horas por sus ids explícitos (las que el usuario ve agrupadas), nunca por rango, así no se da de baja nada que el usuario no haya visto. Todas tienen que existir, estar activas y ser del **mismo profesor**, y ninguna puede tener turnos vigentes. Se dan de baja todas o ninguna. Igual que la baja de una hora, no se valida el estado del profesor.
 
 ## Turnos
 

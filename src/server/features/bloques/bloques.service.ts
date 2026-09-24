@@ -2,21 +2,25 @@ import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { TurnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { Actor } from '@/server/shared/actor'
-import { hoy, type Reloj } from '@/server/shared/fechas'
-import { horaAMinutos, minutosAHora } from '@/server/shared/zod'
-import { partirEnHoras } from './bloques.reglas'
+import { detallesPorPosicion } from '@/server/shared/detalles'
+import { hoy, proximaFechaDelDia, type Reloj } from '@/server/shared/fechas'
+import { horaAMinutos, minutosAHora, partirEnHoras } from '@/server/shared/zod'
 import type { BloquesRepository } from './bloques.repository'
 import type {
   Bloque,
+  BloqueDetalle,
   BloqueHorario,
-  BloquesCreados,
+  BloquesLote,
   CrearBloque,
   EditarBloque,
+  EliminarBloques,
 } from './bloques.validation'
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases. De `profesores` y
-// `turnos` solo lee (`buscarParaBloque`, `buscarCapacidad`, `contarVigentesPorBloque`): nunca usa
-// sus reglas ni su service.
+// `turnos` solo lee (`buscarParaBloque`, `buscarCapacidad`, los conteos de turnos vigentes y la
+// ocupación): nunca usa sus reglas ni su service.
+
+const MENSAJE_TURNOS_VIGENTES = 'No se puede modificar un bloque con turnos vigentes'
 
 const MENSAJE_PROFESOR_INACTIVO = 'El profesor está inactivo: no se le puede cargar un bloque'
 const MENSAJE_SIN_MATERIAS =
@@ -35,7 +39,10 @@ export function crearBloquesService({
 }: {
   repository: BloquesRepository
   profesoresRepository: Pick<ProfesoresRepository, 'buscarParaBloque' | 'buscarCapacidad'>
-  turnosRepository: Pick<TurnosRepository, 'contarVigentesPorBloque'>
+  turnosRepository: Pick<
+    TurnosRepository,
+    'contarVigentesPorBloque' | 'contarVigentesPorBloques' | 'contarOcupacionPorBloque'
+  >
   reloj?: Reloj
 }) {
   /** Profesor inexistente (404), inactivo o sin materias (409). Mismo chequeo del alta y la edición. */
@@ -58,18 +65,47 @@ export function crearBloquesService({
   async function exigirSinTurnosVigentes(bloqueId: number): Promise<void> {
     const cantidad = await turnosRepository.contarVigentesPorBloque(bloqueId, hoy(reloj))
     if (cantidad > 0) {
-      throw new ConflictError('No se puede modificar un bloque con turnos vigentes', {
+      throw new ConflictError(MENSAJE_TURNOS_VIGENTES, {
         code: 'TURNOS_VIGENTES',
         details: { cantidad },
       })
     }
   }
 
+  /**
+   * Próxima fecha de cada fila (la de su día de la semana a partir de hoy, hoy incluido: es un
+   * horario semanal, no una agenda) y su ocupación en esa fecha, en una sola consulta para todas.
+   * Devuelve una función que da `{ proximaFecha, ocupacion }` por id de fila (0 si no hay turnos).
+   */
+  async function ocupacionEnProximaFecha(filas: readonly { id: number; diaSemana: number }[]) {
+    const fechaHoy = hoy(reloj)
+    const proximas = new Map(
+      filas.map((fila) => [fila.id, proximaFechaDelDia(fila.diaSemana, fechaHoy)]),
+    )
+    const cantidades = new Map(
+      (
+        await turnosRepository.contarOcupacionPorBloque(
+          [...proximas].map(([bloqueAgendaId, fecha]) => ({ bloqueAgendaId, fecha })),
+        )
+      ).map((grupo) => [`${grupo.bloqueAgendaId}|${grupo.fecha}`, grupo.cantidad]),
+    )
+    return (id: number) => {
+      const proximaFecha = proximas.get(id) ?? fechaHoy
+      return { proximaFecha, ocupacion: cantidades.get(`${id}|${proximaFecha}`) ?? 0 }
+    }
+  }
+
   return {
     /**
      * Horario semanal del profesor: sus filas activas, ordenadas por día y hora, sin paginar
-     * (T-17 punto 1). Cada una trae la capacidad efectiva (`min(profesor.capacidad,
-     * aula.capacidad)`), calculada al leer.
+     * (T-17 punto 1). Cada una trae, calculadas al leer:
+     * - la capacidad efectiva (`min(profesor.capacidad, aula.capacidad)`);
+     * - `proximaFecha`: la próxima fecha de su día de la semana a partir de hoy, hoy incluido
+     *   (aunque la hora de hoy ya haya pasado: es un horario semanal, no una agenda);
+     * - `ocupacion`: los turnos que ocupan lugar en esa fila en `proximaFecha`. Con T-30 todo
+     *   turno es de una fecha puntual, así que sumar todos los futuros no se puede comparar con la
+     *   capacidad: la ocupación es la de la próxima ocurrencia. Una sola consulta para todo el
+     *   horario.
      *
      * 404 si el profesor no existe. Se puede ver aunque el profesor esté inactivo (es lectura,
      * igual que `listarMateriasAsignadas` de `profesores`).
@@ -79,6 +115,7 @@ export function crearBloquesService({
       if (capacidadProfesor === null) throw new NotFoundError('Profesor no encontrado')
 
       const filas = await repository.listarPorProfesor(profesorId)
+      const ocupacion = await ocupacionEnProximaFecha(filas)
 
       return filas.map((fila) => ({
         id: fila.id,
@@ -87,7 +124,30 @@ export function crearBloquesService({
         horaFin: minutosAHora(fila.horaFin),
         aula: { id: fila.aula.id, nombre: fila.aula.nombre },
         capacidadEfectiva: Math.min(capacidadProfesor, fila.aula.capacidad),
+        ...ocupacion(fila.id),
       }))
+    },
+
+    /**
+     * Detalle de una fila (una hora), activa o no: lo mismo que el horario (capacidad efectiva,
+     * próxima fecha y ocupación, calculadas igual) más su estado, el profesor, la capacidad del
+     * aula y la auditoría. 404 si la fila no existe.
+     */
+    async obtener(id: number): Promise<BloqueDetalle> {
+      const fila = await repository.buscarDetalle(id)
+      if (!fila) throw new NotFoundError('Bloque no encontrado')
+
+      const ocupacion = await ocupacionEnProximaFecha([fila])
+      const { profesor, horaInicio, horaFin, ...resto } = fila
+
+      return {
+        ...resto,
+        horaInicio: minutosAHora(horaInicio),
+        horaFin: minutosAHora(horaFin),
+        profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
+        capacidadEfectiva: Math.min(profesor.capacidad, fila.aula.capacidad),
+        ...ocupacion(fila.id),
+      }
     },
 
     /**
@@ -97,7 +157,7 @@ export function crearBloquesService({
      * (409 `BLOQUE_SUPERPUESTO`) y aula ocupada (409 `AULA_OCUPADA`). Las dos últimas se verifican
      * de forma atómica en el repository, junto con el `INSERT`.
      */
-    async crear(datos: CrearBloque, actor: Actor): Promise<BloquesCreados> {
+    async crear(datos: CrearBloque, actor: Actor): Promise<BloquesLote> {
       await validarProfesor(datos.profesorId)
 
       const horas = partirEnHoras(datos.horaInicio, datos.horaFin)
@@ -156,6 +216,67 @@ export function crearBloquesService({
       await exigirSinTurnosVigentes(id)
 
       return repository.eliminarBloque(id, actor)
+    },
+
+    /**
+     * Baja lógica de varias filas juntas (el bloque que la UI muestra agrupado), todas o ninguna,
+     * por ids explícitos. Mismo esquema que `quitarMaterias` de `profesores`: cada error informa
+     * en `details` todas las filas que lo causan (`path` = posición en `bloqueIds`). Orden de los
+     * chequeos: filas inexistentes o ya dadas de baja (404), filas de más de un profesor (400
+     * `VALIDACION`: es la baja de un bloque del horario de un profesor, no una operación masiva) y
+     * filas con turnos vigentes (409 `TURNOS_VIGENTES`, con la cantidad de cada una). Igual que la
+     * baja de una hora, no valida el estado del profesor.
+     */
+    async eliminarVarios({ bloqueIds }: EliminarBloques, actor: Actor): Promise<BloquesLote> {
+      const filas = new Map((await repository.buscarPorIds(bloqueIds)).map((f) => [f.id, f]))
+
+      const inexistentes = detallesPorPosicion(
+        'bloqueIds',
+        bloqueIds,
+        (id) => filas.get(id)?.estado !== 'ACTIVO',
+        (id) => `El bloque ${id} no existe o ya fue dado de baja`,
+      )
+      if (inexistentes.length > 0) {
+        throw new NotFoundError('Bloque no encontrado', { details: inexistentes })
+      }
+
+      const profesores = new Set(bloqueIds.map((id) => filas.get(id)?.profesorId))
+      if (profesores.size > 1) {
+        throw new ValidationError('Todas las horas deben ser del mismo profesor', {
+          details: [
+            { path: ['bloqueIds'], message: 'Todas las horas deben ser del mismo profesor' },
+          ],
+        })
+      }
+
+      const vigentes = new Map(
+        (await turnosRepository.contarVigentesPorBloques(bloqueIds, hoy(reloj))).map(
+          ({ bloqueAgendaId, cantidad }) => [bloqueAgendaId, cantidad],
+        ),
+      )
+      const conTurnos = detallesPorPosicion(
+        'bloqueIds',
+        bloqueIds,
+        (id) => (vigentes.get(id) ?? 0) > 0,
+        (id) => {
+          const fila = filas.get(id)
+          const cantidad = vigentes.get(id) ?? 0
+          const hora = fila
+            ? ` de ${minutosAHora(fila.horaInicio)} a ${minutosAHora(fila.horaFin)}`
+            : ''
+          return `La hora${hora} tiene ${cantidad} ${cantidad === 1 ? 'turno vigente' : 'turnos vigentes'}`
+        },
+        (id) => ({ cantidad: vigentes.get(id) ?? 0 }),
+      )
+      if (conTurnos.length > 0) {
+        throw new ConflictError(MENSAJE_TURNOS_VIGENTES, {
+          code: 'TURNOS_VIGENTES',
+          details: conTurnos,
+        })
+      }
+
+      const bloques = await repository.eliminarBloques(bloqueIds, actor)
+      return { cantidad: bloques.length, bloques }
     },
   }
 }

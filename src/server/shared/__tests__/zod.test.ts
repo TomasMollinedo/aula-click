@@ -1,5 +1,8 @@
+import { z } from '@hono/zod-openapi'
 import { describe, expect, it } from 'vitest'
 import {
+  diaSemana,
+  diaSemanaQuery,
   dni,
   email,
   fechaISO,
@@ -7,6 +10,8 @@ import {
   horaHHmm,
   minutosAHora,
   nombrePersona,
+  partirEnHoras,
+  rangoHorasEnPunto,
   telefono,
   textoRequerido,
 } from '../zod'
@@ -188,5 +193,110 @@ describe('minutosAHora', () => {
     for (let minutos = 0; minutos < 1440; minutos++) {
       expect(horaAMinutos(minutosAHora(minutos))).toBe(minutos)
     }
+  })
+})
+
+describe('partirEnHoras', () => {
+  it('una hora exacta da un solo tramo', () => {
+    expect(partirEnHoras('14:00', '15:00')).toEqual([{ horaInicio: 840, horaFin: 900 }])
+  })
+
+  it('un rango de varias horas da un tramo por cada una', () => {
+    expect(partirEnHoras('14:00', '18:00')).toEqual([
+      { horaInicio: 840, horaFin: 900 },
+      { horaInicio: 900, horaFin: 960 },
+      { horaInicio: 960, horaFin: 1020 },
+      { horaInicio: 1020, horaFin: 1080 },
+    ])
+  })
+
+  it('un rango que empieza a medianoche', () => {
+    expect(partirEnHoras('00:00', '02:00')).toEqual([
+      { horaInicio: 0, horaFin: 60 },
+      { horaInicio: 60, horaFin: 120 },
+    ])
+  })
+
+  it('lanza RangeError con una hora inválida', () => {
+    expect(() => partirEnHoras('25:00', '26:00')).toThrow(RangeError)
+  })
+})
+
+describe('diaSemana', () => {
+  it.each([1, 4, 7])('acepta %i', (dia) => {
+    expect(diaSemana.parse(dia)).toBe(dia)
+  })
+
+  it.each([0, 8, 1.5, '1'])('rechaza %o', (dia) => {
+    expect(diaSemana.safeParse(dia).success).toBe(false)
+  })
+
+  it('da el mensaje en español', () => {
+    expect(mensaje(diaSemana.safeParse(8))).toBe('Debe ser un día de la semana válido (1 a 7)')
+  })
+})
+
+describe('diaSemanaQuery', () => {
+  it('coerciona el texto del query', () => {
+    expect(diaSemanaQuery.parse('3')).toBe(3)
+  })
+
+  it.each(['0', '8', '1.5', 'abc', ''])('rechaza %o', (dia) => {
+    expect(diaSemanaQuery.safeParse(dia).success).toBe(false)
+  })
+
+  it('mismos mensajes que en el body', () => {
+    expect(mensaje(diaSemanaQuery.safeParse('8'))).toBe(
+      'Debe ser un día de la semana válido (1 a 7)',
+    )
+  })
+})
+
+describe('rangoHorasEnPunto', () => {
+  const rango = z
+    .object({ horaInicio: horaHHmm, horaFin: horaHHmm })
+    .superRefine(rangoHorasEnPunto({ finPosterior: true }))
+  const parcial = z
+    .object({ horaInicio: horaHHmm, horaFin: horaHHmm })
+    .partial()
+    .superRefine(rangoHorasEnPunto({ finPosterior: false }))
+
+  // Issues de un safeParse fallido, como `path` + `message`.
+  function issues(resultado: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) {
+    return resultado.error?.issues.map(({ path, message }) => ({ path, message })) ?? []
+  }
+
+  it('acepta un rango de horas en punto con el fin posterior', () => {
+    expect(rango.safeParse({ horaInicio: '14:00', horaFin: '18:00' }).success).toBe(true)
+  })
+
+  it('marca cada hora que no es en punto, en su campo', () => {
+    expect(issues(rango.safeParse({ horaInicio: '14:30', horaFin: '15:30' }))).toEqual([
+      { path: ['horaInicio'], message: 'Debe ser una hora en punto (por ejemplo 14:00)' },
+      { path: ['horaFin'], message: 'Debe ser una hora en punto (por ejemplo 15:00)' },
+    ])
+  })
+
+  it.each([
+    ['igual', '15:00', '15:00'],
+    ['anterior', '15:00', '14:00'],
+  ])('con finPosterior, un fin %s al inicio falla en horaFin', (_caso, horaInicio, horaFin) => {
+    expect(issues(rango.safeParse({ horaInicio, horaFin }))).toEqual([
+      { path: ['horaFin'], message: 'La hora de fin debe ser posterior a la de inicio' },
+    ])
+  })
+
+  it('con una hora de formato inválido, solo reporta el error de formato', () => {
+    expect(issues(rango.safeParse({ horaInicio: '14:00', horaFin: '25:00' }))).toEqual([
+      { path: ['horaFin'], message: 'Hora inválida: debe tener formato HH:mm (00:00 a 23:59)' },
+    ])
+  })
+
+  it('sin finPosterior no compara el orden y acepta horas ausentes', () => {
+    expect(parcial.safeParse({ horaInicio: '15:00', horaFin: '14:00' }).success).toBe(true)
+    expect(parcial.safeParse({ horaFin: '16:00' }).success).toBe(true)
+    expect(issues(parcial.safeParse({ horaInicio: '14:30' }))).toEqual([
+      { path: ['horaInicio'], message: 'Debe ser una hora en punto (por ejemplo 14:00)' },
+    ])
   })
 })
