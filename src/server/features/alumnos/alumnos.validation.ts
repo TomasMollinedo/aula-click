@@ -77,7 +77,7 @@ export const listarAlumnosQuerySchema = paginacionQuerySchema.extend({
 export type ListarAlumnosQuery = z.infer<typeof listarAlumnosQuerySchema>
 
 export const alumnoListadoItemSchema = z
-  .object({ id: z.number().int(), apellido: z.string(), nombre: z.string() })
+  .object({ id: z.number().int(), apellido: z.string(), nombre: z.string(), dni: z.string() })
   .openapi('AlumnoListadoItem')
 
 export type AlumnoListadoItem = z.infer<typeof alumnoListadoItemSchema>

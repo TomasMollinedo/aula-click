@@ -216,7 +216,7 @@ Completar la feature `src/server/features/alumnos/`, que hoy es el esqueleto mod
 
 **Alcance**
 
-1. `GET /api/v1/alumnos`: paginado, orden por apellido (con `id` como desempate), `q` con `contains` sobre `busqueda`. Cada ítem trae id, apellido y nombre. Sin filtro de estado.
+1. `GET /api/v1/alumnos`: paginado, orden por apellido (con `id` como desempate), `q` con `contains` sobre `busqueda`. Cada ítem trae id, apellido, nombre y DNI. Sin filtro de estado.
 2. `GET /api/v1/alumnos/{id}`: detalle con datos identificatorios, de contacto, del tutor, escolares, observaciones y auditoría (quién creó y quién modificó por última vez, con fecha y hora). Exámenes (HU-08) y turnos (HU-07) se suman cuando se implementen esas HU.
 3. `POST /api/v1/alumnos` y `PATCH /api/v1/alumnos/{id}`, con las primitivas de `shared/zod`:
    - Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (decisión T-25).
@@ -248,7 +248,7 @@ Completar `src/features/alumnos/` (feature modelo del frontend) y sus páginas e
 
 **Alcance**
 
-1. Listado paginado con apellido y nombre.
+1. Listado paginado con apellido, nombre y DNI.
 2. Buscador por DNI, nombre o apellido con `use-debounce`. Sin coincidencias: aviso y botón para dar de alta un alumno.
 3. El buscador se arma como componente reutilizable de la feature, expuesto mediante su hook, porque lo usa la pantalla de registrar turno (HU-07).
 4. Botón "+ Nuevo alumno" y formulario de alta y edición en secciones: identificatorios, contacto, tutor, escolares y observaciones.

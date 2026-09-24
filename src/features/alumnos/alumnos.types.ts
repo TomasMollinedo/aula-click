@@ -20,6 +20,7 @@ export type AlumnoListadoItem = {
   id: number
   apellido: string
   nombre: string
+  dni: string
 }
 
 export type AlumnoDetalle = {

@@ -46,10 +46,11 @@ export const ejemploListadoItem = {
   id: 12,
   apellido: 'Álvarez',
   nombre: 'Lucía',
+  dni: '52345678',
 } satisfies AlumnoListadoItem
 
 export const ejemploListado = {
-  data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan' }],
+  data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan', dni: '30123456' }],
   meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
 } satisfies AlumnosListado
 

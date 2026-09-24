@@ -56,6 +56,7 @@ export function AlumnosTable({
         <TableRow>
           <TableHead className="w-2/5">Apellido</TableHead>
           <TableHead>Nombre</TableHead>
+          <TableHead className="w-36">DNI</TableHead>
           <TableHead className="w-32 text-right">Acciones</TableHead>
         </TableRow>
       </TableHeader>
@@ -71,6 +72,9 @@ export function AlumnosTable({
               </TableCell>
               <TableCell>
                 <Skeleton className="h-4 w-28" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-20" />
               </TableCell>
               <TableCell />
             </TableRow>
@@ -103,6 +107,7 @@ export function AlumnosTable({
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{alumno.nombre}</TableCell>
+                <TableCell className="text-muted-foreground tabular-nums">{alumno.dni}</TableCell>
                 <TableCell>
                   <div className="flex items-center justify-end gap-1">
                     <Link
@@ -135,7 +140,7 @@ export function AlumnosTable({
           })
         ) : (
           <TableRow className="hover:bg-transparent">
-            <TableCell colSpan={3} className="p-0">
+            <TableCell colSpan={4} className="p-0">
               {vacio}
             </TableCell>
           </TableRow>
