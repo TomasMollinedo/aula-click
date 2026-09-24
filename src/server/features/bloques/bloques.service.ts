@@ -3,14 +3,20 @@ import type { ProfesoresRepository } from '@/server/features/profesores/profesor
 import type { TurnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { Actor } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
-import { horaAMinutos } from '@/server/shared/zod'
+import { horaAMinutos, minutosAHora } from '@/server/shared/zod'
 import { partirEnHoras } from './bloques.reglas'
 import type { BloquesRepository } from './bloques.repository'
-import type { Bloque, BloquesCreados, CrearBloque, EditarBloque } from './bloques.validation'
+import type {
+  Bloque,
+  BloqueHorario,
+  BloquesCreados,
+  CrearBloque,
+  EditarBloque,
+} from './bloques.validation'
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases. De `profesores` y
-// `turnos` solo lee (`buscarParaBloque`, `contarVigentesPorBloque`): nunca usa sus reglas ni su
-// service.
+// `turnos` solo lee (`buscarParaBloque`, `buscarCapacidad`, `contarVigentesPorBloque`): nunca usa
+// sus reglas ni su service.
 
 const MENSAJE_PROFESOR_INACTIVO = 'El profesor está inactivo: no se le puede cargar un bloque'
 const MENSAJE_SIN_MATERIAS =
@@ -28,7 +34,7 @@ export function crearBloquesService({
   reloj,
 }: {
   repository: BloquesRepository
-  profesoresRepository: Pick<ProfesoresRepository, 'buscarParaBloque'>
+  profesoresRepository: Pick<ProfesoresRepository, 'buscarParaBloque' | 'buscarCapacidad'>
   turnosRepository: Pick<TurnosRepository, 'contarVigentesPorBloque'>
   reloj?: Reloj
 }) {
@@ -60,6 +66,30 @@ export function crearBloquesService({
   }
 
   return {
+    /**
+     * Horario semanal del profesor: sus filas activas, ordenadas por día y hora, sin paginar
+     * (T-17 punto 1). Cada una trae la capacidad efectiva (`min(profesor.capacidad,
+     * aula.capacidad)`), calculada al leer.
+     *
+     * 404 si el profesor no existe. Se puede ver aunque el profesor esté inactivo (es lectura,
+     * igual que `listarMateriasAsignadas` de `profesores`).
+     */
+    async listarPorProfesor(profesorId: number): Promise<BloqueHorario[]> {
+      const capacidadProfesor = await profesoresRepository.buscarCapacidad(profesorId)
+      if (capacidadProfesor === null) throw new NotFoundError('Profesor no encontrado')
+
+      const filas = await repository.listarPorProfesor(profesorId)
+
+      return filas.map((fila) => ({
+        id: fila.id,
+        diaSemana: fila.diaSemana,
+        horaInicio: minutosAHora(fila.horaInicio),
+        horaFin: minutosAHora(fila.horaFin),
+        aula: { id: fila.aula.id, nombre: fila.aula.nombre },
+        capacidadEfectiva: Math.min(capacidadProfesor, fila.aula.capacidad),
+      }))
+    },
+
     /**
      * Crea una fila por cada hora del rango pedido (todas o ninguna). Orden de los chequeos:
      * profesor inexistente (404), profesor inactivo (409 `PROFESOR_INACTIVO`), profesor sin

@@ -8,13 +8,16 @@ import { bloquesRoutes } from '../bloques.routes'
 
 const { repository, profesoresRepository, turnosRepository, getSession } = vi.hoisted(() => ({
   repository: {
+    listarPorProfesor: vi.fn(),
     crearBloques: vi.fn(),
     buscarPorId: vi.fn(),
     editarBloque: vi.fn(),
     eliminarBloque: vi.fn(),
   },
-  profesoresRepository: { buscarParaBloque: vi.fn() },
-  turnosRepository: { contarVigentesPorBloque: vi.fn() },
+  profesoresRepository: { buscarParaBloque: vi.fn(), buscarCapacidad: vi.fn() },
+  turnosRepository: {
+    contarVigentesPorBloque: vi.fn(),
+  },
   getSession: vi.fn(),
 }))
 vi.mock('../bloques.repository', () => ({ bloquesRepository: repository }))
@@ -68,11 +71,75 @@ beforeEach(() => {
     estado: 'ACTIVO',
     tieneMateriaActiva: true,
   })
+  profesoresRepository.buscarCapacidad.mockResolvedValue(10)
   turnosRepository.contarVigentesPorBloque.mockResolvedValue(0)
+  repository.listarPorProfesor.mockResolvedValue([])
   repository.crearBloques.mockResolvedValue([BLOQUE_RESPUESTA])
   repository.buscarPorId.mockResolvedValue(BLOQUE_ACTUAL)
   repository.editarBloque.mockResolvedValue(BLOQUE_RESPUESTA)
   repository.eliminarBloque.mockResolvedValue(BLOQUE_RESPUESTA)
+})
+
+describe('GET /bloques', () => {
+  it('responde 200 con el horario y la capacidad efectiva', async () => {
+    repository.listarPorProfesor.mockResolvedValue([
+      {
+        id: 10,
+        diaSemana: 1,
+        horaInicio: 840,
+        horaFin: 900,
+        aula: { id: 7, nombre: 'Aula 3', capacidad: 10 },
+      },
+    ])
+
+    const res = await pedir('?profesorId=3', 'GET')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([
+      {
+        id: 10,
+        diaSemana: 1,
+        horaInicio: '14:00',
+        horaFin: '15:00',
+        aula: { id: 7, nombre: 'Aula 3' },
+        capacidadEfectiva: 10,
+      },
+    ])
+  })
+
+  it('sin bloques activos, responde un arreglo vacío', async () => {
+    const res = await pedir('?profesorId=3', 'GET')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+
+  it('profesor inexistente → 404 NO_ENCONTRADO', async () => {
+    profesoresRepository.buscarCapacidad.mockResolvedValue(null)
+    const res = await pedir('?profesorId=99', 'GET')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
+  })
+
+  it('sin profesorId → 400', async () => {
+    const res = await pedir('', 'GET')
+    expect(res.status).toBe(400)
+    expect(profesoresRepository.buscarCapacidad).not.toHaveBeenCalled()
+  })
+
+  it('profesorId inválido → 400', async () => {
+    const res = await pedir('?profesorId=abc', 'GET')
+    expect(res.status).toBe(400)
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('?profesorId=3', 'GET')).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('?profesorId=3', 'GET')).status).toBe(403)
+  })
 })
 
 describe('POST /bloques', () => {
@@ -319,6 +386,9 @@ describe('OpenAPI', () => {
   const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
 
   it('declara los endpoints con todos sus status codes', () => {
+    const respuestasGet = doc.paths['/api/v1/bloques']?.get?.responses ?? {}
+    expect(Object.keys(respuestasGet).sort()).toEqual(['200', '400', '401', '403', '404'])
+
     const respuestasPost = doc.paths['/api/v1/bloques']?.post?.responses ?? {}
     expect(Object.keys(respuestasPost).sort()).toEqual(['201', '400', '401', '403', '404', '409'])
 
@@ -331,7 +401,13 @@ describe('OpenAPI', () => {
 
   it('registra los componentes de bloques', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['BloqueCrear', 'BloqueEditar', 'Bloque', 'BloquesCreados']),
+      expect.arrayContaining([
+        'BloqueCrear',
+        'BloqueEditar',
+        'Bloque',
+        'BloqueHorario',
+        'BloquesCreados',
+      ]),
     )
   })
 })

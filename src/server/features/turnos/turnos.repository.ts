@@ -7,10 +7,10 @@ import type { TurnosVigentesPorMateria } from './turnos.validation'
 // Sin reglas de negocio.
 
 /**
- * Condición de **turno vigente** (docs/dominio.md → Turnos): un recurrente sin fecha de fin o con
- * fin >= hoy, o una sesión única con fecha >= hoy. Como en una sesión única `fechaFin` es igual a
- * `fechaInicio` (decisión T-20), es una sola condición sobre `fechaFin`. Además, un turno
- * `CANCELADO` no cuenta: la vigencia se decide por fechas, pero un cancelado no bloquea nada.
+ * Condición de **turno vigente** (docs/dominio.md → Turnos): `fechaFin` nula o >= hoy. En este
+ * release todo turno es `SESION_UNICA` (T-20/T-30, sin recurrentes), con `fechaFin = fechaInicio`;
+ * la condición queda igual por si `fechaFin` no viene cargada. Un turno `CANCELADO` no cuenta: la
+ * vigencia se decide por fecha, pero un cancelado no bloquea nada.
  *
  * Es la **única** implementación de la condición (convenciones-backend.md → Turno vigente): se
  * reutiliza desde acá, nunca se reescribe en otra feature. `fechaHoy` la calcula el service con

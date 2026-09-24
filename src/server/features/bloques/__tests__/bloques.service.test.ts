@@ -6,7 +6,7 @@ import type { TurnosRepository } from '@/server/features/turnos/turnos.repositor
 import type { Actor } from '@/server/shared/actor'
 import type { BloquesRepository } from '../bloques.repository'
 import { crearBloquesService } from '../bloques.service'
-import type { Bloque, BloqueGuardado, CrearBloque } from '../bloques.validation'
+import type { Bloque, BloqueConAula, BloqueGuardado, CrearBloque } from '../bloques.validation'
 
 // El repository de bloques y los de profesores/turnos (solo lectura, cross-feature) se reemplazan
 // por falsos: sin Docker ni Postgres. El service los importa solo como tipo.
@@ -40,12 +40,16 @@ const ACTUAL: BloqueGuardado = {
 function crearRepositories() {
   return {
     repository: {
+      listarPorProfesor: vi.fn<BloquesRepository['listarPorProfesor']>(),
       crearBloques: vi.fn<BloquesRepository['crearBloques']>(),
       buscarPorId: vi.fn<BloquesRepository['buscarPorId']>(),
       editarBloque: vi.fn<BloquesRepository['editarBloque']>(),
       eliminarBloque: vi.fn<BloquesRepository['eliminarBloque']>(),
     },
-    profesoresRepository: { buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>() },
+    profesoresRepository: {
+      buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>(),
+      buscarCapacidad: vi.fn<ProfesoresRepository['buscarCapacidad']>(),
+    },
     turnosRepository: {
       contarVigentesPorBloque: vi.fn<TurnosRepository['contarVigentesPorBloque']>(),
     },
@@ -66,6 +70,7 @@ beforeEach(() => {
     reloj: relojFijo,
   })
   profesoresRepository.buscarParaBloque.mockResolvedValue(ACTIVO_CON_MATERIA)
+  profesoresRepository.buscarCapacidad.mockResolvedValue(10)
   turnosRepository.contarVigentesPorBloque.mockResolvedValue(0)
 })
 
@@ -83,6 +88,68 @@ const bloque = (horaInicio: string, horaFin: string, id: number): Bloque => ({
   horaInicio,
   horaFin,
   aula: { id: DATOS.aulaId, nombre: 'Aula 3' },
+})
+
+const filaConAula = (
+  id: number,
+  horaInicio: number,
+  horaFin: number,
+  aula: BloqueConAula['aula'] = { id: 7, nombre: 'Aula 3', capacidad: 10 },
+): BloqueConAula => ({ id, diaSemana: 1, horaInicio, horaFin, aula })
+
+describe('listarPorProfesor', () => {
+  it('arma cada fila con su capacidad efectiva (min profesor/aula)', async () => {
+    profesoresRepository.buscarCapacidad.mockResolvedValue(6) // menor que la del aula (10)
+    repository.listarPorProfesor.mockResolvedValue([filaConAula(10, 840, 900)])
+
+    const resultado = await service.listarPorProfesor(3)
+
+    expect(resultado).toEqual([
+      {
+        id: 10,
+        diaSemana: 1,
+        horaInicio: '14:00',
+        horaFin: '15:00',
+        aula: { id: 7, nombre: 'Aula 3' },
+        capacidadEfectiva: 6,
+      },
+    ])
+  })
+
+  it('la capacidad efectiva usa el menor entre profesor y aula, sea cual sea', async () => {
+    profesoresRepository.buscarCapacidad.mockResolvedValue(12) // mayor que la del aula (10)
+    repository.listarPorProfesor.mockResolvedValue([filaConAula(10, 840, 900)])
+
+    const [resultado] = await service.listarPorProfesor(3)
+
+    expect(resultado?.capacidadEfectiva).toBe(10)
+  })
+
+  it('sin bloques activos, devuelve un arreglo vacío', async () => {
+    repository.listarPorProfesor.mockResolvedValue([])
+
+    const resultado = await service.listarPorProfesor(3)
+
+    expect(resultado).toEqual([])
+  })
+
+  it('profesor inexistente → NotFoundError, sin consultar bloques ni turnos', async () => {
+    profesoresRepository.buscarCapacidad.mockResolvedValue(null)
+
+    const error = await errorDe(service.listarPorProfesor(99))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error).toMatchObject({ message: 'Profesor no encontrado' })
+    expect(repository.listarPorProfesor).not.toHaveBeenCalled()
+  })
+
+  it('se puede ver aunque el profesor esté inactivo: no valida su estado', async () => {
+    repository.listarPorProfesor.mockResolvedValue([])
+
+    await service.listarPorProfesor(3)
+
+    expect(profesoresRepository.buscarParaBloque).not.toHaveBeenCalled()
+  })
 })
 
 describe('crear', () => {
@@ -315,7 +382,7 @@ describe('eliminar', () => {
     repository.buscarPorId.mockResolvedValue(ACTUAL)
   })
 
-  it('sin turnos ni excepciones vigentes: da de baja y no valida al profesor', async () => {
+  it('sin turnos vigentes: da de baja y no valida al profesor', async () => {
     const eliminado = bloque('14:00', '15:00', 10)
     repository.eliminarBloque.mockResolvedValue(eliminado)
 

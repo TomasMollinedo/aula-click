@@ -380,6 +380,18 @@ export const profesoresRepository = {
   },
 
   /**
+   * Capacidad del profesor, o `null` si no existe. Lectura para otras features: la usa `bloques`
+   * (T-17) para calcular la capacidad efectiva de cada hora del horario (`min` con la del aula).
+   */
+  async buscarCapacidad(profesorId: number): Promise<number | null> {
+    const profesor = await prisma.profesor.findUnique({
+      where: { id: profesorId },
+      select: { capacidad: true },
+    })
+    return profesor?.capacidad ?? null
+  },
+
+  /**
    * Asigna todas las materias en una sola transacción (todas o ninguna). El par profesor–materia
    * es único: si ya existe una fila (dada de baja), se reactiva; si no, se inserta.
    * Auditoría: `createdById` en el alta y `updatedById` siempre, con el actor.

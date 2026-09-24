@@ -37,6 +37,26 @@ const aulaId = z
   .positive({ error: 'Debe ser mayor a 0' })
   .openapi({ description: 'Id del aula', example: 3 })
 
+/** Aula tal como viaja en las respuestas de bloques: solo lo que hace falta para mostrarla. */
+const bloqueAulaSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('BloqueAula')
+
+/** `profesorId` de query, para filtrar el horario. */
+export const listarBloquesQuerySchema = z.object({
+  profesorId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .openapi({
+      param: { name: 'profesorId', in: 'query' },
+      description: 'Id del profesor',
+      example: 3,
+    }),
+})
+
+export type ListarBloquesQuery = z.infer<typeof listarBloquesQuerySchema>
+
 /** `id` del path: el de la fila (una hora), no el del profesor. */
 export const bloqueIdParamsSchema = z.object({
   bloqueId: z.coerce
@@ -114,18 +134,41 @@ export const editarBloqueSchema = z
 
 export type EditarBloque = z.infer<typeof editarBloqueSchema>
 
-/** Una fila (una hora exacta), tal como viaja en las respuestas. */
+/** Una fila (una hora exacta), tal como viaja en las respuestas del alta y la edición. */
 export const bloqueSchema = z
   .object({
     id: z.number().int(),
     diaSemana: diaSemanaSchema,
     horaInicio: horaHHmm,
     horaFin: horaHHmm,
-    aula: z.object({ id: z.number().int(), nombre: z.string() }).openapi('BloqueAula'),
+    aula: bloqueAulaSchema,
   })
   .openapi('Bloque')
 
 export type Bloque = z.infer<typeof bloqueSchema>
+
+/**
+ * Una fila del horario semanal (`GET /api/v1/bloques?profesorId=`, T-17 punto 1): además de lo de
+ * `Bloque`, trae la capacidad máxima de esa hora (`min(profesor.capacidad, aula.capacidad)`),
+ * calculada al leer.
+ */
+export const bloqueHorarioSchema = z
+  .object({
+    id: z.number().int(),
+    diaSemana: diaSemanaSchema,
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    aula: bloqueAulaSchema,
+    capacidadEfectiva: z.number().int().openapi({
+      description: 'min(profesor.capacidad, aula.capacidad), calculada al leer',
+      example: 10,
+    }),
+  })
+  .openapi('BloqueHorario')
+
+export type BloqueHorario = z.infer<typeof bloqueHorarioSchema>
+
+export const horarioSchema = z.array(bloqueHorarioSchema)
 
 /** Respuesta del alta: cuántas filas se crearon y el detalle de cada una. */
 export const bloquesCreadosSchema = z
@@ -165,4 +208,16 @@ export type DatosEditarBloque = {
   horaInicio: number
   horaFin: number
   aulaId: number
+}
+
+/**
+ * Fila activa del horario, con la capacidad del aula (para que el service calcule la capacidad
+ * efectiva): todo en minutos, tal como lo lee `bloques.repository`. No viaja por HTTP así.
+ */
+export type BloqueConAula = {
+  id: number
+  diaSemana: number
+  horaInicio: number
+  horaFin: number
+  aula: { id: number; nombre: string; capacidad: number }
 }

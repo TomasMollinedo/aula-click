@@ -9,6 +9,8 @@ import {
   bloquesCreadosSchema,
   crearBloqueSchema,
   editarBloqueSchema,
+  horarioSchema,
+  listarBloquesQuerySchema,
 } from './bloques.validation'
 
 // Contrato HTTP de bloques: cada endpoint se declara con createRoute() y se registra acá.
@@ -29,6 +31,41 @@ const errores = {
   401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
   403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
 }
+
+export const listarBloquesRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags,
+  summary: 'Horario semanal de un profesor',
+  description:
+    'Filas activas del profesor, ordenadas por día y hora, sin paginar (es un horario semanal). Cada una trae su capacidad efectiva (`min` profesor/aula), calculada al leer.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: listarBloquesQuerySchema },
+  responses: {
+    200: {
+      description: 'Horario del profesor (arreglo vacío si no tiene bloques activos)',
+      content: {
+        'application/json': {
+          schema: horarioSchema,
+          example: [
+            {
+              id: 10,
+              diaSemana: 1,
+              horaInicio: '14:00',
+              horaFin: '15:00',
+              aula: { id: 3, nombre: 'Aula 3' },
+              capacidadEfectiva: 10,
+            },
+          ],
+        },
+      },
+    },
+    400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
+    404: respuestaError('El profesor no existe (NO_ENCONTRADO)'),
+  },
+})
 
 export const crearBloqueRoute = createRoute({
   method: 'post',
@@ -171,7 +208,7 @@ export const eliminarBloqueRoute = createRoute({
     },
     ...errores,
     404: noEncontrado,
-    409: respuestaError('Turnos o excepciones vigentes que impiden la baja (TURNOS_VIGENTES)', {
+    409: respuestaError('Turnos vigentes que impiden la baja (TURNOS_VIGENTES)', {
       error: {
         code: 'TURNOS_VIGENTES',
         message: 'No se puede modificar un bloque con turnos vigentes',
@@ -182,6 +219,7 @@ export const eliminarBloqueRoute = createRoute({
 })
 
 export const bloquesRoutes = createRouter()
+  .openapi(listarBloquesRoute, bloquesController.listar)
   .openapi(crearBloqueRoute, bloquesController.crear)
   .openapi(editarBloqueRoute, bloquesController.editar)
   .openapi(eliminarBloqueRoute, bloquesController.eliminar)

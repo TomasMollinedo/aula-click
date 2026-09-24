@@ -5,6 +5,7 @@ import type { Actor } from '@/server/shared/actor'
 import { minutosAHora } from '@/server/shared/zod'
 import type {
   Bloque,
+  BloqueConAula,
   BloqueGuardado,
   DatosCrearBloques,
   DatosEditarBloque,
@@ -74,6 +75,32 @@ function errorAulaOcupada(diaSemana: number, conflictos: ConflictoFila[]): Confl
 }
 
 export const bloquesRepository = {
+  /**
+   * Filas activas del profesor, ordenadas por día y hora (es un horario semanal: sin paginar,
+   * T-17 punto 1). Trae la capacidad del aula (no la ocupación: eso lo agrega el service, leyendo
+   * `turnos.repository`) para que el service calcule la capacidad efectiva de cada hora.
+   */
+  async listarPorProfesor(profesorId: number): Promise<BloqueConAula[]> {
+    const filas = await prisma.bloqueAgenda.findMany({
+      where: { profesorId, estado: 'ACTIVO' },
+      select: {
+        id: true,
+        diaSemana: true,
+        horaInicio: true,
+        horaFin: true,
+        aula: { select: { id: true, nombre: true, capacidad: true } },
+      },
+      orderBy: [{ diaSemana: 'asc' }, { horaInicio: 'asc' }],
+    })
+    return filas.map((fila) => ({
+      id: fila.id,
+      diaSemana: fila.diaSemana,
+      horaInicio: fila.horaInicio,
+      horaFin: fila.horaFin,
+      aula: fila.aula,
+    }))
+  },
+
   /**
    * Crea una fila por cada hora pedida, todas o ninguna, en una única transacción que bloquea
    * (`SELECT ... FOR UPDATE`) primero la fila del `Profesor` y después la del `Aula` —siempre en
@@ -204,7 +231,7 @@ export const bloquesRepository = {
 
   /**
    * Baja lógica (`estado = INACTIVO`), nunca borrado físico. El service ya validó que no tenga
-   * turnos ni excepciones vigentes; acá no se repite esa lectura (no hay ningún escritor
+   * turnos vigentes; acá no se repite esa lectura (no hay ningún escritor
    * concurrente de turnos todavía: T-21 no está implementado). Idempotente: si ya estaba
    * `INACTIVO`, el `UPDATE` no cambia nada. `NotFoundError` si la fila no existe (P2025).
    */

@@ -4,7 +4,12 @@ import { turnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { AppEnv } from '@/server/router'
 import { bloquesRepository } from './bloques.repository'
 import { crearBloquesService } from './bloques.service'
-import type { crearBloqueRoute, editarBloqueRoute, eliminarBloqueRoute } from './bloques.routes'
+import type {
+  crearBloqueRoute,
+  editarBloqueRoute,
+  eliminarBloqueRoute,
+  listarBloquesRoute,
+} from './bloques.routes'
 
 // Recibe el dato ya validado, llama al service y arma la respuesta (201, 204...).
 // No accede a la base, no aplica reglas de negocio y no usa try/catch.
@@ -16,6 +21,9 @@ const bloquesService = crearBloquesService({
   profesoresRepository,
   turnosRepository,
 })
+
+export const listar: RouteHandler<typeof listarBloquesRoute, AppEnv> = async (c) =>
+  c.json(await bloquesService.listarPorProfesor(c.req.valid('query').profesorId), 200)
 
 export const crear: RouteHandler<typeof crearBloqueRoute, AppEnv> = async (c) =>
   c.json(await bloquesService.crear(c.req.valid('json'), c.get('actor')), 201)
