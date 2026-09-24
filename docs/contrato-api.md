@@ -29,8 +29,8 @@ Todo es mismo origen: la sesión viaja en una cookie y no hay tokens que manejar
 | Instante (auditoría: `createdAt`, `updatedAt`) | string ISO 8601 en UTC                                                   | `2026-09-22T13:45:00.000Z` |
 | DNI                                            | se devuelve solo con dígitos; en la entrada se aceptan puntos y espacios | `30123456`                 |
 | Email                                          | se guarda en minúsculas y sin espacios alrededor                         | `ana.perez@mail.com`       |
-| Teléfono                                       | se devuelve tal como lo escribió el usuario                              | `(387) 15-412-3456`        |
-| Nombre y apellido de una persona               | letras (con tildes, ñ, ü), espacios, apóstrofos y guiones; sin números   | `O'Connor-Pérez`           |
+| Teléfono                                       | solo dígitos, de 8 a 20 (sin `+`, `-`, espacios ni paréntesis)           | `387154123456`             |
+| Nombre y apellido de una persona               | letras (con tildes, ñ, ü) y espacios; sin números, guiones ni apóstrofos | `María José Pérez`         |
 
 La zona horaria del negocio es `America/Argentina/Salta`. Qué fecha es "hoy" para las reglas (vigencia, prioridad) lo decide la API.
 

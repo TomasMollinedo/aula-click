@@ -177,8 +177,8 @@ export function AlumnoForm({
           <CampoTexto
             label="Teléfono"
             obligatorio
-            type="tel"
-            placeholder="Código de área y número"
+            inputMode="numeric"
+            placeholder="Código de área y número, sin guiones"
             error={errors.telefono?.message}
             caracteres="telefono"
             {...register('telefono')}
@@ -279,8 +279,8 @@ export function AlumnoForm({
                 label="Teléfono"
                 obligatorio={esMenor}
                 opcional={!esMenor}
-                type="tel"
-                placeholder="Código de área y número"
+                inputMode="numeric"
+                placeholder="Código de área y número, sin guiones"
                 error={errors.tutorTelefono?.message}
                 caracteres="telefono"
                 {...register('tutorTelefono')}

@@ -14,7 +14,7 @@ export const ejemploAlta = {
   nombre: 'Martín',
   apellido: 'Pérez',
   dni: '28333444',
-  telefono: '387 4333444',
+  telefono: '3874333444',
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
@@ -23,7 +23,7 @@ export const ejemploAlta = {
 } satisfies CrearProfesor
 
 export const ejemploEdicion = {
-  telefono: '387 4111000',
+  telefono: '3874111000',
   titulo: 'Profesor en Física y Matemática',
 } satisfies EditarProfesor
 
@@ -45,7 +45,7 @@ export const ejemploDetalle = {
   nombre: 'Martín',
   apellido: 'Pérez',
   dni: '28333444',
-  telefono: '387 4333444',
+  telefono: '3874333444',
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',

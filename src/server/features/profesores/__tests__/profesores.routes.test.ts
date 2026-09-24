@@ -60,7 +60,7 @@ const GUARDADO = {
   nombre: 'Martín',
   apellido: 'Pérez',
   dni: '28333444',
-  telefono: '387 4333444',
+  telefono: '3874333444',
   email: 'martin.perez@aulaclick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
@@ -77,7 +77,7 @@ const ALTA = {
   nombre: 'Martín',
   apellido: 'Pérez',
   dni: '28.333.444',
-  telefono: '387 4333444',
+  telefono: '3874333444',
   email: 'Martin.Perez@AulaClick.local',
   titulo: 'Profesor en Matemática',
   matricula: 'MP-0001',
@@ -281,12 +281,12 @@ describe('POST /profesores', () => {
 
 describe('PATCH /profesores/{id}', () => {
   it('edición parcial → 200, sin tocar los campos omitidos', async () => {
-    const res = await pedir('/3', 'PATCH', { telefono: '387 4000000' })
+    const res = await pedir('/3', 'PATCH', { telefono: '3874000000' })
 
     expect(res.status).toBe(200)
     expect(repository.actualizar).toHaveBeenCalledWith(
       3,
-      { telefono: '387 4000000', busqueda: 'perez martin 28333444' },
+      { telefono: '3874000000', busqueda: 'perez martin 28333444' },
       { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
     )
   })
@@ -298,14 +298,14 @@ describe('PATCH /profesores/{id}', () => {
   })
 
   it('no acepta password: el body lo descarta silenciosamente', async () => {
-    await pedir('/3', 'PATCH', { telefono: '387 4000000', password: 'otra-clave-123' })
+    await pedir('/3', 'PATCH', { telefono: '3874000000', password: 'otra-clave-123' })
 
     expect(repository.actualizar.mock.calls[0][1]).not.toHaveProperty('password')
   })
 
   it('profesor inexistente → 404 NO_ENCONTRADO', async () => {
     repository.buscarPorId.mockResolvedValue(null)
-    const res = await pedir('/99', 'PATCH', { telefono: '387 4000000' })
+    const res = await pedir('/99', 'PATCH', { telefono: '3874000000' })
     expect(res.status).toBe(404)
   })
 

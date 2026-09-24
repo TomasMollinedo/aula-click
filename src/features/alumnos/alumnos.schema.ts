@@ -10,8 +10,6 @@ export const SIN_NIVEL = '__SIN_NIVEL__'
 
 const SEPARADORES_DNI = /[.\s]/g
 const DNI_FORMATO = /^\d{7,8}$/
-const TELEFONO_CARACTERES = /^[\d\s+\-()]+$/
-const TELEFONO_MIN_DIGITOS = 8
 const FECHA_FORMATO = /^\d{4}-\d{2}-\d{2}$/
 
 const dniSchema = z
@@ -32,35 +30,24 @@ const dniOpcionalSchema = z
       .or(z.literal('')),
   )
 
+const MENSAJE_TELEFONO_CARACTERES = 'El teléfono solo puede tener números'
+
+// Teléfono: mismo formato que `telefono` de la API (solo dígitos, de 8 a 20).
+const telefonoFormatoSchema = z
+  .string()
+  .refine((v) => tieneSoloCaracteres(v, 'telefono'), { message: MENSAJE_TELEFONO_CARACTERES })
+  .refine((v) => v.length >= 8, { message: 'El teléfono debe tener al menos 8 dígitos' })
+  .refine((v) => v.length <= 20, { message: 'El teléfono no puede superar los 20 dígitos' })
+
 const telefonoSchema = z
   .string({ message: 'Campo obligatorio' })
   .min(1, { message: 'Campo obligatorio' })
-  .min(8, { message: 'El teléfono debe tener al menos 8 caracteres' })
-  .max(20, { message: 'El teléfono no puede superar los 20 caracteres' })
-  .regex(TELEFONO_CARACTERES, {
-    message: 'El teléfono solo puede tener dígitos, espacios, +, - y paréntesis',
-  })
-  .refine((v) => (v.match(/\d/g) ?? []).length >= TELEFONO_MIN_DIGITOS, {
-    message: 'El teléfono debe tener al menos 8 dígitos',
-  })
+  .pipe(telefonoFormatoSchema)
 
 const telefonoOpcionalSchema = z
   .string()
   .optional()
-  .or(z.literal(''))
-  .pipe(
-    z
-      .string()
-      .max(20, { message: 'El teléfono no puede superar los 20 caracteres' })
-      .regex(TELEFONO_CARACTERES, {
-        message: 'El teléfono solo puede tener dígitos, espacios, +, - y paréntesis',
-      })
-      .refine((v) => (v.match(/\d/g) ?? []).length >= TELEFONO_MIN_DIGITOS, {
-        message: 'El teléfono debe tener al menos 8 dígitos',
-      })
-      .optional()
-      .or(z.literal('')),
-  )
+  .pipe(z.union([z.literal(''), telefonoFormatoSchema]).optional())
 
 const emailFormatoSchema = z
   .email({ message: 'Email inválido' })
@@ -72,7 +59,7 @@ const emailOpcionalSchema = z
   .optional()
   .pipe(z.union([z.literal(''), emailFormatoSchema]).optional())
 
-const MENSAJE_NOMBRE_CARACTERES = 'Solo puede tener letras, espacios, apóstrofos y guiones'
+const MENSAJE_NOMBRE_CARACTERES = 'Solo puede tener letras y espacios'
 const MENSAJE_NOMBRE_SIN_LETRAS = 'Debe tener al menos una letra'
 
 // Nombre o apellido: mismo formato que `nombrePersona` de la API (utils/caracteres.ts).
