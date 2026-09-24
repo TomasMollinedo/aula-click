@@ -1,6 +1,8 @@
 import { isValid, parseISO } from 'date-fns'
 import { z } from 'zod'
 
+import { tieneAlgunaLetra, tieneSoloCaracteres } from '@/utils/caracteres'
+
 import type { AlumnoCrear, AlumnoDetalle, AlumnoEditar } from './alumnos.types'
 
 // Valor especial para el Select de nivel: Radix no admite value="".
@@ -70,19 +72,31 @@ const emailOpcionalSchema = z
   .optional()
   .pipe(z.union([z.literal(''), emailFormatoSchema]).optional())
 
+const MENSAJE_NOMBRE_CARACTERES = 'Solo puede tener letras, espacios, apóstrofos y guiones'
+const MENSAJE_NOMBRE_SIN_LETRAS = 'Debe tener al menos una letra'
+
+// Nombre o apellido: mismo formato que `nombrePersona` de la API (utils/caracteres.ts).
+const nombreSchema = z
+  .string({ message: 'Campo obligatorio' })
+  .trim()
+  .min(1, { message: 'Campo obligatorio' })
+  .max(100, { message: 'No puede superar los 100 caracteres' })
+  .refine((v) => tieneSoloCaracteres(v, 'nombre'), { message: MENSAJE_NOMBRE_CARACTERES })
+  .refine(tieneAlgunaLetra, { message: MENSAJE_NOMBRE_SIN_LETRAS })
+
+const nombreOpcionalSchema = z
+  .string()
+  .trim()
+  .max(100, { message: 'No puede superar los 100 caracteres' })
+  .refine((v) => tieneSoloCaracteres(v, 'nombre'), { message: MENSAJE_NOMBRE_CARACTERES })
+  .refine((v) => v === '' || tieneAlgunaLetra(v), { message: MENSAJE_NOMBRE_SIN_LETRAS })
+  .optional()
+
 // Los datos del tutor de un menor no se validan acá: es una regla de negocio que valida la API
 // (T-28). edad.ts solo decide el aviso y los asteriscos del formulario.
 export const alumnoFormSchema = z.object({
-  nombre: z
-    .string({ message: 'Campo obligatorio' })
-    .trim()
-    .min(1, { message: 'Campo obligatorio' })
-    .max(100, { message: 'No puede superar los 100 caracteres' }),
-  apellido: z
-    .string({ message: 'Campo obligatorio' })
-    .trim()
-    .min(1, { message: 'Campo obligatorio' })
-    .max(100, { message: 'No puede superar los 100 caracteres' }),
+  nombre: nombreSchema,
+  apellido: nombreSchema,
   dni: dniSchema,
   fechaNacimiento: z
     .string({ message: 'Campo obligatorio' })
@@ -111,16 +125,8 @@ export const alumnoFormSchema = z.object({
     .max(2000, { message: 'No puede superar los 2000 caracteres' })
     .optional()
     .or(z.literal('')),
-  tutorNombre: z
-    .string()
-    .max(100, { message: 'No puede superar los 100 caracteres' })
-    .optional()
-    .or(z.literal('')),
-  tutorApellido: z
-    .string()
-    .max(100, { message: 'No puede superar los 100 caracteres' })
-    .optional()
-    .or(z.literal('')),
+  tutorNombre: nombreOpcionalSchema,
+  tutorApellido: nombreOpcionalSchema,
   tutorDni: dniOpcionalSchema,
   tutorTelefono: telefonoOpcionalSchema,
   tutorEmail: emailOpcionalSchema,

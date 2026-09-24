@@ -10,6 +10,10 @@ const TELEFONO_CARACTERES = /^[\d\s+\-()]+$/
 const TELEFONO_MIN = 8
 const TELEFONO_MAX = 20
 const TELEFONO_MIN_DIGITOS = 8
+// Letras de cualquier alfabeto (con sus marcas de acento), espacio, apóstrofo recto o tipográfico y
+// guion. Sin \s: un tab o un salto de línea no son parte de un nombre.
+const NOMBRE_CARACTERES = /^[\p{L}\p{M} '’-]+$/u
+const NOMBRE_ALGUNA_LETRA = /\p{L}/u
 // HH:mm de 00:00 a 23:59.
 const HORA_FORMATO = /^([01]\d|2[0-3]):([0-5]\d)$/
 const MINUTOS_POR_DIA = 1440
@@ -80,6 +84,19 @@ export function textoRequerido(max: number) {
     .trim()
     .min(1, { error: MENSAJE_OBLIGATORIO })
     .max(max, { error: `No puede superar los ${max} caracteres` })
+}
+
+/**
+ * Nombre o apellido de una persona. Entrada: texto con letras (con tildes, ñ, ü…), espacios,
+ * apóstrofos y guiones (`"María José"`, `"O'Connor"`, `"Pérez-Gil"`). Salida: recortado, entre 1 y
+ * `max` caracteres y con al menos una letra. Rechaza números y otros símbolos.
+ */
+export function nombrePersona(max: number) {
+  return textoRequerido(max)
+    .regex(NOMBRE_CARACTERES, {
+      error: 'Solo puede tener letras, espacios, apóstrofos y guiones',
+    })
+    .regex(NOMBRE_ALGUNA_LETRA, { error: 'Debe tener al menos una letra' })
 }
 
 /**

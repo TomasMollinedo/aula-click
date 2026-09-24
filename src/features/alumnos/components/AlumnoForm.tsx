@@ -145,6 +145,7 @@ export function AlumnoForm({
             placeholder="Ingresá el nombre"
             autoComplete="off"
             error={errors.nombre?.message}
+            caracteres="nombre"
             {...register('nombre')}
           />
           <CampoTexto
@@ -153,6 +154,7 @@ export function AlumnoForm({
             placeholder="Ingresá el apellido"
             autoComplete="off"
             error={errors.apellido?.message}
+            caracteres="nombre"
             {...register('apellido')}
           />
           <CampoTexto
@@ -161,6 +163,7 @@ export function AlumnoForm({
             placeholder="Sin puntos"
             inputMode="numeric"
             error={errors.dni?.message}
+            caracteres="dni"
             {...register('dni')}
           />
           <CampoTexto
@@ -177,6 +180,7 @@ export function AlumnoForm({
             type="tel"
             placeholder="Código de área y número"
             error={errors.telefono?.message}
+            caracteres="telefono"
             {...register('telefono')}
           />
           <CampoTexto
@@ -249,6 +253,7 @@ export function AlumnoForm({
                 placeholder="Ingresá el nombre"
                 autoComplete="off"
                 error={errors.tutorNombre?.message}
+                caracteres="nombre"
                 {...register('tutorNombre')}
               />
               <CampoTexto
@@ -258,6 +263,7 @@ export function AlumnoForm({
                 placeholder="Ingresá el apellido"
                 autoComplete="off"
                 error={errors.tutorApellido?.message}
+                caracteres="nombre"
                 {...register('tutorApellido')}
               />
               <CampoTexto
@@ -266,6 +272,7 @@ export function AlumnoForm({
                 placeholder="Sin puntos"
                 inputMode="numeric"
                 error={errors.tutorDni?.message}
+                caracteres="dni"
                 {...register('tutorDni')}
               />
               <CampoTexto
@@ -275,6 +282,7 @@ export function AlumnoForm({
                 type="tel"
                 placeholder="Código de área y número"
                 error={errors.tutorTelefono?.message}
+                caracteres="telefono"
                 {...register('tutorTelefono')}
               />
               <CampoTexto
@@ -331,7 +339,7 @@ type CampoTextoProps = {
   obligatorio?: boolean
   opcional?: boolean
   error?: string
-} & React.ComponentProps<'input'>
+} & React.ComponentProps<typeof Input>
 
 function CampoTexto({ label, obligatorio, opcional, error, ...inputProps }: CampoTextoProps) {
   const id = `alumno-${inputProps.name}`
