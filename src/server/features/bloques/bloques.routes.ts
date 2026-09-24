@@ -144,6 +144,44 @@ export const editarBloqueRoute = createRoute({
   },
 })
 
+export const eliminarBloqueRoute = createRoute({
+  method: 'delete',
+  path: '/{bloqueId}',
+  tags,
+  summary: 'Dar de baja un bloque de horario',
+  description:
+    'Baja lógica de esa hora puntual (`estado = INACTIVO`), nunca borrado físico. Se puede dar de baja aunque el profesor esté inactivo.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: bloqueIdParamsSchema },
+  responses: {
+    200: {
+      description: 'Bloque dado de baja',
+      content: {
+        'application/json': {
+          schema: bloqueSchema,
+          example: {
+            id: 10,
+            diaSemana: 1,
+            horaInicio: '14:00',
+            horaFin: '15:00',
+            aula: { id: 3, nombre: 'Aula 3' },
+          },
+        },
+      },
+    },
+    ...errores,
+    404: noEncontrado,
+    409: respuestaError('Turnos o excepciones vigentes que impiden la baja (TURNOS_VIGENTES)', {
+      error: {
+        code: 'TURNOS_VIGENTES',
+        message: 'No se puede modificar un bloque con turnos vigentes',
+        details: { cantidad: 2 },
+      },
+    }),
+  },
+})
+
 export const bloquesRoutes = createRouter()
   .openapi(crearBloqueRoute, bloquesController.crear)
   .openapi(editarBloqueRoute, bloquesController.editar)
+  .openapi(eliminarBloqueRoute, bloquesController.eliminar)

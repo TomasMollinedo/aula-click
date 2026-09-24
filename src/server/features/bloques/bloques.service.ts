@@ -44,6 +44,21 @@ export function crearBloquesService({
     }
   }
 
+  /**
+   * Turnos vigentes de la fila (`estado` `ACTIVO` y fecha no pasada, `condicionTurnoVigente` de
+   * `turnos.repository`, T-11): recurrente o sesión única, es la misma condición. Lanza
+   * `ConflictError` `TURNOS_VIGENTES` si hay alguno.
+   */
+  async function exigirSinTurnosVigentes(bloqueId: number): Promise<void> {
+    const cantidad = await turnosRepository.contarVigentesPorBloque(bloqueId, hoy(reloj))
+    if (cantidad > 0) {
+      throw new ConflictError('No se puede modificar un bloque con turnos vigentes', {
+        code: 'TURNOS_VIGENTES',
+        details: { cantidad },
+      })
+    }
+  }
+
   return {
     /**
      * Crea una fila por cada hora del rango pedido (todas o ninguna). Orden de los chequeos:
@@ -65,23 +80,17 @@ export function crearBloquesService({
 
     /**
      * Edita día, horario y/o aula de una fila (una hora; el profesor no se edita). Orden de los
-     * chequeos: fila inexistente (404), turnos vigentes (409 `TURNOS_VIGENTES`, con la cantidad en
-     * `details`: una fila con reservas no se mueve), el resultado sigue siendo una hora exacta
-     * (400, se valida acá porque depende de la fila actual), profesor inactivo o sin materias
-     * (409, mismo chequeo del alta), y superposición/aula ocupada, verificadas de forma atómica en
-     * el repository junto con el `UPDATE`.
+     * chequeos: fila inexistente (404), turnos vigentes (409 `TURNOS_VIGENTES`, con
+     * la cantidad en `details`: una fila con reservas no se mueve), el resultado sigue siendo una
+     * hora exacta (400, se valida acá porque depende de la fila actual), profesor inactivo o sin
+     * materias (409, mismo chequeo del alta), y superposición/aula ocupada, verificadas de forma
+     * atómica en el repository junto con el `UPDATE`.
      */
     async editar(id: number, cambios: EditarBloque, actor: Actor): Promise<Bloque> {
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError('Bloque no encontrado')
 
-      const vigentes = await turnosRepository.contarVigentesPorBloque(id, hoy(reloj))
-      if (vigentes > 0) {
-        throw new ConflictError('No se puede editar un bloque con turnos vigentes', {
-          code: 'TURNOS_VIGENTES',
-          details: { cantidad: vigentes },
-        })
-      }
+      await exigirSinTurnosVigentes(id)
 
       const diaSemana = cambios.diaSemana ?? actual.diaSemana
       const horaInicio =
@@ -102,6 +111,21 @@ export function crearBloquesService({
       await validarProfesor(actual.profesorId)
 
       return repository.editarBloque(id, { diaSemana, horaInicio, horaFin, aulaId }, actor)
+    },
+
+    /**
+     * Baja lógica de una fila (una hora). Orden de los chequeos: fila inexistente (404) y turnos
+     * vigentes (409 `TURNOS_VIGENTES`, con la cantidad en `details`). A diferencia del
+     * alta y la edición, no valida el estado del profesor: dar de baja un bloque de un profesor ya
+     * inactivo tiene que poder hacerse.
+     */
+    async eliminar(id: number, actor: Actor): Promise<Bloque> {
+      const actual = await repository.buscarPorId(id)
+      if (!actual) throw new NotFoundError('Bloque no encontrado')
+
+      await exigirSinTurnosVigentes(id)
+
+      return repository.eliminarBloque(id, actor)
     },
   }
 }

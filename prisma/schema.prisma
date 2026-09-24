@@ -103,8 +103,6 @@ model Usuario {
   bloquesModificados          BloqueAgenda[]      @relation("BloqueAgendaModificador")
   turnosCreados               Turno[]             @relation("TurnoCreador")
   turnosModificados           Turno[]             @relation("TurnoModificador")
-  turnoExcepcionesCreadas     TurnoExcepcion[]    @relation("TurnoExcepcionCreador")
-  turnoExcepcionesModificadas TurnoExcepcion[]    @relation("TurnoExcepcionModificador")
   examenesMateriaCreados      ExamenMateria[]     @relation("ExamenMateriaCreador")
   examenesMateriaModificados  ExamenMateria[]     @relation("ExamenMateriaModificador")
 
@@ -360,40 +358,12 @@ model Turno {
   createdBy    Usuario      @relation("TurnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy    Usuario      @relation("TurnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
-  excepciones TurnoExcepcion[] @relation("TurnoExcepciones")
-  reemplazoDe TurnoExcepcion[] @relation("TurnoReemplazo")
-
   @@index([bloqueAgendaId, fechaInicio])
   @@index([alumnoId])
   @@index([materiaId])
   @@index([createdById])
   @@index([updatedById])
   @@map("turno")
-}
-
-// Una fecha en la que un turno recurrente no aplica; opcionalmente, el turno que lo reemplaza.
-model TurnoExcepcion {
-  id               Int      @id @default(autoincrement())
-  turnoId          Int      @map("turno_id")
-  fecha            DateTime @db.Date
-  turnoReemplazoId Int?     @map("turno_reemplazo_id")
-
-  createdById String   @map("usuario_creador_id")
-  updatedById String   @map("usuario_modificador_id")
-  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
-  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
-
-  turno          Turno   @relation("TurnoExcepciones", fields: [turnoId], references: [id], onDelete: Restrict)
-  turnoReemplazo Turno?  @relation("TurnoReemplazo", fields: [turnoReemplazoId], references: [id], onDelete: Restrict)
-  createdBy      Usuario @relation("TurnoExcepcionCreador", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy      Usuario @relation("TurnoExcepcionModificador", fields: [updatedById], references: [id], onDelete: Restrict)
-
-  // El índice único (turno_id, fecha) cubre también las búsquedas por turno_id.
-  @@unique([turnoId, fecha])
-  @@index([turnoReemplazoId])
-  @@index([createdById])
-  @@index([updatedById])
-  @@map("turno_excepcion")
 }
 
 // Fecha de examen de un alumno en una materia: de ella depende la prioridad del turno.

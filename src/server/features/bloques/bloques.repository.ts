@@ -1,4 +1,4 @@
-import type { Prisma } from '@/generated/prisma/client'
+import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError, NotFoundError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
@@ -200,6 +200,39 @@ export const bloquesRepository = {
         aula: { id: aulaId, nombre: aula.nombre },
       }
     })
+  },
+
+  /**
+   * Baja lógica (`estado = INACTIVO`), nunca borrado físico. El service ya validó que no tenga
+   * turnos ni excepciones vigentes; acá no se repite esa lectura (no hay ningún escritor
+   * concurrente de turnos todavía: T-21 no está implementado). Idempotente: si ya estaba
+   * `INACTIVO`, el `UPDATE` no cambia nada. `NotFoundError` si la fila no existe (P2025).
+   */
+  async eliminarBloque(id: number, actor: Actor): Promise<Bloque> {
+    try {
+      const fila = await prisma.bloqueAgenda.update({
+        where: { id },
+        data: { estado: 'INACTIVO', updatedById: actor.userId },
+        select: {
+          diaSemana: true,
+          horaInicio: true,
+          horaFin: true,
+          aula: { select: { id: true, nombre: true } },
+        },
+      })
+      return {
+        id,
+        diaSemana: fila.diaSemana,
+        horaInicio: minutosAHora(fila.horaInicio),
+        horaFin: minutosAHora(fila.horaFin),
+        aula: fila.aula,
+      }
+    } catch (error) {
+      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+        throw new NotFoundError('Bloque no encontrado', { cause: error })
+      }
+      throw error
+    }
   },
 }
 

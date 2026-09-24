@@ -4,7 +4,7 @@ import { turnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { AppEnv } from '@/server/router'
 import { bloquesRepository } from './bloques.repository'
 import { crearBloquesService } from './bloques.service'
-import type { crearBloqueRoute, editarBloqueRoute } from './bloques.routes'
+import type { crearBloqueRoute, editarBloqueRoute, eliminarBloqueRoute } from './bloques.routes'
 
 // Recibe el dato ya validado, llama al service y arma la respuesta (201, 204...).
 // No accede a la base, no aplica reglas de negocio y no usa try/catch.
@@ -25,3 +25,6 @@ export const editar: RouteHandler<typeof editarBloqueRoute, AppEnv> = async (c) 
     await bloquesService.editar(c.req.valid('param').bloqueId, c.req.valid('json'), c.get('actor')),
     200,
   )
+
+export const eliminar: RouteHandler<typeof eliminarBloqueRoute, AppEnv> = async (c) =>
+  c.json(await bloquesService.eliminar(c.req.valid('param').bloqueId, c.get('actor')), 200)

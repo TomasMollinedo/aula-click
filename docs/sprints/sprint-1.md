@@ -78,7 +78,7 @@ Traducir el DER aprobado a `prisma/schema.prisma` y generar la migración inicia
 
 **Alcance**
 
-1. Modelar todas las entidades del DER, no sólo las de este sprint: `Rol`, `Usuario`, `Profesor`, `Alumno`, `Materia`, `AsignacionMateria`, `BloqueAgenda`, `Turno` y `TurnoExcepcion`, con sus relaciones.
+1. Modelar todas las entidades del DER, no sólo las de este sprint: `Rol`, `Usuario`, `Profesor`, `Alumno`, `Materia`, `AsignacionMateria`, `BloqueAgenda` y `Turno`, con sus relaciones. (`TurnoExcepcion` se eliminó: T-30, sin turnos recurrentes).
 2. `Usuario` es la entidad de Better Auth: se integran las tablas que Better Auth necesita (sesión, cuenta, verificación) sobre ese mismo modelo, sin crear una segunda tabla de usuarios. `Profesor` referencia a `Usuario` con una FK obligatoria y única.
 3. Valores de rol: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y `ALUMNO` (`contrato-api.md` → Roles). Un solo rol por usuario.
 4. Enum `estado` (`ACTIVO` / `INACTIVO`) en las entidades que lo tienen en el DER.
@@ -599,7 +599,7 @@ Crear la feature `bloques` (horario de atención del profesor: día, horario y a
    - El aula debe existir (si no, 404) y ninguna de las horas pedidas puede estar ocupada en esa aula ese día (por cualquier profesor) → si alguna lo está, 409 con el código nuevo **`AULA_OCUPADA`**, mensaje exactamente el de la HU: "No hay un aula disponible en ese horario. Por favor, elija otro horario.", con la hora y quién la ocupa en `details`.
    - Respuesta 201: cantidad de filas creadas y el detalle de cada una (día, hora de inicio y fin, aula).
 4. `PATCH /api/v1/bloques/{bloqueId}`: día, horario (de esa única hora) y aula, con las mismas validaciones del alta. Sólo si la fila **no tiene turnos vigentes** → si los tiene, 409 `TURNOS_VIGENTES` con la cantidad en `details`.
-5. `DELETE /api/v1/bloques/{bloqueId}`: **baja lógica** (`estado = INACTIVO`) de esa hora, nunca borrado físico. Sólo si no tiene turnos vigentes → si los tiene, 409 `TURNOS_VIGENTES`.
+5. `DELETE /api/v1/bloques/{bloqueId}`: **baja lógica** (`estado = INACTIVO`) de esa hora, nunca borrado físico. Sólo si no tiene turnos vigentes (`turnos.repository` → `contarVigentesPorBloque`, T-11) → si los tiene, 409 `TURNOS_VIGENTES` con la cantidad en `details`. No se valida el estado del profesor: se puede dar de baja un bloque de un profesor inactivo.
 6. **Concurrencia:** dentro de una sola transacción del repository, se bloquea (`SELECT ... FOR UPDATE`) la fila del `Profesor` y después la del `Aula` (siempre en ese orden, para no generar deadlocks entre altas simultáneas), se repiten los chequeos de superposición y ocupación, y recién ahí se insertan las filas: todas o ninguna. Debe existir un test que cubra dos altas simultáneas sobre la misma aula.
 7. Exponer en `bloques.repository` las lecturas que consumen otras features: las filas de un profesor y las que ocupan un horario en un aula (las usan `aulas` acá y `turnos` en T-21).
 8. Agregar `PROFESOR_SIN_MATERIAS`, `BLOQUE_SUPERPUESTO` y `AULA_OCUPADA` a `docs/contrato-api.md`, y las reglas de bloques a `docs/dominio.md`, en el mismo PR.
@@ -719,26 +719,22 @@ Completar la feature `src/server/features/turnos/`, que hoy sólo tiene la consu
 1. `GET /api/v1/turnos/disponibilidad?materiaId&diaSemana?&profesorId?`: `materiaId` obligatorio, los otros dos opcionales y combinables (los cuatro casos de la HU). Devuelve un arreglo (no se pagina).
    - Sólo profesores **activos** con esa materia **asignada y activa** (se lee por `profesores.repository`) y sólo materias activas.
    - Cada resultado es un bloque con profesor, día, horario completo, aula, y **una entrada por hora** con su capacidad efectiva y su ocupación. Las horas llenas vienen igual, marcadas como tales: la UI las muestra con el aviso.
-2. `POST /api/v1/turnos`: alumno, bloque, materia, **una o varias horas** del bloque, tipo (`RECURRENTE` con fecha de inicio y fin opcional, o `SESION_UNICA` con una fecha), motivo de consulta opcional, y una bandera para el "Asignar igual" de la HU.
+2. `POST /api/v1/turnos`: alumno, bloque, materia, **una o varias horas** del bloque, una fecha (`SESION_UNICA`; no hay turnos recurrentes en este release, T-30) y motivo de consulta opcional.
    - **Una hora = un turno.** Todas las horas pedidas se registran en **una sola transacción**: se crean todas o ninguna.
-   - Validaciones: el alumno existe (404); la materia está asignada al profesor del bloque (409); el profesor está activo (409 `PROFESOR_INACTIVO`); las horas están dentro del bloque, en punto y sin repetirse (400); las fechas coinciden con el día de la semana del bloque (400); en una `SESION_UNICA`, `fechaFin = fechaInicio` (decisión T-20).
+   - Validaciones: el alumno existe (404); la materia está asignada al profesor del bloque (409); el profesor está activo (409 `PROFESOR_INACTIVO`); las horas están dentro del bloque, en punto y sin repetirse (400); la fecha coincide con el día de la semana del bloque (400).
    - **Alumno superpuesto:** un alumno no puede tener dos turnos que se pisen en fecha y horario → 409 con el código nuevo **`ALUMNO_SUPERPUESTO`**, con los turnos en conflicto en `details`.
-   - **Capacidad:** se controla por cada hora seleccionada y por cada fecha en que aplica el turno, contra la capacidad efectiva de esa hora (`min` profesor/aula, T-17), contando recurrentes vigentes y sesiones únicas de esa fecha.
-     - Si alguna hora está llena en alguna fecha → 409 `BLOQUE_LLENO`, con **la hora y las fechas** en `details` (hoy el código está descripto sólo con fechas: ampliar en `contrato-api.md`).
-     - Con la bandera de "Asignar igual", en lugar de rechazar se registra el turno y esas fechas se guardan como `TurnoExcepcion`: en ellas el alumno no figura ni ocupa lugar (resuelve D-04, ver T-14).
-     - Si una hora **no tiene lugar en ninguna** fecha, se rechaza siempre, aun con la bandera.
+   - **Capacidad:** se controla por cada hora seleccionada, contra la capacidad efectiva de esa hora (`min` profesor/aula, T-17) en esa fecha.
+     - Si alguna hora está llena → 409 `BLOQUE_LLENO`, con **la hora** en `details`.
    - **Concurrencia:** la verificación de capacidad y la inserción van en una transacción que bloquea la fila del bloque (`SELECT ... FOR UPDATE`, `convenciones-backend.md` → Concurrencia). Debe existir un test de dos reservas simultáneas del último lugar.
-3. `GET /api/v1/turnos/{id}`: alumno, profesor, materia, **aula**, día y hora, tipo, fechas, fechas exceptuadas, motivo de consulta, estado y auditoría (quién lo creó, con fecha y hora).
+3. `GET /api/v1/turnos/{id}`: alumno, profesor, materia, **aula**, día, hora y fecha, motivo de consulta, estado y auditoría (quién lo creó, con fecha y hora).
 4. El estado del turno sigue siendo `ACTIVO` / `CANCELADO` en la base (decisión T-20). La HU lo llama "Agendado": es el texto que muestra la UI, no un valor nuevo del enum. Dejarlo dicho en `contrato-api.md` para que el frontend no lo invente.
-5. Agregar `ALUMNO_SUPERPUESTO` a `docs/contrato-api.md` y actualizar `BLOQUE_LLENO`; actualizar `docs/dominio.md` → Turnos con la regla por hora y con la resolución de D-04.
+5. Agregar `ALUMNO_SUPERPUESTO` a `docs/contrato-api.md` y actualizar `BLOQUE_LLENO`; actualizar `docs/dominio.md` → Turnos con la regla por hora.
 
 **Criterios de aceptación**
 
 - Buscar por materia sola devuelve todos los profesores que la dictan con sus días; agregando día y profesor, se filtra como pide la HU.
-- Tildar dos horas no consecutivas de un bloque (8:00–9:00 y 10:00–11:00) crea **dos** turnos con la misma materia, tipo y fechas.
-- Una sesión única en una hora completa se rechaza con `BLOQUE_LLENO`.
-- Un recurrente con algunas fechas completas se rechaza con las fechas en `details`, y con "Asignar igual" se registra dejando esas fechas como excepciones.
-- Un recurrente sin lugar en ninguna fecha se rechaza siempre.
+- Tildar dos horas no consecutivas de un bloque (8:00–9:00 y 10:00–11:00) crea **dos** turnos con la misma materia y fecha.
+- Una hora completa se rechaza con `BLOQUE_LLENO`.
 - Un alumno con un turno el lunes de 9:00 a 10:00 no puede tomar otro que se pise.
 - Tests del service con reloj fijo, con el repository mockeado: camino feliz de una y de varias horas, cada 4xx que lanza, y dos reservas simultáneas del último lugar.
 
@@ -759,20 +755,18 @@ Crear `src/features/turnos/` con `/nueva-feature-ui turnos turno` y la pantalla 
 1. **Elegir alumno** con el buscador de `features/alumnos`, reutilizado por su hook (T-06 lo dejó como componente de la feature justamente para esto). Si no hay coincidencias, se ofrece dar de alta un alumno.
 2. **Buscar horarios** con tres filtros: materia (obligatorio, con el hook `use-materias-activas` de `features/materias`), día de la semana y profesor, los dos últimos opcionales y combinables.
 3. **Resultados:** cada bloque con profesor, día, horario completo ("de 8:00 a 12:00") y aula. Al seleccionar uno, se muestran sus horas con un checkbox y la ocupación de cada una; las horas llenas se muestran igual, con el aviso de que están completas, y no se pueden tildar.
-4. **Tipo de turno:** "Recurrente" (fecha de inicio y fecha de fin opcional) o "Sesión única" (una fecha). El schema del frontend valida **sólo formato** (fechas `YYYY-MM-DD`); que la fecha caiga en el día del bloque, la capacidad y los solapamientos los decide la API.
+4. **Fecha del turno** (una sola; no hay turnos recurrentes en este release, T-30). El schema del frontend valida **sólo formato** (`YYYY-MM-DD`); que la fecha caiga en el día del bloque, la capacidad y los solapamientos los decide la API.
 5. Campo "motivo de consulta", texto libre opcional.
 6. **Manejo de los rechazos**, con el `message` y el `details` de la API:
-   - `BLOQUE_LLENO` en una sesión única: se informa y se ofrece "Buscar otros turnos disponibles".
-   - `BLOQUE_LLENO` en un recurrente: se listan las fechas sin lugar (por ejemplo, "El lunes 12/10 la hora de 9:00 a 10:00 está completa") y se ofrecen "Asignar igual" y "Cancelar". "Asignar igual" reenvía el alta con la bandera; "Cancelar" vuelve a la búsqueda.
+   - `BLOQUE_LLENO`: se informa y se ofrece "Buscar otros turnos disponibles".
    - `ALUMNO_SUPERPUESTO`, `PROFESOR_INACTIVO` y los 400 por campo, mostrados donde corresponda.
-7. La confirmación muestra el **aula** del bloque, y el detalle del turno muestra también las fechas exceptuadas.
+7. La confirmación muestra el **aula** del bloque.
 8. Fechas siempre como string `YYYY-MM-DD`, formateadas con `date-fns`; nunca `new Date('YYYY-MM-DD')`.
 
 **Criterios de aceptación**
 
-- Recorrido completo: buscar un alumno, filtrar por materia, elegir un bloque, tildar dos horas, cargar un recurrente y verlo confirmado con su aula.
+- Recorrido completo: buscar un alumno, filtrar por materia, elegir un bloque, tildar dos horas, cargar el turno y verlo confirmado con su aula.
 - Una hora completa se ve como completa y no se puede tildar.
-- El recurrente con fechas llenas muestra cuáles son y permite "Asignar igual".
 - La pantalla no calcula capacidad, prioridad, vigencia ni solapamientos.
 
 ---
@@ -792,16 +786,15 @@ Agregar a la feature `turnos` la lectura de la agenda de un día, con todos los 
 **Alcance**
 
 1. `GET /api/v1/turnos/agenda?fecha=YYYY-MM-DD&profesorId?`: devuelve un arreglo (la agenda diaria **no se pagina**, `convenciones-backend.md` → Paginación). Si no se manda `fecha`, la de hoy, que la decide la API con `hoy()`.
-2. **Expansión de ocurrencias** (decisión T-20): se listan los turnos que aplican a esa fecha —recurrentes cuya regla la alcanza y sesiones únicas de ese día—, **excluyendo** las fechas exceptuadas (`TurnoExcepcion`) y los turnos `CANCELADO`.
-   - Es la única implementación de la expansión: la reutiliza T-25 y cualquier vista futura, sin reescribirla.
+2. Se listan los turnos de esa fecha (`fechaInicio = fecha` pedida; decisión T-20, sin recurrentes), **excluyendo** los turnos `CANCELADO`.
+   - Es la única implementación de esta consulta: la reutiliza T-25 y cualquier vista futura, sin reescribirla.
 3. Cada ítem: alumno (apellido y nombre), profesor (apellido y nombre), materia, aula, hora de inicio y fin, y estado. Ordenado por hora y, dentro de la hora, por profesor.
 4. Filtro opcional por profesor.
-5. Tests del service con reloj fijo: un recurrente vigente aparece en una fecha que le corresponde y no en otro día de la semana; una fecha exceptuada no aparece; una sesión única sólo aparece en su fecha; un turno cancelado no aparece; el filtro por profesor acota.
+5. Tests del service con reloj fijo: un turno aparece sólo en su fecha; un turno cancelado no aparece; el filtro por profesor acota.
 
 **Criterios de aceptación**
 
 - Con turnos cargados, la agenda del día los devuelve todos, ordenados por hora.
-- Un recurrente con excepción en esa fecha no figura.
 - Sin `fecha`, responde la del día en curso según la zona del negocio.
 
 ---
@@ -847,7 +840,7 @@ Exponer la agenda del profesor de la sesión, de sólo lectura. Rol `PROFESOR`.
 **Alcance**
 
 1. `GET /api/v1/turnos/agenda-propia?desde&hasta?`: los turnos del profesor **de la sesión**, para un día o un rango (la HU pide vista por día o por semana). El profesor sale del `Actor` del contexto: **nunca de un parámetro**, para que nadie pueda pedir la agenda de otro.
-2. Reutiliza la expansión de ocurrencias de T-23: no se reescribe.
+2. Reutiliza la consulta de turnos por fecha de T-23: no se reescribe.
 3. Cada ítem: alumno, materia, aula, horario y estado. Sin datos de otros profesores.
 4. Sólo lectura: en este incremento el profesor no edita ni cancela turnos.
 5. Tests del service: la agenda devuelve sólo los turnos del profesor de la sesión, y un rango de una semana trae los días que corresponden.

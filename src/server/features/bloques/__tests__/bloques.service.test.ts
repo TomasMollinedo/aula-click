@@ -43,6 +43,7 @@ function crearRepositories() {
       crearBloques: vi.fn<BloquesRepository['crearBloques']>(),
       buscarPorId: vi.fn<BloquesRepository['buscarPorId']>(),
       editarBloque: vi.fn<BloquesRepository['editarBloque']>(),
+      eliminarBloque: vi.fn<BloquesRepository['eliminarBloque']>(),
     },
     profesoresRepository: { buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>() },
     turnosRepository: {
@@ -306,5 +307,61 @@ describe('editar', () => {
     repository.editarBloque.mockRejectedValue(noEncontrada)
 
     await expect(service.editar(10, { aulaId: 999 }, actor)).rejects.toBe(noEncontrada)
+  })
+})
+
+describe('eliminar', () => {
+  beforeEach(() => {
+    repository.buscarPorId.mockResolvedValue(ACTUAL)
+  })
+
+  it('sin turnos ni excepciones vigentes: da de baja y no valida al profesor', async () => {
+    const eliminado = bloque('14:00', '15:00', 10)
+    repository.eliminarBloque.mockResolvedValue(eliminado)
+
+    const resultado = await service.eliminar(10, actor)
+
+    expect(repository.eliminarBloque).toHaveBeenCalledWith(10, actor)
+    expect(profesoresRepository.buscarParaBloque).not.toHaveBeenCalled()
+    expect(resultado).toEqual(eliminado)
+  })
+
+  it('se puede dar de baja aunque el profesor esté inactivo', async () => {
+    profesoresRepository.buscarParaBloque.mockResolvedValue({
+      estado: 'INACTIVO',
+      tieneMateriaActiva: true,
+    })
+    repository.eliminarBloque.mockResolvedValue(bloque('14:00', '15:00', 10))
+
+    await expect(service.eliminar(10, actor)).resolves.not.toThrow()
+  })
+
+  it('bloque inexistente → NotFoundError, sin consultar turnos', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.eliminar(99, actor))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error).toMatchObject({ message: 'Bloque no encontrado' })
+    expect(turnosRepository.contarVigentesPorBloque).not.toHaveBeenCalled()
+    expect(repository.eliminarBloque).not.toHaveBeenCalled()
+  })
+
+  it('con turnos vigentes → 409 TURNOS_VIGENTES con la cantidad, sin dar de baja', async () => {
+    turnosRepository.contarVigentesPorBloque.mockResolvedValue(1)
+
+    const error = await errorDe(service.eliminar(10, actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error).toMatchObject({ code: 'TURNOS_VIGENTES', details: { cantidad: 1 } })
+    expect(repository.eliminarBloque).not.toHaveBeenCalled()
+  })
+
+  it('consulta los turnos vigentes de esa fila con la fecha de hoy del reloj', async () => {
+    repository.eliminarBloque.mockResolvedValue(bloque('14:00', '15:00', 10))
+
+    await service.eliminar(10, actor)
+
+    expect(turnosRepository.contarVigentesPorBloque).toHaveBeenCalledWith(10, HOY)
   })
 })
