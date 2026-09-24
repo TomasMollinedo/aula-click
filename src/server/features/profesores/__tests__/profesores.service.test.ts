@@ -6,7 +6,7 @@ import type { TurnosRepository } from '@/server/features/turnos/turnos.repositor
 import type { Actor } from '@/server/shared/actor'
 import type { ProfesoresRepository } from '../profesores.repository'
 import { crearProfesoresService } from '../profesores.service'
-import type { ProfesorConAsignaciones } from '../profesores.validation'
+import type { ProfesorConAsignaciones, ProfesorGuardado } from '../profesores.validation'
 
 // Los repositories se reemplazan por falsos: sin Docker ni Postgres. El service los importa solo
 // como tipo, así que no hace falta mockear los módulos reales.
@@ -32,9 +32,39 @@ const profesor = (
   estado: ProfesorConAsignaciones['estado'] = 'ACTIVO',
 ): ProfesorConAsignaciones => ({ estado, asignaciones })
 
+const GUARDADO: ProfesorGuardado = {
+  id: 3,
+  nombre: 'Martín',
+  apellido: 'Pérez',
+  dni: '28333444',
+  telefono: '387 4333444',
+  email: 'martin.perez@aulaclick.local',
+  titulo: 'Profesor en Matemática',
+  matricula: 'MP-0001',
+  capacidad: 5,
+  estado: 'ACTIVO',
+  avatarKey: null,
+  createdAt: '2026-09-01T12:00:00.000Z',
+  updatedAt: '2026-09-01T12:00:00.000Z',
+  createdBy: null,
+  updatedBy: null,
+}
+
+/** `ProfesorGuardado` (con `avatarKey`) → `ProfesorDetalle` esperado (con `fotoUrl`). */
+function conFotoUrlEsperada(guardado: ProfesorGuardado) {
+  const { avatarKey, ...resto } = guardado
+  return { ...resto, fotoUrl: avatarKey ? `https://minio.local/${avatarKey}` : null }
+}
+
 function crearRepositories() {
   return {
     repository: {
+      listar: vi.fn<ProfesoresRepository['listar']>(),
+      buscarPorId: vi.fn<ProfesoresRepository['buscarPorId']>(),
+      crear: vi.fn<ProfesoresRepository['crear']>(),
+      actualizar: vi.fn<ProfesoresRepository['actualizar']>(),
+      actualizarFoto: vi.fn<ProfesoresRepository['actualizarFoto']>(),
+      quitarFoto: vi.fn<ProfesoresRepository['quitarFoto']>(),
       listarMateriasAsignadas: vi.fn<ProfesoresRepository['listarMateriasAsignadas']>(),
       buscarConAsignaciones: vi.fn<ProfesoresRepository['buscarConAsignaciones']>(),
       asignarMaterias: vi.fn<ProfesoresRepository['asignarMaterias']>(),
@@ -47,26 +77,30 @@ function crearRepositories() {
     turnosRepository: {
       contarVigentesPorMateria: vi.fn<TurnosRepository['contarVigentesPorMateria']>(),
     },
+    getPresignedUrl: vi.fn<(key: string) => Promise<string>>(),
   }
 }
 
 let repository: ReturnType<typeof crearRepositories>['repository']
 let materiasRepository: ReturnType<typeof crearRepositories>['materiasRepository']
 let turnosRepository: ReturnType<typeof crearRepositories>['turnosRepository']
+let getPresignedUrl: ReturnType<typeof crearRepositories>['getPresignedUrl']
 let service: ReturnType<typeof crearProfesoresService>
 
 beforeEach(() => {
-  ;({ repository, materiasRepository, turnosRepository } = crearRepositories())
+  ;({ repository, materiasRepository, turnosRepository, getPresignedUrl } = crearRepositories())
   service = crearProfesoresService({
     repository,
     materiasRepository,
     turnosRepository,
+    getPresignedUrl,
     reloj: relojFijo,
   })
   repository.listarMateriasAsignadas.mockResolvedValue([
     { id: 7, nombre: 'Física' },
     { id: 2, nombre: 'Matemática' },
   ])
+  getPresignedUrl.mockImplementation((key) => Promise.resolve(`https://minio.local/${key}`))
 })
 
 /** Ejecuta `accion`, que debe fallar, y devuelve el error. */
@@ -76,6 +110,184 @@ function errorDe(accion: Promise<unknown>) {
     (error: unknown) => error,
   )
 }
+
+const ALTA = {
+  nombre: 'Martín',
+  apellido: 'Pérez',
+  dni: '28333444',
+  telefono: '387 4333444',
+  email: 'martin.perez@aulaclick.local',
+  titulo: 'Profesor en Matemática',
+  matricula: 'MP-0001',
+  capacidad: 5,
+  password: 'inicial-2026',
+}
+
+describe('listar', () => {
+  it('pagina, busca por palabras y arma la URL prefirmada de la foto', async () => {
+    repository.listar.mockResolvedValue({
+      data: [
+        { id: 3, apellido: 'Pérez', nombre: 'Martín', estado: 'ACTIVO', avatarKey: 'k1' },
+        { id: 7, apellido: 'Gómez', nombre: 'Luis', estado: 'ACTIVO', avatarKey: null },
+      ],
+      meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+    })
+
+    const resultado = await service.listar({
+      page: 1,
+      pageSize: 20,
+      q: 'perez',
+      estado: 'ACTIVO',
+    })
+
+    expect(repository.listar).toHaveBeenCalledWith({
+      page: 1,
+      pageSize: 20,
+      terminos: ['perez'],
+      estado: 'ACTIVO',
+      materiaId: undefined,
+    })
+    expect(resultado.data).toEqual([
+      {
+        id: 3,
+        apellido: 'Pérez',
+        nombre: 'Martín',
+        estado: 'ACTIVO',
+        fotoUrl: 'https://minio.local/k1',
+      },
+      { id: 7, apellido: 'Gómez', nombre: 'Luis', estado: 'ACTIVO', fotoUrl: null },
+    ])
+  })
+
+  it('estado TODOS no filtra: se lo pasa como undefined al repository', async () => {
+    repository.listar.mockResolvedValue({
+      data: [],
+      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+    })
+
+    await service.listar({ page: 1, pageSize: 20, estado: 'TODOS' })
+
+    expect(repository.listar).toHaveBeenCalledWith(expect.objectContaining({ estado: undefined }))
+  })
+
+  it('pasa materiaId al repository', async () => {
+    repository.listar.mockResolvedValue({
+      data: [],
+      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+    })
+
+    await service.listar({ page: 1, pageSize: 20, estado: 'ACTIVO', materiaId: 2 })
+
+    expect(repository.listar).toHaveBeenCalledWith(expect.objectContaining({ materiaId: 2 }))
+  })
+})
+
+describe('obtener', () => {
+  it('devuelve el detalle con fotoUrl null si no tiene foto', async () => {
+    repository.buscarPorId.mockResolvedValue(GUARDADO)
+
+    await expect(service.obtener(3)).resolves.toEqual(conFotoUrlEsperada(GUARDADO))
+  })
+
+  it('con avatarKey arma la URL prefirmada', async () => {
+    repository.buscarPorId.mockResolvedValue({ ...GUARDADO, avatarKey: 'profesores/3/a.jpg' })
+
+    const detalle = await service.obtener(3)
+
+    expect(detalle.fotoUrl).toBe('https://minio.local/profesores/3/a.jpg')
+    expect(getPresignedUrl).toHaveBeenCalledWith('profesores/3/a.jpg')
+  })
+
+  it('profesor inexistente → NotFoundError', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    await expect(service.obtener(99)).rejects.toThrow(NotFoundError)
+  })
+})
+
+describe('crear', () => {
+  it('crea al profesor con la busqueda calculada y devuelve el detalle', async () => {
+    repository.crear.mockResolvedValue(GUARDADO)
+
+    const resultado = await service.crear(ALTA, actor)
+
+    expect(repository.crear).toHaveBeenCalledWith(
+      { ...ALTA, busqueda: 'perez martin 28333444' },
+      actor,
+    )
+    expect(resultado).toEqual(conFotoUrlEsperada(GUARDADO))
+  })
+
+  it('DNI, email o matrícula repetidos: el repository lanza y el service no lo atrapa', async () => {
+    repository.crear.mockRejectedValue(new ConflictError('Ya existe un profesor con ese DNI'))
+
+    await expect(service.crear(ALTA, actor)).rejects.toThrow(ConflictError)
+  })
+})
+
+describe('editar', () => {
+  it('recalcula la busqueda sobre el estado resultante (actual + cambios)', async () => {
+    repository.buscarPorId.mockResolvedValue(GUARDADO)
+    repository.actualizar.mockResolvedValue({ ...GUARDADO, apellido: 'Gómez' })
+
+    await service.editar(3, { apellido: 'Gómez' }, actor)
+
+    expect(repository.actualizar).toHaveBeenCalledWith(
+      3,
+      { apellido: 'Gómez', busqueda: 'gomez martin 28333444' },
+      actor,
+    )
+  })
+
+  it('profesor inexistente → NotFoundError, sin llamar a actualizar', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.editar(99, { telefono: '387 4000000' }, actor))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repository.actualizar).not.toHaveBeenCalled()
+  })
+})
+
+describe('subirFoto', () => {
+  it('sube la foto y devuelve el detalle con la URL prefirmada', async () => {
+    repository.actualizarFoto.mockResolvedValue({ ...GUARDADO, avatarKey: 'profesores/3/x.png' })
+    const foto = new File([new Uint8Array([1, 2, 3])], 'foto.png', { type: 'image/png' })
+
+    const detalle = await service.subirFoto(3, foto, actor)
+
+    expect(repository.actualizarFoto).toHaveBeenCalledWith(
+      3,
+      { bytes: expect.any(Uint8Array), mimeType: 'image/png' },
+      actor,
+    )
+    expect(detalle.fotoUrl).toBe('https://minio.local/profesores/3/x.png')
+  })
+
+  it('profesor inexistente → NotFoundError', async () => {
+    repository.actualizarFoto.mockResolvedValue(null)
+    const foto = new File([new Uint8Array([1])], 'foto.jpg', { type: 'image/jpeg' })
+
+    await expect(service.subirFoto(99, foto, actor)).rejects.toThrow(NotFoundError)
+  })
+})
+
+describe('quitarFoto', () => {
+  it('quita la foto y devuelve el detalle sin ella', async () => {
+    repository.quitarFoto.mockResolvedValue({ ...GUARDADO, avatarKey: null })
+
+    const detalle = await service.quitarFoto(3, actor)
+
+    expect(repository.quitarFoto).toHaveBeenCalledWith(3, actor)
+    expect(detalle.fotoUrl).toBeNull()
+  })
+
+  it('profesor inexistente → NotFoundError', async () => {
+    repository.quitarFoto.mockResolvedValue(null)
+
+    await expect(service.quitarFoto(99, actor)).rejects.toThrow(NotFoundError)
+  })
+})
 
 describe('listarMateriasAsignadas', () => {
   it('devuelve las materias con asignación activa que informa el repository', async () => {

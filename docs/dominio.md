@@ -32,6 +32,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - La baja del profesor es la de su usuario: un profesor inactivo es un `Usuario` inactivo, que además no puede iniciar sesión.
 - Un profesor inactivo no recibe materias, bloques ni turnos nuevos.
 - No se puede dar de baja un profesor, quitarle una materia, dar de baja una materia que tiene profesores, ni editar o eliminar un bloque, si hay **turnos vigentes**.
+- **Capacidad del profesor** (T-27, HU-02): entero obligatorio, mínimo 1. Es la cantidad máxima de alumnos que atiende a la vez en una franja de una hora; es un dato del profesor, no del bloque. No se puede bajar a un valor menor que la ocupación simultánea máxima vigente del profesor en alguna franja (pendiente de implementar: depende de que existan turnos reales, HU-05/HU-07).
 
 ## Turnos
 
@@ -39,7 +40,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - Tipos: `RECURRENTE` (fecha de inicio y fin opcional) o `SESION_UNICA` (una fecha). Las fechas deben coincidir con el día de la semana del bloque.
 - **Turno vigente:** un recurrente sin fecha de fin o con fin >= hoy, o una sesión única con fecha >= hoy.
 - Un alumno no puede tener dos turnos superpuestos en fecha y horario.
-- **Capacidad del bloque:** se controla por cada fecha en que aplica el turno. Si una fecha puntual de un recurrente está llena, se informa qué fechas no pueden (`BLOQUE_LLENO`, con las fechas en `details`). Qué pasa con esas fechas (excepciones) está pendiente (D-04).
+- **Capacidad del bloque:** se controla por cada fecha en que aplica el turno, contra la capacidad efectiva de esa hora (T-27: `min(profesor.capacidad, aula.capacidad)`, no un valor fijo guardado en el bloque). Si una fecha puntual de un recurrente está llena, se informa qué fechas no pueden (`BLOQUE_LLENO`, con las fechas en `details`). Qué pasa con esas fechas (excepciones) está pendiente (D-04); el mecanismo de bloqueo concurrente sobre esta capacidad está pendiente (D-12).
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen.
 - Un recurrente se guarda como regla (fecha de inicio y fin opcional); las fechas en que no aplica se registran como excepciones y las ocurrencias se calculan al consultar (T-20). La prioridad tampoco se guarda: se calcula al leer.
 - Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no cuenta como vigente: no impide ninguna baja.

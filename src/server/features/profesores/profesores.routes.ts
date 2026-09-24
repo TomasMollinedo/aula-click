@@ -4,10 +4,24 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as profesoresController from './profesores.controller'
 import {
+  ejemploAlta,
+  ejemploDetalle,
+  ejemploEdicion,
+  ejemploErrorDni,
+  ejemploErrorFoto,
+  ejemploListado,
+} from './profesores.ejemplos'
+import {
   asignarMateriasSchema,
+  crearProfesorSchema,
+  editarProfesorSchema,
+  listarProfesoresQuerySchema,
   materiasAsignadasSchema,
+  profesorDetalleSchema,
   profesorIdParamsSchema,
+  profesoresListadoSchema,
   quitarMateriasSchema,
+  subirFotoSchema,
 } from './profesores.validation'
 
 // Contrato HTTP de profesores: cada endpoint se declara con createRoute() y se registra acá.
@@ -29,6 +43,134 @@ const errores = {
   403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
 }
 const noEncontrado = respuestaError('El profesor no existe (NO_ENCONTRADO)')
+const datoDuplicado = respuestaError(
+  'DNI, email o matrícula repetidos (CONFLICTO)',
+  ejemploErrorDni,
+)
+
+const detalle = (description: string) => ({
+  description,
+  content: { 'application/json': { schema: profesorDetalleSchema, example: ejemploDetalle } },
+})
+
+export const listarProfesoresRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags,
+  summary: 'Listar profesores',
+  description:
+    'Listado paginado ordenado por apellido y nombre. `q` busca por palabras sobre apellido, nombre y DNI; `estado` filtra por estado (`ACTIVO` por defecto; `TODOS` no filtra); `materiaId` filtra por materia con asignación activa.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: listarProfesoresQuerySchema },
+  responses: {
+    200: {
+      description: 'Página de profesores',
+      content: { 'application/json': { schema: profesoresListadoSchema, example: ejemploListado } },
+    },
+    ...errores,
+  },
+})
+
+export const obtenerProfesorRoute = createRoute({
+  method: 'get',
+  path: '/{id}',
+  tags,
+  summary: 'Detalle de un profesor',
+  description:
+    'Todos los datos del profesor, su estado y quién lo creó y modificó (de su Usuario).',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: profesorIdParamsSchema },
+  responses: {
+    200: detalle('Detalle del profesor'),
+    ...errores,
+    404: noEncontrado,
+  },
+})
+
+export const crearProfesorRoute = createRoute({
+  method: 'post',
+  path: '/',
+  tags,
+  summary: 'Dar de alta un profesor',
+  description:
+    'Crea al profesor junto con su cuenta de usuario (rol PROFESOR), con la contraseña inicial que define mesa de entradas. Si algo falla, no queda nada creado.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    body: {
+      required: true,
+      content: { 'application/json': { schema: crearProfesorSchema, example: ejemploAlta } },
+    },
+  },
+  responses: {
+    201: detalle('Profesor creado'),
+    ...errores,
+    409: datoDuplicado,
+  },
+})
+
+export const editarProfesorRoute = createRoute({
+  method: 'patch',
+  path: '/{id}',
+  tags,
+  summary: 'Editar un profesor',
+  description:
+    'Edición parcial: lo omitido no cambia. La contraseña no se edita. Como el email es el de la cuenta, cambiarlo cambia el email de ingreso.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    params: profesorIdParamsSchema,
+    body: {
+      required: true,
+      content: { 'application/json': { schema: editarProfesorSchema, example: ejemploEdicion } },
+    },
+  },
+  responses: {
+    200: detalle('Profesor actualizado'),
+    ...errores,
+    404: noEncontrado,
+    409: datoDuplicado,
+  },
+})
+
+export const subirFotoRoute = createRoute({
+  method: 'post',
+  path: '/{id}/foto',
+  tags,
+  summary: 'Subir o reemplazar la foto del profesor',
+  description:
+    'Multipart con un único campo `foto` (JPG o PNG, hasta 5 MB). Si ya tenía una, la reemplaza y borra la anterior.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    params: profesorIdParamsSchema,
+    body: {
+      required: true,
+      content: { 'multipart/form-data': { schema: subirFotoSchema } },
+    },
+  },
+  responses: {
+    200: detalle('Profesor con la foto actualizada'),
+    ...errores,
+    400: respuestaError(
+      'La foto no es JPG ni PNG, o supera el tamaño máximo (VALIDACION)',
+      ejemploErrorFoto,
+    ),
+    404: noEncontrado,
+  },
+})
+
+export const quitarFotoRoute = createRoute({
+  method: 'delete',
+  path: '/{id}/foto',
+  tags,
+  summary: 'Quitar la foto del profesor',
+  description: 'Borra el objeto y limpia la clave. Sin foto no es un error: no cambia nada.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: profesorIdParamsSchema },
+  responses: {
+    200: detalle('Profesor sin foto'),
+    ...errores,
+    404: noEncontrado,
+  },
+})
 
 const ejemploMateriasAsignadas = [
   { id: 7, nombre: 'Física' },
@@ -150,6 +292,12 @@ export const quitarMateriasRoute = createRoute({
 })
 
 export const profesoresRoutes = createRouter()
+  .openapi(listarProfesoresRoute, profesoresController.listar)
+  .openapi(obtenerProfesorRoute, profesoresController.obtener)
+  .openapi(crearProfesorRoute, profesoresController.crear)
+  .openapi(editarProfesorRoute, profesoresController.editar)
+  .openapi(subirFotoRoute, profesoresController.subirFoto)
+  .openapi(quitarFotoRoute, profesoresController.quitarFoto)
   .openapi(listarMateriasAsignadasRoute, profesoresController.listarMateriasAsignadas)
   .openapi(asignarMateriasRoute, profesoresController.asignarMaterias)
   .openapi(quitarMateriasRoute, profesoresController.quitarMaterias)
