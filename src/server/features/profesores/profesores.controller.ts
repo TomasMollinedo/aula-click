@@ -6,12 +6,14 @@ import type { AppEnv } from '@/server/router'
 import type {
   asignarMateriasRoute,
   crearProfesorRoute,
+  darDeBajaProfesorRoute,
   editarProfesorRoute,
   listarMateriasAsignadasRoute,
   listarProfesoresRoute,
   obtenerProfesorRoute,
   quitarFotoRoute,
   quitarMateriasRoute,
+  reactivarProfesorRoute,
   subirFotoRoute,
 } from './profesores.routes'
 import { profesoresRepository } from './profesores.repository'
@@ -43,6 +45,12 @@ export const editar: RouteHandler<typeof editarProfesorRoute, AppEnv> = async (c
     await profesoresService.editar(c.req.valid('param').id, c.req.valid('json'), c.get('actor')),
     200,
   )
+
+export const darDeBaja: RouteHandler<typeof darDeBajaProfesorRoute, AppEnv> = async (c) =>
+  c.json(await profesoresService.darDeBaja(c.req.valid('param').id, c.get('actor')), 200)
+
+export const reactivar: RouteHandler<typeof reactivarProfesorRoute, AppEnv> = async (c) =>
+  c.json(await profesoresService.reactivar(c.req.valid('param').id, c.get('actor')), 200)
 
 export const subirFoto: RouteHandler<typeof subirFotoRoute, AppEnv> = async (c) =>
   c.json(

@@ -76,3 +76,20 @@ export const ejemploErrorFoto = {
     details: [{ path: ['foto'], message: 'La foto debe ser JPG o PNG' }],
   },
 } satisfies ErrorResponse
+
+/** 409 del service: la baja de un profesor con turnos vigentes, uno por cada uno en `details`. */
+export const ejemploErrorTurnosVigentes = {
+  error: {
+    code: 'TURNOS_VIGENTES',
+    message: 'No se puede dar de baja un profesor con turnos vigentes',
+    details: [
+      {
+        alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
+        materia: { id: 2, nombre: 'Matemática' },
+        fecha: '2026-09-25',
+        horaInicio: '09:00',
+        horaFin: '10:00',
+      },
+    ],
+  },
+} satisfies ErrorResponse

@@ -20,9 +20,11 @@ const { repository, materiasRepository, turnosRepository, getPresignedUrl, getSe
       buscarConAsignaciones: vi.fn(),
       asignarMaterias: vi.fn(),
       quitarMaterias: vi.fn(),
+      darDeBaja: vi.fn(),
+      reactivar: vi.fn(),
     },
     materiasRepository: { buscarPorIds: vi.fn() },
-    turnosRepository: { contarVigentesPorMateria: vi.fn() },
+    turnosRepository: { contarVigentesPorMateria: vi.fn(), listarVigentesPorProfesor: vi.fn() },
     getPresignedUrl: vi.fn(),
     getSession: vi.fn(),
   }))
@@ -111,7 +113,10 @@ beforeEach(() => {
   repository.buscarConAsignaciones.mockResolvedValue({ estado: 'ACTIVO', asignaciones: [] })
   repository.asignarMaterias.mockResolvedValue(undefined)
   repository.quitarMaterias.mockResolvedValue(undefined)
+  repository.darDeBaja.mockResolvedValue(GUARDADO)
+  repository.reactivar.mockResolvedValue(GUARDADO)
   turnosRepository.contarVigentesPorMateria.mockResolvedValue([])
+  turnosRepository.listarVigentesPorProfesor.mockResolvedValue([])
   materiasRepository.buscarPorIds.mockResolvedValue([
     { id: 2, nombre: 'Matemática', estado: 'ACTIVO' },
   ])
@@ -362,6 +367,87 @@ describe('PATCH /profesores/{id}', () => {
   })
 })
 
+describe('PATCH /profesores/{id}/baja', () => {
+  it('sin turnos vigentes → 200, pasa a INACTIVO', async () => {
+    repository.darDeBaja.mockResolvedValue({ ...GUARDADO, estado: 'INACTIVO' })
+
+    const res = await pedir('/3/baja', 'PATCH')
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).estado).toBe('INACTIVO')
+    expect(repository.darDeBaja).toHaveBeenCalledWith(3, {
+      userId: 'usr_mesa',
+      role: 'MESA_ENTRADAS',
+    })
+  })
+
+  it('con turnos vigentes → 409 TURNOS_VIGENTES con cada uno en details, sin dar de baja', async () => {
+    turnosRepository.listarVigentesPorProfesor.mockResolvedValue([
+      {
+        alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
+        materia: { id: 2, nombre: 'Matemática' },
+        fecha: '2026-09-25',
+        horaInicio: '09:00',
+        horaFin: '10:00',
+      },
+    ])
+
+    const res = await pedir('/3/baja', 'PATCH')
+
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error.code).toBe('TURNOS_VIGENTES')
+    expect(body.error.details).toEqual([
+      {
+        alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
+        materia: { id: 2, nombre: 'Matemática' },
+        fecha: '2026-09-25',
+        horaInicio: '09:00',
+        horaFin: '10:00',
+      },
+    ])
+    expect(repository.darDeBaja).not.toHaveBeenCalled()
+  })
+
+  it('profesor inexistente → 404', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+    const res = await pedir('/99/baja', 'PATCH')
+    expect(res.status).toBe(404)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('/3/baja', 'PATCH')).status).toBe(403)
+  })
+})
+
+describe('PATCH /profesores/{id}/reactivacion', () => {
+  it('vuelve a ACTIVO → 200', async () => {
+    repository.buscarPorId.mockResolvedValue({ ...GUARDADO, estado: 'INACTIVO' })
+    repository.reactivar.mockResolvedValue({ ...GUARDADO, estado: 'ACTIVO' })
+
+    const res = await pedir('/3/reactivacion', 'PATCH')
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).estado).toBe('ACTIVO')
+    expect(repository.reactivar).toHaveBeenCalledWith(3, {
+      userId: 'usr_mesa',
+      role: 'MESA_ENTRADAS',
+    })
+  })
+
+  it('profesor inexistente → 404', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+    const res = await pedir('/99/reactivacion', 'PATCH')
+    expect(res.status).toBe(404)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('/3/reactivacion', 'PATCH')).status).toBe(403)
+  })
+})
+
 describe('POST /profesores/{id}/foto', () => {
   function formConFoto(nombre = 'foto.jpg', tipo = 'image/jpeg', bytes = [1, 2, 3]) {
     const form = new FormData()
@@ -590,6 +676,24 @@ describe('OpenAPI', () => {
       '403',
       '404',
       '409',
+    ])
+  })
+
+  it('declara los endpoints de baja y reactivación con todos sus status codes', () => {
+    expect(status('/api/v1/profesores/{id}/baja', 'patch')).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
+      '409',
+    ])
+    expect(status('/api/v1/profesores/{id}/reactivacion', 'patch')).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
     ])
   })
 

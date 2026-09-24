@@ -9,6 +9,7 @@ import {
   ejemploEdicion,
   ejemploErrorDni,
   ejemploErrorFoto,
+  ejemploErrorTurnosVigentes,
   ejemploListado,
 } from './profesores.ejemplos'
 import {
@@ -128,6 +129,42 @@ export const editarProfesorRoute = createRoute({
     ...errores,
     404: noEncontrado,
     409: datoDuplicado,
+  },
+})
+
+export const darDeBajaProfesorRoute = createRoute({
+  method: 'patch',
+  path: '/{id}/baja',
+  tags,
+  summary: 'Dar de baja un profesor',
+  description:
+    'Baja lógica: la del Usuario del profesor (T-22), que pasa a INACTIVO, deja de poder iniciar sesión y pierde sus sesiones abiertas. No toca materias, bloques ni el historial de turnos. Si tiene turnos vigentes responde 409 TURNOS_VIGENTES con cada uno (alumno, materia, fecha y horario) en `details`.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: profesorIdParamsSchema },
+  responses: {
+    200: detalle('Profesor dado de baja'),
+    ...errores,
+    404: noEncontrado,
+    409: respuestaError(
+      'El profesor tiene turnos vigentes (TURNOS_VIGENTES)',
+      ejemploErrorTurnosVigentes,
+    ),
+  },
+})
+
+export const reactivarProfesorRoute = createRoute({
+  method: 'patch',
+  path: '/{id}/reactivacion',
+  tags,
+  summary: 'Reactivar un profesor',
+  description:
+    'Vuelve el Usuario del profesor a ACTIVO: puede iniciar sesión de nuevo, vuelve a aparecer en el listado por defecto y queda disponible para agendar turnos, con sus materias y bloques intactos. No revalida nada.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: profesorIdParamsSchema },
+  responses: {
+    200: detalle('Profesor reactivado'),
+    ...errores,
+    404: noEncontrado,
   },
 })
 
@@ -296,6 +333,8 @@ export const profesoresRoutes = createRouter()
   .openapi(obtenerProfesorRoute, profesoresController.obtener)
   .openapi(crearProfesorRoute, profesoresController.crear)
   .openapi(editarProfesorRoute, profesoresController.editar)
+  .openapi(darDeBajaProfesorRoute, profesoresController.darDeBaja)
+  .openapi(reactivarProfesorRoute, profesoresController.reactivar)
   .openapi(subirFotoRoute, profesoresController.subirFoto)
   .openapi(quitarFotoRoute, profesoresController.quitarFoto)
   .openapi(listarMateriasAsignadasRoute, profesoresController.listarMateriasAsignadas)

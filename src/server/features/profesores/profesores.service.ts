@@ -66,7 +66,7 @@ export function crearProfesoresService({
 }: {
   repository: ProfesoresRepository
   materiasRepository: Pick<MateriasRepository, 'buscarPorIds'>
-  turnosRepository: Pick<TurnosRepository, 'contarVigentesPorMateria'>
+  turnosRepository: Pick<TurnosRepository, 'contarVigentesPorMateria' | 'listarVigentesPorProfesor'>
   getPresignedUrl: (key: string) => Promise<string>
   reloj?: Reloj
 }) {
@@ -276,6 +276,38 @@ export function crearProfesoresService({
 
       await repository.quitarMaterias(profesorId, materiaIds, actor)
       return listarMateriasAsignadas(profesorId)
+    },
+
+    /**
+     * Baja lógica del profesor: la de su `Usuario` (T-22), que pasa a `INACTIVO` y no puede
+     * iniciar sesión. No se permite si tiene turnos vigentes: 409 `TURNOS_VIGENTES` con cada uno
+     * en `details` (alumno, materia, fecha y horario). No toca materias, bloques ni el historial
+     * de turnos: se conservan tal cual.
+     */
+    async darDeBaja(id: number, actor: Actor): Promise<ProfesorDetalle> {
+      const actual = await repository.buscarPorId(id)
+      if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+
+      const turnosVigentes = await turnosRepository.listarVigentesPorProfesor(id, hoy(reloj))
+      if (turnosVigentes.length > 0) {
+        throw new ConflictError('No se puede dar de baja un profesor con turnos vigentes', {
+          code: 'TURNOS_VIGENTES',
+          details: turnosVigentes,
+        })
+      }
+
+      return conFotoUrl(await repository.darDeBaja(id, actor))
+    },
+
+    /**
+     * Reactivación: vuelve el profesor a `ACTIVO`. No revalida nada: sus materias y bloques
+     * quedan intactos, y vuelve a estar disponible para agendar turnos.
+     */
+    async reactivar(id: number, actor: Actor): Promise<ProfesorDetalle> {
+      const actual = await repository.buscarPorId(id)
+      if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+
+      return conFotoUrl(await repository.reactivar(id, actor))
     },
   }
 }
