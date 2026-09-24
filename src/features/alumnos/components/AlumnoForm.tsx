@@ -1,14 +1,15 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Controller, useForm } from 'react-hook-form'
+import { useEffect, useMemo, useRef } from 'react'
+import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
+import { Field, fieldErrorId } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
+import { PanelBody, PanelFooter } from '@/components/ui/panel'
 import {
   Select,
   SelectContent,
@@ -20,6 +21,7 @@ import { Textarea } from '@/components/ui/textarea'
 import type { ApiError } from '@/utils/fetch-json'
 
 import {
+  ALUMNO_FORM_VACIO,
   type AlumnoFormValues,
   SIN_NIVEL,
   alumnoFormSchema,
@@ -27,103 +29,137 @@ import {
   valoresFormAEditar,
 } from '../alumnos.schema'
 import { NIVEL_ESCOLARIDAD_LABEL, type AlumnoCrear, type AlumnoEditar } from '../alumnos.types'
-import { aplicarErroresApi } from '../errores-api'
+import { esMenorDeEdad, hoyLocal } from '../edad'
+import { aplicarErroresApi, interpretarErroresApi } from '../errores-api'
+import { AvisoMenorDeEdad } from './AvisoMenorDeEdad'
 
-type AlumnoFormProps =
+const CAMPOS_TUTOR = [
+  'tutorNombre',
+  'tutorApellido',
+  'tutorDni',
+  'tutorTelefono',
+  'tutorEmail',
+] as const satisfies readonly (keyof AlumnoFormValues)[]
+
+type AlumnoFormProps = {
+  onCancelar: () => void
+  isPending: boolean
+  error: ApiError | null
+} & (
   | {
       modo: 'crear'
       defaultValues?: undefined
       onSubmit: (datos: AlumnoCrear) => void
-      isPending: boolean
-      error: ApiError | null
     }
   | {
       modo: 'editar'
       defaultValues: AlumnoFormValues
       onSubmit: (datos: AlumnoEditar | null) => void
-      isPending: boolean
-      error: ApiError | null
     }
+)
 
-export function AlumnoForm({ modo, defaultValues, onSubmit, isPending, error }: AlumnoFormProps) {
+// Cuerpo y pie del formulario: va dentro de un <Panel> (modal o página) que pone el encabezado.
+export function AlumnoForm({
+  modo,
+  defaultValues,
+  onSubmit,
+  onCancelar,
+  isPending,
+  error,
+}: AlumnoFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
-  const [errorGeneral, setErrorGeneral] = useState<string | null>(null)
 
   const {
     register,
     handleSubmit,
     control,
     setError: setFieldError,
-    formState: { errors, dirtyFields },
+    formState: { errors, dirtyFields, isDirty },
   } = useForm<AlumnoFormValues>({
     resolver: zodResolver(alumnoFormSchema),
-    defaultValues: defaultValues ?? {
-      nombre: '',
-      apellido: '',
-      dni: '',
-      fechaNacimiento: '',
-      email: '',
-      telefono: '',
-      nivelEscolaridad: SIN_NIVEL,
-      grado: '',
-      institucionEducativa: '',
-      observaciones: '',
-      tutorNombre: '',
-      tutorApellido: '',
-      tutorDni: '',
-      tutorTelefono: '',
-      tutorEmail: '',
-    },
+    defaultValues: defaultValues ?? ALUMNO_FORM_VACIO,
   })
 
+  // Qué marca el error de la API (sin efectos; el setError y el foco van en el efecto de abajo).
+  // Se deriva del error, que la mutación vuelve a null al reenviar.
+  const errorApi = useMemo(() => (error ? interpretarErroresApi(error) : null), [error])
+  const camposConErrorApi = errorApi?.camposMarcados ?? []
+
+  const [fechaNacimiento, ...datosTutor] = useWatch({
+    control,
+    name: ['fechaNacimiento', ...CAMPOS_TUTOR],
+  })
+  // Solo ayuda visual (aviso y asteriscos): no bloquea el envío; la regla la valida la API (T-28).
+  const esMenor = esMenorDeEdad(fechaNacimiento ?? '', hoyLocal()) === true
+  // Un mayor con datos de tutor los conserva (docs/dominio.md): se muestran como opcionales.
+  // Con un error en un campo del tutor (por ejemplo, un 400 de la API) la sección se muestra siempre.
+  const mostrarTutor =
+    esMenor ||
+    datosTutor.some((dato) => dato?.trim()) ||
+    CAMPOS_TUTOR.some(
+      (campo) => errors[campo] || camposConErrorApi.some((marcado) => marcado.campo === campo),
+    )
+
+  // Red de seguridad: un error de la API sobre un campo que no está en pantalla se repite arriba.
+  // Hoy los únicos campos condicionales son los del tutor, que se muestran si tienen un error.
+  const camposOcultos: readonly string[] = mostrarTutor ? [] : CAMPOS_TUTOR
+  const erroresOcultos = camposConErrorApi.filter(({ campo }) => camposOcultos.includes(campo))
+  const errorGeneral =
+    errorApi?.errorGeneral ??
+    (erroresOcultos.length > 0 ? erroresOcultos.map(({ mensaje }) => mensaje).join('. ') : null)
+
   const procesarEnvio = handleSubmit((valores) => {
-    setErrorGeneral(null)
     if (modo === 'crear') {
       onSubmit(valoresFormACrear(valores))
     } else {
-      const cambios = valoresFormAEditar(valores, dirtyFields)
-      onSubmit(cambios)
+      onSubmit(valoresFormAEditar(valores, dirtyFields))
     }
   })
 
-  // Mostrar errores de la API en los campos correspondientes.
+  // Mostrar errores de la API en los campos (setError) y poner el foco en el primero. Corre después
+  // del render en que la sección del tutor ya se muestra si el error marca alguno de sus campos.
   useEffect(() => {
     if (!error) return
-    const resultado = aplicarErroresApi(error, setFieldError, formRef)
-    if (resultado.errorGeneral) {
-      setErrorGeneral(resultado.errorGeneral)
-    }
+    aplicarErroresApi(error, setFieldError, formRef)
   }, [error, setFieldError])
 
   return (
-    <form ref={formRef} onSubmit={procesarEnvio} className="space-y-8" noValidate>
-      {errorGeneral && (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertDescription>{errorGeneral}</AlertDescription>
-        </Alert>
-      )}
+    <form
+      ref={formRef}
+      onSubmit={procesarEnvio}
+      className="flex min-h-0 flex-1 flex-col"
+      noValidate
+    >
+      <PanelBody className="@container space-y-6">
+        {errorGeneral && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription className="text-destructive">{errorGeneral}</AlertDescription>
+          </Alert>
+        )}
 
-      {/* Identificatorios */}
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Datos identificatorios</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <Grilla>
           <CampoTexto
             label="Nombre"
             obligatorio
+            placeholder="Ingresá el nombre"
+            autoComplete="off"
             error={errors.nombre?.message}
             {...register('nombre')}
           />
           <CampoTexto
             label="Apellido"
             obligatorio
+            placeholder="Ingresá el apellido"
+            autoComplete="off"
             error={errors.apellido?.message}
             {...register('apellido')}
           />
           <CampoTexto
             label="DNI"
             obligatorio
-            placeholder="30.123.456"
+            placeholder="Sin puntos"
+            inputMode="numeric"
             error={errors.dni?.message}
             {...register('dni')}
           />
@@ -131,84 +167,44 @@ export function AlumnoForm({ modo, defaultValues, onSubmit, isPending, error }: 
             label="Fecha de nacimiento"
             obligatorio
             type="date"
+            max={hoyLocal()}
             error={errors.fechaNacimiento?.message}
             {...register('fechaNacimiento')}
-          />
-        </div>
-      </fieldset>
-
-      {/* Contacto */}
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Contacto</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <CampoTexto
-            label="Email"
-            obligatorio
-            type="email"
-            error={errors.email?.message}
-            {...register('email')}
           />
           <CampoTexto
             label="Teléfono"
             obligatorio
-            placeholder="(387) 15-412-3456"
+            type="tel"
+            placeholder="Código de área y número"
             error={errors.telefono?.message}
             {...register('telefono')}
           />
-        </div>
-      </fieldset>
-
-      {/* Tutor */}
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Tutor</legend>
-        <p className="text-muted-foreground text-sm">
-          Obligatorio si el alumno es menor de 18 años
-        </p>
-        <div className="grid gap-4 sm:grid-cols-2">
           <CampoTexto
-            label="Nombre del tutor"
-            error={errors.tutorNombre?.message}
-            {...register('tutorNombre')}
-          />
-          <CampoTexto
-            label="Apellido del tutor"
-            error={errors.tutorApellido?.message}
-            {...register('tutorApellido')}
-          />
-          <CampoTexto
-            label="DNI del tutor"
-            placeholder="20.111.222"
-            error={errors.tutorDni?.message}
-            {...register('tutorDni')}
-          />
-          <CampoTexto
-            label="Teléfono del tutor"
-            placeholder="(387) 15-433-9876"
-            error={errors.tutorTelefono?.message}
-            {...register('tutorTelefono')}
-          />
-          <CampoTexto
-            label="Email del tutor"
+            label="Email"
+            obligatorio
             type="email"
-            error={errors.tutorEmail?.message}
-            {...register('tutorEmail')}
+            placeholder="nombre@correo.com"
+            error={errors.email?.message}
+            {...register('email')}
           />
-        </div>
-      </fieldset>
-
-      {/* Escolares */}
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Datos escolares</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-2">
-            <Label>Nivel de escolaridad</Label>
+          <Field
+            label="Nivel de escolaridad"
+            htmlFor="alumno-nivelEscolaridad"
+            optional
+            error={errors.nivelEscolaridad?.message}
+          >
             <Controller
               name="nivelEscolaridad"
               control={control}
               render={({ field }) => (
-                <Select value={field.value || SIN_NIVEL} onValueChange={field.onChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Sin especificar" />
+                <Select value={field.value ?? ''} onValueChange={field.onChange}>
+                  <SelectTrigger
+                    id="alumno-nivelEscolaridad"
+                    className="w-full"
+                    aria-invalid={!!errors.nivelEscolaridad}
+                    onBlur={field.onBlur}
+                  >
+                    <SelectValue placeholder="Seleccionar nivel" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value={SIN_NIVEL}>Sin especificar</SelectItem>
@@ -221,59 +217,132 @@ export function AlumnoForm({ modo, defaultValues, onSubmit, isPending, error }: 
                 </Select>
               )}
             />
-            {errors.nivelEscolaridad && (
-              <p className="text-destructive text-sm">{errors.nivelEscolaridad.message}</p>
-            )}
-          </div>
+          </Field>
           <CampoTexto
             label="Grado o año"
-            placeholder="5° año"
+            opcional
+            placeholder="Por ejemplo, 3.er año"
             error={errors.grado?.message}
             {...register('grado')}
           />
-          <div className="sm:col-span-2">
-            <CampoTexto
-              label="Institución educativa"
-              error={errors.institucionEducativa?.message}
-              {...register('institucionEducativa')}
-            />
-          </div>
-        </div>
-      </fieldset>
+          <CampoTexto
+            label="Colegio / institución"
+            opcional
+            placeholder="Nombre de la institución"
+            error={errors.institucionEducativa?.message}
+            {...register('institucionEducativa')}
+          />
+        </Grilla>
 
-      {/* Observaciones */}
-      <fieldset className="space-y-4">
-        <legend className="text-lg font-semibold">Observaciones</legend>
-        <div className="space-y-2">
-          <Textarea {...register('observaciones')} rows={4} aria-invalid={!!errors.observaciones} />
-          {errors.observaciones && (
-            <p className="text-destructive text-sm">{errors.observaciones.message}</p>
-          )}
-        </div>
-      </fieldset>
+        {esMenor && <AvisoMenorDeEdad modo={modo} />}
 
-      <Button type="submit" disabled={isPending}>
-        {isPending ? 'Guardando…' : modo === 'crear' ? 'Crear alumno' : 'Guardar cambios'}
-      </Button>
+        {mostrarTutor && (
+          <section className="space-y-4" aria-labelledby="alumno-tutor-titulo">
+            <h3 id="alumno-tutor-titulo" className="text-lg font-semibold">
+              Tutor o responsable
+            </h3>
+            <Grilla>
+              <CampoTexto
+                label="Nombre"
+                obligatorio={esMenor}
+                opcional={!esMenor}
+                placeholder="Ingresá el nombre"
+                autoComplete="off"
+                error={errors.tutorNombre?.message}
+                {...register('tutorNombre')}
+              />
+              <CampoTexto
+                label="Apellido"
+                obligatorio={esMenor}
+                opcional={!esMenor}
+                placeholder="Ingresá el apellido"
+                autoComplete="off"
+                error={errors.tutorApellido?.message}
+                {...register('tutorApellido')}
+              />
+              <CampoTexto
+                label="DNI"
+                opcional
+                placeholder="Sin puntos"
+                inputMode="numeric"
+                error={errors.tutorDni?.message}
+                {...register('tutorDni')}
+              />
+              <CampoTexto
+                label="Teléfono"
+                obligatorio={esMenor}
+                opcional={!esMenor}
+                type="tel"
+                placeholder="Código de área y número"
+                error={errors.tutorTelefono?.message}
+                {...register('tutorTelefono')}
+              />
+              <CampoTexto
+                label="Email"
+                obligatorio={esMenor}
+                opcional={!esMenor}
+                type="email"
+                placeholder="nombre@correo.com"
+                error={errors.tutorEmail?.message}
+                {...register('tutorEmail')}
+              />
+            </Grilla>
+          </section>
+        )}
+
+        <Field
+          label="Observaciones"
+          htmlFor="alumno-observaciones"
+          optional
+          error={errors.observaciones?.message}
+        >
+          <Textarea
+            id="alumno-observaciones"
+            rows={4}
+            placeholder="Información relevante para las clases"
+            aria-invalid={!!errors.observaciones}
+            aria-describedby={fieldErrorId('alumno-observaciones')}
+            {...register('observaciones')}
+          />
+        </Field>
+      </PanelBody>
+
+      <PanelFooter>
+        <Button type="button" variant="cancelado" size="lg" onClick={onCancelar}>
+          Cancelar
+        </Button>
+        {/* Sin cambios no hay nada que guardar: el botón queda deshabilitado (así lo muestra el diseño). */}
+        <Button type="submit" variant="confirmado" size="lg" disabled={isPending || !isDirty}>
+          {isPending ? 'Guardando…' : 'Guardar alumno'}
+        </Button>
+      </PanelFooter>
     </form>
   )
 }
 
+// Dos columnas en el modal y tres cuando el panel es ancho (página): mismo orden de campos.
+function Grilla({ children }: { children: React.ReactNode }) {
+  return <div className="grid gap-x-5 gap-y-4 @xl:grid-cols-2 @4xl:grid-cols-3">{children}</div>
+}
+
 type CampoTextoProps = {
   label: string
+  name: string
   obligatorio?: boolean
+  opcional?: boolean
   error?: string
 } & React.ComponentProps<'input'>
 
-function CampoTexto({ label, obligatorio, error, ...inputProps }: CampoTextoProps) {
+function CampoTexto({ label, obligatorio, opcional, error, ...inputProps }: CampoTextoProps) {
+  const id = `alumno-${inputProps.name}`
   return (
-    <div className="space-y-2">
-      <Label>
-        {label}
-        {obligatorio && <span className="text-destructive"> *</span>}
-      </Label>
-      <Input {...inputProps} aria-invalid={!!error} />
-      {error && <p className="text-destructive text-sm">{error}</p>}
-    </div>
+    <Field label={label} htmlFor={id} required={obligatorio} optional={opcional} error={error}>
+      <Input
+        id={id}
+        aria-invalid={!!error}
+        aria-describedby={error ? fieldErrorId(id) : undefined}
+        {...inputProps}
+      />
+    </Field>
   )
 }

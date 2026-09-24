@@ -60,27 +60,27 @@ const telefonoOpcionalSchema = z
       .or(z.literal('')),
   )
 
+const emailFormatoSchema = z
+  .email({ message: 'Email inválido' })
+  .max(254, { message: 'El email no puede superar los 254 caracteres' })
+
 const emailOpcionalSchema = z
   .string()
+  .trim()
   .optional()
-  .or(z.literal(''))
-  .pipe(
-    z
-      .string()
-      .trim()
-      .email({ message: 'Email inválido' })
-      .max(254, { message: 'El email no puede superar los 254 caracteres' })
-      .optional()
-      .or(z.literal('')),
-  )
+  .pipe(z.union([z.literal(''), emailFormatoSchema]).optional())
 
+// Los datos del tutor de un menor no se validan acá: es una regla de negocio que valida la API
+// (T-28). edad.ts solo decide el aviso y los asteriscos del formulario.
 export const alumnoFormSchema = z.object({
   nombre: z
     .string({ message: 'Campo obligatorio' })
+    .trim()
     .min(1, { message: 'Campo obligatorio' })
     .max(100, { message: 'No puede superar los 100 caracteres' }),
   apellido: z
     .string({ message: 'Campo obligatorio' })
+    .trim()
     .min(1, { message: 'Campo obligatorio' })
     .max(100, { message: 'No puede superar los 100 caracteres' }),
   dni: dniSchema,
@@ -91,10 +91,9 @@ export const alumnoFormSchema = z.object({
     .refine((v) => isValid(parseISO(v)), { message: 'La fecha no es válida' }),
   email: z
     .string({ message: 'Campo obligatorio' })
-    .min(1, { message: 'Campo obligatorio' })
     .trim()
-    .email({ message: 'Email inválido' })
-    .max(254, { message: 'El email no puede superar los 254 caracteres' }),
+    .min(1, { message: 'Campo obligatorio' })
+    .pipe(emailFormatoSchema),
   telefono: telefonoSchema,
   nivelEscolaridad: z.string().optional().or(z.literal('')),
   grado: z
@@ -131,7 +130,32 @@ export type AlumnoFormValues = z.input<typeof alumnoFormSchema>
 
 export const ALUMNO_FORM_FIELDS = Object.keys(alumnoFormSchema.shape) as (keyof AlumnoFormValues)[]
 
-/** Convierte el detalle de la API a valores del formulario: null → "" y nivel null → SIN_NIVEL. */
+/** Valores del formulario de alta: todo vacío y el nivel sin elegir (muestra el placeholder). */
+export const ALUMNO_FORM_VACIO: AlumnoFormValues = {
+  nombre: '',
+  apellido: '',
+  dni: '',
+  fechaNacimiento: '',
+  email: '',
+  telefono: '',
+  nivelEscolaridad: '',
+  grado: '',
+  institucionEducativa: '',
+  observaciones: '',
+  tutorNombre: '',
+  tutorApellido: '',
+  tutorDni: '',
+  tutorTelefono: '',
+  tutorEmail: '',
+}
+
+/** `alumnoId` de la URL como número, o `null` si no es un entero positivo (se muestra 404). */
+export function parsearAlumnoId(alumnoId: string): number | null {
+  const id = Number(alumnoId)
+  return Number.isInteger(id) && id > 0 ? id : null
+}
+
+/** Convierte el detalle de la API a valores del formulario: null → "" (el nivel sin elegir, también). */
 export function detalleAValoresForm(detalle: AlumnoDetalle): AlumnoFormValues {
   return {
     nombre: detalle.nombre,
@@ -140,7 +164,7 @@ export function detalleAValoresForm(detalle: AlumnoDetalle): AlumnoFormValues {
     fechaNacimiento: detalle.fechaNacimiento,
     email: detalle.email,
     telefono: detalle.telefono,
-    nivelEscolaridad: detalle.nivelEscolaridad ?? SIN_NIVEL,
+    nivelEscolaridad: detalle.nivelEscolaridad ?? '',
     grado: detalle.grado ?? '',
     institucionEducativa: detalle.institucionEducativa ?? '',
     observaciones: detalle.observaciones ?? '',

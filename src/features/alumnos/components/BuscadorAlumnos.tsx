@@ -1,25 +1,21 @@
 'use client'
 
-import { Search } from 'lucide-react'
-
-import { Input } from '@/components/ui/input'
+import { SearchInput } from '@/components/ui/search-input'
 
 type BuscadorAlumnosProps = {
   texto: string
   onChange: (texto: string) => void
+  className?: string
 }
 
-export function BuscadorAlumnos({ texto, onChange }: BuscadorAlumnosProps) {
+export function BuscadorAlumnos({ texto, onChange, className }: BuscadorAlumnosProps) {
   return (
-    <div className="relative max-w-sm">
-      <Search className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
-      <Input
-        type="search"
-        placeholder="Buscar por apellido, nombre o DNI"
-        value={texto}
-        onChange={(e) => onChange(e.target.value)}
-        className="pl-9"
-      />
-    </div>
+    <SearchInput
+      value={texto}
+      onValueChange={onChange}
+      placeholder="Buscar por DNI, nombre o apellido…"
+      aria-label="Buscar alumnos por DNI, nombre o apellido"
+      className={className}
+    />
   )
 }

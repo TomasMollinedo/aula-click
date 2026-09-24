@@ -1,16 +1,11 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { AlertCircle } from 'lucide-react'
+import { useRouter } from 'next/navigation'
+import { Eye } from 'lucide-react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import {
-  Pagination,
-  PaginationContent,
-  PaginationItem,
-  PaginationNext,
-  PaginationPrevious,
-} from '@/components/ui/pagination'
+import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -20,95 +15,98 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table'
+import { cn } from '@/utils/cn'
+import { getInitials } from '@/utils/initials'
 
 import type { AlumnoListadoItem } from '../alumnos.types'
 
 type AlumnosTableProps = {
+  /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
+  rutaBase: string
   data?: AlumnoListadoItem[]
-  meta?: { page: number; totalPages: number }
   isLoading: boolean
-  isError: boolean
-  error: { message: string } | null
-  page: number
-  onPageChange: (page: number) => void
+  /** Hay datos en pantalla y se está pidiendo otra página o búsqueda. */
+  isFetching: boolean
+  /** Lo que se muestra debajo del encabezado si no hay filas. */
+  vacio: ReactNode
 }
 
-export function AlumnosTable({
-  data,
-  meta,
-  isLoading,
-  isError,
-  error,
-  page,
-  onPageChange,
-}: AlumnosTableProps) {
-  if (isError) {
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="size-4" />
-        <AlertDescription>{error?.message ?? 'Ocurrió un error inesperado'}</AlertDescription>
-      </Alert>
-    )
-  }
+export function AlumnosTable({ rutaBase, data, isLoading, isFetching, vacio }: AlumnosTableProps) {
+  const router = useRouter()
 
   return (
-    <div className="space-y-4">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Apellido</TableHead>
-            <TableHead>Nombre</TableHead>
+    <Table aria-busy={isFetching} className={cn(isFetching && !isLoading && 'opacity-60')}>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-2/5">Apellido</TableHead>
+          <TableHead>Nombre</TableHead>
+          <TableHead className="w-24 text-right">Detalle</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {isLoading ? (
+          Array.from({ length: 6 }).map((_, i) => (
+            <TableRow key={i}>
+              <TableCell>
+                <div className="flex items-center gap-3">
+                  <Skeleton className="size-9 rounded-full" />
+                  <Skeleton className="h-4 w-32" />
+                </div>
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-28" />
+              </TableCell>
+              <TableCell />
+            </TableRow>
+          ))
+        ) : data?.length ? (
+          data.map((alumno) => {
+            const href = `${rutaBase}/${alumno.id}`
+            return (
+              // La fila entera abre el detalle con el mouse. El link del ojo es el acceso de teclado
+              // y el que permite abrir en otra pestaña. No se "estira" el link sobre la fila con
+              // after:absolute: un <tr> no es containing block en todos los navegadores y el ::after
+              // de la última fila terminaba cubriendo toda la tabla.
+              <TableRow
+                key={alumno.id}
+                className="cursor-pointer"
+                onClick={(e) => {
+                  // El clic sobre el link ya navega (y respeta Cmd/Ctrl+clic): no duplicarlo.
+                  if ((e.target as HTMLElement).closest('a')) return
+                  router.push(href)
+                }}
+              >
+                <TableCell>
+                  <div className="flex items-center gap-3">
+                    <Avatar>
+                      <AvatarFallback className="bg-cobalto/10 text-cobalto text-xs font-semibold">
+                        {getInitials(alumno.nombre, alumno.apellido)}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="font-semibold">{alumno.apellido}</span>
+                  </div>
+                </TableCell>
+                <TableCell className="text-muted-foreground">{alumno.nombre}</TableCell>
+                <TableCell className="text-right">
+                  <Link
+                    href={href}
+                    aria-label={`Ver detalle de ${alumno.nombre} ${alumno.apellido}`}
+                    className="text-cobalto hover:bg-cobalto/10 focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none focus-visible:ring-2"
+                  >
+                    <Eye className="size-5" />
+                  </Link>
+                </TableCell>
+              </TableRow>
+            )
+          })
+        ) : (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={3} className="p-0">
+              {vacio}
+            </TableCell>
           </TableRow>
-        </TableHeader>
-        <TableBody>
-          {isLoading
-            ? Array.from({ length: 5 }).map((_, i) => (
-                <TableRow key={i}>
-                  <TableCell>
-                    <Skeleton className="h-4 w-32" />
-                  </TableCell>
-                  <TableCell>
-                    <Skeleton className="h-4 w-28" />
-                  </TableCell>
-                </TableRow>
-              ))
-            : data?.map((alumno) => (
-                <TableRow key={alumno.id} className="cursor-pointer">
-                  <TableCell>
-                    <Link href={`/mesa/alumnos/${alumno.id}`} className="block w-full">
-                      {alumno.apellido}
-                    </Link>
-                  </TableCell>
-                  <TableCell>
-                    <Link href={`/mesa/alumnos/${alumno.id}`} className="block w-full">
-                      {alumno.nombre}
-                    </Link>
-                  </TableCell>
-                </TableRow>
-              ))}
-        </TableBody>
-      </Table>
-
-      {meta && meta.totalPages > 1 && (
-        <div className="flex items-center justify-between">
-          <p className="text-muted-foreground text-sm">
-            Página {meta.page} de {meta.totalPages}
-          </p>
-          <Pagination>
-            <PaginationContent>
-              <PaginationItem>
-                <PaginationPrevious onClick={() => onPageChange(page - 1)} disabled={page <= 1} />
-              </PaginationItem>
-              <PaginationItem>
-                <PaginationNext
-                  onClick={() => onPageChange(page + 1)}
-                  disabled={page >= meta.totalPages}
-                />
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
-        </div>
-      )}
-    </div>
+        )}
+      </TableBody>
+    </Table>
   )
 }

@@ -2,31 +2,19 @@
 
 import { useRouter } from 'next/navigation'
 
-import { AlumnoForm } from '@/features/alumnos/components/AlumnoForm'
-import { useCrearAlumno } from '@/features/alumnos/hooks/use-crear-alumno'
-import type { AlumnoCrear } from '@/features/alumnos/alumnos.types'
+import { PageHeader } from '@/components/layout/page-header'
+import { AlumnoNuevo } from '@/features/alumnos/components/AlumnoNuevo'
 
+// Alta entrando por URL. Navegando desde el listado se abre el modal de @modal/(.)nuevo.
+// Salir vuelve al listado: ir a otra ruta de /mesa/alumnos abriría un modal encima de esta página.
 export default function NuevoAlumnoPage() {
   const router = useRouter()
-  const mutation = useCrearAlumno()
-
-  function handleSubmit(datos: AlumnoCrear) {
-    mutation.mutate(datos, {
-      onSuccess: (alumno) => {
-        router.push(`/mesa/alumnos/${alumno.id}`)
-      },
-    })
-  }
+  const volverAlListado = () => router.push('/mesa/alumnos')
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold">Nuevo alumno</h1>
-      <AlumnoForm
-        modo="crear"
-        onSubmit={handleSubmit}
-        isPending={mutation.isPending}
-        error={mutation.error}
-      />
+    <div className="space-y-8">
+      <PageHeader title="Nuevo alumno" description="Gestión de datos del alumno" />
+      <AlumnoNuevo mode="page" onCerrar={volverAlListado} onCreado={volverAlListado} />
     </div>
   )
 }

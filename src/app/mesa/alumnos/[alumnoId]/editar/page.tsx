@@ -1,96 +1,32 @@
 'use client'
 
-import { use, useState } from 'react'
-import Link from 'next/link'
+import { use } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertCircle } from 'lucide-react'
 
-import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Button } from '@/components/ui/button'
-import { Skeleton } from '@/components/ui/skeleton'
-import { detalleAValoresForm } from '@/features/alumnos/alumnos.schema'
-import type { AlumnoEditar } from '@/features/alumnos/alumnos.types'
-import { AlumnoForm } from '@/features/alumnos/components/AlumnoForm'
-import { useAlumno } from '@/features/alumnos/hooks/use-alumno'
-import { useEditarAlumno } from '@/features/alumnos/hooks/use-editar-alumno'
+import { PageHeader } from '@/components/layout/page-header'
+import { AlumnoEditar } from '@/features/alumnos/components/AlumnoEditar'
+import { BotonNuevoAlumno } from '@/features/alumnos/components/BotonNuevoAlumno'
 
-export default function EditarAlumnoPage({ params }: { params: Promise<{ alumnoId: string }> }) {
+// Edición entrando por URL. Navegando desde el detalle se abre el modal de @modal/(.)[alumnoId]/editar.
+// Salir vuelve al listado: ir al detalle lo abriría como modal encima de esta página.
+export default function EditarAlumnoPage({ params }: PageProps<'/mesa/alumnos/[alumnoId]/editar'>) {
   const { alumnoId } = use(params)
-  const id = Number(alumnoId)
-
-  if (!Number.isFinite(id) || id <= 0 || !Number.isInteger(id)) {
-    return <NoEncontrado />
-  }
-
-  return <EditarContenido id={id} />
-}
-
-function EditarContenido({ id }: { id: number }) {
   const router = useRouter()
-  const { data: alumno, isLoading, isError, error } = useAlumno(id)
-  const mutation = useEditarAlumno(id)
-  const [sinCambios, setSinCambios] = useState(false)
-
-  if (isLoading) {
-    return (
-      <div className="max-w-2xl space-y-4">
-        <Skeleton className="h-8 w-48" />
-        <Skeleton className="h-96 w-full" />
-      </div>
-    )
-  }
-
-  if (isError) {
-    if (error?.status === 404) return <NoEncontrado />
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="size-4" />
-        <AlertDescription>{error?.message ?? 'Ocurrió un error inesperado'}</AlertDescription>
-      </Alert>
-    )
-  }
-
-  if (!alumno) return <NoEncontrado />
-
-  function handleSubmit(cambios: AlumnoEditar | null) {
-    if (!cambios) {
-      setSinCambios(true)
-      return
-    }
-    setSinCambios(false)
-    mutation.mutate(cambios, {
-      onSuccess: () => {
-        router.push(`/mesa/alumnos/${id}`)
-      },
-    })
-  }
+  const volverAlListado = () => router.push('/mesa/alumnos')
 
   return (
-    <div className="max-w-2xl space-y-6">
-      <h1 className="text-2xl font-semibold">Editar alumno</h1>
-      {sinCambios && (
-        <Alert>
-          <AlertDescription>No hay cambios para guardar</AlertDescription>
-        </Alert>
-      )}
-      <AlumnoForm
-        modo="editar"
-        defaultValues={detalleAValoresForm(alumno)}
-        onSubmit={handleSubmit}
-        isPending={mutation.isPending}
-        error={mutation.error}
+    <div className="space-y-8">
+      <PageHeader
+        title="Editar alumno"
+        description="Gestión de datos del alumno"
+        actions={<BotonNuevoAlumno rutaBase="/mesa/alumnos" />}
       />
-    </div>
-  )
-}
-
-function NoEncontrado() {
-  return (
-    <div className="flex flex-col items-center gap-4 py-12 text-center">
-      <p className="text-muted-foreground">Alumno no encontrado</p>
-      <Button variant="outline" asChild>
-        <Link href="/mesa/alumnos">Volver al listado</Link>
-      </Button>
+      <AlumnoEditar
+        alumnoId={alumnoId}
+        mode="page"
+        onCerrar={volverAlListado}
+        onGuardado={volverAlListado}
+      />
     </div>
   )
 }
