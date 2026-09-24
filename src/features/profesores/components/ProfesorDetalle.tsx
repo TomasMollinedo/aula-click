@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import { useRouter, useSearchParams } from 'next/navigation'
 import { format, parseISO } from 'date-fns'
 import {
   AlertCircle,
@@ -30,6 +31,7 @@ import { getInitials } from '@/utils/initials'
 import { parsearProfesorId } from '../profesores.schema'
 import type { ProfesorDetalle as ProfesorDetalleType, UsuarioAuditoria } from '../profesores.types'
 import { useProfesor } from '../hooks/use-profesor'
+import { HorarioProfesor } from './HorarioProfesor'
 
 type ProfesorDetalleProps = {
   /** `profesorId` tal como llega en la URL. */
@@ -38,11 +40,26 @@ type ProfesorDetalleProps = {
   rutaBase: string
 }
 
+const TABS = ['datos', 'materias', 'horario'] as const
+type Tab = (typeof TABS)[number]
+
 // Página de detalle del profesor, con tabs. "Editar" abre la edición como modal encima de esta
-// página (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia.
+// página (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia. El tab va en la URL
+// (`?tab=`), así el formulario de la sección "Horario" (`&bloque=…`) tiene URL propia.
 export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) {
   const id = parsearProfesorId(profesorId)
   const { data: profesor, isLoading, isError, error, refetch } = useProfesor(id ?? 0)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const rutaDetalle = `${rutaBase}/${profesorId}`
+
+  const tabParam = searchParams.get('tab')
+  const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'datos'
+  // replace: cambiar de tab no suma entradas al historial (Atrás sale del detalle).
+  const cambiarTab = (valor: string) =>
+    router.replace(valor === 'datos' ? rutaDetalle : `${rutaDetalle}?tab=${valor}`, {
+      scroll: false,
+    })
 
   const volver = (
     <Link
@@ -141,7 +158,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         }
       />
 
-      <Tabs defaultValue="datos" className="space-y-6">
+      <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="datos" className="px-4">
             <UserRound />
@@ -172,13 +189,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         </TabsContent>
 
         <TabsContent value="horario">
-          <Card className="p-0">
-            <EmptyState
-              icon={Construction}
-              title="Próximamente"
-              description="Pronto vas a poder ver acá el horario de atención del profesor."
-            />
-          </Card>
+          <HorarioProfesor profesor={profesor} rutaDetalle={rutaDetalle} />
         </TabsContent>
       </Tabs>
     </div>
