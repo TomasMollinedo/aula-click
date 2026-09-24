@@ -4,7 +4,7 @@ import { auditoriaSchema } from '@/server/shared/auditoria'
 import { qBusqueda } from '@/server/shared/busqueda'
 import { ESTADOS, type Estado } from '@/server/shared/estado'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
-import { dni, email, telefono, textoRequerido } from '@/server/shared/zod'
+import { dni, email, nombrePersona, telefono, textoRequerido } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio.
 
@@ -93,8 +93,8 @@ export type ProfesorListadoFila = Omit<ProfesorListadoItem, 'fotoUrl'> & {
 // datos los completan el service y el repository. Ningún campo acepta `null`: todos son
 // obligatorios en el profesor.
 const camposProfesor = {
-  nombre: textoRequerido(NOMBRE_MAX),
-  apellido: textoRequerido(NOMBRE_MAX),
+  nombre: nombrePersona(NOMBRE_MAX),
+  apellido: nombrePersona(NOMBRE_MAX),
   dni,
   telefono,
   email,
