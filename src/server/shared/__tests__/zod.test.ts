@@ -6,6 +6,7 @@ import {
   horaAMinutos,
   horaHHmm,
   minutosAHora,
+  nombrePersona,
   telefono,
   textoRequerido,
 } from '../zod'
@@ -90,6 +91,31 @@ describe('textoRequerido', () => {
 
   it.each([0, -1, 1.5, Number.NaN])('lanza RangeError con max %s', (max) => {
     expect(() => textoRequerido(max)).toThrow(RangeError)
+  })
+})
+
+describe('nombrePersona', () => {
+  it.each(['Lucía', 'María José', "O'Connor", 'D’Angelo', 'Pérez-Gil', 'Müller', 'Ñandú'])(
+    'acepta %o',
+    (valor) => {
+      expect(nombrePersona(100).parse(valor)).toBe(valor)
+    },
+  )
+
+  it('recorta y respeta el máximo, como textoRequerido', () => {
+    expect(nombrePersona(5).parse('  Ana  ')).toBe('Ana')
+    expect(nombrePersona(3).safeParse('Lucía').success).toBe(false)
+    expect(mensaje(nombrePersona(10).safeParse('   '))).toBe('Campo obligatorio')
+  })
+
+  it.each(['Juan2', '1234', 'Ana_María', 'Ana.', 'Juan\tPérez', 'Ana@'])('rechaza %o', (valor) => {
+    expect(mensaje(nombrePersona(100).safeParse(valor))).toBe(
+      'Solo puede tener letras, espacios, apóstrofos y guiones',
+    )
+  })
+
+  it('exige al menos una letra', () => {
+    expect(mensaje(nombrePersona(100).safeParse("- '"))).toBe('Debe tener al menos una letra')
   })
 })
 

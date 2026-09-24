@@ -109,7 +109,7 @@ export const alumnosRepository = {
     const [data, total] = await prisma.$transaction([
       prisma.alumno.findMany({
         where,
-        select: { id: true, apellido: true, nombre: true },
+        select: { id: true, apellido: true, nombre: true, dni: true },
         orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
         ...calcularSkipTake(parametros),
       }),

@@ -30,6 +30,7 @@ Todo es mismo origen: la sesión viaja en una cookie y no hay tokens que manejar
 | DNI                                            | se devuelve solo con dígitos; en la entrada se aceptan puntos y espacios | `30123456`                 |
 | Email                                          | se guarda en minúsculas y sin espacios alrededor                         | `ana.perez@mail.com`       |
 | Teléfono                                       | se devuelve tal como lo escribió el usuario                              | `(387) 15-412-3456`        |
+| Nombre y apellido de una persona               | letras (con tildes, ñ, ü), espacios, apóstrofos y guiones; sin números   | `O'Connor-Pérez`           |
 
 La zona horaria del negocio es `America/Argentina/Salta`. Qué fecha es "hoy" para las reglas (vigencia, prioridad) lo decide la API.
 

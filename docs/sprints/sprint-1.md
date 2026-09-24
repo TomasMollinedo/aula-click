@@ -216,7 +216,7 @@ Completar la feature `src/server/features/alumnos/`, que hoy es el esqueleto mod
 
 **Alcance**
 
-1. `GET /api/v1/alumnos`: paginado, orden por apellido (con `id` como desempate), `q` con `contains` sobre `busqueda`. Cada ítem trae id, apellido y nombre. Sin filtro de estado.
+1. `GET /api/v1/alumnos`: paginado, orden por apellido (con `id` como desempate), `q` con `contains` sobre `busqueda`. Cada ítem trae id, apellido, nombre y DNI. Sin filtro de estado.
 2. `GET /api/v1/alumnos/{id}`: detalle con datos identificatorios, de contacto, del tutor, escolares, observaciones y auditoría (quién creó y quién modificó por última vez, con fecha y hora). Exámenes (HU-08) y turnos (HU-07) se suman cuando se implementen esas HU.
 3. `POST /api/v1/alumnos` y `PATCH /api/v1/alumnos/{id}`, con las primitivas de `shared/zod`:
    - Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (decisión T-25).
@@ -248,7 +248,7 @@ Completar `src/features/alumnos/` (feature modelo del frontend) y sus páginas e
 
 **Alcance**
 
-1. Listado paginado con apellido y nombre.
+1. Listado paginado con apellido, nombre y DNI.
 2. Buscador por DNI, nombre o apellido con `use-debounce`. Sin coincidencias: aviso y botón para dar de alta un alumno.
 3. El buscador se arma como componente reutilizable de la feature, expuesto mediante su hook, porque lo usa la pantalla de registrar turno (HU-07).
 4. Botón "+ Nuevo alumno" y formulario de alta y edición en secciones: identificatorios, contacto, tutor, escolares y observaciones.
@@ -454,7 +454,7 @@ Completar en `src/features/profesores/` la sección "Materias" del detalle del p
 - **Prioridad:** No bloqueante, pero conviene mergearla antes que T-06, T-08 y T-10 empiecen a construir sus tablas y formularios, para que nazcan con los primitivos en lugar de reescribirlos después
 
 **Descripción**
-Resolver la decisión D-08 (ahora T-25 en `decisiones.md`: shadcn/ui sobre Radix) y construir la base visual que reutilizan todas las features: la paleta de marca (Figma), los tokens de color de Tailwind y los primitivos de `components/ui/`. **No incluye** tocar `/login`: lo está trabajando Alvaro y se re-skinnea en un PR aparte, chico, una vez mergeada esta tarea.
+Resolver la decisión D-08 (ahora T-26 en `decisiones.md`: shadcn/ui sobre Radix) y construir la base visual que reutilizan todas las features: la paleta de marca (Figma), los tokens de color de Tailwind y los primitivos de `components/ui/`. **No incluye** tocar `/login`: lo está trabajando Alvaro y se re-skinnea en un PR aparte, chico, una vez mergeada esta tarea.
 
 **Alcance**
 
@@ -465,7 +465,7 @@ Resolver la decisión D-08 (ahora T-25 en `decisiones.md`: shadcn/ui sobre Radix
    - Sacar el boilerplate de modo oscuro de `create-next-app`: el Figma no define una variante oscura; si hace falta más adelante, se decide aparte.
 3. Primitivos en `components/ui/` con la API de shadcn, estilados con los tokens nuevos (no con los colores por defecto de shadcn): `Button`, `Input`, `Badge`, `Avatar`, `Card`, `Table`, `Select`, `Dialog`, `Pagination`.
 4. Re-skin de `components/layout/{app-shell,header,mesa-sidebar,profesor-sidebar}.tsx` con los tokens (sidebar oscuro con ítem activo, según el Figma).
-5. Actualizar `docs/arquitectura-frontend.md` → "Estilos y UI" con la lista final de primitivos, los nombres de los tokens y la referencia a T-25 en lugar de D-08.
+5. Actualizar `docs/arquitectura-frontend.md` → "Estilos y UI" con la lista final de primitivos, los nombres de los tokens y la referencia a T-26 en lugar de D-08.
 
 **Criterios de aceptación**
 

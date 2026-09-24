@@ -145,6 +145,35 @@ describe('POST /alumnos', () => {
     expect(paths).toEqual(expect.arrayContaining(['tutorEmail', 'tutorDni']))
   })
 
+  it.each([
+    ['nombre', 'Juan2'],
+    ['apellido', 'González 3'],
+    ['tutorNombre', 'Marta1'],
+    ['tutorApellido', '4lvarez'],
+    ['dni', '30A23456'],
+    ['tutorDni', '2011122B'],
+    ['telefono', '387 412 ABCD'],
+    ['tutorTelefono', '387-15-XXXX-99'],
+  ])('%s con caracteres no permitidos (%o) → 400 sobre ese campo', async (campo, valor) => {
+    const res = await pedir('', 'POST', { ...minimo, [campo]: valor })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.details[0].path).toEqual([campo])
+    expect(repository.crear).not.toHaveBeenCalled()
+  })
+
+  it('nombres con tildes, espacios, apóstrofos y guiones → 201', async () => {
+    const res = await pedir('', 'POST', {
+      ...minimo,
+      nombre: 'María José',
+      apellido: "O'Connor-Pérez",
+      tutorNombre: 'Ñusta',
+      tutorApellido: 'D’Angelo',
+    })
+
+    expect(res.status).toBe(201)
+  })
+
   it.each(['nombre', 'apellido', 'dni', 'fechaNacimiento', 'email', 'telefono'])(
     'sin %s → 400',
     async (campo) => {
