@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { authClient } from '@/features/auth/auth-client'
 import { rolLabel } from '@/features/auth/roles'
+import { getInitials } from '@/utils/initials'
 
 export function UserMenu() {
   const router = useRouter()
@@ -23,11 +24,7 @@ export function UserMenu() {
   if (!session) return null
 
   const nombre = [session.user.name, session.user.apellido].filter(Boolean).join(' ')
-  const iniciales = [session.user.name, session.user.apellido]
-    .filter(Boolean)
-    .map((parte) => parte[0])
-    .join('')
-    .toUpperCase()
+  const iniciales = getInitials(session.user.name, session.user.apellido)
 
   const cerrarSesion = async () => {
     await authClient.signOut()
@@ -39,8 +36,10 @@ export function UserMenu() {
 
   return (
     <div className="flex items-center gap-2">
-      <Avatar className="size-8">
-        <AvatarFallback className="bg-cobalto/20 text-luminoso text-xs">{iniciales}</AvatarFallback>
+      <Avatar className="size-9">
+        <AvatarFallback className="bg-luminoso text-cobalto text-xs font-semibold">
+          {iniciales}
+        </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <p className="text-luminoso truncate text-sm font-medium">{nombre}</p>

@@ -49,3 +49,5 @@ next-env.d.ts
 
 # Claude Code: configuración personal (la compartida es .claude/settings.json)
 .claude/settings.local.json
+# Claude Code: servidores del panel de preview (config local de cada uno)
+.claude/launch.json

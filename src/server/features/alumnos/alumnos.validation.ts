@@ -3,7 +3,7 @@ import { auditoriaSchema } from '@/server/shared/auditoria'
 import { ESTADOS } from '@/server/shared/estado'
 import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
-import { dni, email, fechaISO, telefono, textoRequerido } from '@/server/shared/zod'
+import { dni, email, fechaISO, nombrePersona, telefono } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio:
 // la edad y el tutor de los menores los decide el service.
@@ -77,7 +77,7 @@ export const listarAlumnosQuerySchema = paginacionQuerySchema.extend({
 export type ListarAlumnosQuery = z.infer<typeof listarAlumnosQuerySchema>
 
 export const alumnoListadoItemSchema = z
-  .object({ id: z.number().int(), apellido: z.string(), nombre: z.string() })
+  .object({ id: z.number().int(), apellido: z.string(), nombre: z.string(), dni: z.string() })
   .openapi('AlumnoListadoItem')
 
 export type AlumnoListadoItem = z.infer<typeof alumnoListadoItemSchema>
@@ -89,8 +89,8 @@ export type AlumnosListado = z.infer<typeof alumnosListadoSchema>
 // Campos del body. Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (T-25).
 // busqueda, estado y la auditoría no están: z.object descarta las claves desconocidas.
 const camposObligatorios = {
-  nombre: textoRequerido(100),
-  apellido: textoRequerido(100),
+  nombre: nombrePersona(100),
+  apellido: nombrePersona(100),
   dni,
   fechaNacimiento: fechaISO,
   email,
@@ -106,8 +106,16 @@ const camposOpcionales = {
   grado: textoOpcional(50, 'Grado o año', '5° año'),
   institucionEducativa: textoOpcional(150, 'Institución educativa (colegio)'),
   observaciones: textoOpcional(2000, 'Observaciones'),
-  tutorNombre: textoOpcional(100, 'Nombre del tutor. Obligatorio si el alumno es menor'),
-  tutorApellido: textoOpcional(100, 'Apellido del tutor. Obligatorio si el alumno es menor'),
+  tutorNombre: opcional(nombrePersona(100), {
+    description: 'Nombre del tutor. Obligatorio si el alumno es menor',
+    example: 'Marta',
+    maxLength: 100,
+  }),
+  tutorApellido: opcional(nombrePersona(100), {
+    description: 'Apellido del tutor. Obligatorio si el alumno es menor',
+    example: 'Álvarez',
+    maxLength: 100,
+  }),
   tutorDni: opcional(dni, { description: 'DNI del tutor (7 u 8 dígitos)', example: '20111222' }),
   tutorTelefono: opcional(telefono, {
     description: 'Teléfono del tutor. Obligatorio si el alumno es menor',

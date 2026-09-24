@@ -24,8 +24,13 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
 function DialogContent({
   className,
   children,
+  showCloseButton = true,
+  onInteractOutside,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & {
+  /** En `false`, quien lo usa pone su propio `DialogClose` (por ejemplo, junto a otras acciones). */
+  showCloseButton?: boolean
+}) {
   return (
     <DialogPrimitive.Portal>
       <DialogOverlay />
@@ -35,13 +40,22 @@ function DialogContent({
           'border-border bg-background data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 fixed top-1/2 left-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border p-6 shadow-lg duration-200',
           className,
         )}
+        onInteractOutside={(e) => {
+          // Los toasts (toast.tsx) quedan encima del modal: cerrar uno no es salir del modal.
+          if (e.target instanceof Element && e.target.closest('[data-slot="toast-viewport"]')) {
+            e.preventDefault()
+          }
+          onInteractOutside?.(e)
+        }}
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="focus-visible:ring-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-2 disabled:pointer-events-none">
-          <X className="size-4" />
-          <span className="sr-only">Cerrar</span>
-        </DialogPrimitive.Close>
+        {showCloseButton && (
+          <DialogPrimitive.Close className="focus-visible:ring-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-2 disabled:pointer-events-none">
+            <X className="size-4" />
+            <span className="sr-only">Cerrar</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   )

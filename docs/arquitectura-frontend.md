@@ -40,16 +40,30 @@ Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx`
 src/
 ├── app/
 │   ├── layout.tsx                      # layout raíz: solo <Providers> (sin Header ni Sidebar)
-│   ├── providers.tsx                   # QueryClientProvider (TanStack Query)
+│   ├── providers.tsx                   # QueryClientProvider (TanStack Query) + ToastProvider
 │   ├── page.tsx                        # "/": redirige al segmento del rol de la sesión
 │   ├── login/page.tsx                  # pública; usa features/auth
 │   ├── mesa/                           # rol MESA_ENTRADAS → /mesa/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /mesa/alumnos
 │   │   ├── alumnos/
-│   │   │   ├── page.tsx                # listado
-│   │   │   ├── nuevo/page.tsx          # alta
-│   │   │   └── [alumnoId]/page.tsx     # edición
+│   │   │   ├── layout.tsx              # {children} + {modal}
+│   │   │   ├── page.tsx                # listado (q y page en la URL)
+│   │   │   ├── nuevo/page.tsx          # alta entrando por URL: el listado de fondo
+│   │   │   ├── [alumnoId]/
+│   │   │   │   ├── layout.tsx          # {children} + {modal}: el slot de la edición
+│   │   │   │   ├── page.tsx            # página de detalle (tabs Datos y Turnos)
+│   │   │   │   ├── editar/page.tsx     # edición entrando por URL: el detalle de fondo
+│   │   │   │   └── @modal/             # edición, siempre como modal sobre el detalle
+│   │   │   │       ├── default.tsx, page.tsx   # null (igual que en el slot del listado)
+│   │   │   │       ├── (.)editar/page.tsx      # navegando desde el detalle (intercepción)
+│   │   │   │       └── editar/page.tsx         # entrando por URL o al recargar
+│   │   │   └── @modal/                 # alta, siempre como modal sobre el listado
+│   │   │       ├── default.tsx         # null: sin modal al cargar por URL una ruta que el slot no define
+│   │   │       ├── page.tsx            # null: cierra el modal al volver al listado con un Link
+│   │   │       ├── (.)nuevo/page.tsx   # navegando desde el listado (intercepción)
+│   │   │       ├── nuevo/page.tsx      # entrando por URL o al recargar
+│   │   │       └── [alumnoId]/page.tsx # null: sin modal del listado al ir al detalle
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
@@ -73,37 +87,47 @@ src/
 │   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
-│       ├── alumnos.schema.ts
+│       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
+│       ├── edad.ts                      # "menor de edad" en el formulario: solo ayuda visual (ver Formularios)
+│       ├── errores-api.ts               # helper: mapea ApiError a errores del formulario
 │       ├── api/{alumnos.api.ts, alumnos.keys.ts}
-│       ├── hooks/{use-alumnos.ts, use-create-alumno.ts}
-│       └── components/{AlumnosTable.tsx, AlumnoForm.tsx}
+│       ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts}
+│       └── components/
+│           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
+│           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
+│           ├── AlumnoDetalle.tsx        # página de detalle con tabs (Datos del alumno, Turnos)
+│           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
+│           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
 ├── components/
-│   ├── ui/                             # primitivos de UI hechos a mano (D-08/T-25)
+│   ├── ui/                             # primitivos de UI hechos a mano (D-08/T-26)
 │   └── layout/
 │       ├── app-shell.tsx               # columna del Sidebar (logo + nav + usuario) + contenido
+│       ├── page-header.tsx             # título, descripción y acción principal de cada pantalla
 │       ├── sidebar-logo.tsx            # isotipo + wordmark, arriba de la columna (no es un link)
 │       ├── sidebar-nav.tsx             # nav genérico (label + links con ícono); lo usan los de abajo
 │       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
-├── hooks/use-debounce.ts
+├── hooks/{use-debounce.ts, use-toast.ts}   # use-toast: contexto y hook de los toasts
 ├── types/index.ts                      # PaginatedResponse<T>, Role
-└── utils/{cn.ts, fetch-json.ts}
+└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts}
 ```
 
 ## Anatomía de una feature de UI
 
-| Archivo                                     | Responsabilidad                                                                                         |
-| ------------------------------------------- | ------------------------------------------------------------------------------------------------------- |
-| `<entidad>.types.ts`                        | Tipos de lo que la API recibe y devuelve para esta entidad, según el OpenAPI y `contrato-api.md` (D-07) |
-| `<entidad>.schema.ts`                       | Schemas Zod de los formularios de la entidad                                                            |
-| `api/<entidad>.api.ts`                      | Funciones que llaman a `/api/v1` con `fetchJson`. Es el único archivo de la entidad que conoce URLs     |
-| `api/<entidad>.keys.ts`                     | Query keys de TanStack Query de la entidad (fábrica de keys)                                            |
-| `hooks/use-<entidad>.ts`                    | `useQuery` de listado o detalle                                                                         |
-| `hooks/use-create-<singular>.ts` (y afines) | `useMutation` que, al terminar bien, invalida las keys de la entidad                                    |
-| `components/`                               | Componentes de la entidad (`<Entidad>Table.tsx`, `<Singular>Form.tsx`…)                                 |
+| Archivo                                    | Responsabilidad                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `<entidad>.types.ts`                       | Tipos de lo que la API recibe y devuelve para esta entidad, según el OpenAPI y `contrato-api.md` (D-07)                                                                                                                                                                                                                                                                                                                                                             |
+| `<entidad>.schema.ts`                      | Schemas Zod de los formularios de la entidad                                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `api/<entidad>.api.ts`                     | Funciones que llaman a `/api/v1` con `fetchJson`. Es el único archivo de la entidad que conoce URLs                                                                                                                                                                                                                                                                                                                                                                 |
+| `api/<entidad>.keys.ts`                    | Query keys de TanStack Query de la entidad (fábrica de keys)                                                                                                                                                                                                                                                                                                                                                                                                        |
+| `hooks/use-<entidad>.ts`                   | `useQuery` de listado o detalle                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `hooks/use-crear-<singular>.ts` (y afines) | `useMutation` que, al terminar bien, invalida las keys de la entidad                                                                                                                                                                                                                                                                                                                                                                                                |
+| `hooks/use-buscador-<entidad>.ts`          | Hook reutilizable de búsqueda: texto, debounce, paginación, delegado al hook de listado. El debounce es propio (no `hooks/use-debounce.ts`): al sincronizarse con la URL tiene que poder fijar `q` al instante, y con un valor debounceado atrasado volvería a escribir la búsqueda vieja en la URL. Acepta estado controlado (q, page, onCambio) para que la página maneje la URL, o estado interno para otros consumidores (por ejemplo, el formulario de turnos) |
+| `errores-api.ts`                           | Helpers que mapean un `ApiError` a errores del formulario y/o error general: `interpretarErroresApi` (pura, se puede usar en el render) y `aplicarErroresApi` (hace el `setError` y pone el foco). Verifican que el `path` sea un campo válido del schema antes de marcar el campo                                                                                                                                                                                  |
+| `components/`                              | Componentes de la entidad (`<Entidad>Table.tsx`, `<Singular>Form.tsx`…). La página de detalle es `<Singular>Detalle.tsx` (pide sus datos y arma sus tabs). El alta y la edición son `<Singular>Nuevo.tsx` y `<Singular>Editar.tsx`: se arman con `Panel` y reciben `mode` y los callbacks de navegación (`onCerrar`, `onCreado`, `onGuardado`) desde la página del slot (ver Modales con URL propia)                                                                |
 
-Nombres: archivos que no son componentes en kebab-case (`use-create-alumno.ts`); componentes en PascalCase (`AlumnoForm.tsx`). La feature va en plural (`alumnos`); lo que representa un solo objeto va en singular (`AlumnoForm`, `use-create-alumno`). `features/alumnos/` es la referencia de nombres y firmas. Una feature nueva se crea con `/nueva-feature-ui <plural> <singular>` (Claude Code) o copiando `alumnos` a mano.
+Nombres: archivos que no son componentes en kebab-case (`use-crear-alumno.ts`); componentes en PascalCase (`AlumnoForm.tsx`). La feature va en plural (`alumnos`); lo que representa un solo objeto va en singular (`AlumnoForm`, `use-crear-alumno`). `features/alumnos/` es la referencia de nombres y firmas. Una feature nueva se crea con `/nueva-feature-ui <plural> <singular>` (Claude Code) o copiando `alumnos` a mano.
 
 ## Roles y URLs
 
@@ -118,6 +142,7 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 
 - Cada segmento tiene su `page.tsx` en la raíz, que lleva a la primera pantalla del rol: ahí es donde caen el login y `/`, así que sin esa página serían un 404.
 - La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
+- Por eso los componentes de una feature **no escriben el segmento del rol en sus links**: la página les pasa `rutaBase` (la URL del listado de la entidad en su segmento, por ejemplo `rutaBase="/mesa/alumnos"`) y el componente arma el resto (`${rutaBase}/nuevo`, `${rutaBase}/<id>`, `${rutaBase}/<id>/editar`).
 - El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que manda al usuario al segmento de su propio rol: es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
 - La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `GERENTE` y `ALUMNO` no tienen segmento todavía: para ellos la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlos a un 404.
 - No se usan route groups para separar roles. Si alguna vez se usan para otra cosa (compartir un layout sin cambiar la URL), dos route groups nunca pueden definir la misma ruta: los paréntesis no aparecen en la URL y el build falla.
@@ -143,6 +168,34 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - Un Client Component que usa `useSearchParams` va envuelto en `<Suspense>` donde se monta (así se monta `AvisoSesionExpirada` en `/login`); sin eso falla el build de producción.
 - Los datos del servidor viven en la cache de TanStack Query; no se copian a `useState`. El estado de UI (filtros, modal abierto) es local y se sube solo lo necesario: datos hacia abajo por props, eventos hacia arriba.
 
+## Filtros del listado en la URL
+
+Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&page=…`) con `router.replace`, para que el botón Atrás del navegador conserve la búsqueda y la página. El patrón:
+
+- La página del listado es un Server Component que envuelve en `<Suspense>` un Client Component (por ejemplo `AlumnosListado`).
+- Ese Client Component lee `q` y `page` con `useSearchParams` (una `page` que no sea un entero >= 1 se toma como 1) y llama a `router.replace` solo cuando el `q` debounceado o la `page` cambian, evitando un replace por cada tecla.
+- Si la URL cambia desde afuera (Atrás, o un clic en "Alumnos" del Sidebar), el buscador se sincroniza con ella: el texto del input y la página pasan a ser los de la URL.
+- Escribir en el buscador vuelve a la página 1.
+- El hook `use-buscador-<entidad>` acepta un estado controlado (`{ q, page, onCambio }`) para este caso, o estado interno para otros consumidores (por ejemplo, un selector de alumnos en el formulario de turnos que no necesita persistir en la URL).
+
+## Modales con URL propia
+
+El **detalle** de una entidad es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+
+- Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
+- **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
+- **Nunca una carpeta interceptora con parámetro dinámico** (`@modal/(.)[id]/…`). En Next 16, con `pnpm dev`, cada recompilación le vuelve a agregar el `(.)` al parámetro (`Invalid interception route: /mesa/alumnos/(.)(.)(.)2/editar`, o `alumnoId` llega como `"(.)2"`). La navegación del cliente falla con un 500 y el navegador recarga la página entera, sin intercepción. Recién reiniciado funciona, así que el error aparece y desaparece.
+- **Edición desde el lápiz del listado:** por eso no es una ruta interceptada, sino un parámetro del listado, `?editar=<id>` (se suma a `q` y `page`). `<Entidad>Listado` lo lee y muestra `<Singular>Editar` con `mode="modal"`. El lápiz lo agrega con un `Link` (`push`, así Atrás cierra el modal); cerrar o guardar es `router.back()` si se abrió con el lápiz en esa pestaña, o `router.replace` sin `editar` si se entró por URL.
+- Después de crear, mover o borrar carpetas de rutas, **reiniciar `pnpm dev`**: con el árbol de rutas viejo en memoria, las rutas nuevas o borradas se comportan mal.
+- **Entrando por URL o al recargar:** no hay intercepción. `nuevo/page.tsx` renderiza el listado de fondo (`<Entidad>Pantalla`, el mismo componente que usa `page.tsx`) y `[id]/editar/page.tsx` el detalle; el modal lo ponen `@modal/nuevo/page.tsx` y `[id]/@modal/editar/page.tsx`, las rutas de cada slot sin `(.)`.
+- Rutas del slot que devuelven `null`: `default.tsx`, para la carga por URL de una ruta que el slot no define; `page.tsx`, para que volver a la pantalla de fondo (un `Link` al listado, como el del Sidebar, o `router.replace` al detalle) cierre el modal; y `@modal/[id]/page.tsx` en el slot del listado, para que ir al detalle no deje un modal del listado abierto. Sin ellas, en una navegación del cliente el slot conserva el último modal abierto.
+- `AlumnoNuevo` y `AlumnoEditar` se arman con `Panel` de `components/ui/` y **no navegan solos**. Quien los monta les pasa qué hacer al cerrar o al guardar:
+  - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`, o al detalle); guardar también, tanto el alta como la edición. Tras un alta se vuelve al listado, que ya se invalidó y muestra al alumno nuevo.
+  - **Por URL:** puede no haber historial dentro de la app. Cerrar el alta va al listado con `router.push` y crear, con `router.replace` (Atrás no reabre el formulario). Cerrar o guardar la edición vuelve al detalle con `router.replace`.
+- `Panel` conserva `mode="page"` (tarjeta dentro de la página) para pantallas que no sean modales.
+- El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
+- Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.
+
 ## Llamadas a la API: `fetchJson` y `ApiError`
 
 - `src/utils/fetch-json.ts` es el **único** lugar que interpreta la respuesta de error de la API (`{ error: { code, message, details? } }`) y la convierte en un `ApiError` con `status`, `code` y `details`.
@@ -167,6 +220,30 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 
 Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con el motivo en la URL: los valores están en `features/auth/sesion-expirada.ts` y los lee `AvisoSesionExpirada` en `/login`. Es el único lugar que conoce esos nombres.
 
+## Notificaciones (toasts)
+
+Avisos efímeros abajo a la derecha, sin librería externa. Se muestran con `useToast()` desde cualquier componente de `features/` o `components/`:
+
+```tsx
+const toast = useToast()
+mutation.mutate(datos, {
+  onSuccess: (alumno) => {
+    toast.success(`Se registró a ${alumno.nombre} ${alumno.apellido}`)
+    onCreado(alumno)
+  },
+})
+```
+
+- **Piezas.** `hooks/use-toast.ts`: tipos, contexto y `useToast()` (sin componentes, así cualquiera lo importa sin romper Fast Refresh). `components/ui/toast.tsx`: `ToastProvider` (estado, ids, autocierre y la pila en pantalla) y la UI de cada toast. `app/providers.tsx` lo monta una sola vez para toda la app, y sobrevive a la navegación (por ejemplo, al `router.back()` que cierra un modal).
+- **API.** `toast.success | error | warning | info(mensaje, { duracion? })` devuelve el id; `toast.cerrar(id)` lo cierra antes. Por defecto dura 4 s (`success`), 5 s (`info`), 6 s (`warning`) y 8 s (`error`); `duracion: Infinity` lo deja hasta que se cierre con la X. Hay como máximo 5 en pantalla: los más viejos se descartan. El objeto `toast` es estable entre renders: se puede poner en las dependencias de un `useEffect`.
+- **Colores:** `confirmado` (éxito), `cancelado` (error), `urgente` (advertencia) y `cobalto` (información).
+- **Quién lo dispara.** El componente de la feature que ejecuta la mutación, en el `onSuccess`/`onError` del `mutate` (como `AlumnoNuevo` y `AlumnoEditar`). Los hooks `use-crear-*` / `use-editar-*` **no** muestran toasts: solo invalidan la cache, para que cada pantalla decida qué avisar.
+- **Solo texto.** El toast no conoce la API: convertir un `ApiError` en un mensaje legible le toca a quien lo llama.
+- **Cuándo no usarlo.** Los errores de un formulario (400 por campo, 409, error general) se muestran en el formulario, no en un toast: el usuario los corrige ahí. Tampoco reemplaza el estado de error, 403 o 404 de una pantalla con datos (ver Manejo de errores en la UI). El toast confirma una acción que terminó bien, o avisa el error de una acción que no tiene un lugar propio donde mostrarlo (por ejemplo, un botón en una fila).
+- **Accesibilidad.** El contenedor es `aria-live="polite"` y está siempre montado (un `aria-live` que aparece junto con su contenido no se anuncia). El autocierre se pausa con el mouse encima o con el foco adentro. Respeta `prefers-reduced-motion`.
+- **Con un modal abierto.** El contenedor está en `z-60`, por encima de `Dialog` y `Panel` (`z-50`), y `DialogContent` ignora los clics sobre un toast: cerrarlo no cierra el modal.
+- Las animaciones (`animate-toast-in`, `animate-toast-out`) están en `globals.css`; la duración de `toast-out` tiene que coincidir con `DURACION_SALIDA` de `toast.tsx`.
+
 ## Autenticación en el cliente
 
 - `features/auth/auth-client.ts` crea el cliente con `createAuthClient` de `better-auth/react`.
@@ -182,7 +259,13 @@ Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con e
 
 - `react-hook-form` + `zodResolver`, con el schema de la feature (`<entidad>.schema.ts`, usando el `z` de `zod`).
 - Los schemas del frontend no se comparten con el backend (T-08). Replican las reglas de **formato** del contrato (DNI de 7 u 8 dígitos aceptando puntos, email, teléfono, fechas `YYYY-MM-DD`, horas `HH:mm`) para dar feedback inmediato. La validación que manda es la de la API, y sus 400 se muestran en los campos.
+- **Caracteres permitidos (nombres, DNI, teléfono).** Se validan en tres capas, cada una con su función:
+  1. **API** (la que manda): `nombrePersona`, `dni` y `telefono` de `src/server/shared/zod.ts` rechazan con 400 `VALIDACION` sobre el campo. Ningún cliente (otro front, Postman, un script) puede saltearla.
+  2. **Schema del formulario**: replica el formato con `utils/caracteres.ts` (`tieneSoloCaracteres`, `tieneAlgunaLetra`) y muestra el error en el campo antes de enviar, también si el valor llegó por autocompletado o por una composición (IME).
+  3. **Input**: `<Input caracteres="nombre" | "dni" | "telefono">` descarta lo que el tipo no acepta mientras se escribe o se pega, sin mover el cursor al final. Es comodidad: no reemplaza a las otras dos. Se combina con `inputMode="numeric"` (DNI) o `type="tel"` (teléfono) para el teclado del celular. No se usa `maxLength` en el DNI: cortaría un DNI pegado con puntos antes de filtrarlo.
+  - Los caracteres de cada tipo están en `utils/caracteres.ts` (un solo lugar para el schema y el input). Si cambian en `shared/zod.ts`, se cambian ahí en el mismo PR. Un tipo nuevo (por ejemplo, matrícula) se agrega a los dos.
 - Nada de reglas de negocio en el frontend: DNI duplicado, solapamientos, capacidad, prioridad y vigencia los decide la API.
+- **Única excepción, solo como ayuda visual (T-28): la edad del alumno.** `features/alumnos/edad.ts` replica la cuenta de "menor de edad" del backend para que el formulario, mientras se tipea la fecha, muestre el aviso y los asteriscos de los datos del tutor. **No bloquea el envío**: el schema del formulario no valida el tutor. La regla la valida la API (con su propio "hoy", hora de Salta) y sus 400 se muestran en los campos; la sección del tutor se muestra también si alguno de sus campos tiene un error, para que un 400 nunca quede sobre un campo oculto. El detalle usa el `menorDeEdad` que devuelve la API, no la función del cliente. Si la regla cambia en `src/server/features/alumnos/edad.ts`, se cambia acá en el mismo PR.
 
 ## Fechas y horas
 
@@ -195,16 +278,23 @@ Las dos redirecciones a `/login` (401 y 403 `USUARIO_INHABILITADO`) viajan con e
 ## Estilos y UI
 
 - Tailwind v4. Las clases condicionales se arman con `cn()` de `utils/cn.ts`.
+- Aspecto general, según el Figma: el contenido de la app autenticada va sobre `canvas` (gris azulado claro) y cada bloque es una tarjeta blanca (`Card`, `Panel`) redondeada, con sombra suave y sin borde duro. Cada pantalla empieza con `components/layout/page-header.tsx` (título, descripción y la acción principal, con `Button size="lg"`).
 - **Paleta de marca**, definida como tokens de color en `src/app/globals.css` (`@theme`), a partir del Figma:
   - Página: `cobalto` (marca y foco), `blanco`, `tinta` (texto), `piedra` (neutro cálido), `dorado` (acentos), `oscuro` (interfaz), `luminoso` (fondo claro).
   - Acciones: `confirmado`, `cancelado`, `urgente`, `pendiente`.
   - Semánticos (los usan los primitivos): `background`, `foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, todos mapeados a la paleta de marca. Sin variante de modo oscuro: el Figma no define una.
-- `components/ui/`: primitivos con la API de shadcn/ui, escritos a mano (T-25, antes D-08: no se usa el CLI de shadcn porque su preset actual genera `src/lib/utils.ts`, zona backend, y un `cn` propio que reemplazaría a `utils/cn.ts`). Usan `class-variance-authority` para variantes y, donde hace falta accesibilidad de teclado/foco, un primitivo de `@radix-ui/react-*` (`Dialog`, `Select`, `Avatar`, `DropdownMenu`, `Label`, `Checkbox`, `Tabs`, `Tooltip`, y `Slot` para el `asChild` de `Button`).
-  - Disponibles: `Button`, `Input`, `Label`, `Textarea`, `Checkbox`, `Badge` (con variantes `confirmado`/`cancelado`/`urgente`/`pendiente`), `Avatar`, `Card`, `Table`, `Select`, `Tabs`, `Tooltip`, `Dialog`, `DropdownMenu`, `Pagination`, `Alert` (variantes `default`/`destructive`, para los estados de error de la tabla de arriba), `Skeleton` (estado de carga).
+  - De la app, fuera de la paleta de página: `sidebar` (fondo del Sidebar) y `canvas` (fondo del contenido y de las zonas "hundidas" dentro de una tarjeta: encabezado de tabla, avisos, observaciones). Inputs, tarjetas y modales quedan en `background` (blanco).
+- `components/ui/`: primitivos con la API de shadcn/ui, escritos a mano (T-26, antes D-08: no se usa el CLI de shadcn porque su preset actual genera `src/lib/utils.ts`, zona backend, y un `cn` propio que reemplazaría a `utils/cn.ts`). Usan `class-variance-authority` para variantes y, donde hace falta accesibilidad de teclado/foco, un primitivo de `@radix-ui/react-*` (`Dialog`, `Select`, `Avatar`, `DropdownMenu`, `Label`, `Checkbox`, `Tabs`, `Tooltip`, y `Slot` para el `asChild` de `Button`).
+  - Disponibles: `Button` (además de las de shadcn, variantes `confirmado` y `cancelado` para Guardar/Cancelar de los formularios y `accent`, dorada, para la acción de editar; `size="lg"` es el alto de los inputs), `Input` (con `caracteres` para descartar lo que un nombre, DNI o teléfono no acepta; ver Formularios), `Label`, `Textarea`, `Checkbox`, `Badge` (con variantes `confirmado`/`cancelado`/`urgente`/`pendiente` y `accent`, dorado, para avisos como "Menor de edad"), `Avatar`, `Card`, `Table`, `Select`, `Tabs`, `Tooltip`, `Dialog` (`showCloseButton={false}` para poner la X a mano), `DropdownMenu`, `Pagination` (y `PaginationControls`, el paginador numerado completo, con `utils/page-range.ts`), `Alert` (variantes `default`/`destructive`, para los estados de error de la tabla de arriba), `Skeleton` (estado de carga).
+  - Propios (no son de shadcn), para que todas las features se vean igual:
+    - `Panel` (`PanelHeader`, `PanelTitle`, `PanelDescription`, `PanelBody`, `PanelFooter`, `PanelClose`): encabezado + cuerpo con scroll + pie, que se muestra como modal (`mode="modal"`, sobre `Dialog`) o como tarjeta de página (`mode="page"`). Ver Modales con URL propia.
+    - `Field`: label (con `*` si es obligatorio o "(opcional)"), control y mensaje de error, con `htmlFor` y `fieldErrorId()` para el `aria-describedby`.
+    - `SearchInput`: input de búsqueda con lupa y botón para limpiar.
+    - `EmptyState`: ícono en círculo, título, descripción y una acción (listados sin resultados o sin datos).
+    - `ToastProvider` (`toast.tsx`): la pila de notificaciones. Se usa con `useToast()` de `hooks/use-toast.ts` (ver Notificaciones (toasts)).
   - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
-  - `src/app/ui-showcase/page.tsx` los muestra todos juntos, con la paleta aplicada; es una página de referencia para revisarlos, no una pantalla del sprint.
 - Íconos: `lucide-react`.
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`. `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts` y las de `utils/` (`page-range.ts`, `initials.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
