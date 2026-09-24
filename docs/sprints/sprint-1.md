@@ -497,7 +497,7 @@ Los tres cambios: las aulas no existen como entidad, la capacidad pasó del bloq
 5. **Restricciones `CHECK`** para el `migration.sql` (Prisma no las genera). Las nuevas y las que cambian:
    - `aula`: `capacidad > 0`.
    - `profesor`: `capacidad >= 1`.
-   - `bloque_agenda`: se quita el check de `capacidad`; se agregan `hora_inicio % 60 = 0`, `hora_fin % 60 = 0` y `hora_fin - hora_inicio >= 60` (horas en punto y duración mínima de una hora, HU-05). Se mantienen los de día y orden de horas.
+   - `bloque_agenda`: se quita el check de `capacidad`; se agregan `hora_inicio % 60 = 0`, `hora_fin % 60 = 0` y `hora_fin - hora_inicio = 60` (horas en punto; cada fila es siempre una hora exacta, T-17: una fila por hora, sin fila que abarque varias horas). Se mantienen los de día y orden de horas.
    - `turno`: `hora_inicio BETWEEN 0 AND 1439` y `hora_inicio % 60 = 0`. Que la hora caiga **dentro** del bloque no se puede expresar con un `CHECK` (es otra tabla): lo valida la API.
 6. **Seed:** aulas de ejemplo con nombre y capacidad distintas entre sí (para que se vea el efecto de `min(...)` al probar), y `capacidad` en el profesor del seed. Sigue siendo idempotente (`upsert` por clave natural).
 7. **Migración sobre base con datos:** las tres columnas nuevas son NOT NULL sobre tablas que ya existen. La migración necesita un default temporal (y quitarlo después) o una base limpia. Coordinarlo con quien lleve el modelo de datos antes de generarla.
@@ -578,37 +578,42 @@ Reflejar en `src/features/profesores/` el campo `capacidad` que agrega T-15.
 - **Depende de:** T-14, T-11
 
 **Descripción**
-Agregar a la feature `profesores` la gestión de sus bloques de clase (`arquitectura-backend.md`: `profesores` incluye materias asignadas y bloques de clase), y la lectura del catálogo de aulas que el alta necesita. Todos los endpoints requieren rol `MESA_ENTRADAS`.
+Crear la feature `bloques` (horario de atención del profesor: día, horario y aula) y la lectura del catálogo de aulas que el alta necesita. `bloques` es su propia feature, separada de `profesores` (`arquitectura-backend.md` → "Qué es una feature": a diferencia de una asignación simple, un bloque involucra por igual a `Profesor` y a `Aula`, y de él cuelga `Turno`): el profesor se identifica con `profesorId` en el body o la query, **no** en el path (`/api/v1/bloques`, no `/api/v1/profesores/{id}/bloques`). `bloques.service` lee `profesores.repository` (solo como tipo) para los chequeos de profesor activo y con materias asignadas. Todos los endpoints requieren rol `MESA_ENTRADAS`.
+
+**Diseño de guardado — una fila por hora, sin agrupador.** Un bloque pedido como un rango múltiplo de una hora (por ejemplo 14:00 a 18:00) se guarda como varias filas de `bloque_agenda`, una por hora (14–15, 15–16, 16–17, 17–18), con el mismo `profesorId`, `aulaId` y `diaSemana`. No hay ninguna columna que agrupe esas filas como "un bloque visual": cada una tiene su propio id y es la unidad de `PATCH`/`DELETE`. Por eso la superposición deja de ser un cálculo de rangos: es una igualdad de `diaSemana` + `horaInicio` sobre filas activas.
 
 **Alcance**
 
-1. `GET /api/v1/profesores/{id}/bloques`: los bloques activos del profesor, ordenados por día y hora, sin paginar (es un horario semanal). Cada bloque trae día, hora de inicio y fin, aula (id y nombre), y **una entrada por cada hora** del bloque con su capacidad efectiva y su ocupación (turnos vigentes / capacidad efectiva).
+1. `GET /api/v1/bloques?profesorId=`: las filas activas de ese profesor, ordenadas por día y hora, sin paginar (es un horario semanal). Cada fila trae día, hora de inicio y fin (siempre una hora), aula (id y nombre), su capacidad efectiva y su ocupación (turnos vigentes / capacidad efectiva).
    - Capacidad efectiva = `min(profesor.capacidad, aula.capacidad)`, calculada al leer.
    - La ocupación sale de los turnos vigentes de esa hora, usando la condición única de `turnos.repository` (T-11).
 2. Feature de API `aulas` con `/nueva-feature-api aulas`, sólo de lectura (las aulas no tienen ABM, HU-05):
    - `GET /api/v1/aulas/disponibles?diaSemana&horaInicio&horaFin&excluirBloqueId?`: las aulas libres **durante todo** ese horario ese día de la semana. Devuelve un arreglo (es un selector, no se pagina).
-   - La ocupación de un aula se calcula sobre `bloque_agenda`, que pertenece a `profesores`: se lee importando `profesores.repository` (única dependencia permitida entre features). `excluirBloqueId` sirve para la edición, para que el bloque no se choque consigo mismo.
-3. `POST /api/v1/profesores/{id}/bloques`: día de la semana, hora de inicio, hora de fin y aula, todos obligatorios. Validaciones, en este orden:
-   - Horas **en punto** y duración mínima de una hora, con la hora de fin posterior a la de inicio (400).
+   - La ocupación de un aula se calcula sobre `bloque_agenda`, que pertenece a la feature `bloques`: se lee importando `bloques.repository` (única dependencia permitida entre features). `excluirBloqueId` sirve para la edición, para que la fila no se choque consigo misma.
+3. `POST /api/v1/bloques`: `profesorId`, día de la semana, hora de inicio, hora de fin y aula, todos obligatorios. Un rango de varias horas crea varias filas (ver diseño de guardado). Validaciones, en este orden:
+   - Horas **en punto**, con la hora de fin posterior a la de inicio (400). Con las dos en punto, la duración ya es múltiplo de una hora: no hace falta un chequeo aparte de duración mínima.
+   - El profesor debe existir → 404 `NO_ENCONTRADO`.
    - El profesor debe estar `ACTIVO` → 409 `PROFESOR_INACTIVO`.
    - El profesor debe tener **al menos una materia asignada** activa (HU-05) → 409 con el código nuevo **`PROFESOR_SIN_MATERIAS`**.
-   - El bloque no puede superponerse con otro bloque activo del mismo profesor ese día → 409 con el código nuevo **`BLOQUE_SUPERPUESTO`**, con el bloque en conflicto en `details`.
-   - El aula debe estar libre todo el horario ese día → si la elegida no lo está, 409 con el código nuevo **`AULA_OCUPADA`**. Si **no hay ninguna** aula libre, el mensaje es exactamente el de la HU: "No hay un aula disponible en ese horario. Por favor, elija otro horario."
-4. `PATCH /api/v1/profesores/{id}/bloques/{bloqueId}`: día, horario y aula, con las mismas validaciones del alta. Sólo si el bloque **no tiene turnos vigentes** → si los tiene, 409 `TURNOS_VIGENTES` con la cantidad en `details`.
-5. `DELETE /api/v1/profesores/{id}/bloques/{bloqueId}`: **baja lógica** (`estado = INACTIVO`), nunca borrado físico. Sólo si no tiene turnos vigentes → si los tiene, 409 `TURNOS_VIGENTES`.
-6. **Concurrencia:** la verificación de aula libre y la inserción del bloque van en una sola transacción del repository, para que dos altas simultáneas no se lleven la misma aula. Debe existir un test que cubra ese caso.
-7. Exponer en `profesores.repository` las lecturas que consumen otras features: los bloques de un profesor y los bloques que solapan un horario (las usan `aulas` acá y `turnos` en T-21).
+   - Ninguna de las horas pedidas puede coincidir con otra fila activa del mismo profesor ese día → 409 con el código nuevo **`BLOQUE_SUPERPUESTO`**, con la hora y la fila en conflicto en `details` (puede haber más de una).
+   - El aula debe existir (si no, 404) y ninguna de las horas pedidas puede estar ocupada en esa aula ese día (por cualquier profesor) → si alguna lo está, 409 con el código nuevo **`AULA_OCUPADA`**, mensaje exactamente el de la HU: "No hay un aula disponible en ese horario. Por favor, elija otro horario.", con la hora y quién la ocupa en `details`.
+   - Respuesta 201: cantidad de filas creadas y el detalle de cada una (día, hora de inicio y fin, aula).
+4. `PATCH /api/v1/bloques/{bloqueId}`: día, horario (de esa única hora) y aula, con las mismas validaciones del alta. Sólo si la fila **no tiene turnos vigentes** → si los tiene, 409 `TURNOS_VIGENTES` con la cantidad en `details`.
+5. `DELETE /api/v1/bloques/{bloqueId}`: **baja lógica** (`estado = INACTIVO`) de esa hora, nunca borrado físico. Sólo si no tiene turnos vigentes → si los tiene, 409 `TURNOS_VIGENTES`.
+6. **Concurrencia:** dentro de una sola transacción del repository, se bloquea (`SELECT ... FOR UPDATE`) la fila del `Profesor` y después la del `Aula` (siempre en ese orden, para no generar deadlocks entre altas simultáneas), se repiten los chequeos de superposición y ocupación, y recién ahí se insertan las filas: todas o ninguna. Debe existir un test que cubra dos altas simultáneas sobre la misma aula.
+7. Exponer en `bloques.repository` las lecturas que consumen otras features: las filas de un profesor y las que ocupan un horario en un aula (las usan `aulas` acá y `turnos` en T-21).
 8. Agregar `PROFESOR_SIN_MATERIAS`, `BLOQUE_SUPERPUESTO` y `AULA_OCUPADA` a `docs/contrato-api.md`, y las reglas de bloques a `docs/dominio.md`, en el mismo PR.
 
 **Criterios de aceptación**
 
-- Un bloque de 8:00 a 12:00 se carga como **un** bloque y la lectura devuelve sus cuatro horas con su ocupación.
+- Un bloque de 8:00 a 12:00 se guarda como **cuatro filas** de una hora (mismo profesor, aula y día), cada una con su propio id.
 - Un profesor con capacidad 12 en un aula de 10 da capacidad efectiva 10 en cada hora; con capacidad 6 en la misma aula, 6.
 - No se puede cargar un bloque a un profesor inactivo, ni a uno sin materias asignadas.
-- Dos bloques del mismo profesor que se superponen el mismo día se rechazan; dos bloques del mismo día que no se superponen (8:00–12:00 y 16:00–18:00) se aceptan.
-- Un aula ya asignada a un bloque que se superpone ese día no aparece entre las disponibles y se rechaza si se la manda igual.
-- Editar o eliminar un bloque con turnos vigentes responde 409 `TURNOS_VIGENTES`.
-- Tests del service con reloj fijo: alta feliz, cada validación, y dos altas simultáneas sobre la misma aula.
+- Dos filas del mismo profesor a la misma hora el mismo día se rechazan; dos rangos del mismo día que no comparten ninguna hora (8:00–12:00 y 16:00–18:00) se aceptan.
+- Si dentro de un rango pedido alguna hora ya está ocupada (por el profesor o por el aula) y otras no, no se crea ninguna fila y la respuesta indica exactamente qué hora y por qué.
+- Un aula ya ocupada a alguna hora que se pide no aparece entre las disponibles y se rechaza si se la manda igual.
+- Editar o eliminar una fila con turnos vigentes responde 409 `TURNOS_VIGENTES`.
+- Tests del service con reloj fijo: alta feliz (una y varias horas), cada validación, y dos altas simultáneas sobre la misma aula.
 
 ---
 
