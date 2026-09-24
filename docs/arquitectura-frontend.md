@@ -49,15 +49,17 @@ src/
 │   │   ├── alumnos/
 │   │   │   ├── layout.tsx              # {children} + {modal}
 │   │   │   ├── page.tsx                # listado (q y page en la URL)
-│   │   │   ├── nuevo/page.tsx          # alta, entrando por URL (página)
+│   │   │   ├── nuevo/page.tsx          # alta entrando por URL: el listado de fondo
 │   │   │   ├── [alumnoId]/
-│   │   │   │   ├── page.tsx            # detalle, entrando por URL
-│   │   │   │   └── editar/page.tsx     # edición, entrando por URL
-│   │   │   └── @modal/                 # las mismas tres, como modal sobre el listado
-│   │   │       ├── default.tsx         # null: sin modal al cargar por URL
+│   │   │   │   ├── page.tsx            # detalle entrando por URL: el listado de fondo
+│   │   │   │   └── editar/page.tsx     # edición entrando por URL: el listado de fondo
+│   │   │   └── @modal/                 # las mismas tres, siempre como modal sobre el listado
+│   │   │       ├── default.tsx         # null: sin modal al cargar por URL una ruta que el slot no define
 │   │   │       ├── page.tsx            # null: cierra el modal al volver al listado con un Link
-│   │   │       ├── (.)nuevo/page.tsx
-│   │   │       └── (.)[alumnoId]/{page.tsx, editar/page.tsx}
+│   │   │       ├── (.)nuevo/page.tsx   # navegando desde el listado (intercepción)
+│   │   │       ├── (.)[alumnoId]/{page.tsx, editar/page.tsx}
+│   │   │       ├── nuevo/page.tsx      # entrando por URL o al recargar
+│   │   │       └── [alumnoId]/{page.tsx, editar/page.tsx}
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
@@ -87,6 +89,7 @@ src/
 │       ├── api/{alumnos.api.ts, alumnos.keys.ts}
 │       ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts}
 │       └── components/
+│           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo de los modales
 │           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
 │           ├── AlumnoNuevo.tsx, AlumnoDetalle.tsx, AlumnoEditar.tsx   # pantallas en un <Panel> (modal o página)
 │           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
@@ -172,14 +175,16 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 ## Modales con URL propia
 
-Alta, detalle y edición de una entidad se abren **como modal encima del listado** cuando se llega navegando desde él, y **como página** cuando se entra por URL o se recarga. Las URLs son las mismas en los dos casos (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12`, `/mesa/alumnos/12/editar`), así que se pueden compartir y otras features pueden enlazarlas. Es el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+Alta, detalle y edición de una entidad se abren **siempre como modal encima del listado**: tanto navegando desde él como entrando por URL o al recargar. Las URLs son las mismas en los dos casos (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12`, `/mesa/alumnos/12/editar`), así que se pueden compartir y otras features pueden enlazarlas. Es el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
 - `app/<segmento>/<entidad>/layout.tsx` renderiza `{children}` y el slot `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
-- `@modal/(.)nuevo/page.tsx` y `@modal/(.)[id]/…` interceptan la navegación desde el listado y muestran el componente de la feature con `mode="modal"`. `@modal/default.tsx` y `@modal/page.tsx` devuelven `null`: el primero para la carga por URL y el segundo para que un `Link` al listado (por ejemplo, el del Sidebar) cierre el modal.
-- `nuevo/page.tsx` y `[id]/…/page.tsx` son la versión de página: `PageHeader` + el mismo componente con `mode="page"`.
-- Cada pantalla de la feature (`AlumnoNuevo`, `AlumnoDetalle`, `AlumnoEditar`) es la misma en los dos modos: se arma con `Panel` de `components/ui/` y **no navega sola**. La página le pasa qué hacer al cerrar o al guardar:
-  - **Modal:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`); tras un alta, `router.replace` al detalle, así Atrás vuelve al listado y no al alta.
-  - **Página:** cerrar o guardar va al listado con `router.push`. Ir a otra ruta de la entidad desde una página la abriría como modal encima de esa página, porque la intercepción vale para toda navegación dentro del layout de la entidad.
+- **Navegando desde el listado:** `@modal/(.)nuevo/page.tsx` y `@modal/(.)[id]/…` interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo el listado, con su `q` y su `page`.
+- **Entrando por URL o al recargar:** no hay intercepción. `nuevo/page.tsx` y `[id]/…/page.tsx` renderizan el listado de fondo (`<Entidad>Pantalla`, el mismo componente que usa `page.tsx`) y el modal lo ponen `@modal/nuevo/page.tsx` y `@modal/[id]/…`, las rutas del slot sin `(.)`.
+- `@modal/default.tsx` y `@modal/page.tsx` devuelven `null`: el primero para la carga por URL de una ruta que el slot no define y el segundo para que un `Link` al listado (por ejemplo, el del Sidebar) cierre el modal.
+- Cada pantalla de la feature (`AlumnoNuevo`, `AlumnoDetalle`, `AlumnoEditar`) se arma con `Panel` de `components/ui/` y **no navega sola**. La página del slot le pasa qué hacer al cerrar o al guardar:
+  - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`); tras un alta, `router.replace` al detalle, así Atrás vuelve al listado y no al alta.
+  - **Por URL:** puede no haber historial dentro de la app, así que cerrar o guardar va al listado con `router.push`. Desde el detalle abierto por URL, "Editar" sí se intercepta: el slot cambia al modal de edición (no se apilan dos modales) y cerrarlo con `router.back()` vuelve al detalle.
+- `Panel` conserva `mode="page"` (tarjeta dentro de la página) para pantallas que no sean modales.
 - El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
 - Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.
 
