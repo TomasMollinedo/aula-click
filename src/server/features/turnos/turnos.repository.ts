@@ -47,6 +47,16 @@ export const turnosRepository = {
     })
     return grupos.map((grupo) => ({ materiaId: grupo.materiaId, cantidad: grupo._count._all }))
   },
+
+  /**
+   * Cantidad de turnos vigentes de un bloque puntual. La usa `bloques` (T-17) para decidir
+   * `TURNOS_VIGENTES` antes de editar o dar de baja una fila.
+   */
+  async contarVigentesPorBloque(bloqueAgendaId: number, fechaHoy: string): Promise<number> {
+    return prisma.turno.count({
+      where: { ...condicionTurnoVigente(fechaHoy), bloqueAgendaId },
+    })
+  },
 }
 
 export type TurnosRepository = typeof turnosRepository

@@ -3,7 +3,13 @@ import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as bloquesController from './bloques.controller'
-import { bloquesCreadosSchema, crearBloqueSchema } from './bloques.validation'
+import {
+  bloqueIdParamsSchema,
+  bloqueSchema,
+  bloquesCreadosSchema,
+  crearBloqueSchema,
+  editarBloqueSchema,
+} from './bloques.validation'
 
 // Contrato HTTP de bloques: cada endpoint se declara con createRoute() y se registra acá.
 
@@ -85,4 +91,59 @@ export const crearBloqueRoute = createRoute({
   },
 })
 
-export const bloquesRoutes = createRouter().openapi(crearBloqueRoute, bloquesController.crear)
+const noEncontrado = respuestaError('El bloque no existe (NO_ENCONTRADO)')
+
+export const editarBloqueRoute = createRoute({
+  method: 'patch',
+  path: '/{bloqueId}',
+  tags,
+  summary: 'Editar un bloque de horario',
+  description:
+    'Edita día, horario y/o aula de esa hora puntual (el profesor no se edita). Edición parcial: lo omitido no cambia. Mismas validaciones que el alta, más el chequeo de turnos vigentes.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    params: bloqueIdParamsSchema,
+    body: {
+      required: true,
+      content: {
+        'application/json': {
+          schema: editarBloqueSchema,
+          example: { horaInicio: '15:00', horaFin: '16:00' },
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Bloque editado',
+      content: {
+        'application/json': {
+          schema: bloqueSchema,
+          example: {
+            id: 10,
+            diaSemana: 1,
+            horaInicio: '15:00',
+            horaFin: '16:00',
+            aula: { id: 3, nombre: 'Aula 3' },
+          },
+        },
+      },
+    },
+    ...errores,
+    404: noEncontrado,
+    409: respuestaError(
+      'Profesor inactivo, sin materias, bloque superpuesto, aula ocupada, o turnos vigentes que impiden editarlo (TURNOS_VIGENTES)',
+      {
+        error: {
+          code: 'TURNOS_VIGENTES',
+          message: 'No se puede editar un bloque con turnos vigentes',
+          details: { cantidad: 2 },
+        },
+      },
+    ),
+  },
+})
+
+export const bloquesRoutes = createRouter()
+  .openapi(crearBloqueRoute, bloquesController.crear)
+  .openapi(editarBloqueRoute, bloquesController.editar)

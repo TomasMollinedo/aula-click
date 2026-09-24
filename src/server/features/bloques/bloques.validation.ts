@@ -1,11 +1,13 @@
 import { z } from '@hono/zod-openapi'
+import type { Estado } from '@/server/shared/estado'
 import { horaAMinutos, horaHHmm } from '@/server/shared/zod'
 
 /**
  * `horaAMinutos` sin excepción: si el formato ya es inválido, `horaHHmm` lo reporta solo (su
  * propio mensaje de formato); acá alcanza con no volver a fallar el `.refine()` por lo mismo.
  */
-function minutosSeguro(hora: string): number | null {
+function minutosSeguro(hora: string | undefined): number | null {
+  if (hora === undefined) return null
   try {
     return horaAMinutos(hora)
   } catch {
@@ -34,6 +36,19 @@ const aulaId = z
   .int({ error: 'Debe ser un número entero' })
   .positive({ error: 'Debe ser mayor a 0' })
   .openapi({ description: 'Id del aula', example: 3 })
+
+/** `id` del path: el de la fila (una hora), no el del profesor. */
+export const bloqueIdParamsSchema = z.object({
+  bloqueId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .openapi({
+      param: { name: 'bloqueId', in: 'path' },
+      description: 'Id del bloque',
+      example: 10,
+    }),
+})
 
 /**
  * Body de la carga de un bloque. Un rango de varias horas (por ejemplo 14:00 a 18:00) crea varias
@@ -70,8 +85,37 @@ export const crearBloqueSchema = z
 
 export type CrearBloque = z.infer<typeof crearBloqueSchema>
 
-/** Una fila creada (una hora exacta), tal como viaja en la respuesta. */
-export const bloqueCreadoSchema = z
+/**
+ * Body de la edición: día, horario y aula de esa única hora (T-17 punto 4). Edición parcial: lo
+ * omitido no cambia; el service arma el resultado (actual + cambios) y ahí recién valida que siga
+ * siendo una hora exacta y en punto — no se puede a nivel de schema porque depende de la fila
+ * actual. Acá solo se valida el formato de lo que sí llega.
+ */
+export const editarBloqueSchema = z
+  .object({
+    diaSemana: diaSemanaSchema,
+    horaInicio: horaHHmm.openapi({ example: '14:00' }),
+    horaFin: horaHHmm.openapi({ example: '15:00' }),
+    aulaId,
+  })
+  .partial()
+  .refine((cambios) => Object.values(cambios).some((valor) => valor !== undefined), {
+    error: 'Debe enviar al menos un campo',
+  })
+  .refine((cambios) => (minutosSeguro(cambios.horaInicio) ?? 0) % 60 === 0, {
+    error: 'Debe ser una hora en punto (por ejemplo 14:00)',
+    path: ['horaInicio'],
+  })
+  .refine((cambios) => (minutosSeguro(cambios.horaFin) ?? 0) % 60 === 0, {
+    error: 'Debe ser una hora en punto (por ejemplo 15:00)',
+    path: ['horaFin'],
+  })
+  .openapi('BloqueEditar')
+
+export type EditarBloque = z.infer<typeof editarBloqueSchema>
+
+/** Una fila (una hora exacta), tal como viaja en las respuestas. */
+export const bloqueSchema = z
   .object({
     id: z.number().int(),
     diaSemana: diaSemanaSchema,
@@ -79,15 +123,15 @@ export const bloqueCreadoSchema = z
     horaFin: horaHHmm,
     aula: z.object({ id: z.number().int(), nombre: z.string() }).openapi('BloqueAula'),
   })
-  .openapi('BloqueCreado')
+  .openapi('Bloque')
 
-export type BloqueCreado = z.infer<typeof bloqueCreadoSchema>
+export type Bloque = z.infer<typeof bloqueSchema>
 
 /** Respuesta del alta: cuántas filas se crearon y el detalle de cada una. */
 export const bloquesCreadosSchema = z
   .object({
     cantidad: z.number().int().openapi({ description: 'Cantidad de filas creadas', example: 4 }),
-    bloques: z.array(bloqueCreadoSchema),
+    bloques: z.array(bloqueSchema),
   })
   .openapi('BloquesCreados')
 
@@ -102,4 +146,23 @@ export type DatosCrearBloques = {
   aulaId: number
   diaSemana: number
   horas: HoraPedida[]
+}
+
+/** La fila tal como la lee el repository para editarla: todo en minutos. No viaja por HTTP. */
+export type BloqueGuardado = {
+  id: number
+  profesorId: number
+  aulaId: number
+  diaSemana: number
+  horaInicio: number
+  horaFin: number
+  estado: Estado
+}
+
+/** Datos ya validados (y ya fusionados con la fila actual) para editar una fila. No viaja por HTTP. */
+export type DatosEditarBloque = {
+  diaSemana: number
+  horaInicio: number
+  horaFin: number
+  aulaId: number
 }
