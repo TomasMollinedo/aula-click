@@ -5,7 +5,7 @@
 // - Fechas de calendario con @db.Date; horas en minutos desde medianoche (Int); día de la semana ISO 1..7.
 // - Auditoría en cada entidad de negocio: createdById, updatedById, createdAt, updatedAt.
 // - Baja lógica con el enum Estado: nada se borra.
-// - Las restricciones CHECK (bloque_agenda, turno) no las genera Prisma: se agregan a mano
+// - Las restricciones CHECK (bloque_agenda, turno, profesor) no las genera Prisma: se agregan a mano
 //   en el migration.sql de la migración inicial.
 
 generator client {
@@ -174,11 +174,15 @@ model Verification {
 // ---------- Profesores ----------
 
 // Sin estado ni auditoría propios: los toma de su Usuario (datos personales, busqueda y baja lógica).
+// capacidad: cantidad máxima de alumnos que el profesor atiende a la vez en una franja de una hora
+// (HU-02, decisión T-27). CHECK (a mano en la migración): capacidad >= 1. La capacidad efectiva de
+// una hora (mínimo con la del aula) se calculará al leer, en HU-05/HU-07: no se persiste acá.
 model Profesor {
   id        Int    @id @default(autoincrement())
   usuarioId String @unique @map("usuario_id")
   titulo    String
   matricula String @unique
+  capacidad Int
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
@@ -286,6 +290,8 @@ model AsignacionMateria {
 
 // CHECK (a mano en la migración): dia_semana 1..7, hora_inicio 0..1439, hora_fin 1..1440,
 // hora_fin > hora_inicio, capacidad > 0.
+// D-12 (abierta, decisiones.md): esta capacidad puede quedar redundante con Profesor.capacidad
+// (T-27); hoy no tiene filas ni código que la use. No se toca hasta que se decida D-12.
 model BloqueAgenda {
   id         Int    @id @default(autoincrement())
   profesorId Int    @map("profesor_id")

@@ -117,7 +117,12 @@ async function main() {
   })
   await prisma.profesor.upsert({
     where: { usuarioId: profesor.id },
-    create: { usuarioId: profesor.id, titulo: 'Profesor en Matemática', matricula: 'MP-0001' },
+    create: {
+      usuarioId: profesor.id,
+      titulo: 'Profesor en Matemática',
+      matricula: 'MP-0001',
+      capacidad: 5,
+    },
     update: {},
   })
 

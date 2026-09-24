@@ -92,6 +92,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 - La verificación de capacidad y la inserción del turno se hacen en una sola transacción de `turnos.repository` que bloquea la fila del bloque (`SELECT ... FOR UPDATE` dentro de `$transaction`). El service decide la regla; el repository la ejecuta de forma atómica.
 - Debe existir un test que cubra dos reservas simultáneas del último lugar.
+- Pendiente (D-12 de `decisiones.md`): la capacidad contra la que se verifica hoy sería `BloqueAgenda.capacidad`, pero la decisión T-27 (HU-02) puso la capacidad en `Profesor` (combinada luego con la del aula). Qué fila bloquear (profesor, aula, ambas) se decide junto con D-12, antes de implementar HU-05/HU-07.
 
 ## Seguridad de cuentas
 
