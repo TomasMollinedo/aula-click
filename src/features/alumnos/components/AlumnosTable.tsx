@@ -3,9 +3,10 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye } from 'lucide-react'
+import { Eye, Pencil } from 'lucide-react'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -40,7 +41,7 @@ export function AlumnosTable({ rutaBase, data, isLoading, isFetching, vacio }: A
         <TableRow>
           <TableHead className="w-2/5">Apellido</TableHead>
           <TableHead>Nombre</TableHead>
-          <TableHead className="w-24 text-right">Detalle</TableHead>
+          <TableHead className="w-32 text-right">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -63,8 +64,8 @@ export function AlumnosTable({ rutaBase, data, isLoading, isFetching, vacio }: A
           data.map((alumno) => {
             const href = `${rutaBase}/${alumno.id}`
             return (
-              // La fila entera abre el detalle con el mouse. El link del ojo es el acceso de teclado
-              // y el que permite abrir en otra pestaña. No se "estira" el link sobre la fila con
+              // La fila entera abre el detalle con el mouse. Los links del ojo y del lápiz son el acceso de teclado
+              // y los que permiten abrir en otra pestaña. No se "estira" el link sobre la fila con
               // after:absolute: un <tr> no es containing block en todos los navegadores y el ::after
               // de la última fila terminaba cubriendo toda la tabla.
               <TableRow
@@ -87,14 +88,27 @@ export function AlumnosTable({ rutaBase, data, isLoading, isFetching, vacio }: A
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{alumno.nombre}</TableCell>
-                <TableCell className="text-right">
-                  <Link
-                    href={href}
-                    aria-label={`Ver detalle de ${alumno.nombre} ${alumno.apellido}`}
-                    className="text-cobalto hover:bg-cobalto/10 focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none focus-visible:ring-2"
-                  >
-                    <Eye className="size-5" />
-                  </Link>
+                <TableCell>
+                  <div className="flex items-center justify-end gap-1">
+                    <Link
+                      href={href}
+                      aria-label={`Ver detalle de ${alumno.nombre} ${alumno.apellido}`}
+                      title="Ver detalle"
+                      className="text-cobalto hover:bg-cobalto/10 focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none focus-visible:ring-2"
+                    >
+                      <Eye className="size-5" />
+                    </Link>
+                    {/* Dorado, como el "Editar" del detalle: la acción de editar. */}
+                    <Button variant="accent" size="icon" className="rounded-lg" asChild>
+                      <Link
+                        href={`${href}/editar`}
+                        aria-label={`Editar a ${alumno.nombre} ${alumno.apellido}`}
+                        title="Editar"
+                      >
+                        <Pencil />
+                      </Link>
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
             )

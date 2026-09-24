@@ -17,6 +17,8 @@ const buttonVariants = cva(
         // Paleta de acciones (globals.css): guardar/confirmar y cancelar en formularios.
         confirmado: 'bg-confirmado text-white hover:bg-confirmado/90',
         cancelado: 'bg-cancelado text-white hover:bg-cancelado/90',
+        // Dorado (acento): la acción de editar.
+        accent: 'bg-accent text-accent-foreground hover:bg-accent/85',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {

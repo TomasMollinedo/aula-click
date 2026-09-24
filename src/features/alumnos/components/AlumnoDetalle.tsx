@@ -124,7 +124,7 @@ export function AlumnoDetalle({ alumnoId, rutaBase }: AlumnoDetalleProps) {
           </span>
         }
         actions={
-          <Button size="lg" asChild>
+          <Button size="lg" variant="accent" asChild>
             <Link href={`${rutaBase}/${alumno.id}/editar`}>
               <Pencil />
               Editar

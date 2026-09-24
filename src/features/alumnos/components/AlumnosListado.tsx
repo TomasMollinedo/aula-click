@@ -53,7 +53,8 @@ export function AlumnosListado({ rutaBase }: AlumnosListadoProps) {
           className="w-full sm:max-w-md"
         />
         {/* La API ordena siempre por apellido y nombre: es un indicador, no un selector. */}
-        <p className="border-border text-muted-foreground flex h-11 shrink-0 items-center gap-2 self-start rounded-lg border px-3.5 text-sm whitespace-nowrap sm:self-auto">
+        {/* Sin borde ni fondo, para que no parezca un botón. */}
+        <p className="text-muted-foreground flex shrink-0 items-center gap-2 self-start text-sm whitespace-nowrap sm:self-auto">
           <ArrowDownAZ className="size-4" />
           Ordenado por apellido (A–Z)
         </p>
