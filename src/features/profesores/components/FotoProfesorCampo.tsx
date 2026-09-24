@@ -7,13 +7,15 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
 
-import { useQuitarFotoProfesor } from '../hooks/use-quitar-foto-profesor'
-import { useSubirFotoProfesor } from '../hooks/use-subir-foto-profesor'
-
 // Mismos límites que valida la API (`profesores.validation.ts`): los schemas del frontend no
 // comparten código con el backend (T-08). Si cambian allá, se cambian acá.
 const FOTO_TIPOS_ACEPTADOS = ['image/jpeg', 'image/png']
 const FOTO_MAX_BYTES = 5 * 1024 * 1024
+
+// Cambio de foto elegido en la edición, todavía no guardado: un archivo nuevo o la foto actual
+// marcada para quitarse. Lo sube o quita ProfesorFormEditar recién al hacer clic en "Guardar
+// profesor" (junto con el resto de los cambios, un solo botón de guardado).
+export type CambioFotoPendiente = { tipo: 'archivo'; archivo: File } | { tipo: 'quitar' }
 
 type FotoProfesorCampoProps =
   | {
@@ -24,28 +26,28 @@ type FotoProfesorCampoProps =
     }
   | {
       modo: 'editar'
-      profesorId: number
       /** URL prefirmada de la foto actual, o null si no tiene. */
       fotoUrl: string | null
+      cambio: CambioFotoPendiente | null
+      onCambioChange: (cambio: CambioFotoPendiente | null) => void
+      /** Mientras se guarda el formulario: deshabilita elegir o quitar. */
+      disabled?: boolean
     }
 
-// Vista previa de la foto del profesor, con opciones de elegir, reemplazar o quitar. En el alta
-// guarda el archivo local y lo sube ProfesorNuevo recién al crear el profesor (que hasta entonces no
-// tiene id); en la edición sube o quita de inmediato, sin esperar a "Guardar".
+// Vista previa de la foto del profesor, con opciones de elegir, reemplazar o quitar. En ambos
+// modos el archivo (o la marca de "quitar") queda en el estado del formulario: en el alta lo sube
+// ProfesorNuevo al crear el profesor; en la edición lo sube o quita ProfesorFormEditar al guardar.
 export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const toast = useToast()
 
-  // Los hooks se llaman siempre, sin condicionar por el modo (reglas de los hooks). En "crear" no
-  // hay profesorId todavía: se pasa 0 y las mutaciones nunca se disparan en ese modo.
-  const profesorId = props.modo === 'editar' ? props.profesorId : 0
-  const subir = useSubirFotoProfesor(profesorId)
-  const quitar = useQuitarFotoProfesor(profesorId)
-
   const archivoCrear = props.modo === 'crear' ? props.archivo : null
+  const archivoPendiente =
+    props.modo === 'editar' && props.cambio?.tipo === 'archivo' ? props.cambio.archivo : null
+  const archivoPreview = archivoCrear ?? archivoPendiente
   const previewLocal = useMemo(
-    () => (archivoCrear ? URL.createObjectURL(archivoCrear) : null),
-    [archivoCrear],
+    () => (archivoPreview ? URL.createObjectURL(archivoPreview) : null),
+    [archivoPreview],
   )
   // Solo libera el object URL (no sincroniza estado de React): no hay setState que lo reemplace.
   useEffect(() => {
@@ -54,9 +56,12 @@ export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
     }
   }, [previewLocal])
 
-  const hayFoto = props.modo === 'crear' ? !!props.archivo : !!props.fotoUrl
-  const previewSrc = props.modo === 'crear' ? previewLocal : props.fotoUrl
-  const isPending = subir.isPending || quitar.isPending
+  const quitandoPendiente = props.modo === 'editar' && props.cambio?.tipo === 'quitar'
+  const hayFotoGuardada = props.modo === 'crear' ? !!props.archivo : !!props.fotoUrl
+  const hayFoto = quitandoPendiente ? false : !!archivoPreview || hayFotoGuardada
+  const previewSrc =
+    previewLocal ?? (quitandoPendiente || props.modo === 'crear' ? null : props.fotoUrl)
+  const disabled = props.modo === 'editar' && !!props.disabled
 
   function manejarSeleccion(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
@@ -76,10 +81,7 @@ export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
       props.onArchivoChange(file)
       return
     }
-    subir.mutate(file, {
-      onSuccess: () => toast.success('Se actualizó la foto'),
-      onError: (error) => toast.error(error.message),
-    })
+    props.onCambioChange({ tipo: 'archivo', archivo: file })
   }
 
   function manejarQuitar() {
@@ -87,10 +89,7 @@ export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
       props.onArchivoChange(null)
       return
     }
-    quitar.mutate(undefined, {
-      onSuccess: () => toast.success('Se quitó la foto'),
-      onError: (error) => toast.error(error.message),
-    })
+    props.onCambioChange({ tipo: 'quitar' })
   }
 
   return (
@@ -107,7 +106,7 @@ export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
             type="button"
             variant="outline"
             size="sm"
-            disabled={isPending}
+            disabled={disabled}
             onClick={() => inputRef.current?.click()}
           >
             <ImagePlus className="size-4" />
@@ -118,7 +117,7 @@ export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
               type="button"
               variant="outline"
               size="sm"
-              disabled={isPending}
+              disabled={disabled}
               onClick={manejarQuitar}
             >
               <Trash2 className="size-4" />
@@ -126,7 +125,11 @@ export function FotoProfesorCampo(props: FotoProfesorCampoProps) {
             </Button>
           )}
         </div>
-        <p className="text-muted-foreground text-xs">JPG o PNG, hasta 5 MB</p>
+        <p className="text-muted-foreground text-xs">
+          {props.modo === 'editar' && props.cambio
+            ? 'El cambio se guarda con "Guardar profesor"'
+            : 'JPG o PNG, hasta 5 MB'}
+        </p>
       </div>
       <input
         ref={inputRef}

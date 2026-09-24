@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
 import {
@@ -43,6 +44,7 @@ type ProfesorDetalleProps = {
 export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) {
   const id = parsearProfesorId(profesorId)
   const { data: profesor, isLoading, isError, error, refetch } = useProfesor(id ?? 0)
+  const [tab, setTab] = useState<'datos' | 'materias' | 'horario'>('datos')
 
   const volver = (
     <Link
@@ -132,16 +134,18 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
           </span>
         }
         actions={
-          <Button size="lg" variant="accent" asChild>
-            <Link href={`${rutaBase}/${profesor.id}/editar`}>
-              <Pencil />
-              Editar
-            </Link>
-          </Button>
+          tab === 'datos' && (
+            <Button size="lg" variant="accent" asChild>
+              <Link href={`${rutaBase}/${profesor.id}/editar`}>
+                <Pencil />
+                Editar datos
+              </Link>
+            </Button>
+          )
         }
       />
 
-      <Tabs defaultValue="datos" className="space-y-6">
+      <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="space-y-6">
         <TabsList>
           <TabsTrigger value="datos" className="px-4">
             <UserRound />
