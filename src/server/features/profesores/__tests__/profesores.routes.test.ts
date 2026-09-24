@@ -90,7 +90,16 @@ beforeEach(() => {
   getSession.mockResolvedValue(sesion())
   getPresignedUrl.mockImplementation((key: string) => Promise.resolve(`https://minio.local/${key}`))
   repository.listar.mockResolvedValue({
-    data: [{ id: 3, apellido: 'Pérez', nombre: 'Martín', estado: 'ACTIVO', avatarKey: null }],
+    data: [
+      {
+        id: 3,
+        apellido: 'Pérez',
+        nombre: 'Martín',
+        dni: '28333444',
+        estado: 'ACTIVO',
+        avatarKey: null,
+      },
+    ],
     meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
   })
   repository.buscarPorId.mockResolvedValue(GUARDADO)
@@ -111,7 +120,16 @@ beforeEach(() => {
 describe('GET /profesores', () => {
   it('responde 200 paginado, con fotoUrl armada a partir de avatarKey', async () => {
     repository.listar.mockResolvedValue({
-      data: [{ id: 3, apellido: 'Pérez', nombre: 'Martín', estado: 'ACTIVO', avatarKey: 'k1' }],
+      data: [
+        {
+          id: 3,
+          apellido: 'Pérez',
+          nombre: 'Martín',
+          dni: '28333444',
+          estado: 'ACTIVO',
+          avatarKey: 'k1',
+        },
+      ],
       meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
     })
 
@@ -124,6 +142,7 @@ describe('GET /profesores', () => {
           id: 3,
           apellido: 'Pérez',
           nombre: 'Martín',
+          dni: '28333444',
           estado: 'ACTIVO',
           fotoUrl: 'https://minio.local/k1',
         },

@@ -72,6 +72,7 @@ export const profesorListadoItemSchema = z
     id: z.number().int(),
     apellido: z.string(),
     nombre: z.string(),
+    dni: z.string(),
     estado: z.enum(ESTADOS),
     fotoUrl: z.string().nullable().openapi({ description: 'URL prefirmada de la foto, o null' }),
   })

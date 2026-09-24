@@ -10,9 +10,12 @@ import { Button } from '@/components/ui/button'
 import { Field, fieldErrorId } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { PanelBody, PanelFooter } from '@/components/ui/panel'
+import { useToast } from '@/hooks/use-toast'
 import type { ApiError } from '@/utils/fetch-json'
 
 import { aplicarErroresApi, interpretarErroresApi } from '../errores-api'
+import { useQuitarFotoProfesor } from '../hooks/use-quitar-foto-profesor'
+import { useSubirFotoProfesor } from '../hooks/use-subir-foto-profesor'
 import {
   PROFESOR_CREAR_FORM_FIELDS,
   PROFESOR_CREAR_FORM_VACIO,
@@ -25,7 +28,7 @@ import {
   valoresFormAEditar,
 } from '../profesores.schema'
 import type { ProfesorCrear, ProfesorEditar } from '../profesores.types'
-import { FotoProfesorCampo } from './FotoProfesorCampo'
+import { type CambioFotoPendiente, FotoProfesorCampo } from './FotoProfesorCampo'
 
 type ProfesorFormProps =
   | {
@@ -226,6 +229,7 @@ function ProfesorFormEditar({
   error,
 }: Extract<ProfesorFormProps, { modo: 'editar' }>) {
   const formRef = useRef<HTMLFormElement>(null)
+  const toast = useToast()
 
   const {
     register,
@@ -237,13 +241,35 @@ function ProfesorFormEditar({
     defaultValues,
   })
 
+  // Foto: se elige o se marca "quitar" acá, pero se sube o se quita recién al guardar el
+  // formulario (un solo botón, "Guardar profesor"), junto con los demás campos.
+  const [cambioFoto, setCambioFoto] = useState<CambioFotoPendiente | null>(null)
+  const subirFoto = useSubirFotoProfesor(profesorId)
+  const quitarFoto = useQuitarFotoProfesor(profesorId)
+  const fotoPending = subirFoto.isPending || quitarFoto.isPending
+
   const camposValidos = useMemo(() => new Set(PROFESOR_FORM_FIELDS), [])
   const errorGeneral = useMemo(
     () => (error ? interpretarErroresApi(error, camposValidos).errorGeneral : null),
     [error, camposValidos],
   )
 
-  const procesarEnvio = handleSubmit((valores) => {
+  const procesarEnvio = handleSubmit(async (valores) => {
+    if (cambioFoto) {
+      try {
+        if (cambioFoto.tipo === 'archivo') {
+          await subirFoto.mutateAsync(cambioFoto.archivo)
+          toast.success('Se actualizó la foto')
+        } else {
+          await quitarFoto.mutateAsync()
+          toast.success('Se quitó la foto')
+        }
+        setCambioFoto(null)
+      } catch (errorFoto) {
+        toast.error(errorFoto instanceof Error ? errorFoto.message : 'No se pudo guardar la foto')
+        return
+      }
+    }
     onSubmit(valoresFormAEditar(valores, dirtyFields))
   })
 
@@ -268,7 +294,13 @@ function ProfesorFormEditar({
           </Alert>
         )}
 
-        <FotoProfesorCampo modo="editar" profesorId={profesorId} fotoUrl={fotoUrl} />
+        <FotoProfesorCampo
+          modo="editar"
+          fotoUrl={fotoUrl}
+          cambio={cambioFoto}
+          onCambioChange={setCambioFoto}
+          disabled={isPending || fotoPending}
+        />
 
         <Grilla>
           <CampoTexto
@@ -347,8 +379,13 @@ function ProfesorFormEditar({
           Cancelar
         </Button>
         {/* Sin cambios no hay nada que guardar: el botón queda deshabilitado (así lo muestra el diseño). */}
-        <Button type="submit" variant="confirmado" size="lg" disabled={isPending || !isDirty}>
-          {isPending ? 'Guardando…' : 'Guardar profesor'}
+        <Button
+          type="submit"
+          variant="confirmado"
+          size="lg"
+          disabled={isPending || fotoPending || (!isDirty && !cambioFoto)}
+        >
+          {isPending || fotoPending ? 'Guardando…' : 'Guardar profesor'}
         </Button>
       </PanelFooter>
     </form>

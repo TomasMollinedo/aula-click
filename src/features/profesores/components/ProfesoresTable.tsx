@@ -57,6 +57,7 @@ export function ProfesoresTable({
         <TableRow>
           <TableHead className="w-2/5">Apellido</TableHead>
           <TableHead>Nombre</TableHead>
+          <TableHead className="w-36">DNI</TableHead>
           <TableHead className="w-32">Estado</TableHead>
           <TableHead className="w-32 text-right">Acciones</TableHead>
         </TableRow>
@@ -73,6 +74,9 @@ export function ProfesoresTable({
               </TableCell>
               <TableCell>
                 <Skeleton className="h-4 w-28" />
+              </TableCell>
+              <TableCell>
+                <Skeleton className="h-4 w-20" />
               </TableCell>
               <TableCell>
                 <Skeleton className="h-4 w-16" />
@@ -106,6 +110,7 @@ export function ProfesoresTable({
                   </div>
                 </TableCell>
                 <TableCell className="text-muted-foreground">{profesor.nombre}</TableCell>
+                <TableCell className="text-muted-foreground tabular-nums">{profesor.dni}</TableCell>
                 <TableCell>
                   <Badge variant={profesor.estado === 'ACTIVO' ? 'confirmado' : 'secondary'}>
                     {profesor.estado === 'ACTIVO' ? 'Activo' : 'Inactivo'}
@@ -140,7 +145,7 @@ export function ProfesoresTable({
           })
         ) : (
           <TableRow className="hover:bg-transparent">
-            <TableCell colSpan={4} className="p-0">
+            <TableCell colSpan={5} className="p-0">
               {vacio}
             </TableCell>
           </TableRow>
