@@ -40,6 +40,10 @@
 
   /* Fondo del Sidebar (components/layout/app-shell.tsx). Propio: no es la paleta de página. */
   --sidebar: #1c1f35;
+
+  /* Fondo del área de contenido de la app autenticada y de las zonas "hundidas" dentro de una
+     tarjeta (encabezado de tabla, avisos). Las tarjetas, modales e inputs quedan en blanco. */
+  --canvas: #f4f5f9;
 }
 
 @theme inline {
@@ -63,6 +67,7 @@
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-sidebar: var(--sidebar);
+  --color-canvas: var(--canvas);
 
   --color-cobalto: var(--color-cobalto);
   --color-blanco: var(--color-blanco);

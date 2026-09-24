@@ -24,8 +24,12 @@ function DialogOverlay({ className, ...props }: ComponentProps<typeof DialogPrim
 function DialogContent({
   className,
   children,
+  showCloseButton = true,
   ...props
-}: ComponentProps<typeof DialogPrimitive.Content>) {
+}: ComponentProps<typeof DialogPrimitive.Content> & {
+  /** En `false`, quien lo usa pone su propio `DialogClose` (por ejemplo, junto a otras acciones). */
+  showCloseButton?: boolean
+}) {
   return (
     <DialogPrimitive.Portal>
       <DialogOverlay />
@@ -38,10 +42,12 @@ function DialogContent({
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="focus-visible:ring-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-2 disabled:pointer-events-none">
-          <X className="size-4" />
-          <span className="sr-only">Cerrar</span>
-        </DialogPrimitive.Close>
+        {showCloseButton && (
+          <DialogPrimitive.Close className="focus-visible:ring-ring absolute top-4 right-4 rounded-sm opacity-70 transition-opacity outline-none hover:opacity-100 focus-visible:ring-2 disabled:pointer-events-none">
+            <X className="size-4" />
+            <span className="sr-only">Cerrar</span>
+          </DialogPrimitive.Close>
+        )}
       </DialogPrimitive.Content>
     </DialogPrimitive.Portal>
   )

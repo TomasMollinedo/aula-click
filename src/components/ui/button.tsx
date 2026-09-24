@@ -14,12 +14,15 @@ const buttonVariants = cva(
         secondary: 'bg-secondary text-secondary-foreground hover:bg-secondary/80',
         ghost: 'hover:bg-muted',
         destructive: 'bg-destructive text-destructive-foreground hover:bg-destructive/90',
+        // Paleta de acciones (globals.css): guardar/confirmar y cancelar en formularios.
+        confirmado: 'bg-confirmado text-white hover:bg-confirmado/90',
+        cancelado: 'bg-cancelado text-white hover:bg-cancelado/90',
         link: 'text-primary underline-offset-4 hover:underline',
       },
       size: {
         default: 'h-9 px-4',
         sm: 'h-8 rounded-md px-3 text-xs',
-        lg: 'h-10 rounded-md px-6',
+        lg: 'h-11 rounded-lg px-5 font-semibold',
         icon: 'size-9',
       },
     },
