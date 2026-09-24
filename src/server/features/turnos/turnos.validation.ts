@@ -15,3 +15,12 @@ export type TurnoVigentePorProfesor = {
   horaInicio: string
   horaFin: string
 }
+
+/** Cantidad de turnos vigentes de una fila de `bloque_agenda`. No viaja por HTTP. */
+export type TurnosVigentesPorBloque = { bloqueAgendaId: number; cantidad: number }
+
+/**
+ * Turnos que ocupan lugar en una fila de `bloque_agenda` en una fecha (`YYYY-MM-DD`). No viaja
+ * por HTTP: lo lee `bloques` para la ocupación del horario.
+ */
+export type OcupacionPorBloque = { bloqueAgendaId: number; fecha: string; cantidad: number }

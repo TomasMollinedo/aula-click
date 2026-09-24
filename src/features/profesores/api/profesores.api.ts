@@ -1,7 +1,14 @@
 import { fetchJson } from '@/utils/fetch-json'
 
 import type {
+  Bloque,
+  BloqueCrear,
+  BloqueDetalle,
+  BloqueEditar,
+  BloqueHorario,
+  BloquesLote,
   ListarProfesoresParams,
+  MateriaAsignada,
   ProfesorCrear,
   ProfesorDetalle,
   ProfesorEditar,
@@ -56,4 +63,53 @@ export function subirFotoProfesor(id: number, foto: File): Promise<ProfesorDetal
 
 export function quitarFotoProfesor(id: number): Promise<ProfesorDetalle> {
   return fetchJson<ProfesorDetalle>(`${BASE}/${id}/foto`, { method: 'DELETE' })
+}
+
+/** Materias con asignación activa, sin paginar. Se listan aunque el profesor esté inactivo. */
+export function listarMateriasAsignadas(id: number): Promise<MateriaAsignada[]> {
+  return fetchJson<MateriaAsignada[]>(`${BASE}/${id}/materias`)
+}
+
+// Horario de atención (bloques). Es su propia feature en la API (`/api/v1/bloques`, T-29), con el
+// profesor en la query o el body; en la UI es una sección de la ficha del profesor.
+const BLOQUES = '/api/v1/bloques'
+
+/** Filas activas del profesor (una por hora), ordenadas por día y hora, sin paginar. */
+export function listarHorarioProfesor(profesorId: number): Promise<BloqueHorario[]> {
+  return fetchJson<BloqueHorario[]>(`${BLOQUES}?profesorId=${profesorId}`)
+}
+
+/** Una hora del horario, activa o dada de baja, con su auditoría. */
+export function obtenerBloque(bloqueId: number): Promise<BloqueDetalle> {
+  return fetchJson<BloqueDetalle>(`${BLOQUES}/${bloqueId}`)
+}
+
+export function crearBloque(datos: BloqueCrear): Promise<BloquesLote> {
+  return fetchJson<BloquesLote>(BLOQUES, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  })
+}
+
+export function editarBloque(bloqueId: number, cambios: BloqueEditar): Promise<Bloque> {
+  return fetchJson<Bloque>(`${BLOQUES}/${bloqueId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(cambios),
+  })
+}
+
+/** Baja lógica de una hora. */
+export function eliminarBloque(bloqueId: number): Promise<Bloque> {
+  return fetchJson<Bloque>(`${BLOQUES}/${bloqueId}`, { method: 'DELETE' })
+}
+
+/** Baja lógica de varias horas del mismo profesor, todas o ninguna (hasta 24). */
+export function eliminarBloques(bloqueIds: number[]): Promise<BloquesLote> {
+  return fetchJson<BloquesLote>(BLOQUES, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bloqueIds }),
+  })
 }

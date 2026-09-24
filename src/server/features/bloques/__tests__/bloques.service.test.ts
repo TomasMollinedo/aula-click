@@ -6,7 +6,13 @@ import type { TurnosRepository } from '@/server/features/turnos/turnos.repositor
 import type { Actor } from '@/server/shared/actor'
 import type { BloquesRepository } from '../bloques.repository'
 import { crearBloquesService } from '../bloques.service'
-import type { Bloque, BloqueConAula, BloqueGuardado, CrearBloque } from '../bloques.validation'
+import type {
+  Bloque,
+  BloqueConAula,
+  BloqueDetalleGuardado,
+  BloqueGuardado,
+  CrearBloque,
+} from '../bloques.validation'
 
 // El repository de bloques y los de profesores/turnos (solo lectura, cross-feature) se reemplazan
 // por falsos: sin Docker ni Postgres. El service los importa solo como tipo.
@@ -45,6 +51,10 @@ function crearRepositories() {
       buscarPorId: vi.fn<BloquesRepository['buscarPorId']>(),
       editarBloque: vi.fn<BloquesRepository['editarBloque']>(),
       eliminarBloque: vi.fn<BloquesRepository['eliminarBloque']>(),
+      aulasOcupadas: vi.fn<BloquesRepository['aulasOcupadas']>(),
+      buscarPorIds: vi.fn<BloquesRepository['buscarPorIds']>(),
+      eliminarBloques: vi.fn<BloquesRepository['eliminarBloques']>(),
+      buscarDetalle: vi.fn<BloquesRepository['buscarDetalle']>(),
     },
     profesoresRepository: {
       buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>(),
@@ -52,6 +62,8 @@ function crearRepositories() {
     },
     turnosRepository: {
       contarVigentesPorBloque: vi.fn<TurnosRepository['contarVigentesPorBloque']>(),
+      contarVigentesPorBloques: vi.fn<TurnosRepository['contarVigentesPorBloques']>(),
+      contarOcupacionPorBloque: vi.fn<TurnosRepository['contarOcupacionPorBloque']>(),
     },
   }
 }
@@ -72,6 +84,8 @@ beforeEach(() => {
   profesoresRepository.buscarParaBloque.mockResolvedValue(ACTIVO_CON_MATERIA)
   profesoresRepository.buscarCapacidad.mockResolvedValue(10)
   turnosRepository.contarVigentesPorBloque.mockResolvedValue(0)
+  turnosRepository.contarVigentesPorBloques.mockResolvedValue([])
+  turnosRepository.contarOcupacionPorBloque.mockResolvedValue([])
 })
 
 /** Ejecuta `accion`, que debe fallar, y devuelve el error. */
@@ -112,8 +126,53 @@ describe('listarPorProfesor', () => {
         horaFin: '15:00',
         aula: { id: 7, nombre: 'Aula 3' },
         capacidadEfectiva: 6,
+        proximaFecha: '2026-09-28', // HOY es martes 22: el próximo lunes
+        ocupacion: 0,
       },
     ])
+  })
+
+  it('ocupación: una sola consulta con cada fila y su próxima fecha (hoy incluido), 0 si no hay turnos', async () => {
+    repository.listarPorProfesor.mockResolvedValue([
+      { ...filaConAula(10, 840, 900), diaSemana: 1 }, // lunes → 28/09
+      { ...filaConAula(11, 840, 900), diaSemana: 2 }, // martes = HOY → 22/09
+      { ...filaConAula(12, 900, 960), diaSemana: 7 }, // domingo → 27/09
+    ])
+    turnosRepository.contarOcupacionPorBloque.mockResolvedValue([
+      { bloqueAgendaId: 11, fecha: '2026-09-22', cantidad: 3 },
+      { bloqueAgendaId: 12, fecha: '2026-09-27', cantidad: 1 },
+    ])
+
+    const resultado = await service.listarPorProfesor(3)
+
+    expect(turnosRepository.contarOcupacionPorBloque).toHaveBeenCalledTimes(1)
+    expect(turnosRepository.contarOcupacionPorBloque).toHaveBeenCalledWith([
+      { bloqueAgendaId: 10, fecha: '2026-09-28' },
+      { bloqueAgendaId: 11, fecha: '2026-09-22' },
+      { bloqueAgendaId: 12, fecha: '2026-09-27' },
+    ])
+    expect(
+      resultado.map(({ id, proximaFecha, ocupacion }) => ({ id, proximaFecha, ocupacion })),
+    ).toEqual([
+      { id: 10, proximaFecha: '2026-09-28', ocupacion: 0 },
+      { id: 11, proximaFecha: '2026-09-22', ocupacion: 3 },
+      { id: 12, proximaFecha: '2026-09-27', ocupacion: 1 },
+    ])
+  })
+
+  it('la próxima fecha sale del reloj en hora Salta, no de UTC', async () => {
+    // 23:30 del martes 22 en Salta = 02:30 UTC del miércoles 23.
+    service = crearBloquesService({
+      repository,
+      profesoresRepository,
+      turnosRepository,
+      reloj: () => new Date('2026-09-23T02:30:00Z'),
+    })
+    repository.listarPorProfesor.mockResolvedValue([{ ...filaConAula(11, 840, 900), diaSemana: 2 }])
+
+    const [fila] = await service.listarPorProfesor(3)
+
+    expect(fila?.proximaFecha).toBe('2026-09-22')
   })
 
   it('la capacidad efectiva usa el menor entre profesor y aula, sea cual sea', async () => {
@@ -430,5 +489,185 @@ describe('eliminar', () => {
     await service.eliminar(10, actor)
 
     expect(turnosRepository.contarVigentesPorBloque).toHaveBeenCalledWith(10, HOY)
+  })
+})
+
+describe('eliminarVarios', () => {
+  const guardado = (id: number, horaInicio: number, extra: Partial<BloqueGuardado> = {}) => ({
+    ...ACTUAL,
+    id,
+    horaInicio,
+    horaFin: horaInicio + 60,
+    ...extra,
+  })
+
+  beforeEach(() => {
+    repository.buscarPorIds.mockResolvedValue([
+      guardado(10, 840), // 14:00
+      guardado(11, 900), // 15:00
+      guardado(12, 960), // 16:00
+    ])
+  })
+
+  it('varias horas sin turnos vigentes: las da de baja juntas y devuelve cantidad y detalle', async () => {
+    const eliminados = [
+      bloque('14:00', '15:00', 10),
+      bloque('15:00', '16:00', 11),
+      bloque('16:00', '17:00', 12),
+    ]
+    repository.eliminarBloques.mockResolvedValue(eliminados)
+
+    const resultado = await service.eliminarVarios({ bloqueIds: [10, 11, 12] }, actor)
+
+    expect(turnosRepository.contarVigentesPorBloques).toHaveBeenCalledWith([10, 11, 12], HOY)
+    expect(repository.eliminarBloques).toHaveBeenCalledWith([10, 11, 12], actor)
+    expect(profesoresRepository.buscarParaBloque).not.toHaveBeenCalled()
+    expect(resultado).toEqual({ cantidad: 3, bloques: eliminados })
+  })
+
+  it('ids repetidos: el service tampoco los acepta como válidos (los frena el schema)', async () => {
+    const { eliminarBloquesSchema } = await import('../bloques.validation')
+    expect(eliminarBloquesSchema.safeParse({ bloqueIds: [10, 10] }).success).toBe(false)
+    expect(eliminarBloquesSchema.safeParse({ bloqueIds: [] }).success).toBe(false)
+  })
+
+  it('inexistente o ya dada de baja → 404 con details por posición, sin dar de baja ninguna', async () => {
+    repository.buscarPorIds.mockResolvedValue([
+      guardado(10, 840),
+      guardado(11, 900, { estado: 'INACTIVO' }),
+    ])
+
+    const error = await errorDe(service.eliminarVarios({ bloqueIds: [10, 11, 99] }, actor))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error).toMatchObject({
+      details: [
+        { path: ['bloqueIds', 1], message: 'El bloque 11 no existe o ya fue dado de baja' },
+        { path: ['bloqueIds', 2], message: 'El bloque 99 no existe o ya fue dado de baja' },
+      ],
+    })
+    expect(turnosRepository.contarVigentesPorBloques).not.toHaveBeenCalled()
+    expect(repository.eliminarBloques).not.toHaveBeenCalled()
+  })
+
+  it('horas de dos profesores → 400 VALIDACION, sin consultar turnos ni dar de baja', async () => {
+    repository.buscarPorIds.mockResolvedValue([
+      guardado(10, 840),
+      guardado(20, 840, { profesorId: 9 }),
+    ])
+
+    const error = await errorDe(service.eliminarVarios({ bloqueIds: [10, 20] }, actor))
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error).toMatchObject({
+      details: [{ path: ['bloqueIds'], message: 'Todas las horas deben ser del mismo profesor' }],
+    })
+    expect(turnosRepository.contarVigentesPorBloques).not.toHaveBeenCalled()
+    expect(repository.eliminarBloques).not.toHaveBeenCalled()
+  })
+
+  it('con turnos vigentes en alguna → 409 TURNOS_VIGENTES por posición y no da de baja ninguna', async () => {
+    turnosRepository.contarVigentesPorBloques.mockResolvedValue([
+      { bloqueAgendaId: 12, cantidad: 2 },
+    ])
+
+    const error = await errorDe(service.eliminarVarios({ bloqueIds: [10, 11, 12] }, actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error).toMatchObject({
+      code: 'TURNOS_VIGENTES',
+      details: [
+        {
+          path: ['bloqueIds', 2],
+          message: 'La hora de 16:00 a 17:00 tiene 2 turnos vigentes',
+          cantidad: 2,
+        },
+      ],
+    })
+    expect(repository.eliminarBloques).not.toHaveBeenCalled()
+  })
+
+  it('una sola hora con un turno vigente usa el singular', async () => {
+    turnosRepository.contarVigentesPorBloques.mockResolvedValue([
+      { bloqueAgendaId: 10, cantidad: 1 },
+    ])
+
+    const error = await errorDe(service.eliminarVarios({ bloqueIds: [10] }, actor))
+
+    expect(error).toMatchObject({
+      details: [
+        expect.objectContaining({ message: 'La hora de 14:00 a 15:00 tiene 1 turno vigente' }),
+      ],
+    })
+  })
+
+  it('carrera: si el repository no puede dar de baja todas, propaga su NotFoundError', async () => {
+    const noEncontrado = new NotFoundError('Bloque no encontrado')
+    repository.eliminarBloques.mockRejectedValue(noEncontrado)
+
+    await expect(service.eliminarVarios({ bloqueIds: [10, 11] }, actor)).rejects.toBe(noEncontrado)
+  })
+})
+
+describe('obtener', () => {
+  const AUDITORIA = {
+    createdAt: '2026-09-20T13:00:00.000Z',
+    updatedAt: '2026-09-21T10:30:00.000Z',
+    createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+    updatedBy: { id: 'usr_mesa_2', nombre: 'Luis', apellido: 'Paz' },
+  }
+  const DETALLE: BloqueDetalleGuardado = {
+    id: 10,
+    diaSemana: 1,
+    horaInicio: 840,
+    horaFin: 900,
+    estado: 'ACTIVO',
+    aula: { id: 7, nombre: 'Aula 3', capacidad: 4 },
+    profesor: { id: 3, nombre: 'Sofía', apellido: 'Herrera', capacidad: 6 },
+    ...AUDITORIA,
+  }
+
+  it('arma el detalle: horas, capacidad efectiva, ocupación de la próxima fecha y auditoría', async () => {
+    repository.buscarDetalle.mockResolvedValue(DETALLE)
+    turnosRepository.contarOcupacionPorBloque.mockResolvedValue([
+      { bloqueAgendaId: 10, fecha: '2026-09-28', cantidad: 2 },
+    ])
+
+    const resultado = await service.obtener(10)
+
+    expect(turnosRepository.contarOcupacionPorBloque).toHaveBeenCalledWith([
+      { bloqueAgendaId: 10, fecha: '2026-09-28' }, // HOY es martes 22: el próximo lunes
+    ])
+    expect(resultado).toEqual({
+      id: 10,
+      diaSemana: 1,
+      horaInicio: '14:00',
+      horaFin: '15:00',
+      estado: 'ACTIVO',
+      aula: { id: 7, nombre: 'Aula 3', capacidad: 4 },
+      profesor: { id: 3, nombre: 'Sofía', apellido: 'Herrera' },
+      capacidadEfectiva: 4, // min(6, 4)
+      proximaFecha: '2026-09-28',
+      ocupacion: 2,
+      ...AUDITORIA,
+    })
+  })
+
+  it('una hora dada de baja también se puede ver, con su estado', async () => {
+    repository.buscarDetalle.mockResolvedValue({ ...DETALLE, estado: 'INACTIVO' })
+
+    const resultado = await service.obtener(10)
+
+    expect(resultado).toMatchObject({ estado: 'INACTIVO', ocupacion: 0 })
+  })
+
+  it('bloque inexistente → NotFoundError, sin consultar turnos', async () => {
+    repository.buscarDetalle.mockResolvedValue(null)
+
+    const error = await errorDe(service.obtener(99))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error).toMatchObject({ message: 'Bloque no encontrado' })
+    expect(turnosRepository.contarOcupacionPorBloque).not.toHaveBeenCalled()
   })
 })

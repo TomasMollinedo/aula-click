@@ -3,6 +3,7 @@ import type { MateriasRepository } from '@/server/features/materias/materias.rep
 import type { TurnosRepository } from '@/server/features/turnos/turnos.repository'
 import type { Actor } from '@/server/shared/actor'
 import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
+import { detallesPorPosicion } from '@/server/shared/detalles'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { ProfesoresRepository } from './profesores.repository'
 import type {
@@ -36,22 +37,17 @@ function sinOmitidos<T extends object>(cambios: T): Partial<T> {
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
 
-type Detalle = { path: (string | number)[]; message: string } & Record<string, unknown>
-
 /**
- * Un detalle por cada materia pedida que cumple `condicion`, con la misma forma que las issues
- * de Zod (`path` = posición en `materiaIds`): la UI marca cada materia igual que en un 400.
- * `extra` agrega datos propios del error (por ejemplo la cantidad de turnos vigentes).
+ * Un detalle por cada materia pedida que cumple `condicion` (`path` = posición en `materiaIds`):
+ * la UI marca cada materia igual que en un 400.
  */
 function detallesDe(
   materiaIds: number[],
   condicion: (id: number) => boolean,
   mensaje: (id: number) => string,
-  extra: (id: number) => Record<string, unknown> = () => ({}),
-): Detalle[] {
-  return materiaIds.flatMap((id, i) =>
-    condicion(id) ? [{ path: ['materiaIds', i], message: mensaje(id), ...extra(id) }] : [],
-  )
+  extra?: (id: number) => Record<string, unknown>,
+) {
+  return detallesPorPosicion('materiaIds', materiaIds, condicion, mensaje, extra)
 }
 
 /**

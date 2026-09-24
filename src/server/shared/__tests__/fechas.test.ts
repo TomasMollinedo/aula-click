@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { dateAFecha, diaSemanaISO, fechaADate, hoy } from '../fechas'
+import { dateAFecha, diaSemanaISO, fechaADate, hoy, proximaFechaDelDia } from '../fechas'
 
 describe('hoy', () => {
   afterEach(() => {
@@ -63,5 +63,31 @@ describe('diaSemanaISO', () => {
 
   it('lanza RangeError con una fecha inválida', () => {
     expect(() => diaSemanaISO('2026-02-30')).toThrow(RangeError)
+  })
+})
+
+describe('proximaFechaDelDia', () => {
+  // 2026-09-22 es martes (2).
+  it.each([
+    [2, '2026-09-22', '2026-09-22'], // hoy es ese día: hoy incluido
+    [3, '2026-09-22', '2026-09-23'], // mañana
+    [1, '2026-09-22', '2026-09-28'], // el lunes ya pasó: el de la semana que viene
+    [7, '2026-09-22', '2026-09-27'], // domingo = 7
+    [7, '2026-09-27', '2026-09-27'], // desde un domingo, domingo
+    [1, '2026-09-27', '2026-09-28'], // desde un domingo, el lunes siguiente
+    [4, '2026-09-29', '2026-10-01'], // cruce de mes
+    [1, '2026-12-30', '2027-01-04'], // cruce de año
+    [2, '2028-02-28', '2028-02-29'], // año bisiesto
+  ])('día %i desde %s → %s', (dia, desde, esperada) => {
+    expect(proximaFechaDelDia(dia, desde)).toBe(esperada)
+    expect(diaSemanaISO(proximaFechaDelDia(dia, desde))).toBe(dia)
+  })
+
+  it.each([0, 8, 1.5, Number.NaN])('lanza RangeError con el día %o', (dia) => {
+    expect(() => proximaFechaDelDia(dia, '2026-09-22')).toThrow(RangeError)
+  })
+
+  it('lanza RangeError con una fecha inválida', () => {
+    expect(() => proximaFechaDelDia(1, '2026-02-30')).toThrow(RangeError)
   })
 })

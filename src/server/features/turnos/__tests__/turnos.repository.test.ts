@@ -1,5 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { condicionTurnoVigente, turnosRepository } from '../turnos.repository'
+import {
+  condicionTurnoOcupaLugar,
+  condicionTurnoVigente,
+  turnosRepository,
+} from '../turnos.repository'
 
 // Única implementación de "turno vigente" (docs/dominio.md → Turnos). Sin base: Prisma se
 // reemplaza por un mock y se verifica la condición que recibe. Que Postgres la evalúe bien lo
@@ -89,6 +93,68 @@ describe('contarVigentesPorBloque', () => {
     expect(count).toHaveBeenCalledWith({
       where: { ...condicionTurnoVigente(HOY), bloqueAgendaId: 10 },
     })
+  })
+})
+
+describe('condicionTurnoOcupaLugar', () => {
+  it('solo turnos ACTIVO (un cancelado libera su lugar) de exactamente esa fecha', () => {
+    expect(condicionTurnoOcupaLugar(HOY)).toEqual({
+      estado: 'ACTIVO',
+      fechaInicio: MEDIANOCHE_HOY,
+    })
+  })
+})
+
+describe('contarVigentesPorBloques', () => {
+  it('una sola consulta para todas las filas, con la condición de vigente, agrupada por fila', async () => {
+    groupBy.mockResolvedValue([{ bloqueAgendaId: 11, _count: { _all: 2 } }])
+
+    const resultado = await turnosRepository.contarVigentesPorBloques([10, 11], HOY)
+
+    expect(resultado).toEqual([{ bloqueAgendaId: 11, cantidad: 2 }])
+    expect(groupBy).toHaveBeenCalledTimes(1)
+    expect(groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['bloqueAgendaId'],
+        where: { ...condicionTurnoVigente(HOY), bloqueAgendaId: { in: [10, 11] } },
+      }),
+    )
+  })
+})
+
+describe('contarOcupacionPorBloque', () => {
+  it('una sola consulta con un OR de pares fila–fecha, y devuelve la fecha como YYYY-MM-DD', async () => {
+    groupBy.mockResolvedValue([
+      {
+        bloqueAgendaId: 10,
+        fechaInicio: new Date('2026-09-28T00:00:00.000Z'),
+        _count: { _all: 3 },
+      },
+    ])
+
+    const resultado = await turnosRepository.contarOcupacionPorBloque([
+      { bloqueAgendaId: 10, fecha: '2026-09-28' },
+      { bloqueAgendaId: 11, fecha: HOY },
+    ])
+
+    expect(resultado).toEqual([{ bloqueAgendaId: 10, fecha: '2026-09-28', cantidad: 3 }])
+    expect(groupBy).toHaveBeenCalledTimes(1)
+    expect(groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        by: ['bloqueAgendaId', 'fechaInicio'],
+        where: {
+          OR: [
+            { ...condicionTurnoOcupaLugar('2026-09-28'), bloqueAgendaId: 10 },
+            { ...condicionTurnoOcupaLugar(HOY), bloqueAgendaId: 11 },
+          ],
+        },
+      }),
+    )
+  })
+
+  it('sin filas no consulta la base', async () => {
+    expect(await turnosRepository.contarOcupacionPorBloque([])).toEqual([])
+    expect(groupBy).not.toHaveBeenCalled()
   })
 })
 

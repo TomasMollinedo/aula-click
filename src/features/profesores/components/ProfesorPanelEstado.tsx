@@ -9,10 +9,28 @@ import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/c
 import { Skeleton } from '@/components/ui/skeleton'
 import type { ApiError } from '@/utils/fetch-json'
 
+/** Textos del panel: por defecto, los del profesor. El formulario de bloques pasa los suyos. */
+type TextosPanelEstado = {
+  descripcion: string
+  cargando: string
+  noEncontrado: string
+  volver: string
+  sinPermiso: string
+}
+
+const TEXTOS_PROFESOR: TextosPanelEstado = {
+  descripcion: 'Datos del profesor',
+  cargando: 'Cargando datos del profesor…',
+  noEncontrado: 'Profesor no encontrado',
+  volver: 'Volver al listado',
+  sinPermiso: 'No tenés permiso para ver este profesor',
+}
+
 type ProfesorPanelEstadoProps = {
   mode: 'modal' | 'page'
   onCerrar: () => void
   titulo: string
+  textos?: Partial<TextosPanelEstado>
 } & (
   | { estado: 'cargando' }
   | { estado: 'no-encontrado' }
@@ -23,6 +41,7 @@ type ProfesorPanelEstadoProps = {
 // encabezado que tendrán cuando lleguen los datos (docs/arquitectura-frontend.md → Manejo de errores).
 export function ProfesorPanelEstado(props: ProfesorPanelEstadoProps) {
   const { mode, onCerrar, titulo } = props
+  const textos = { ...TEXTOS_PROFESOR, ...props.textos }
 
   return (
     <Panel mode={mode} onClose={onCerrar}>
@@ -30,7 +49,7 @@ export function ProfesorPanelEstado(props: ProfesorPanelEstadoProps) {
         <div>
           <PanelTitle>{titulo}</PanelTitle>
           <PanelDescription>
-            {props.estado === 'cargando' ? 'Cargando datos del profesor…' : 'Datos del profesor'}
+            {props.estado === 'cargando' ? textos.cargando : textos.descripcion}
           </PanelDescription>
         </div>
       </PanelHeader>
@@ -49,12 +68,12 @@ export function ProfesorPanelEstado(props: ProfesorPanelEstadoProps) {
         {props.estado === 'no-encontrado' && (
           <EmptyState
             icon={SearchX}
-            title="Profesor no encontrado"
+            title={textos.noEncontrado}
             description="Puede que el enlace sea incorrecto."
             className="py-10"
           >
             <Button variant="outline" onClick={onCerrar}>
-              Volver al listado
+              {textos.volver}
             </Button>
           </EmptyState>
         )}
@@ -64,7 +83,7 @@ export function ProfesorPanelEstado(props: ProfesorPanelEstadoProps) {
             <AlertCircle className="size-4" />
             <AlertDescription className="text-destructive flex flex-wrap items-center justify-between gap-3">
               {props.error?.status === 403
-                ? 'No tenés permiso para ver este profesor'
+                ? textos.sinPermiso
                 : (props.error?.message ?? 'Ocurrió un error inesperado')}
               {props.error?.status !== 403 && (
                 <Button variant="outline" size="sm" onClick={props.onReintentar}>

@@ -2,7 +2,14 @@ import { z } from 'zod'
 
 import { tieneAlgunaLetra, tieneSoloCaracteres } from '@/utils/caracteres'
 
-import type { ProfesorCrear, ProfesorDetalle, ProfesorEditar } from './profesores.types'
+import type {
+  Bloque,
+  BloqueCrear,
+  BloqueEditar,
+  ProfesorCrear,
+  ProfesorDetalle,
+  ProfesorEditar,
+} from './profesores.types'
 
 // Mismo rango que valida la API (T-07, `src/lib/auth-reglas.ts`): los schemas del frontend no
 // comparten código con el backend (T-08), así que se replica el valor. Si cambia allá, se cambia acá.
@@ -193,4 +200,102 @@ export function valoresFormAEditar(
   }
 
   return hayCambios ? cambios : null
+}
+
+// ---------- Horario (bloques) ----------
+
+// Solo formato, el mismo del contrato (docs/contrato-api.md → Formatos): día ISO 1 a 7 y horas
+// `HH:mm` en punto. Superposición, aula ocupada y el estado del profesor los decide la API.
+const DIA_SEMANA_FORMATO = /^[1-7]$/
+const HORA_EN_PUNTO = /^([01]\d|2[0-3]):00$/
+
+const horaEnPuntoSchema = z
+  .string({ message: 'Campo obligatorio' })
+  .min(1, { message: 'Campo obligatorio' })
+  .regex(HORA_EN_PUNTO, { message: 'Debe ser una hora en punto (por ejemplo 14:00)' })
+
+/**
+ * Formulario de alta y edición de bloques. Los selects trabajan con texto: `diaSemana` y `aulaId`
+ * se convierten a número al armar el body. En la edición `horaFin` no se elige: es `horaInicio`
+ * más una hora (cada fila dura una hora, T-29), y el formulario la completa sola.
+ */
+export const bloqueFormSchema = z
+  .object({
+    diaSemana: z
+      .string({ message: 'Elegí un día' })
+      .regex(DIA_SEMANA_FORMATO, { message: 'Elegí un día' }),
+    horaInicio: horaEnPuntoSchema,
+    horaFin: horaEnPuntoSchema,
+    aulaId: z.string({ message: 'Elegí un aula' }).min(1, { message: 'Elegí un aula' }),
+  })
+  .refine(
+    // `HH:mm` con dos dígitos: la comparación de textos es la de horas.
+    (datos) =>
+      !HORA_EN_PUNTO.test(datos.horaInicio) ||
+      !HORA_EN_PUNTO.test(datos.horaFin) ||
+      datos.horaFin > datos.horaInicio,
+    { message: 'La hora de fin debe ser posterior a la de inicio', path: ['horaFin'] },
+  )
+
+export type BloqueFormValues = z.input<typeof bloqueFormSchema>
+
+export const BLOQUE_FORM_VACIO: BloqueFormValues = {
+  diaSemana: '',
+  horaInicio: '',
+  horaFin: '',
+  aulaId: '',
+}
+
+/** Valores del formulario de edición a partir de la fila del horario. */
+export function bloqueAValoresForm(bloque: Bloque): BloqueFormValues {
+  return {
+    diaSemana: String(bloque.diaSemana),
+    horaInicio: bloque.horaInicio,
+    horaFin: bloque.horaFin,
+    aulaId: String(bloque.aula.id),
+  }
+}
+
+/** Body del alta (sin `profesorId`: lo agrega el hook). */
+export function valoresFormACrearBloque(
+  valores: BloqueFormValues,
+): Omit<BloqueCrear, 'profesorId'> {
+  return {
+    diaSemana: Number(valores.diaSemana),
+    horaInicio: valores.horaInicio,
+    horaFin: valores.horaFin,
+    aulaId: Number(valores.aulaId),
+  }
+}
+
+/**
+ * Body del PATCH de una hora: solo lo que cambió respecto de la fila actual. Si cambia el horario
+ * van las dos horas (la API valida que sigan formando una hora exacta). `null` si no hay cambios.
+ */
+export function valoresFormAEditarBloque(
+  valores: BloqueFormValues,
+  actual: Bloque,
+): BloqueEditar | null {
+  const cambios: BloqueEditar = {}
+  const diaSemana = Number(valores.diaSemana)
+  const aulaId = Number(valores.aulaId)
+
+  if (diaSemana !== actual.diaSemana) cambios.diaSemana = diaSemana
+  if (valores.horaInicio !== actual.horaInicio || valores.horaFin !== actual.horaFin) {
+    cambios.horaInicio = valores.horaInicio
+    cambios.horaFin = valores.horaFin
+  }
+  if (aulaId !== actual.aula.id) cambios.aulaId = aulaId
+
+  return Object.keys(cambios).length > 0 ? cambios : null
+}
+
+/**
+ * `bloque` de la URL de la sección "Horario" (`?tab=horario&bloque=…`): `'nuevo'` abre el alta y
+ * un entero positivo, la edición de esa hora. Cualquier otro valor, ningún formulario.
+ */
+export function parsearParamBloque(valor: string | null): 'nuevo' | number | null {
+  if (valor === 'nuevo') return 'nuevo'
+  const id = Number(valor)
+  return valor && Number.isInteger(id) && id > 0 ? id : null
 }
