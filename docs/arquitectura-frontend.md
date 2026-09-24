@@ -51,15 +51,19 @@ src/
 │   │   │   ├── page.tsx                # listado (q y page en la URL)
 │   │   │   ├── nuevo/page.tsx          # alta entrando por URL: el listado de fondo
 │   │   │   ├── [alumnoId]/
-│   │   │   │   ├── page.tsx            # detalle entrando por URL: el listado de fondo
-│   │   │   │   └── editar/page.tsx     # edición entrando por URL: el listado de fondo
-│   │   │   └── @modal/                 # las mismas tres, siempre como modal sobre el listado
+│   │   │   │   ├── layout.tsx          # {children} + {modal}: el slot de la edición
+│   │   │   │   ├── page.tsx            # página de detalle (tabs Datos y Turnos)
+│   │   │   │   ├── editar/page.tsx     # edición entrando por URL: el detalle de fondo
+│   │   │   │   └── @modal/             # edición, siempre como modal sobre el detalle
+│   │   │   │       ├── default.tsx, page.tsx   # null (igual que en el slot del listado)
+│   │   │   │       ├── (.)editar/page.tsx      # navegando desde el detalle (intercepción)
+│   │   │   │       └── editar/page.tsx         # entrando por URL o al recargar
+│   │   │   └── @modal/                 # alta, siempre como modal sobre el listado
 │   │   │       ├── default.tsx         # null: sin modal al cargar por URL una ruta que el slot no define
 │   │   │       ├── page.tsx            # null: cierra el modal al volver al listado con un Link
 │   │   │       ├── (.)nuevo/page.tsx   # navegando desde el listado (intercepción)
-│   │   │       ├── (.)[alumnoId]/{page.tsx, editar/page.tsx}
 │   │   │       ├── nuevo/page.tsx      # entrando por URL o al recargar
-│   │   │       └── [alumnoId]/{page.tsx, editar/page.tsx}
+│   │   │       └── [alumnoId]/page.tsx # null: cierra el alta al ir a la página del alumno creado
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
@@ -89,9 +93,10 @@ src/
 │       ├── api/{alumnos.api.ts, alumnos.keys.ts}
 │       ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts}
 │       └── components/
-│           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo de los modales
+│           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
 │           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
-│           ├── AlumnoNuevo.tsx, AlumnoDetalle.tsx, AlumnoEditar.tsx   # pantallas en un <Panel> (modal o página)
+│           ├── AlumnoDetalle.tsx        # página de detalle con tabs (Datos del alumno, Turnos)
+│           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
 │           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
 ├── components/
@@ -120,7 +125,7 @@ src/
 | `hooks/use-crear-<singular>.ts` (y afines) | `useMutation` que, al terminar bien, invalida las keys de la entidad                                                                                                                                                                                                                                                                                                                                                                                                |
 | `hooks/use-buscador-<entidad>.ts`          | Hook reutilizable de búsqueda: texto, debounce, paginación, delegado al hook de listado. El debounce es propio (no `hooks/use-debounce.ts`): al sincronizarse con la URL tiene que poder fijar `q` al instante, y con un valor debounceado atrasado volvería a escribir la búsqueda vieja en la URL. Acepta estado controlado (q, page, onCambio) para que la página maneje la URL, o estado interno para otros consumidores (por ejemplo, el formulario de turnos) |
 | `errores-api.ts`                           | Helpers que mapean un `ApiError` a errores del formulario y/o error general: `interpretarErroresApi` (pura, se puede usar en el render) y `aplicarErroresApi` (hace el `setError` y pone el foco). Verifican que el `path` sea un campo válido del schema antes de marcar el campo                                                                                                                                                                                  |
-| `components/`                              | Componentes de la entidad (`<Entidad>Table.tsx`, `<Singular>Form.tsx`…). Las pantallas de alta, detalle y edición son `<Singular>Nuevo.tsx`, `<Singular>Detalle.tsx` y `<Singular>Editar.tsx`: piden sus datos, se arman con `Panel` y reciben `mode` y los callbacks de navegación (`onCerrar`, `onCreado`, `onGuardado`) desde la página (ver Modales con URL propia)                                                                                             |
+| `components/`                              | Componentes de la entidad (`<Entidad>Table.tsx`, `<Singular>Form.tsx`…). La página de detalle es `<Singular>Detalle.tsx` (pide sus datos y arma sus tabs). El alta y la edición son `<Singular>Nuevo.tsx` y `<Singular>Editar.tsx`: se arman con `Panel` y reciben `mode` y los callbacks de navegación (`onCerrar`, `onCreado`, `onGuardado`) desde la página del slot (ver Modales con URL propia)                                                                |
 
 Nombres: archivos que no son componentes en kebab-case (`use-crear-alumno.ts`); componentes en PascalCase (`AlumnoForm.tsx`). La feature va en plural (`alumnos`); lo que representa un solo objeto va en singular (`AlumnoForm`, `use-crear-alumno`). `features/alumnos/` es la referencia de nombres y firmas. Una feature nueva se crea con `/nueva-feature-ui <plural> <singular>` (Claude Code) o copiando `alumnos` a mano.
 
@@ -175,15 +180,16 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 ## Modales con URL propia
 
-Alta, detalle y edición de una entidad se abren **siempre como modal encima del listado**: tanto navegando desde él como entrando por URL o al recargar. Las URLs son las mismas en los dos casos (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12`, `/mesa/alumnos/12/editar`), así que se pueden compartir y otras features pueden enlazarlas. Es el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+El **detalle** de una entidad es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**: el alta encima del listado y la edición encima de la página de detalle, tanto navegando como entrando por URL o al recargar. Las URLs son las mismas en los dos casos (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`), así que se pueden compartir y otras features pueden enlazarlas. Es el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
-- `app/<segmento>/<entidad>/layout.tsx` renderiza `{children}` y el slot `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
-- **Navegando desde el listado:** `@modal/(.)nuevo/page.tsx` y `@modal/(.)[id]/…` interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo el listado, con su `q` y su `page`.
-- **Entrando por URL o al recargar:** no hay intercepción. `nuevo/page.tsx` y `[id]/…/page.tsx` renderizan el listado de fondo (`<Entidad>Pantalla`, el mismo componente que usa `page.tsx`) y el modal lo ponen `@modal/nuevo/page.tsx` y `@modal/[id]/…`, las rutas del slot sin `(.)`.
-- `@modal/default.tsx` y `@modal/page.tsx` devuelven `null`: el primero para la carga por URL de una ruta que el slot no define y el segundo para que un `Link` al listado (por ejemplo, el del Sidebar) cierre el modal.
-- Cada pantalla de la feature (`AlumnoNuevo`, `AlumnoDetalle`, `AlumnoEditar`) se arma con `Panel` de `components/ui/` y **no navega sola**. La página del slot le pasa qué hacer al cerrar o al guardar:
-  - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`); tras un alta, `router.replace` al detalle, así Atrás vuelve al listado y no al alta.
-  - **Por URL:** puede no haber historial dentro de la app, así que cerrar o guardar va al listado con `router.push`. Desde el detalle abierto por URL, "Editar" sí se intercepta: el slot cambia al modal de edición (no se apilan dos modales) y cerrarlo con `router.back()` vuelve al detalle.
+- Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
+- **No crear una carpeta interceptora con parámetro dinámico** (`@modal/(.)[id]/…`) en el slot del listado: Next pasa entonces el parámetro como `"(.)12"` al navegar a `[id]/page.tsx`. Por eso la edición se intercepta desde el layout de `[id]/`, con `@modal/(.)editar`.
+- **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
+- **Entrando por URL o al recargar:** no hay intercepción. `nuevo/page.tsx` renderiza el listado de fondo (`<Entidad>Pantalla`, el mismo componente que usa `page.tsx`) y `[id]/editar/page.tsx` el detalle; el modal lo ponen `@modal/nuevo/page.tsx` y `[id]/@modal/editar/page.tsx`, las rutas de cada slot sin `(.)`.
+- Rutas del slot que devuelven `null`: `default.tsx`, para la carga por URL de una ruta que el slot no define; `page.tsx`, para que volver a la pantalla de fondo (un `Link` al listado, como el del Sidebar, o `router.replace` al detalle) cierre el modal; y `@modal/[id]/page.tsx` en el slot del listado, que cierra el alta al ir a la página del alumno creado. Sin ellas, en una navegación del cliente el slot conserva el último modal abierto.
+- `AlumnoNuevo` y `AlumnoEditar` se arman con `Panel` de `components/ui/` y **no navegan solos**. La página del slot les pasa qué hacer al cerrar o al guardar:
+  - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`, o al detalle); guardar una edición también. Tras un alta, `router.replace` a la página de detalle, así Atrás vuelve al listado y no al alta.
+  - **Por URL:** puede no haber historial dentro de la app, así que cerrar el alta va al listado con `router.push`, y cerrar o guardar la edición vuelve al detalle con `router.replace` (Atrás no reabre el formulario). Tras un alta, `router.replace` al detalle.
 - `Panel` conserva `mode="page"` (tarjeta dentro de la página) para pantallas que no sean modales.
 - El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
 - Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.

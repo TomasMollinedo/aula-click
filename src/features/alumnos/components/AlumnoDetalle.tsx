@@ -2,13 +2,30 @@
 
 import Link from 'next/link'
 import { format, parseISO } from 'date-fns'
-import { AlertTriangle, Pencil } from 'lucide-react'
+import {
+  AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  CalendarClock,
+  Construction,
+  GraduationCap,
+  IdCard,
+  NotebookPen,
+  Pencil,
+  Phone,
+  SearchX,
+  UserRound,
+  type LucideIcon,
+} from 'lucide-react'
 
+import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Panel, PanelBody, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel'
-import { getInitials } from '@/utils/initials'
+import { Card } from '@/components/ui/card'
+import { EmptyState } from '@/components/ui/empty-state'
+import { Skeleton } from '@/components/ui/skeleton'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { parsearAlumnoId } from '../alumnos.schema'
 import {
@@ -17,77 +34,152 @@ import {
   type UsuarioAuditoria,
 } from '../alumnos.types'
 import { useAlumno } from '../hooks/use-alumno'
-import { AlumnoPanelEstado } from './AlumnoPanelEstado'
 
 type AlumnoDetalleProps = {
   /** `alumnoId` tal como llega en la URL. */
   alumnoId: string
-  mode: 'modal' | 'page'
-  onCerrar: () => void
   /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
   rutaBase: string
 }
 
-const TITULO = 'Detalle del alumno'
-
-export function AlumnoDetalle({ alumnoId, mode, onCerrar, rutaBase }: AlumnoDetalleProps) {
+// Página de detalle del alumno, con tabs. "Editar" abre la edición como modal encima de esta página
+// (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia.
+export function AlumnoDetalle({ alumnoId, rutaBase }: AlumnoDetalleProps) {
   const id = parsearAlumnoId(alumnoId)
   const { data: alumno, isLoading, isError, error, refetch } = useAlumno(id ?? 0)
 
-  const estado = { mode, onCerrar, titulo: TITULO }
-  if (id === null) return <AlumnoPanelEstado {...estado} estado="no-encontrado" />
-  if (isLoading) return <AlumnoPanelEstado {...estado} estado="cargando" />
-  if (isError && error?.status === 404) {
-    return <AlumnoPanelEstado {...estado} estado="no-encontrado" />
+  const volver = (
+    <Link
+      href={rutaBase}
+      className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 text-sm font-medium"
+    >
+      <ArrowLeft className="size-4" />
+      Volver a alumnos
+    </Link>
+  )
+
+  if (id === null || (isError && error?.status === 404)) {
+    return (
+      <div className="space-y-6">
+        {volver}
+        <Card className="p-0">
+          <EmptyState
+            icon={SearchX}
+            title="Alumno no encontrado"
+            description="Puede que el enlace sea incorrecto."
+          >
+            <Button variant="outline" asChild>
+              <Link href={rutaBase}>Volver al listado</Link>
+            </Button>
+          </EmptyState>
+        </Card>
+      </div>
+    )
   }
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6" aria-busy>
+        {volver}
+        <div className="space-y-2">
+          <Skeleton className="h-9 w-72" />
+          <Skeleton className="h-4 w-40" />
+        </div>
+        <Skeleton className="h-9 w-56" />
+        <Skeleton className="h-80 w-full rounded-2xl" />
+      </div>
+    )
+  }
+
   if (isError || !alumno) {
     return (
-      <AlumnoPanelEstado {...estado} estado="error" error={error} onReintentar={() => refetch()} />
+      <div className="space-y-6">
+        {volver}
+        <Alert variant="destructive">
+          <AlertCircle className="size-4" />
+          <AlertDescription className="text-destructive flex flex-wrap items-center justify-between gap-3">
+            {error?.status === 403
+              ? 'No tenés permiso para ver este alumno'
+              : (error?.message ?? 'Ocurrió un error inesperado')}
+            {error?.status !== 403 && (
+              <Button variant="outline" size="sm" onClick={() => refetch()}>
+                Reintentar
+              </Button>
+            )}
+          </AlertDescription>
+        </Alert>
+      </div>
     )
   }
 
   return (
-    <Panel mode={mode} onClose={onCerrar}>
-      <PanelHeader
+    <div className="space-y-6">
+      {volver}
+      <PageHeader
+        title={`${alumno.nombre} ${alumno.apellido}`}
+        description={
+          <span className="flex flex-wrap items-center gap-2">
+            DNI {alumno.dni}
+            {alumno.menorDeEdad && <Badge variant="accent">Menor de edad</Badge>}
+          </span>
+        }
         actions={
-          <Button variant="outline" asChild>
+          <Button size="lg" asChild>
             <Link href={`${rutaBase}/${alumno.id}/editar`}>
               <Pencil />
               Editar
             </Link>
           </Button>
         }
-      >
-        <Avatar className="hidden size-11 sm:flex">
-          <AvatarFallback className="bg-cobalto/10 text-cobalto text-xs font-semibold">
-            {getInitials(alumno.nombre, alumno.apellido)}
-          </AvatarFallback>
-        </Avatar>
-        <div className="min-w-0">
-          <PanelTitle className="truncate">
-            {TITULO} — {alumno.nombre} {alumno.apellido}
-          </PanelTitle>
-          <PanelDescription>Información personal y próximos turnos</PanelDescription>
-        </div>
-      </PanelHeader>
-      <PanelBody className="space-y-8">
-        <FichaAlumno alumno={alumno} />
-      </PanelBody>
-    </Panel>
+      />
+
+      <Tabs defaultValue="datos" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="datos" className="px-4">
+            <UserRound />
+            Datos del alumno
+          </TabsTrigger>
+          <TabsTrigger value="turnos" className="px-4">
+            <CalendarClock />
+            Turnos
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="datos">
+          <DatosAlumno alumno={alumno} />
+        </TabsContent>
+
+        <TabsContent value="turnos">
+          <Card className="p-0">
+            <EmptyState
+              icon={Construction}
+              title="Función en construcción"
+              description="Pronto vas a poder ver acá los turnos del alumno."
+            />
+          </Card>
+        </TabsContent>
+      </Tabs>
+    </div>
   )
 }
 
-function FichaAlumno({ alumno }: { alumno: AlumnoDetalleType }) {
+function DatosAlumno({ alumno }: { alumno: AlumnoDetalleType }) {
+  const tieneDatosTutor = [
+    alumno.tutorNombre,
+    alumno.tutorApellido,
+    alumno.tutorDni,
+    alumno.tutorTelefono,
+    alumno.tutorEmail,
+  ].some(Boolean)
+  // Mismo criterio que el formulario: el tutor corresponde a un menor; un mayor que conserva datos
+  // de tutor (docs/dominio.md) también los ve.
+  const mostrarTutor = alumno.menorDeEdad || tieneDatosTutor
   const faltanDatosTutor =
     alumno.menorDeEdad &&
     (!alumno.tutorNombre || !alumno.tutorApellido || !alumno.tutorTelefono || !alumno.tutorEmail)
 
-  const nombreTutor = [alumno.tutorNombre, alumno.tutorApellido].filter(Boolean).join(' ')
-  const contactoTutor = [alumno.tutorTelefono, alumno.tutorEmail].filter(Boolean).join(' · ')
-  const nivel = alumno.nivelEscolaridad ? NIVEL_ESCOLARIDAD_LABEL[alumno.nivelEscolaridad] : null
-
   return (
-    <>
+    <div className="space-y-6">
       {faltanDatosTutor && (
         <Alert variant="destructive">
           <AlertTriangle className="size-4" />
@@ -97,74 +189,97 @@ function FichaAlumno({ alumno }: { alumno: AlumnoDetalleType }) {
         </Alert>
       )}
 
-      <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">
-        <Dato label="DNI" valor={alumno.dni} />
-        <Dato
-          label="Fecha de nacimiento"
-          valor={format(parseISO(alumno.fechaNacimiento), 'dd/MM/yyyy')}
-        />
-        <Dato label="Teléfono" valor={alumno.telefono} />
-        <Dato label="Email" valor={alumno.email} />
-        <Dato
-          label="Tutor"
-          valor={
-            nombreTutor || contactoTutor ? (
-              <>
-                {nombreTutor && <span className="block">{nombreTutor}</span>}
-                {contactoTutor && <span className="block">{contactoTutor}</span>}
-                {alumno.tutorDni && (
-                  <span className="text-muted-foreground block">DNI {alumno.tutorDni}</span>
-                )}
-              </>
-            ) : null
-          }
-        />
-        <Dato label="Nivel" valor={[nivel, alumno.grado].filter(Boolean).join(' — ') || null} />
-        <Dato label="Colegio" valor={alumno.institucionEducativa} />
-      </dl>
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Seccion icon={IdCard} titulo="Datos identificatorios">
+          <Datos>
+            <Dato label="Nombre" valor={alumno.nombre} />
+            <Dato label="Apellido" valor={alumno.apellido} />
+            <Dato label="DNI" valor={alumno.dni} />
+            <Dato
+              label="Fecha de nacimiento"
+              valor={format(parseISO(alumno.fechaNacimiento), 'dd/MM/yyyy')}
+            />
+          </Datos>
+        </Seccion>
 
-      <section className="space-y-2">
-        <h3 className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-          Observaciones
-        </h3>
-        <p className="bg-canvas rounded-lg px-4 py-3 text-sm whitespace-pre-line">
-          {alumno.observaciones ?? 'Sin observaciones'}
-        </p>
-      </section>
+        <Seccion icon={Phone} titulo="Contacto">
+          <Datos>
+            <Dato label="Teléfono" valor={alumno.telefono} />
+            <Dato label="Email" valor={alumno.email} />
+          </Datos>
+        </Seccion>
 
-      <section className="space-y-3">
-        <h3 className="font-semibold">Próximos turnos</h3>
-        <div className="border-border overflow-hidden rounded-xl border">
-          <div className="bg-canvas text-muted-foreground grid grid-cols-3 px-4 py-2.5 text-[11px] font-semibold tracking-wide uppercase">
-            <span>Fecha y hora</span>
-            <span>Materia</span>
-            <span>Profesor</span>
-          </div>
-          <p className="text-muted-foreground border-border border-t px-4 py-4 text-sm">
-            Próximamente
+        {mostrarTutor && (
+          <Seccion icon={UserRound} titulo="Tutor o responsable">
+            <Datos>
+              <Dato label="Nombre" valor={alumno.tutorNombre} />
+              <Dato label="Apellido" valor={alumno.tutorApellido} />
+              <Dato label="DNI" valor={alumno.tutorDni} />
+              <Dato label="Teléfono" valor={alumno.tutorTelefono} />
+              <Dato label="Email" valor={alumno.tutorEmail} />
+            </Datos>
+          </Seccion>
+        )}
+
+        <Seccion icon={GraduationCap} titulo="Datos escolares">
+          <Datos>
+            <Dato
+              label="Nivel"
+              valor={
+                alumno.nivelEscolaridad ? NIVEL_ESCOLARIDAD_LABEL[alumno.nivelEscolaridad] : null
+              }
+            />
+            <Dato label="Grado o año" valor={alumno.grado} />
+            <Dato label="Colegio / institución" valor={alumno.institucionEducativa} />
+          </Datos>
+        </Seccion>
+
+        <Seccion icon={NotebookPen} titulo="Observaciones" className="lg:col-span-2">
+          <p className="text-sm whitespace-pre-line">
+            {alumno.observaciones ?? (
+              <span className="text-muted-foreground">Sin observaciones</span>
+            )}
           </p>
-        </div>
-      </section>
+        </Seccion>
+      </div>
 
-      <section className="space-y-3">
-        <h3 className="font-semibold">Exámenes</h3>
-        <p className="text-muted-foreground border-border rounded-xl border px-4 py-4 text-sm">
-          Próximamente
-        </p>
-      </section>
-
-      <section className="border-border space-y-1.5 border-t pt-5">
-        <h3 className="font-semibold">Trazabilidad</h3>
-        <p className="text-muted-foreground text-sm">
+      <div className="text-muted-foreground space-y-1 text-xs">
+        <p>
           Creado por {nombreAuditoria(alumno.createdBy)} · {formatoInstante(alumno.createdAt)}
         </p>
-        <p className="text-muted-foreground text-sm">
+        <p>
           Última modificación por {nombreAuditoria(alumno.updatedBy)} ·{' '}
           {formatoInstante(alumno.updatedAt)}
         </p>
-      </section>
-    </>
+      </div>
+    </div>
   )
+}
+
+function Seccion({
+  icon: Icon,
+  titulo,
+  className,
+  children,
+}: {
+  icon: LucideIcon
+  titulo: string
+  className?: string
+  children: React.ReactNode
+}) {
+  return (
+    <Card className={className}>
+      <h2 className="flex items-center gap-2 font-semibold">
+        <Icon className="text-cobalto size-4" />
+        {titulo}
+      </h2>
+      {children}
+    </Card>
+  )
+}
+
+function Datos({ children }: { children: React.ReactNode }) {
+  return <dl className="grid gap-x-8 gap-y-5 sm:grid-cols-2">{children}</dl>
 }
 
 function Dato({ label, valor }: { label: string; valor: React.ReactNode }) {

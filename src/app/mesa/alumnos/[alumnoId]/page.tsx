@@ -1,6 +1,11 @@
-import { AlumnosPantalla } from '@/features/alumnos/components/AlumnosPantalla'
+'use client'
 
-// Detalle entrando por URL: el listado de fondo; el modal lo pone @modal/[alumnoId].
-export default function DetalleAlumnoPage() {
-  return <AlumnosPantalla rutaBase="/mesa/alumnos" />
+import { use } from 'react'
+
+import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
+
+// El detalle es una página (no un modal): "Editar" abre la edición como modal encima de ella.
+export default function DetalleAlumnoPage({ params }: PageProps<'/mesa/alumnos/[alumnoId]'>) {
+  const { alumnoId } = use(params)
+  return <AlumnoDetalle alumnoId={alumnoId} rutaBase="/mesa/alumnos" />
 }

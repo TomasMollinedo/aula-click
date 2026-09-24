@@ -1,24 +1,5 @@
-'use client'
-
-import { use } from 'react'
-import { useRouter } from 'next/navigation'
-
-import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
-
-// Detalle entrando por URL (o al recargar). Navegando desde el listado lo intercepta
-// @modal/(.)[alumnoId]. Sin historial propio, cerrar va al listado con push.
-export default function DetalleAlumnoModalPorUrl({
-  params,
-}: PageProps<'/mesa/alumnos/[alumnoId]'>) {
-  const { alumnoId } = use(params)
-  const router = useRouter()
-
-  return (
-    <AlumnoDetalle
-      alumnoId={alumnoId}
-      mode="modal"
-      rutaBase="/mesa/alumnos"
-      onCerrar={() => router.push('/mesa/alumnos')}
-    />
-  )
+// El detalle es una página, sin modal. Esta ruta vacía cierra el modal de alta cuando, tras crear,
+// se navega a la página del alumno (sin ella, el slot conservaría el último modal abierto).
+export default function SinModalEnDetalle() {
+  return null
 }

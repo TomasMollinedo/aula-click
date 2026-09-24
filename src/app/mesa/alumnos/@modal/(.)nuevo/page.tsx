@@ -11,7 +11,7 @@ export default function NuevoAlumnoModal() {
     <AlumnoNuevo
       mode="modal"
       onCerrar={() => router.back()}
-      // replace: Atrás desde el detalle del alumno creado vuelve al listado, no al alta.
+      // replace: Atrás desde la página del alumno creado vuelve al listado, no al alta.
       onCreado={(alumno) => router.replace(`/mesa/alumnos/${alumno.id}`)}
     />
   )

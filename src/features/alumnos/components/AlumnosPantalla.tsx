@@ -7,8 +7,8 @@ import { AlumnosListado } from './AlumnosListado'
 import { BotonNuevoAlumno } from './BotonNuevoAlumno'
 import { TotalAlumnos } from './TotalAlumnos'
 
-// Pantalla del listado: la página del listado y, de fondo, las de alta, detalle y edición cuando se
-// entra por URL (el modal lo pone el slot @modal). docs/arquitectura-frontend.md → Modales con URL propia.
+// Pantalla del listado: la página del listado y, de fondo, la del alta cuando se entra por URL (el
+// modal lo pone el slot @modal). docs/arquitectura-frontend.md → Modales con URL propia.
 export function AlumnosPantalla({
   rutaBase,
 }: {
