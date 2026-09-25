@@ -21,6 +21,18 @@ import { fechaConDia } from '../formato-turnos'
 
 const COLUMNAS = 5
 
+/** Título y descripción del estado vacío, por vista. */
+export type TextosVacioAgenda = Record<VistaAgenda, { title: string; description: string }>
+
+// Los de "Mi agenda" (HU-10): el profesor ve su propia agenda.
+const TEXTOS_VACIO_PROPIA: TextosVacioAgenda = {
+  dia: { title: 'No tenés turnos este día', description: 'Elegí otro día para ver tu agenda.' },
+  semana: {
+    title: 'No tenés turnos esta semana',
+    description: 'Elegí otra semana para ver tu agenda.',
+  },
+}
+
 type AgendaPropiaTableProps = {
   dias?: DiaDeAgenda[]
   isLoading: boolean
@@ -28,14 +40,23 @@ type AgendaPropiaTableProps = {
   isFetching: boolean
   /** Cambia el encabezado por día y los textos del estado vacío. */
   vista: VistaAgenda
+  /** Textos del estado vacío; por defecto, los de "Mi agenda". */
+  textosVacio?: TextosVacioAgenda
 }
 
 /**
- * Turnos propios del profesor, de sólo lectura (HU-10): no hay acciones por fila, porque la API no
+ * Ocurrencias de los turnos de un profesor, sin columna de profesor, de sólo lectura ("Mi agenda",
+ * HU-10, y la ficha del profesor, HU-02): no hay acciones por fila, porque la API no
  * soporta editar ni cancelar en este incremento. En la vista por semana, cada día lleva su
  * encabezado; los días sin turnos no aparecen.
  */
-export function AgendaPropiaTable({ dias, isLoading, isFetching, vista }: AgendaPropiaTableProps) {
+export function AgendaPropiaTable({
+  dias,
+  isLoading,
+  isFetching,
+  vista,
+  textosVacio = TEXTOS_VACIO_PROPIA,
+}: AgendaPropiaTableProps) {
   const hayTurnos = dias?.some((dia) => dia.turnos.length > 0)
 
   return (
@@ -107,12 +128,8 @@ export function AgendaPropiaTable({ dias, isLoading, isFetching, vista }: Agenda
             <TableCell colSpan={COLUMNAS} className="p-0">
               <EmptyState
                 icon={CalendarX2}
-                title={vista === 'dia' ? 'No tenés turnos este día' : 'No tenés turnos esta semana'}
-                description={
-                  vista === 'dia'
-                    ? 'Elegí otro día para ver tu agenda.'
-                    : 'Elegí otra semana para ver tu agenda.'
-                }
+                title={textosVacio[vista].title}
+                description={textosVacio[vista].description}
                 className="py-20"
               />
             </TableCell>

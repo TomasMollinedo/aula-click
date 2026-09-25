@@ -1,4 +1,4 @@
-import { addDays, format, getISODay, parseISO, startOfISOWeek } from 'date-fns'
+import { addDays, format, getISODay, isValid, parseISO, startOfISOWeek } from 'date-fns'
 
 import { nombreDiaSemana } from '@/utils/dias-semana'
 
@@ -24,9 +24,25 @@ function esVista(valor: string): valor is VistaAgenda {
   return (VISTAS_AGENDA as readonly string[]).includes(valor)
 }
 
-/** Vista que viene en la URL (`?vista=`); cualquier otra cosa cae en la vista por día. */
-export function parsearVista(valor: string | null | undefined): VistaAgenda {
-  return valor && esVista(valor) ? valor : 'dia'
+/**
+ * Vista que viene en la URL (`?vista=`); cualquier otra cosa cae en `porDefecto` (día en "Mi
+ * agenda", semana en la ficha del profesor).
+ */
+export function parsearVista(
+  valor: string | null | undefined,
+  porDefecto: VistaAgenda = 'dia',
+): VistaAgenda {
+  return valor && esVista(valor) ? valor : porDefecto
+}
+
+/**
+ * Fecha que viene en la URL (`?fecha=`): tiene que ser una fecha de calendario real `YYYY-MM-DD`
+ * (`2026-02-30` no lo es). Cualquier otra cosa cae en `porDefecto` (hoy).
+ */
+export function parsearFecha(valor: string | null | undefined, porDefecto: string): string {
+  if (!valor || !/^\d{4}-\d{2}-\d{2}$/.test(valor)) return porDefecto
+  const fecha = parseISO(valor)
+  return isValid(fecha) && formatearFecha(fecha) === valor ? valor : porDefecto
 }
 
 /**
@@ -62,6 +78,28 @@ export function etiquetaDelRango(vista: VistaAgenda, fecha: string): string {
   if (vista === 'dia') return nombreDiaSemana(getISODay(parseISO(fecha)))
   const { desde, hasta } = rangoDeVista(vista, fecha)
   return `Semana del ${fechaCorta(desde)} al ${fechaCorta(hasta)}`
+}
+
+/**
+ * Query params de la URL para mostrar `vista` y `fecha`, a partir de los actuales (sin mutarlos):
+ * conserva los demás (por ejemplo `tab` en la ficha del profesor) y omite los valores por defecto,
+ * `vista` si es `vistaPorDefecto` y `fecha` si es el rango de `hoy`. La fecha va normalizada con
+ * la vista nueva: pasar a semana guarda el lunes de ese día.
+ */
+export function paramsDeRango(
+  actuales: URLSearchParams,
+  { vista, fecha }: { vista: VistaAgenda; fecha: string },
+  { vistaPorDefecto, hoy }: { vistaPorDefecto: VistaAgenda; hoy: string },
+): URLSearchParams {
+  const params = new URLSearchParams(actuales)
+  const normalizada = normalizarFecha(vista, fecha)
+
+  if (vista === vistaPorDefecto) params.delete('vista')
+  else params.set('vista', vista)
+  if (esRangoActual(vista, normalizada, hoy)) params.delete('fecha')
+  else params.set('fecha', normalizada)
+
+  return params
 }
 
 /**

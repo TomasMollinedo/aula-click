@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -8,6 +8,7 @@ import {
   ArrowLeft,
   BookOpen,
   CalendarClock,
+  CalendarDays,
   IdCard,
   Pencil,
   Phone,
@@ -43,15 +44,20 @@ type ProfesorDetalleProps = {
   profesorId: string
   /** URL del listado de profesores en el segmento del rol (por ejemplo `/mesa/profesores`). */
   rutaBase: string
+  /**
+   * Contenido del tab "Agenda": lo compone `app/` con la agenda de `features/turnos`, porque una
+   * feature no importa componentes de otra (docs/arquitectura-frontend.md → Quién importa a quién).
+   */
+  renderAgenda: (profesor: ProfesorDetalleType) => ReactNode
 }
 
-const TABS = ['datos', 'materias', 'horario'] as const
+const TABS = ['datos', 'materias', 'horario', 'agenda'] as const
 type Tab = (typeof TABS)[number]
 
 // Página de detalle del profesor, con tabs. "Editar" abre la edición como modal encima de esta
 // página (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia. El tab va en la URL
 // (`?tab=`), así el formulario de la sección "Horario" (`&bloque=…`) tiene URL propia.
-export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) {
+export function ProfesorDetalle({ profesorId, rutaBase, renderAgenda }: ProfesorDetalleProps) {
   const id = parsearProfesorId(profesorId)
   const { data: profesor, isLoading, isError, error, refetch } = useProfesor(id ?? 0)
   const searchParams = useSearchParams()
@@ -185,20 +191,27 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
       />
 
       <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="datos" className="px-4">
-            <UserRound />
-            Datos del profesor
-          </TabsTrigger>
-          <TabsTrigger value="materias" className="px-4">
-            <BookOpen />
-            Materias
-          </TabsTrigger>
-          <TabsTrigger value="horario" className="px-4">
-            <CalendarClock />
-            Horario de atención
-          </TabsTrigger>
-        </TabsList>
+        {/* Con cuatro tabs, en mobile la barra se desplaza sola en lugar de desbordar la página. */}
+        <div className="max-w-full overflow-x-auto">
+          <TabsList>
+            <TabsTrigger value="datos" className="px-4">
+              <UserRound />
+              Datos del profesor
+            </TabsTrigger>
+            <TabsTrigger value="materias" className="px-4">
+              <BookOpen />
+              Materias
+            </TabsTrigger>
+            <TabsTrigger value="horario" className="px-4">
+              <CalendarClock />
+              Horario de atención
+            </TabsTrigger>
+            <TabsTrigger value="agenda" className="px-4">
+              <CalendarDays />
+              Agenda
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="datos">
           <DatosProfesor profesor={profesor} />
@@ -211,6 +224,8 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         <TabsContent value="horario">
           <HorarioProfesor profesor={profesor} rutaDetalle={rutaDetalle} />
         </TabsContent>
+
+        <TabsContent value="agenda">{renderAgenda(profesor)}</TabsContent>
       </Tabs>
 
       <ConfirmarEstadoProfesor
