@@ -115,3 +115,29 @@ export type AgendaItem = z.infer<typeof agendaItemSchema>
 export const agendaListadoSchema = paginatedSchema(agendaItemSchema)
 
 export type AgendaListado = z.infer<typeof agendaListadoSchema>
+
+/** Query del selector de materias con turno: `fecha` (sin ella, hoy), como en la agenda. */
+export const materiasConTurnoQuerySchema = z.object({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+})
+
+export type MateriasConTurnoQuery = z.infer<typeof materiasConTurnoQuerySchema>
+
+/**
+ * Ítem del selector de materias con turno en una fecha (id y nombre, como el resto de los
+ * selectores de catálogo: `materias.validation.ts` → `MateriaSelectorItem`). Es su propio
+ * componente porque vive en `turnos`: una feature no importa la validation de otra.
+ */
+export const materiaConTurnoSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('MateriaConTurno')
+
+export type MateriaConTurno = z.infer<typeof materiaConTurnoSchema>
+
+export const materiasConTurnoListadoSchema = z.array(materiaConTurnoSchema)
+
+export type MateriasConTurnoListado = z.infer<typeof materiasConTurnoListadoSchema>

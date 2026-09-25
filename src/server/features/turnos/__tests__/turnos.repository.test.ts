@@ -10,15 +10,20 @@ import {
 // reemplaza por un mock y se verifica la condición que recibe. Que Postgres la evalúe bien lo
 // garantiza el `gte` sobre una columna @db.Date.
 
-const { groupBy, count, findMany, $transaction } = vi.hoisted(() => ({
+const { groupBy, count, findMany, materiaFindMany, $transaction } = vi.hoisted(() => ({
   groupBy: vi.fn(),
   count: vi.fn(),
   findMany: vi.fn(),
+  materiaFindMany: vi.fn(),
   // Emula la forma "arreglo" de $transaction: ejecuta las consultas ya lanzadas por los mocks.
   $transaction: vi.fn((operaciones: Promise<unknown>[]) => Promise.all(operaciones)),
 }))
 vi.mock('@/lib/prisma', () => ({
-  prisma: { turno: { groupBy, count, findMany }, $transaction },
+  prisma: {
+    turno: { groupBy, count, findMany },
+    materia: { findMany: materiaFindMany },
+    $transaction,
+  },
 }))
 
 const HOY = '2026-09-22'
@@ -29,6 +34,7 @@ beforeEach(() => {
   groupBy.mockResolvedValue([])
   count.mockResolvedValue(0)
   findMany.mockResolvedValue([])
+  materiaFindMany.mockResolvedValue([])
 })
 
 describe('condicionTurnoVigente', () => {
@@ -318,5 +324,43 @@ describe('listarAgenda', () => {
       data: [],
       meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
     })
+  })
+})
+
+describe('listarMateriasConTurno', () => {
+  it('devuelve las materias que trae Prisma, tal cual', async () => {
+    materiaFindMany.mockResolvedValue([
+      { id: 2, nombre: 'Matemática' },
+      { id: 7, nombre: 'Física' },
+    ])
+
+    await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([
+      { id: 2, nombre: 'Matemática' },
+      { id: 7, nombre: 'Física' },
+    ])
+  })
+
+  it('filtra materias con algún turno que aplica esa fecha, en el día de semana del bloque', async () => {
+    await turnosRepository.listarMateriasConTurno(HOY)
+
+    // 2026-09-22 es martes: diaSemanaISO = 2.
+    expect(materiaFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          turnos: { some: { ...condicionTurnoEnFecha(HOY), bloqueAgenda: { diaSemana: 2 } } },
+        },
+      }),
+    )
+  })
+
+  it('no filtra por el estado de la materia: importa si se dictó esa fecha, no si sigue activa', async () => {
+    await turnosRepository.listarMateriasConTurno(HOY)
+
+    const { where } = materiaFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
+    expect(where).not.toHaveProperty('estado')
+  })
+
+  it('sin materias con turno ese día, devuelve un arreglo vacío', async () => {
+    await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([])
   })
 })

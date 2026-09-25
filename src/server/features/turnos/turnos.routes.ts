@@ -3,7 +3,12 @@ import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as turnosController from './turnos.controller'
-import { agendaListadoSchema, agendaQuerySchema } from './turnos.validation'
+import {
+  agendaListadoSchema,
+  agendaQuerySchema,
+  materiasConTurnoListadoSchema,
+  materiasConTurnoQuerySchema,
+} from './turnos.validation'
 
 // Contrato HTTP de turnos: cada endpoint se declara con createRoute() y se registra acá.
 
@@ -56,4 +61,32 @@ export const listarAgendaRoute = createRoute({
   },
 })
 
-export const turnosRoutes = createRouter().openapi(listarAgendaRoute, turnosController.listarAgenda)
+export const listarMateriasConTurnoRoute = createRoute({
+  method: 'get',
+  path: '/materias',
+  tags,
+  summary: 'Materias con turno en una fecha',
+  description:
+    'Selector para el filtro de materia de la agenda: materias con al menos un turno ACTIVO en la fecha pedida (id y nombre, sin paginar). Sin `fecha`, la de hoy, igual que la agenda.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: materiasConTurnoQuerySchema },
+  responses: {
+    200: {
+      description: 'Materias con turno ese día (arreglo vacío si no hay ninguna)',
+      content: {
+        'application/json': {
+          schema: materiasConTurnoListadoSchema,
+          example: [
+            { id: 2, nombre: 'Matemática' },
+            { id: 7, nombre: 'Física' },
+          ],
+        },
+      },
+    },
+    ...errores,
+  },
+})
+
+export const turnosRoutes = createRouter()
+  .openapi(listarAgendaRoute, turnosController.listarAgenda)
+  .openapi(listarMateriasConTurnoRoute, turnosController.listarMateriasConTurno)

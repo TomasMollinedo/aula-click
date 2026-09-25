@@ -23,6 +23,7 @@ function crearRepository() {
     contarVigentesPorBloques: vi.fn<TurnosRepository['contarVigentesPorBloques']>(),
     contarOcupacionPorBloque: vi.fn<TurnosRepository['contarOcupacionPorBloque']>(),
     listarAgenda: vi.fn<TurnosRepository['listarAgenda']>(),
+    listarMateriasConTurno: vi.fn<TurnosRepository['listarMateriasConTurno']>(),
   }
 }
 
@@ -98,5 +99,30 @@ describe('listarAgenda', () => {
     repository.listarAgenda.mockResolvedValue(pagina)
 
     await expect(service.listarAgenda({ page: 1, pageSize: 20 })).resolves.toEqual(pagina)
+  })
+})
+
+describe('listarMateriasConTurno', () => {
+  it('sin fecha, consulta la de hoy según el reloj del service', async () => {
+    await service.listarMateriasConTurno({})
+
+    expect(repository.listarMateriasConTurno).toHaveBeenCalledWith(HOY)
+  })
+
+  it('pide al repository las materias con turno de la fecha pedida', async () => {
+    const materias = [
+      { id: 2, nombre: 'Matemática' },
+      { id: 7, nombre: 'Física' },
+    ]
+    repository.listarMateriasConTurno.mockResolvedValue(materias)
+
+    await expect(service.listarMateriasConTurno({ fecha: '2026-09-28' })).resolves.toEqual(materias)
+    expect(repository.listarMateriasConTurno).toHaveBeenCalledWith('2026-09-28')
+  })
+
+  it('sin materias con turno ese día, devuelve un arreglo vacío', async () => {
+    repository.listarMateriasConTurno.mockResolvedValue([])
+
+    await expect(service.listarMateriasConTurno({ fecha: '2026-09-28' })).resolves.toEqual([])
   })
 })

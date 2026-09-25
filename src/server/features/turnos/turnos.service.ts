@@ -1,6 +1,11 @@
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { TurnosRepository } from './turnos.repository'
-import type { AgendaListado, AgendaQuery } from './turnos.validation'
+import type {
+  AgendaListado,
+  AgendaQuery,
+  MateriasConTurnoListado,
+  MateriasConTurnoQuery,
+} from './turnos.validation'
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
 
@@ -28,6 +33,11 @@ export function crearTurnosService({
         profesorId: query.profesorId,
         alumnoId: query.alumnoId,
       })
+    },
+
+    /** Selector de materias con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
+    listarMateriasConTurno(query: MateriasConTurnoQuery): Promise<MateriasConTurnoListado> {
+      return repository.listarMateriasConTurno(query.fecha ?? hoy(reloj))
     },
   }
 }

@@ -1,6 +1,6 @@
 import type { RouteHandler } from '@hono/zod-openapi'
 import type { AppEnv } from '@/server/router'
-import type { listarAgendaRoute } from './turnos.routes'
+import type { listarAgendaRoute, listarMateriasConTurnoRoute } from './turnos.routes'
 import { turnosRepository } from './turnos.repository'
 import { crearTurnosService } from './turnos.service'
 
@@ -13,3 +13,8 @@ const turnosService = crearTurnosService({ repository: turnosRepository })
 
 export const listarAgenda: RouteHandler<typeof listarAgendaRoute, AppEnv> = async (c) =>
   c.json(await turnosService.listarAgenda(c.req.valid('query')), 200)
+
+export const listarMateriasConTurno: RouteHandler<
+  typeof listarMateriasConTurnoRoute,
+  AppEnv
+> = async (c) => c.json(await turnosService.listarMateriasConTurno(c.req.valid('query')), 200)

@@ -5,6 +5,7 @@ import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
 import type {
   AgendaListado,
+  MateriasConTurnoListado,
   OcupacionPorBloque,
   TurnosVigentesPorBloque,
   TurnosVigentesPorMateria,
@@ -244,6 +245,31 @@ export const turnosRepository = {
       })),
       meta: armarMeta(filtro, total),
     }
+  },
+
+  /**
+   * Materias con al menos un turno que aplica esa fecha (`condicionTurnoEnFecha`, excluyendo los
+   * `CANCELADO`), para el selector de materias de la agenda en el frontend. Ordenadas por nombre
+   * (`busqueda`, sin tildes ni mayúsculas) y luego `id`. Sin paginar: es un selector de catálogo.
+   *
+   * A propósito **no filtra por `Materia.estado`**: importa si esa materia se dictó ese día, no si
+   * hoy sigue activa. Con una fecha pasada, una materia dada de baja después sigue apareciendo si
+   * tuvo un turno `ACTIVO` ese día (a diferencia de `materiasRepository.listarActivas()`, el
+   * selector del catálogo vigente, que sí filtra por `estado`).
+   */
+  async listarMateriasConTurno(fecha: string): Promise<MateriasConTurnoListado> {
+    return prisma.materia.findMany({
+      where: {
+        turnos: {
+          some: {
+            ...condicionTurnoEnFecha(fecha),
+            bloqueAgenda: { diaSemana: diaSemanaISO(fecha) },
+          },
+        },
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+    })
   },
 }
 
