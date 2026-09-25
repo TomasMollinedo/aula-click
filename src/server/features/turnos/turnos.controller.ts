@@ -8,6 +8,7 @@ import { turnosRepository } from './turnos.repository'
 import type {
   crearTurnoRoute,
   disponibilidadRoute,
+  listarAgendaPropiaRoute,
   listarAgendaRoute,
   listarAulasConTurnoRoute,
   listarMateriasConTurnoRoute,
@@ -30,6 +31,10 @@ const turnosService = crearTurnosService({
 
 export const listarAgenda: RouteHandler<typeof listarAgendaRoute, AppEnv> = async (c) =>
   c.json(await turnosService.listarAgenda(c.req.valid('query')), 200)
+
+// El profesor sale del Actor de la sesión: nunca de un parámetro (HU-10).
+export const listarAgendaPropia: RouteHandler<typeof listarAgendaPropiaRoute, AppEnv> = async (c) =>
+  c.json(await turnosService.listarAgendaPropia(c.req.valid('query'), c.get('actor')), 200)
 
 export const listarMateriasConTurno: RouteHandler<
   typeof listarMateriasConTurnoRoute,

@@ -10,6 +10,7 @@ import { minutosAHora } from '@/server/shared/zod'
 import type { TurnosRepository } from './turnos.repository'
 import {
   CODIGO_MATERIA_INACTIVA,
+  expandirOcurrencias,
   MENSAJE_FECHA_PASADA,
   MENSAJE_MATERIA_INACTIVA,
   MENSAJE_MATERIA_NO_ENCONTRADA,
@@ -19,10 +20,13 @@ import {
   validarFilas,
   validarMateria,
   validarProfesor,
+  validarRangoAgenda,
   type PedidoReserva,
 } from './turnos.reglas'
 import type {
   AgendaListado,
+  AgendaPropiaListado,
+  AgendaPropiaQuery,
   AgendaQuery,
   AulasConTurnoListado,
   AulasConTurnoQuery,
@@ -58,6 +62,7 @@ export function crearTurnosService({
     | 'reservar'
     | 'buscarDetalle'
     | 'listarAgenda'
+    | 'listarAgendaPropia'
     | 'listarMateriasConTurno'
     | 'listarAulasConTurno'
   >
@@ -65,7 +70,7 @@ export function crearTurnosService({
   bloquesRepository: Pick<BloquesRepository, 'buscarPorIds' | 'listarActivasDeProfesores'>
   profesoresRepository: Pick<
     ProfesoresRepository,
-    'listarProfesoresActivosDeMateria' | 'buscarConAsignaciones'
+    'listarProfesoresActivosDeMateria' | 'buscarConAsignaciones' | 'buscarIdPorUsuario'
   >
   materiasRepository: Pick<MateriasRepository, 'buscarPorIds'>
   reloj?: Reloj
@@ -278,6 +283,43 @@ export function crearTurnosService({
         profesorId: query.profesorId,
         terminos: terminosDeBusqueda(query.q),
       })
+    },
+
+    /**
+     * Agenda propia del profesor de la sesión (HU-10, T-25), de sólo lectura: una entrada por cada
+     * ocurrencia de sus turnos dentro del rango, con alumno, materia, aula, horario y estado.
+     *
+     * - El profesor sale del `Actor` (`buscarIdPorUsuario`), **nunca de un parámetro**: nadie puede
+     *   pedir la agenda de otro. Si el usuario no tiene ficha de profesor → 404.
+     * - Sin `desde`, hoy; sin `hasta`, el mismo día que `desde` (la vista por día). El rango tiene
+     *   que estar en orden y no superar `MAX_DIAS_AGENDA` días (400 en `hasta`).
+     * - La expansión en ocurrencias es la de T-23 aplicada fecha por fecha (`expandirOcurrencias`
+     *   sobre `ocupaLugarEn`): un recurrente aparece una vez por semana mientras su rango cubra la
+     *   fecha, y una sesión única, sólo en la suya.
+     * - Sin paginar (decisión T-43): el rango está acotado y es de un solo profesor. Ordenada por
+     *   fecha y, dentro del día, por hora e id.
+     */
+    async listarAgendaPropia(query: AgendaPropiaQuery, actor: Actor): Promise<AgendaPropiaListado> {
+      const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
+      if (profesorId === null) throw new NotFoundError('El usuario no tiene ficha de profesor')
+
+      const desde = query.desde ?? hoy(reloj)
+      const hasta = query.hasta ?? desde
+      validarRangoAgenda(desde, hasta)
+
+      const turnos = await repository.listarAgendaPropia({ profesorId, desde, hasta })
+      return expandirOcurrencias(turnos, desde, hasta).map(({ fecha, turno }) => ({
+        turnoId: turno.id,
+        fecha,
+        diaSemana: turno.diaSemana,
+        horaInicio: turno.horaInicio,
+        horaFin: turno.horaFin,
+        alumno: turno.alumno,
+        materia: turno.materia,
+        aula: turno.aula,
+        tipo: turno.tipo,
+        estado: turno.estado,
+      }))
     },
 
     /** Selector de materias con turno activo en la fecha pedida; sin `fecha`, la de hoy. */

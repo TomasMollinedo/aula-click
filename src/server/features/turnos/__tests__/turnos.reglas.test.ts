@@ -2,9 +2,13 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import {
   analizarHora,
+  expandirOcurrencias,
+  MENSAJE_RANGO_INVERTIDO,
+  MENSAJE_RANGO_MAXIMO,
   ocupacionMaxima,
   ocupaLugarEn,
   planificarReserva,
+  validarRangoAgenda,
   type PedidoReserva,
 } from '../turnos.reglas'
 import type { SnapshotReserva, TurnoFechas } from '../turnos.validation'
@@ -88,6 +92,88 @@ describe('ocupacionMaxima', () => {
         '2026-10-05',
       ),
     ).toEqual({ fecha: '2026-10-05', cantidad: 1 })
+  })
+})
+
+describe('validarRangoAgenda', () => {
+  it('acepta un solo día y un rango del máximo de días', () => {
+    expect(() => validarRangoAgenda('2026-09-28', '2026-09-28')).not.toThrow()
+    // 28/09 + 30 días = 28/10: 31 días contando los dos extremos.
+    expect(() => validarRangoAgenda('2026-09-28', '2026-10-28')).not.toThrow()
+  })
+
+  it('`hasta` anterior a `desde`: 400 sobre `hasta`', () => {
+    const error = errorDe(() => validarRangoAgenda('2026-09-28', '2026-09-27'))
+    expect(error).toBeInstanceOf(ValidationError)
+    expect((error as ValidationError).details).toEqual([
+      { path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO },
+    ])
+  })
+
+  it('rango mayor al máximo: 400 sobre `hasta`', () => {
+    const error = errorDe(() => validarRangoAgenda('2026-09-28', '2026-10-29'))
+    expect(error).toBeInstanceOf(ValidationError)
+    expect((error as ValidationError).details).toEqual([
+      { path: ['hasta'], message: MENSAJE_RANGO_MAXIMO },
+    ])
+  })
+})
+
+describe('expandirOcurrencias', () => {
+  // Lunes 28/09 a domingo 04/10 de 2026.
+  const semana = { desde: '2026-09-28', hasta: '2026-10-04' }
+  const conDia = (diaSemana: number, id: number, fechaInicio: string, fechaFin: string | null) => ({
+    ...turno(fechaInicio, fechaFin),
+    id,
+    diaSemana,
+  })
+
+  it('una sesión única aparece solo en su fecha', () => {
+    const sesionMartes = conDia(2, 1, '2026-09-29', '2026-09-29')
+    expect(expandirOcurrencias([sesionMartes], semana.desde, semana.hasta)).toEqual([
+      { fecha: '2026-09-29', turno: sesionMartes },
+    ])
+  })
+
+  it('un recurrente sin fin aparece una vez por semana, en el día de su fila', () => {
+    const lunes = conDia(1, 1, '2026-09-28', null)
+    const enDosSemanas = expandirOcurrencias([lunes], '2026-09-28', '2026-10-11')
+    expect(enDosSemanas.map((o) => o.fecha)).toEqual(['2026-09-28', '2026-10-05'])
+  })
+
+  it('no incluye las fechas fuera del rango del turno ni los cancelados', () => {
+    const terminado = conDia(1, 1, '2026-09-21', '2026-09-21')
+    const cancelado = { ...conDia(1, 2, '2026-09-28', null), estado: 'CANCELADO' as const }
+    expect(expandirOcurrencias([terminado, cancelado], semana.desde, semana.hasta)).toEqual([])
+  })
+
+  it('ordena por fecha y conserva el orden de entrada dentro del día', () => {
+    const nueve = conDia(1, 10, '2026-09-28', null)
+    const diez = conDia(1, 11, '2026-09-28', null)
+    const martes = conDia(2, 12, '2026-09-29', '2026-09-29')
+    expect(
+      expandirOcurrencias([nueve, diez, martes], semana.desde, semana.hasta).map((o) => [
+        o.fecha,
+        o.turno.id,
+      ]),
+    ).toEqual([
+      ['2026-09-28', 10],
+      ['2026-09-28', 11],
+      ['2026-09-29', 12],
+    ])
+  })
+
+  it('dice lo mismo que `ocupaLugarEn` en cada fecha del rango', () => {
+    const turnos = [
+      conDia(1, 1, '2026-09-28', null),
+      conDia(3, 2, '2026-09-30', '2026-09-30'),
+      conDia(5, 3, '2026-10-02', '2026-10-16'),
+    ]
+    const ocurrencias = expandirOcurrencias(turnos, semana.desde, semana.hasta)
+    for (const { fecha, turno: encontrado } of ocurrencias) {
+      expect(ocupaLugarEn(encontrado, fecha)).toBe(true)
+    }
+    expect(ocurrencias.map((o) => o.fecha)).toEqual(['2026-09-28', '2026-09-30', '2026-10-02'])
   })
 })
 

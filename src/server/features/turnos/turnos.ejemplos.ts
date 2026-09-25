@@ -1,5 +1,11 @@
 import type { ErrorResponse } from '@/server/errors'
-import type { CrearTurno, DisponibilidadItem, TurnoDetalle, TurnosAlta } from './turnos.validation'
+import type {
+  AgendaPropiaListado,
+  CrearTurno,
+  DisponibilidadItem,
+  TurnoDetalle,
+  TurnosAlta,
+} from './turnos.validation'
 
 // Ejemplos del OpenAPI de turnos (Swagger en /api/v1/docs), usados en turnos.routes. Solo datos:
 // sin lógica. `satisfies` los mantiene alineados con los schemas.
@@ -32,6 +38,34 @@ export const ejemploDisponibilidad = [
     ],
   },
 ] satisfies DisponibilidadItem[]
+
+// Una semana de la agenda propia: el recurrente de los lunes 9–10 y una sesión única del martes.
+export const ejemploAgendaPropia = [
+  {
+    turnoId: 31,
+    fecha: '2026-09-28',
+    diaSemana: 1,
+    horaInicio: '09:00',
+    horaFin: '10:00',
+    alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+    materia: { id: 3, nombre: 'Matemática' },
+    aula: { id: 3, nombre: 'Aula 3' },
+    tipo: 'RECURRENTE',
+    estado: 'ACTIVO',
+  },
+  {
+    turnoId: 44,
+    fecha: '2026-09-29',
+    diaSemana: 2,
+    horaInicio: '11:00',
+    horaFin: '12:00',
+    alumno: { id: 18, apellido: 'Sosa', nombre: 'Martín' },
+    materia: { id: 7, nombre: 'Física' },
+    aula: { id: 1, nombre: 'Aula 1' },
+    tipo: 'SESION_UNICA',
+    estado: 'ACTIVO',
+  },
+] satisfies AgendaPropiaListado
 
 export const ejemploAltaRecurrente = {
   alumnoId: 12,

@@ -405,8 +405,83 @@ export const aulasConTurnoListadoSchema = z.array(aulaConTurnoSchema)
 export type AulasConTurnoListado = z.infer<typeof aulasConTurnoListadoSchema>
 
 // ---------------------------------------------------------------------------------------------
+// Agenda propia del profesor (HU-10, T-25)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Query de la agenda propia: `desde` (sin ella, hoy) y `hasta` (sin ella, `desde`: un solo día).
+ * El profesor no es un parámetro: sale del `Actor` de la sesión. Que el rango esté en orden y no
+ * supere `MAX_DIAS_AGENDA` días lo decide el service (`validarRangoAgenda`), porque los dos
+ * extremos pueden venir de un default que depende de hoy.
+ */
+export const agendaPropiaQuerySchema = z.object({
+  desde: fechaISO.optional().openapi({
+    param: { name: 'desde', in: 'query' },
+    description: 'Primer día del rango (YYYY-MM-DD). Sin `desde`, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+  hasta: fechaISO.optional().openapi({
+    param: { name: 'hasta', in: 'query' },
+    description:
+      'Último día del rango, incluido (YYYY-MM-DD). Sin `hasta`, el mismo día que `desde`',
+    example: '2026-10-04',
+  }),
+})
+
+export type AgendaPropiaQuery = z.infer<typeof agendaPropiaQuerySchema>
+
+/**
+ * Una **ocurrencia** de un turno propio en una fecha del rango: alumno, materia, aula, horario y
+ * estado. Sin profesor (es el de la sesión) ni datos de otros profesores. `turnoId` se repite
+ * entre fechas cuando el turno es recurrente: la ocurrencia se identifica por `turnoId` + `fecha`.
+ */
+export const agendaPropiaItemSchema = z
+  .object({
+    turnoId: z.number().int().openapi({ description: 'Id del turno (se repite en un recurrente)' }),
+    fecha: fechaISO.openapi({ description: 'Fecha de la ocurrencia (YYYY-MM-DD)' }),
+    diaSemana: diaSemana.openapi({ description: 'Día de la semana, ISO: 1 = lunes … 7 = domingo' }),
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    alumno: z.object({
+      id: z.number().int(),
+      apellido: z.string(),
+      nombre: z.string(),
+    }),
+    materia: z.object({ id: z.number().int(), nombre: z.string() }),
+    aula: z.object({ id: z.number().int(), nombre: z.string() }),
+    tipo: z.enum(TIPOS_TURNO),
+    estado: z.enum(ESTADOS_TURNO).openapi({
+      description:
+        'Siempre ACTIVO (la consulta excluye los cancelados); la UI lo muestra "Agendado"',
+    }),
+  })
+  .openapi('AgendaPropiaItem')
+
+export type AgendaPropiaItem = z.infer<typeof agendaPropiaItemSchema>
+
+/** Sin paginar (decisión T-43): el rango está acotado y es de un solo profesor. */
+export const agendaPropiaListadoSchema = z.array(agendaPropiaItemSchema)
+
+export type AgendaPropiaListado = z.infer<typeof agendaPropiaListadoSchema>
+
+// ---------------------------------------------------------------------------------------------
 // Tipos internos (no viajan por HTTP así)
 // ---------------------------------------------------------------------------------------------
+
+/**
+ * Turno de un profesor que se cruza con un rango de fechas, antes de expandirlo en ocurrencias
+ * (`expandirOcurrencias`). No viaja por HTTP así: el service arma con él los `AgendaPropiaItem`.
+ */
+export type TurnoDeProfesor = TurnoFechas & {
+  id: number
+  tipo: TipoTurno
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  alumno: { id: number; apellido: string; nombre: string }
+  materia: { id: number; nombre: string }
+  aula: { id: number; nombre: string }
+}
 
 /** Cantidad de turnos vigentes de una materia. No viaja por HTTP: la leen otras features. */
 export type TurnosVigentesPorMateria = { materiaId: number; cantidad: number }

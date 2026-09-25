@@ -71,6 +71,7 @@ function crearRepositories() {
       quitarMaterias: vi.fn<ProfesoresRepository['quitarMaterias']>(),
       buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>(),
       buscarCapacidad: vi.fn<ProfesoresRepository['buscarCapacidad']>(),
+      buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
       listarProfesoresDeMateria: vi.fn<ProfesoresRepository['listarProfesoresDeMateria']>(),
       listarProfesoresActivosDeMateria:
         vi.fn<ProfesoresRepository['listarProfesoresActivosDeMateria']>(),

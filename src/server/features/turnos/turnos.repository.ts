@@ -25,6 +25,7 @@ import type {
   OcupacionPorBloque,
   PlanReserva,
   SnapshotReserva,
+  TurnoDeProfesor,
   TurnoDetalle,
   TurnoFechas,
   TurnosVigentesPorBloque,
@@ -52,6 +53,22 @@ function aFechas(fila: {
     fechaInicio: dateAFecha(fila.fechaInicio),
     fechaFin: fila.fechaFin && dateAFecha(fila.fechaFin),
   }
+}
+
+const MS_POR_DIA = 24 * 60 * 60 * 1000
+
+/**
+ * Días de la semana (ISO) que toca el rango `[desde, hasta]`, o `undefined` si los toca a todos
+ * (rango de una semana o más), para no filtrar de más. Recorre como mucho siete fechas.
+ */
+function diasDelRango(desde: string, hasta: string): number[] | undefined {
+  const dias = new Set<number>()
+  let fecha = desde
+  while (fecha <= hasta && dias.size < 7) {
+    dias.add(diaSemanaISO(fecha))
+    fecha = dateAFecha(new Date(fechaADate(fecha).getTime() + MS_POR_DIA))
+  }
+  return dias.size >= 7 ? undefined : [...dias]
 }
 
 const SELECT_DETALLE = {
@@ -470,6 +487,63 @@ export const turnosRepository = {
       })),
       meta: armarMeta(filtro, total),
     }
+  },
+
+  /**
+   * Turnos de un profesor que se cruzan con `[desde, hasta]` (HU-10), **sin expandir**: el service
+   * los convierte en ocurrencias con `expandirOcurrencias`, la misma condición "ocupa lugar" que
+   * usa la agenda diaria, aplicada fecha por fecha. `condicionTurnoSeCruzaCon` ya excluye los
+   * `CANCELADO`. Si el rango no llega a cubrir la semana, se acota además por los días que toca,
+   * así un pedido de un solo día no lee los bloques de los otros días del profesor.
+   *
+   * Ordenados por hora de inicio y luego `id`: al expandir, las ocurrencias de cada fecha quedan
+   * en ese mismo orden.
+   */
+  async listarAgendaPropia(filtro: {
+    profesorId: number
+    desde: string
+    hasta: string
+  }): Promise<TurnoDeProfesor[]> {
+    const dias = diasDelRango(filtro.desde, filtro.hasta)
+    const filas = await prisma.turno.findMany({
+      where: {
+        ...condicionTurnoSeCruzaCon(filtro.desde, filtro.hasta),
+        bloqueAgenda: {
+          profesorId: filtro.profesorId,
+          ...(dias === undefined ? {} : { diaSemana: { in: dias } }),
+        },
+      },
+      select: {
+        id: true,
+        tipo: true,
+        estado: true,
+        fechaInicio: true,
+        fechaFin: true,
+        alumno: { select: { id: true, apellido: true, nombre: true } },
+        materia: { select: { id: true, nombre: true } },
+        bloqueAgenda: {
+          select: {
+            diaSemana: true,
+            horaInicio: true,
+            horaFin: true,
+            aula: { select: { id: true, nombre: true } },
+          },
+        },
+      },
+      orderBy: [{ bloqueAgenda: { horaInicio: 'asc' } }, { id: 'asc' }],
+    })
+
+    return filas.map((fila) => ({
+      id: fila.id,
+      tipo: fila.tipo,
+      ...aFechas(fila),
+      diaSemana: fila.bloqueAgenda.diaSemana,
+      horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
+      horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
+      alumno: fila.alumno,
+      materia: fila.materia,
+      aula: fila.bloqueAgenda.aula,
+    }))
   },
 
   /**

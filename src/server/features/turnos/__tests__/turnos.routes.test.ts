@@ -21,6 +21,7 @@ const {
     reservar: vi.fn(),
     buscarDetalle: vi.fn(),
     listarAgenda: vi.fn(),
+    listarAgendaPropia: vi.fn(),
     listarMateriasConTurno: vi.fn(),
     listarAulasConTurno: vi.fn(),
   },
@@ -29,6 +30,7 @@ const {
   profesoresRepository: {
     listarProfesoresActivosDeMateria: vi.fn(),
     buscarConAsignaciones: vi.fn(),
+    buscarIdPorUsuario: vi.fn(),
   },
   materiasRepository: { buscarPorIds: vi.fn() },
   getSession: vi.fn(),
@@ -58,6 +60,10 @@ const paginaVacia = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPa
 
 function pedirAgenda(query = '') {
   return app.request(`/api/v1/turnos/agenda${query}`)
+}
+
+function pedirAgendaPropia(query = '') {
+  return app.request(`/api/v1/turnos/agenda-propia${query}`)
 }
 
 function pedirMaterias(query = '') {
@@ -340,6 +346,63 @@ describe('GET /turnos/agenda', () => {
   })
 })
 
+describe('GET /turnos/agenda-propia', () => {
+  beforeEach(() => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
+    repository.listarAgendaPropia.mockResolvedValue([])
+  })
+
+  it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
+    const res = await pedirAgendaPropia('?desde=2099-01-05&hasta=2099-01-11')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+    expect(repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 4,
+      desde: '2099-01-05',
+      hasta: '2099-01-11',
+    })
+  })
+
+  it('el profesor sale de la sesión: un profesorId en el query no cambia nada', async () => {
+    await pedirAgendaPropia('?desde=2099-01-05&profesorId=99')
+    expect(profesoresRepository.buscarIdPorUsuario).toHaveBeenCalledWith('usr_mesa')
+    expect(repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 4,
+      desde: '2099-01-05',
+      hasta: '2099-01-05',
+    })
+  })
+
+  it.each([
+    ['desde con formato inválido', '?desde=05-01-2099'],
+    ['hasta inexistente', '?hasta=2099-02-30'],
+    ['hasta anterior a desde', '?desde=2099-01-05&hasta=2099-01-04'],
+    ['rango mayor al máximo', '?desde=2099-01-05&hasta=2099-02-05'],
+  ])('%s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedirAgendaPropia(query)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('el usuario de la sesión no tiene ficha de profesor → 404', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(null)
+    expect((await pedirAgendaPropia()).status).toBe(404)
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedirAgendaPropia()).status).toBe(401)
+  })
+
+  it('con un rol que no es PROFESOR → 403', async () => {
+    getSession.mockResolvedValue(sesion('MESA_ENTRADAS'))
+    const res = await pedirAgendaPropia()
+    expect(res.status).toBe(403)
+    expect(repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+})
+
 describe('GET /turnos/materias', () => {
   it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
     repository.listarMateriasConTurno.mockResolvedValue([{ id: 2, nombre: 'Matemática' }])
@@ -422,6 +485,17 @@ describe('OpenAPI de la agenda', () => {
 
     const responsesAulas = doc.paths['/api/v1/turnos/aulas']?.get?.responses ?? {}
     expect(Object.keys(responsesAulas).sort()).toEqual(['200', '400', '401', '403'])
+
+    const responsesPropia = doc.paths['/api/v1/turnos/agenda-propia']?.get?.responses ?? {}
+    expect(Object.keys(responsesPropia).sort()).toEqual(['200', '400', '401', '403', '404'])
+  })
+
+  it('la agenda propia no recibe el profesor por parámetro (sale del Actor)', () => {
+    const parametros = doc.paths['/api/v1/turnos/agenda-propia']?.get?.parameters ?? []
+    expect(parametros.map((parametro) => (parametro as { name: string }).name).sort()).toEqual([
+      'desde',
+      'hasta',
+    ])
   })
 
   it('no expone /turnos/profesores: el filtro de profesor se sacó (decisión T-36)', () => {
@@ -430,7 +504,7 @@ describe('OpenAPI de la agenda', () => {
 
   it('registra los componentes de agenda y de los selectores de materias y aulas', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['AgendaItem', 'MateriaConTurno', 'AulaConTurno']),
+      expect.arrayContaining(['AgendaItem', 'AgendaPropiaItem', 'MateriaConTurno', 'AulaConTurno']),
     )
     expect(Object.keys(doc.components?.schemas ?? {})).not.toContain('ProfesorConTurno')
   })
@@ -442,6 +516,15 @@ describe('orden de las rutas', () => {
     expect((await pedirMaterias()).status).toBe(200)
     expect((await pedirAulas()).status).toBe(200)
     expect((await pedir('/disponibilidad?materiaId=3')).status).toBe(200)
+    expect(repository.buscarDetalle).not.toHaveBeenCalled()
+  })
+
+  it('/agenda-propia tampoco lo captura /{turnoId}', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
+    repository.listarAgendaPropia.mockResolvedValue([])
+
+    expect((await pedirAgendaPropia()).status).toBe(200)
     expect(repository.buscarDetalle).not.toHaveBeenCalled()
   })
 })
