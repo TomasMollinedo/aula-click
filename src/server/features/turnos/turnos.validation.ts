@@ -167,3 +167,28 @@ export type ProfesorConTurno = z.infer<typeof profesorConTurnoSchema>
 export const profesoresConTurnoListadoSchema = z.array(profesorConTurnoSchema)
 
 export type ProfesoresConTurnoListado = z.infer<typeof profesoresConTurnoListadoSchema>
+
+/** Query del selector de aulas con turno: `fecha` (sin ella, hoy), como en la agenda. */
+export const aulasConTurnoQuerySchema = z.object({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+})
+
+export type AulasConTurnoQuery = z.infer<typeof aulasConTurnoQuerySchema>
+
+/**
+ * Ítem del selector de aulas con turno en una fecha (id y nombre, como `aulas.validation.ts` →
+ * `AulaGuardada` sin `capacidad`/`estado`). Es su propio componente porque vive en `turnos`.
+ */
+export const aulaConTurnoSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('AulaConTurno')
+
+export type AulaConTurno = z.infer<typeof aulaConTurnoSchema>
+
+export const aulasConTurnoListadoSchema = z.array(aulaConTurnoSchema)
+
+export type AulasConTurnoListado = z.infer<typeof aulasConTurnoListadoSchema>

@@ -6,6 +6,8 @@ import * as turnosController from './turnos.controller'
 import {
   agendaListadoSchema,
   agendaQuerySchema,
+  aulasConTurnoListadoSchema,
+  aulasConTurnoQuerySchema,
   materiasConTurnoListadoSchema,
   materiasConTurnoQuerySchema,
   profesoresConTurnoListadoSchema,
@@ -115,7 +117,34 @@ export const listarProfesoresConTurnoRoute = createRoute({
   },
 })
 
+export const listarAulasConTurnoRoute = createRoute({
+  method: 'get',
+  path: '/aulas',
+  tags,
+  summary: 'Aulas con turno en una fecha',
+  description:
+    'Selector para el filtro de aula de la agenda: aulas con al menos un turno ACTIVO en la fecha pedida (id y nombre, sin paginar). Sin `fecha`, la de hoy, igual que la agenda.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: aulasConTurnoQuerySchema },
+  responses: {
+    200: {
+      description: 'Aulas con turno ese día (arreglo vacío si no hay ninguna)',
+      content: {
+        'application/json': {
+          schema: aulasConTurnoListadoSchema,
+          example: [
+            { id: 1, nombre: 'Aula 1' },
+            { id: 2, nombre: 'Aula 2' },
+          ],
+        },
+      },
+    },
+    ...errores,
+  },
+})
+
 export const turnosRoutes = createRouter()
   .openapi(listarAgendaRoute, turnosController.listarAgenda)
   .openapi(listarMateriasConTurnoRoute, turnosController.listarMateriasConTurno)
   .openapi(listarProfesoresConTurnoRoute, turnosController.listarProfesoresConTurno)
+  .openapi(listarAulasConTurnoRoute, turnosController.listarAulasConTurno)

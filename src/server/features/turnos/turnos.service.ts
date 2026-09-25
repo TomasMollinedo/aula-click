@@ -3,6 +3,8 @@ import type { TurnosRepository } from './turnos.repository'
 import type {
   AgendaListado,
   AgendaQuery,
+  AulasConTurnoListado,
+  AulasConTurnoQuery,
   MateriasConTurnoListado,
   MateriasConTurnoQuery,
   ProfesoresConTurnoListado,
@@ -45,6 +47,11 @@ export function crearTurnosService({
     /** Selector de profesores con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
     listarProfesoresConTurno(query: ProfesoresConTurnoQuery): Promise<ProfesoresConTurnoListado> {
       return repository.listarProfesoresConTurno(query.fecha ?? hoy(reloj))
+    },
+
+    /** Selector de aulas con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
+    listarAulasConTurno(query: AulasConTurnoQuery): Promise<AulasConTurnoListado> {
+      return repository.listarAulasConTurno(query.fecha ?? hoy(reloj))
     },
   }
 }

@@ -5,6 +5,7 @@ import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
 import type {
   AgendaListado,
+  AulasConTurnoListado,
   MateriasConTurnoListado,
   OcupacionPorBloque,
   ProfesoresConTurnoListado,
@@ -297,6 +298,31 @@ export const turnosRepository = {
       orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
     })
     return filas.map(({ id, usuario }) => ({ id, ...usuario }))
+  },
+
+  /**
+   * Aulas con al menos un bloque que ese día de la semana tiene un turno que aplica esa fecha
+   * (`condicionTurnoEnFecha`, excluyendo los `CANCELADO`), para el selector de aula de la agenda
+   * en el frontend. Ordenadas por nombre y luego `id`, como `aulasRepository.listar()`. Sin
+   * paginar: es un selector de catálogo.
+   *
+   * A propósito **no filtra por `Aula.estado`**: importa si se usó ese día, no si hoy sigue
+   * activa. Con una fecha pasada, un aula dada de baja después sigue apareciendo si tuvo un turno
+   * `ACTIVO` ese día.
+   */
+  async listarAulasConTurno(fecha: string): Promise<AulasConTurnoListado> {
+    return prisma.aula.findMany({
+      where: {
+        bloques: {
+          some: {
+            diaSemana: diaSemanaISO(fecha),
+            turnos: { some: condicionTurnoEnFecha(fecha) },
+          },
+        },
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
+    })
   },
 }
 

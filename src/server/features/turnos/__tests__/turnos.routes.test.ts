@@ -11,6 +11,7 @@ const { repository, getSession } = vi.hoisted(() => ({
     listarAgenda: vi.fn(),
     listarMateriasConTurno: vi.fn(),
     listarProfesoresConTurno: vi.fn(),
+    listarAulasConTurno: vi.fn(),
   },
   getSession: vi.fn(),
 }))
@@ -42,12 +43,17 @@ function pedirProfesores(query = '') {
   return app.request(`/api/v1/turnos/profesores${query}`)
 }
 
+function pedirAulas(query = '') {
+  return app.request(`/api/v1/turnos/aulas${query}`)
+}
+
 beforeEach(() => {
   vi.clearAllMocks()
   getSession.mockResolvedValue(sesion())
   repository.listarAgenda.mockResolvedValue(paginaVacia)
   repository.listarMateriasConTurno.mockResolvedValue([])
   repository.listarProfesoresConTurno.mockResolvedValue([])
+  repository.listarAulasConTurno.mockResolvedValue([])
 })
 
 describe('GET /turnos/agenda', () => {
@@ -174,6 +180,41 @@ describe('GET /turnos/profesores', () => {
   })
 })
 
+describe('GET /turnos/aulas', () => {
+  it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
+    repository.listarAulasConTurno.mockResolvedValue([{ id: 1, nombre: 'Aula 1' }])
+    const res = await pedirAulas('?fecha=2026-09-28')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([{ id: 1, nombre: 'Aula 1' }])
+    expect(repository.listarAulasConTurno).toHaveBeenCalledWith('2026-09-28')
+  })
+
+  it('sin fecha, responde 200 (el service completa con la de hoy)', async () => {
+    const res = await pedirAulas()
+    expect(res.status).toBe(200)
+    expect(repository.listarAulasConTurno).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it.each([
+    ['formato inválido', '?fecha=28-09-2026'],
+    ['fecha inexistente', '?fecha=2026-02-30'],
+  ])('fecha con %s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedirAulas(query)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedirAulas('?fecha=2026-09-28')).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedirAulas('?fecha=2026-09-28')).status).toBe(403)
+  })
+})
+
 describe('OpenAPI', () => {
   const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
 
@@ -186,11 +227,14 @@ describe('OpenAPI', () => {
 
     const responsesProfesores = doc.paths['/api/v1/turnos/profesores']?.get?.responses ?? {}
     expect(Object.keys(responsesProfesores).sort()).toEqual(['200', '400', '401', '403'])
+
+    const responsesAulas = doc.paths['/api/v1/turnos/aulas']?.get?.responses ?? {}
+    expect(Object.keys(responsesAulas).sort()).toEqual(['200', '400', '401', '403'])
   })
 
-  it('registra los componentes de agenda y de los selectores de materias y profesores', () => {
+  it('registra los componentes de agenda y de los selectores de materias, profesores y aulas', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['AgendaItem', 'MateriaConTurno', 'ProfesorConTurno']),
+      expect.arrayContaining(['AgendaItem', 'MateriaConTurno', 'ProfesorConTurno', 'AulaConTurno']),
     )
   })
 })
