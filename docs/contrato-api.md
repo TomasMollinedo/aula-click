@@ -93,7 +93,7 @@ Ejemplo: `GET /api/v1/aulas/disponibles?diaSemana=1&horaInicio=14:00&horaFin=16:
 
 ## Turnos
 
-Todos los endpoints son de `MESA_ENTRADAS`, salvo `GET /api/v1/turnos/agenda-propia`, que es de `PROFESOR`. Reglas en `dominio.md` → Turnos.
+Todos los endpoints son de `MESA_ENTRADAS` (incluido `GET /api/v1/turnos/agenda-profesor`), salvo `GET /api/v1/turnos/agenda-propia`, que es de `PROFESOR`. Reglas en `dominio.md` → Turnos.
 
 - **Estado:** `ACTIVO` / `CANCELADO`. La UI muestra `ACTIVO` como **"Agendado"**: es el texto de la pantalla, no un valor del enum, y el frontend no lo inventa como estado.
 - **Tipos:** `SESION_UNICA` (una fecha, `fechaFin = fechaInicio`) o `RECURRENTE` (de `fechaInicio` a `fechaFin`, o sin fin con `fechaFin: null`). Las dos fechas caen en el día de la semana de la hora.
@@ -186,6 +186,15 @@ Todos los endpoints son de `MESA_ENTRADAS`, salvo `GET /api/v1/turnos/agenda-pro
 - Los turnos `CANCELADO` no salen; `estado` es siempre `ACTIVO`, que la UI muestra como "Agendado".
 - Errores: 400 `VALIDACION` si una fecha tiene formato inválido, si `hasta` es anterior a `desde` o si el rango supera los **31 días** (`details` sobre `hasta`); 404 `NO_ENCONTRADO` si el usuario de la sesión no tiene ficha de profesor; 403 para cualquier rol que no sea `PROFESOR`.
 
+### Agenda de un profesor (mesa de entradas)
+
+**`GET /api/v1/turnos/agenda-profesor?profesorId&desde&hasta`** (rol `MESA_ENTRADAS`, sólo lectura; decisión T-44): la agenda de cualquier profesor para un día o un rango, para la vista semanal de la ficha del profesor (HU-02).
+
+- `profesorId` (obligatorio): el profesor. `desde` y `hasta` funcionan igual que en la agenda propia (mismos defaults y mismo tope de 31 días).
+- La respuesta tiene **exactamente la forma de "Agenda propia del profesor"** (arreglo sin paginar de ocurrencias `turnoId` + `fecha`, mismo orden, sin `CANCELADO` y sin datos del profesor): el frontend reutiliza el mismo tipo.
+- Un profesor **inactivo** también se puede consultar: sus turnos históricos siguen existiendo.
+- Errores: 400 `VALIDACION` por los mismos motivos que la agenda propia y además si `profesorId` falta o no es un entero positivo; 404 `NO_ENCONTRADO` si el profesor no existe (se decide antes que el rango); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+
 ## Filtros
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
@@ -199,7 +208,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                                                          |
 | `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (agenda propia del profesor). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                                                                         |
+| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (agenda propia y agenda de un profesor). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                                                              |
 | `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Recursos individuales

@@ -26,6 +26,7 @@ import {
 import type {
   AgendaListado,
   AgendaPropiaListado,
+  AgendaProfesorQuery,
   AgendaPropiaQuery,
   AgendaQuery,
   AulasConTurnoListado,
@@ -82,6 +83,35 @@ export function crearTurnosService({
         details: [{ path: [campo], message: MENSAJE_FECHA_PASADA }],
       })
     }
+  }
+
+  /**
+   * Agenda de un profesor ya resuelto, común a la agenda propia (T-43) y a la que consulta mesa de
+   * entradas (T-44). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango tiene que
+   * estar en orden y no superar `MAX_DIAS_AGENDA` días (400 en `hasta`).
+   */
+  async function agendaDeProfesor(
+    profesorId: number,
+    desdePedido?: string,
+    hastaPedido?: string,
+  ): Promise<AgendaPropiaListado> {
+    const desde = desdePedido ?? hoy(reloj)
+    const hasta = hastaPedido ?? desde
+    validarRangoAgenda(desde, hasta)
+
+    const turnos = await repository.listarAgendaPropia({ profesorId, desde, hasta })
+    return expandirOcurrencias(turnos, desde, hasta).map(({ fecha, turno }) => ({
+      turnoId: turno.id,
+      fecha,
+      diaSemana: turno.diaSemana,
+      horaInicio: turno.horaInicio,
+      horaFin: turno.horaFin,
+      alumno: turno.alumno,
+      materia: turno.materia,
+      aula: turno.aula,
+      tipo: turno.tipo,
+      estado: turno.estado,
+    }))
   }
 
   return {
@@ -302,24 +332,21 @@ export function crearTurnosService({
     async listarAgendaPropia(query: AgendaPropiaQuery, actor: Actor): Promise<AgendaPropiaListado> {
       const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
       if (profesorId === null) throw new NotFoundError('El usuario no tiene ficha de profesor')
+      return agendaDeProfesor(profesorId, query.desde, query.hasta)
+    },
 
-      const desde = query.desde ?? hoy(reloj)
-      const hasta = query.hasta ?? desde
-      validarRangoAgenda(desde, hasta)
-
-      const turnos = await repository.listarAgendaPropia({ profesorId, desde, hasta })
-      return expandirOcurrencias(turnos, desde, hasta).map(({ fecha, turno }) => ({
-        turnoId: turno.id,
-        fecha,
-        diaSemana: turno.diaSemana,
-        horaInicio: turno.horaInicio,
-        horaFin: turno.horaFin,
-        alumno: turno.alumno,
-        materia: turno.materia,
-        aula: turno.aula,
-        tipo: turno.tipo,
-        estado: turno.estado,
-      }))
+    /**
+     * Agenda de cualquier profesor para mesa de entradas (T-44, ficha del profesor de HU-02): la
+     * misma lógica y la misma forma que `listarAgendaPropia`, con el profesor fijo por `profesorId`.
+     *
+     * `buscarConAsignaciones` con `[]` se usa sólo para saber si el profesor existe (`null` → 404,
+     * antes de validar el rango). No mira el estado a propósito: un profesor inactivo se puede
+     * consultar, porque sus turnos históricos siguen existiendo.
+     */
+    async listarAgendaDeProfesor(query: AgendaProfesorQuery): Promise<AgendaPropiaListado> {
+      const profesor = await profesoresRepository.buscarConAsignaciones(query.profesorId, [])
+      if (!profesor) throw new NotFoundError('Profesor no encontrado')
+      return agendaDeProfesor(query.profesorId, query.desde, query.hasta)
     },
 
     /** Selector de materias con turno activo en la fecha pedida; sin `fecha`, la de hoy. */

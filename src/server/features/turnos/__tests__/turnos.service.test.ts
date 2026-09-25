@@ -1140,6 +1140,132 @@ describe('listarAgendaPropia', () => {
   })
 })
 
+// ---------------------------------------------------------------------------------------------
+// Agenda de un profesor para mesa de entradas (T-44)
+// ---------------------------------------------------------------------------------------------
+
+describe('listarAgendaDeProfesor', () => {
+  // HOY (22/09/2026) es martes; los lunes siguientes son 28/09, 05/10…
+  const LUNES = '2026-09-28'
+
+  /** Recurrente sin fin de Juan (profesor 7) los lunes 9–10, tal como lo devuelve el repository. */
+  const recurrenteDeJuan = {
+    id: 90,
+    tipo: 'RECURRENTE' as const,
+    estado: 'ACTIVO' as const,
+    fechaInicio: LUNES,
+    fechaFin: null,
+    diaSemana: 1,
+    horaInicio: '09:00',
+    horaFin: '10:00',
+    alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+    materia: { id: 3, nombre: 'Matemática' },
+    aula: { id: 3, nombre: 'Aula 3' },
+  }
+
+  beforeEach(() => {
+    repos.profesoresRepository.buscarConAsignaciones.mockImplementation(async (profesorId) =>
+      profesorId === 7 ? { estado: 'ACTIVO', asignaciones: [] } : null,
+    )
+    repos.repository.listarAgendaPropia.mockResolvedValue([recurrenteDeJuan])
+  })
+
+  it('devuelve las ocurrencias del profesor pedido, con la forma de la agenda propia', async () => {
+    const agenda = await service.listarAgendaDeProfesor({
+      profesorId: 7,
+      desde: LUNES,
+      hasta: '2026-10-05',
+    })
+
+    expect(repos.profesoresRepository.buscarConAsignaciones).toHaveBeenCalledWith(7, [])
+    expect(repos.repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 7,
+      desde: LUNES,
+      hasta: '2026-10-05',
+    })
+    expect(agenda).toEqual([
+      {
+        turnoId: 90,
+        fecha: LUNES,
+        diaSemana: 1,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+        materia: { id: 3, nombre: 'Matemática' },
+        aula: { id: 3, nombre: 'Aula 3' },
+        tipo: 'RECURRENTE',
+        estado: 'ACTIVO',
+      },
+      expect.objectContaining({ turnoId: 90, fecha: '2026-10-05' }),
+    ])
+  })
+
+  it('un profesor inactivo también se puede consultar', async () => {
+    repos.profesoresRepository.buscarConAsignaciones.mockResolvedValue({
+      estado: 'INACTIVO',
+      asignaciones: [],
+    })
+
+    const agenda = await service.listarAgendaDeProfesor({ profesorId: 7, desde: LUNES })
+
+    expect(agenda.map((item) => [item.fecha, item.turnoId])).toEqual([[LUNES, 90]])
+  })
+
+  it('sin desde ni hasta, el día de hoy', async () => {
+    await service.listarAgendaDeProfesor({ profesorId: 7 })
+
+    expect(repos.repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 7,
+      desde: HOY,
+      hasta: HOY,
+    })
+  })
+
+  it('sin hasta, el mismo día que desde', async () => {
+    await service.listarAgendaDeProfesor({ profesorId: 7, desde: LUNES })
+
+    expect(repos.repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 7,
+      desde: LUNES,
+      hasta: LUNES,
+    })
+  })
+
+  it('un profesor inexistente → 404, sin leer la agenda', async () => {
+    const error = await errorDe(service.listarAgendaDeProfesor({ profesorId: 99 }))
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repos.repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+
+  it('el 404 va antes que la validación del rango', async () => {
+    const error = await errorDe(
+      service.listarAgendaDeProfesor({ profesorId: 99, desde: LUNES, hasta: HOY }),
+    )
+
+    expect(error).toBeInstanceOf(NotFoundError)
+  })
+
+  it('`hasta` anterior a `desde` → 400 sobre `hasta`', async () => {
+    const error = await errorDe(
+      service.listarAgendaDeProfesor({ profesorId: 7, desde: LUNES, hasta: HOY }),
+    )
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }])
+    expect(repos.repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+
+  it('un rango mayor al máximo → 400 sobre `hasta`', async () => {
+    const error = await errorDe(
+      service.listarAgendaDeProfesor({ profesorId: 7, desde: LUNES, hasta: '2026-10-29' }),
+    )
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_MAXIMO }])
+  })
+})
+
 describe('listarMateriasConTurno', () => {
   it('sin fecha, consulta la de hoy según el reloj del service', async () => {
     await service.listarMateriasConTurno({})

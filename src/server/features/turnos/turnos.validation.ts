@@ -431,6 +431,16 @@ export const agendaPropiaQuerySchema = z.object({
 export type AgendaPropiaQuery = z.infer<typeof agendaPropiaQuerySchema>
 
 /**
+ * Query de la agenda de un profesor para mesa de entradas (T-44): el mismo rango que la agenda
+ * propia más `profesorId`, obligatorio. La respuesta es la misma (`agendaPropiaListadoSchema`).
+ */
+export const agendaProfesorQuerySchema = agendaPropiaQuerySchema.extend({
+  profesorId: idQuery('profesorId', 'Id del profesor (obligatorio)', 4),
+})
+
+export type AgendaProfesorQuery = z.infer<typeof agendaProfesorQuerySchema>
+
+/**
  * Una **ocurrencia** de un turno propio en una fecha del rango: alumno, materia, aula, horario y
  * estado. Sin profesor (es el de la sesión) ni datos de otros profesores. `turnoId` se repite
  * entre fechas cuando el turno es recurrente: la ocurrencia se identifica por `turnoId` + `fecha`.
@@ -459,7 +469,11 @@ export const agendaPropiaItemSchema = z
 
 export type AgendaPropiaItem = z.infer<typeof agendaPropiaItemSchema>
 
-/** Sin paginar (decisión T-43): el rango está acotado y es de un solo profesor. */
+/**
+ * Sin paginar (decisión T-43): el rango está acotado y es de un solo profesor. A pesar del nombre,
+ * también es la respuesta de `GET /turnos/agenda-profesor` (T-44): la misma forma, con el profesor
+ * fijo por `profesorId` en lugar de salir de la sesión.
+ */
 export const agendaPropiaListadoSchema = z.array(agendaPropiaItemSchema)
 
 export type AgendaPropiaListado = z.infer<typeof agendaPropiaListadoSchema>
