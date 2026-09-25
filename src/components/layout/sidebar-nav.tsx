@@ -31,7 +31,7 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
                 className={cn(
                   'flex items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/5 hover:text-white',
                   activo &&
-                    'border-dorado bg-dorado/10 hover:bg-dorado/10 font-semibold text-white',
+                    'border-dorado bg-dorado/10 text-urgente hover:bg-dorado/10 font-semibold',
                 )}
               >
                 <link.icon className={cn('size-4 shrink-0', activo && 'text-dorado')} />
