@@ -237,6 +237,25 @@ export const listarMateriasAsignadasRoute = createRoute({
   },
 })
 
+// Se registra antes de `/{id}`: si no, `/mis-materias` caería en ese path param (mismo cuidado
+// que `/mis-alumnos` en `alumnos.routes.ts` y `/agenda`, `/materias`, `/aulas` en `turnos.routes.ts`).
+export const misMateriasRoute = createRoute({
+  method: 'get',
+  path: '/mis-materias',
+  tags,
+  summary: 'Materias del profesor de la sesión',
+  description:
+    'Materias con asignación activa del profesor de la sesión (sale del `Actor`, nunca de un parámetro), ordenadas por nombre. Sin paginar. Pensado para el selector de materia de "Mis alumnos" (T-11 hasta acá solo lo exponía por `{id}`, para mesa de entradas).',
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  responses: {
+    200: materiasAsignadas('Materias del profesor (arreglo vacío si no tiene ninguna)'),
+    400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es profesor o el usuario está inhabilitado'),
+    404: respuestaError('El usuario de la sesión no tiene ficha de profesor (NO_ENCONTRADO)'),
+  },
+})
+
 export const asignarMateriasRoute = createRoute({
   method: 'post',
   path: '/{id}/materias',
@@ -330,6 +349,7 @@ export const quitarMateriasRoute = createRoute({
 
 export const profesoresRoutes = createRouter()
   .openapi(listarProfesoresRoute, profesoresController.listar)
+  .openapi(misMateriasRoute, profesoresController.misMaterias)
   .openapi(obtenerProfesorRoute, profesoresController.obtener)
   .openapi(crearProfesorRoute, profesoresController.crear)
   .openapi(editarProfesorRoute, profesoresController.editar)

@@ -22,6 +22,7 @@ const { repository, materiasRepository, turnosRepository, getPresignedUrl, getSe
       quitarMaterias: vi.fn(),
       darDeBaja: vi.fn(),
       reactivar: vi.fn(),
+      buscarIdPorUsuario: vi.fn(),
     },
     materiasRepository: { buscarPorIds: vi.fn() },
     turnosRepository: {
@@ -125,6 +126,38 @@ beforeEach(() => {
   materiasRepository.buscarPorIds.mockResolvedValue([
     { id: 2, nombre: 'Matemática', estado: 'ACTIVO' },
   ])
+  repository.buscarIdPorUsuario.mockResolvedValue(3)
+})
+
+describe('GET /profesores/mis-materias', () => {
+  it('con rol PROFESOR responde 200 y resuelve el profesor con el userId de la sesión', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+
+    const res = await pedir('/mis-materias')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([{ id: 2, nombre: 'Matemática' }])
+    expect(repository.buscarIdPorUsuario).toHaveBeenCalledWith('usr_mesa')
+  })
+
+  it('el usuario de la sesión sin ficha de profesor → 404 NO_ENCONTRADO', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    repository.buscarIdPorUsuario.mockResolvedValue(null)
+
+    const res = await pedir('/mis-materias')
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('/mis-materias')).status).toBe(401)
+  })
+
+  it('con MESA_ENTRADAS (no PROFESOR) → 403', async () => {
+    expect((await pedir('/mis-materias')).status).toBe(403)
+  })
 })
 
 describe('GET /profesores', () => {
@@ -751,6 +784,13 @@ describe('OpenAPI', () => {
       '403',
       '404',
       '409',
+    ])
+    expect(status('/api/v1/profesores/mis-materias', 'get')).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
     ])
   })
 
