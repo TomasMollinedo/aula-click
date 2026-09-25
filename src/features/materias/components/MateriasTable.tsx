@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye } from 'lucide-react'
+import { Eye, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -24,6 +24,8 @@ type MateriasTableProps = {
   hrefDetalle: (id: number) => string
   /** Se llama al abrir el detalle con el ojo en esta pestaña (no con Cmd/Ctrl+clic). */
   onVerDetalle: () => void
+  /** Abre la confirmación de la baja. Solo se ofrece en las materias activas. */
+  onDarDeBaja: (materia: MateriaListadoItem) => void
   data?: MateriaListadoItem[]
   isLoading: boolean
   /** Hay datos en pantalla y se está pidiendo otra página o búsqueda. */
@@ -32,13 +34,14 @@ type MateriasTableProps = {
   vacio: ReactNode
 }
 
-/** Acción de cada fila (ver detalle): ícono sin relleno; el color lo pone cada una. */
+/** Acciones de cada fila (ver detalle, dar de baja): ícono sin relleno; el color lo pone cada una. */
 const accionDeFila =
   'focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2'
 
 export function MateriasTable({
   hrefDetalle,
   onVerDetalle,
+  onDarDeBaja,
   data,
   isLoading,
   isFetching,
@@ -54,7 +57,7 @@ export function MateriasTable({
               se ve en el detalle. */}
           <TableHead>Nombre</TableHead>
           <TableHead className="w-32">Estado</TableHead>
-          <TableHead className="w-24 text-right">Acciones</TableHead>
+          <TableHead className="w-32 text-right">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -75,12 +78,13 @@ export function MateriasTable({
             const href = hrefDetalle(materia.id)
             return (
               // La fila entera abre el detalle con el mouse. El link del ojo es el acceso de
-              // teclado y el que permite abrirlo en otra pestaña.
+              // teclado y el que permite abrirlo en otra pestaña; el botón de baja abre su
+              // confirmación y por eso también queda excluido del clic de la fila.
               <TableRow
                 key={materia.id}
                 className="cursor-pointer"
                 onClick={(e) => {
-                  if ((e.target as HTMLElement).closest('a')) return
+                  if ((e.target as HTMLElement).closest('a, button')) return
                   onVerDetalle()
                   router.push(href, { scroll: false })
                 }}
@@ -106,6 +110,18 @@ export function MateriasTable({
                     >
                       <Eye className="size-5" />
                     </Link>
+                    {/* Una materia ya dada de baja no se da de baja de nuevo. */}
+                    {materia.estado === 'ACTIVO' && (
+                      <button
+                        type="button"
+                        onClick={() => onDarDeBaja(materia)}
+                        aria-label={`Dar de baja ${materia.nombre}`}
+                        title="Dar de baja"
+                        className={cn(accionDeFila, 'text-cancelado hover:bg-cancelado/10')}
+                      >
+                        <Trash2 className="size-5" />
+                      </button>
+                    )}
                   </div>
                 </TableCell>
               </TableRow>

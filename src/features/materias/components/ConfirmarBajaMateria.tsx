@@ -20,11 +20,20 @@ import type { MateriaDetalle } from '../materias.types'
 import { ProfesoresDeMateria } from './ProfesoresDeMateria'
 
 type ConfirmarBajaMateriaProps = {
-  /** `null` cierra el diálogo. */
-  materia: MateriaDetalle | null
+  /**
+   * Materia a dar de baja; `null` cierra el diálogo. Alcanza con el id y el nombre, así lo abren
+   * tanto el detalle (que tiene el `MateriaDetalle` completo) como una fila del listado.
+   */
+  materia: Pick<MateriaDetalle, 'id' | 'nombre'> | null
   /** URL del listado de profesores en el segmento del rol (por ejemplo `/mesa/profesores`). */
   rutaProfesores: string
+  /** Cierra el diálogo: al cancelar, al cerrar el rechazo y también después de la baja. */
   onCerrar: () => void
+  /**
+   * Solo cuando la baja se hizo. Lo usa el detalle para cerrarse y volver al listado; desde una
+   * fila no hace falta, porque el listado ya se invalida solo.
+   */
+  onDadaDeBaja?: () => void
 }
 
 /**
@@ -36,6 +45,7 @@ export function ConfirmarBajaMateria({
   materia,
   rutaProfesores,
   onCerrar,
+  onDadaDeBaja,
 }: ConfirmarBajaMateriaProps) {
   const mutation = useDarDeBajaMateria()
   const toast = useToast()
@@ -55,6 +65,7 @@ export function ConfirmarBajaMateria({
       onSuccess: (actualizada) => {
         toast.success(`Se dio de baja la materia ${actualizada.nombre}`)
         cerrar()
+        onDadaDeBaja?.()
       },
     })
   }

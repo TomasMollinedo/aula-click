@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Ban } from 'lucide-react'
+import { Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -53,7 +53,7 @@ export function MateriaDetalleModal({
         acciones={
           activa && (
             <Button size="lg" variant="destructive" onClick={() => setConfirmandoBaja(true)}>
-              <Ban />
+              <Trash2 />
               Dar de baja
             </Button>
           )
@@ -93,6 +93,8 @@ export function MateriaDetalleModal({
         materia={confirmandoBaja && materia ? materia : null}
         rutaProfesores={rutaProfesores}
         onCerrar={() => setConfirmandoBaja(false)}
+        // Dada de baja, el detalle ya no tiene nada que mostrar: se cierra y vuelve al listado.
+        onDadaDeBaja={onCerrar}
       />
     </>
   )

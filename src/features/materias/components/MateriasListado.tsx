@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowDownAZ } from 'lucide-react'
 
@@ -10,8 +10,9 @@ import { PaginationControls } from '@/components/ui/pagination'
 
 import { useBuscadorMaterias } from '../hooks/use-buscador-materias'
 import { parsearMateriaId } from '../materias.schema'
-import type { EstadoFiltro } from '../materias.types'
+import type { EstadoFiltro, MateriaListadoItem } from '../materias.types'
 import { BuscadorMaterias } from './BuscadorMaterias'
+import { ConfirmarBajaMateria } from './ConfirmarBajaMateria'
 import { FiltroEstadoMaterias } from './FiltroEstadoMaterias'
 import { MateriaDetalleModal } from './MateriaDetalleModal'
 import { MateriasTable } from './MateriasTable'
@@ -78,6 +79,9 @@ export function MateriasListado({ rutaBase, rutaProfesores }: MateriasListadoPro
     router.replace(qs ? `${rutaBase}?${qs}` : rutaBase, { scroll: false })
   }
 
+  // Baja desde una fila: confirmación sin URL propia, igual que la del detalle.
+  const [bajaPendiente, setBajaPendiente] = useState<MateriaListadoItem | null>(null)
+
   const buscador = useBuscadorMaterias({
     controlado: { q: qUrl, page: pageUrl, estado: estadoUrl, onCambio },
   })
@@ -121,6 +125,7 @@ export function MateriasListado({ rutaBase, rutaProfesores }: MateriasListadoPro
           onVerDetalle={() => {
             abiertoConElOjo.current = true
           }}
+          onDarDeBaja={setBajaPendiente}
           data={buscador.data}
           isLoading={buscador.isLoading}
           isFetching={buscador.isFetching}
@@ -150,6 +155,12 @@ export function MateriasListado({ rutaBase, rutaProfesores }: MateriasListadoPro
           onCerrar={cerrarDetalle}
         />
       )}
+
+      <ConfirmarBajaMateria
+        materia={bajaPendiente}
+        rutaProfesores={rutaProfesores}
+        onCerrar={() => setBajaPendiente(null)}
+      />
     </Card>
   )
 }
