@@ -65,3 +65,18 @@ export type ListarAlumnosParams = {
 }
 
 export type AlumnosListadoResponse = PaginatedResponse<AlumnoListadoItem>
+
+/** Materia de un turno vigente del alumno con el profesor. */
+export type AlumnoMateria = { id: number; nombre: string }
+
+/** Item de `GET /alumnos/mis-alumnos`: el general más las materias que cursa con ese profesor. */
+export type AlumnoDeProfesorItem = AlumnoListadoItem & { materias: AlumnoMateria[] }
+
+export type AlumnosDeProfesorListadoResponse = PaginatedResponse<AlumnoDeProfesorItem>
+
+export type ListarMisAlumnosParams = {
+  page?: number
+  pageSize?: number
+  q?: string
+  materiaId?: number
+}

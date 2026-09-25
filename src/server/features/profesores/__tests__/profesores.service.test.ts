@@ -429,6 +429,26 @@ describe('listarMateriasAsignadas', () => {
   })
 })
 
+describe('misMaterias', () => {
+  it('resuelve el profesor con el userId del actor y devuelve sus materias asignadas', async () => {
+    repository.buscarIdPorUsuario.mockResolvedValue(3)
+
+    await expect(service.misMaterias(actor)).resolves.toEqual([
+      { id: 7, nombre: 'Física' },
+      { id: 2, nombre: 'Matemática' },
+    ])
+    expect(repository.buscarIdPorUsuario).toHaveBeenCalledWith(actor.userId)
+    expect(repository.listarMateriasAsignadas).toHaveBeenCalledWith(3)
+  })
+
+  it('el usuario de la sesión sin ficha de profesor → NotFoundError, sin listar', async () => {
+    repository.buscarIdPorUsuario.mockResolvedValue(null)
+
+    await expect(service.misMaterias(actor)).rejects.toThrow(NotFoundError)
+    expect(repository.listarMateriasAsignadas).not.toHaveBeenCalled()
+  })
+})
+
 describe('asignarMaterias', () => {
   beforeEach(() => {
     repository.buscarConAsignaciones.mockResolvedValue(profesor())

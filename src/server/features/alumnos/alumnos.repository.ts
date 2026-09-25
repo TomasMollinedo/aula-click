@@ -10,8 +10,11 @@ import type { Estado } from '@/server/shared/estado'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
+import { condicionTurnoVigente } from '@/server/features/turnos/turnos.condiciones'
+import { agruparMateriasPorAlumno } from './materias-por-alumno'
 import type {
   AlumnoGuardado,
+  AlumnosDeProfesorListado,
   AlumnosListado,
   CrearAlumno,
   EditarAlumno,
@@ -116,6 +119,69 @@ export const alumnosRepository = {
       prisma.alumno.count({ where }),
     ])
     return { data, meta: armarMeta(parametros, total) }
+  },
+
+  /**
+   * Página de alumnos del profesor: los que tienen al menos un turno vigente con él (`docs/dominio.md`
+   * → Turnos; misma condición que usa `profesores` para la baja, vía `turnos.condiciones`, nunca
+   * reescrita acá), filtrable por materia. Mismo orden y búsqueda por palabras que `listar`. Cada
+   * alumno trae además sus materias vigentes con el profesor (todas, sin el filtro `materiaId`: es
+   * lo que le da sentido a ese filtro), en una segunda consulta acotada a la página ya resuelta.
+   */
+  async listarDeProfesor(parametros: {
+    profesorId: number
+    materiaId: number | undefined
+    terminos: string[]
+    page: number
+    pageSize: number
+    fechaHoy: string
+  }): Promise<AlumnosDeProfesorListado> {
+    // Sin `materiaId`: la condición de "materias vigentes del alumno con el profesor" de abajo.
+    const condicionDelProfesor = {
+      ...condicionTurnoVigente(parametros.fechaHoy),
+      bloqueAgenda: { profesorId: parametros.profesorId },
+    } satisfies Prisma.TurnoWhereInput
+    const where = {
+      AND: [
+        ...parametros.terminos.map((termino) => ({ busqueda: { contains: termino } })),
+        {
+          turnos: {
+            some: {
+              ...condicionDelProfesor,
+              ...(parametros.materiaId === undefined ? {} : { materiaId: parametros.materiaId }),
+            },
+          },
+        },
+      ],
+    } satisfies Prisma.AlumnoWhereInput
+    const [pagina, total] = await prisma.$transaction([
+      prisma.alumno.findMany({
+        where,
+        select: { id: true, apellido: true, nombre: true, dni: true },
+        orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+        ...calcularSkipTake(parametros),
+      }),
+      prisma.alumno.count({ where }),
+    ])
+
+    const alumnoIds = pagina.map((alumno) => alumno.id)
+    const turnos =
+      alumnoIds.length === 0
+        ? []
+        : await prisma.turno.findMany({
+            where: { ...condicionDelProfesor, alumnoId: { in: alumnoIds } },
+            select: { alumnoId: true, materia: { select: { id: true, nombre: true } } },
+            orderBy: [{ materia: { busqueda: 'asc' } }, { materiaId: 'asc' }],
+          })
+    const materiasPorAlumno = agruparMateriasPorAlumno(turnos)
+
+    return {
+      data: pagina.map((alumno) => ({
+        ...alumno,
+        materias: materiasPorAlumno.get(alumno.id) ?? [],
+      })),
+      meta: armarMeta(parametros, total),
+    }
   },
 
   /** Detalle con la auditoría, o `null` si no existe. */

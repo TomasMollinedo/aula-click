@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
+import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import type { AlumnosRepository } from '../alumnos.repository'
 import { crearAlumnosService } from '../alumnos.service'
@@ -60,18 +61,25 @@ function guardado(campos: Partial<AlumnoGuardado> = {}): AlumnoGuardado {
 function crearRepository() {
   return {
     listar: vi.fn<AlumnosRepository['listar']>(),
+    listarDeProfesor: vi.fn<AlumnosRepository['listarDeProfesor']>(),
     buscarPorId: vi.fn<AlumnosRepository['buscarPorId']>(),
     crear: vi.fn<AlumnosRepository['crear']>(),
     actualizar: vi.fn<AlumnosRepository['actualizar']>(),
   }
 }
 
+function crearProfesoresRepository() {
+  return { buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>() }
+}
+
 let repository: ReturnType<typeof crearRepository>
+let profesoresRepository: ReturnType<typeof crearProfesoresRepository>
 let service: ReturnType<typeof crearAlumnosService>
 
 beforeEach(() => {
   repository = crearRepository()
-  service = crearAlumnosService({ repository, reloj: relojFijo })
+  profesoresRepository = crearProfesoresRepository()
+  service = crearAlumnosService({ repository, profesoresRepository, reloj: relojFijo })
 })
 
 /** Ejecuta `accion`, que debe fallar con `ValidationError`, y devuelve sus `details`. */
@@ -102,6 +110,51 @@ describe('listar', () => {
   ])('q %o → términos %o', async (q, terminos) => {
     await expect(service.listar({ page: 2, pageSize: 10, q })).resolves.toEqual(vacio)
     expect(repository.listar).toHaveBeenCalledWith({ page: 2, pageSize: 10, terminos })
+  })
+})
+
+describe('listarMisAlumnos', () => {
+  const vacio = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }
+
+  beforeEach(() => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(3)
+    repository.listarDeProfesor.mockResolvedValue(vacio)
+  })
+
+  it('resuelve el profesor con el userId del actor, nunca con un id del pedido', async () => {
+    await service.listarMisAlumnos({ page: 1, pageSize: 20, q: undefined }, actor)
+
+    expect(profesoresRepository.buscarIdPorUsuario).toHaveBeenCalledWith(actor.userId)
+  })
+
+  it('pasa profesorId, materiaId, términos, paginación y la fecha de hoy del reloj', async () => {
+    await service.listarMisAlumnos({ page: 2, pageSize: 10, q: 'gonz', materiaId: 7 }, actor)
+
+    expect(repository.listarDeProfesor).toHaveBeenCalledWith({
+      profesorId: 3,
+      materiaId: 7,
+      terminos: ['gonz'],
+      page: 2,
+      pageSize: 10,
+      fechaHoy: HOY,
+    })
+  })
+
+  it('sin materiaId, lo pasa undefined (sin filtrar por materia)', async () => {
+    await service.listarMisAlumnos({ page: 1, pageSize: 20, q: undefined }, actor)
+
+    expect(repository.listarDeProfesor).toHaveBeenCalledWith(
+      expect.objectContaining({ materiaId: undefined }),
+    )
+  })
+
+  it('el usuario de la sesión sin ficha de profesor → NotFoundError, sin listar', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(null)
+
+    await expect(
+      service.listarMisAlumnos({ page: 1, pageSize: 20, q: undefined }, actor),
+    ).rejects.toThrow(NotFoundError)
+    expect(repository.listarDeProfesor).not.toHaveBeenCalled()
   })
 })
 
@@ -196,6 +249,7 @@ describe('crear', () => {
   it('a las 02:30Z del día en que cumple 18 (23:30 del día anterior en Salta) todavía es menor', async () => {
     const service = crearAlumnosService({
       repository,
+      profesoresRepository,
       reloj: () => new Date('2026-09-22T02:30:00Z'),
     })
     const details = await detallesDe(

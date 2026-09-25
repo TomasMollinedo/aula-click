@@ -54,7 +54,7 @@ src/
 │   │   │   ├── nuevo/page.tsx          # alta entrando por URL: el listado de fondo
 │   │   │   ├── [alumnoId]/
 │   │   │   │   ├── layout.tsx          # {children} + {modal}: el slot de la edición
-│   │   │   │   ├── page.tsx            # página de detalle (tabs Datos y Turnos)
+│   │   │   │   ├── page.tsx            # página de detalle (una sola sección hoy; ver "Modales con URL propia" → tabs)
 │   │   │   │   ├── editar/page.tsx     # edición entrando por URL: el detalle de fondo
 │   │   │   │   └── @modal/             # edición, siempre como modal sobre el detalle
 │   │   │   │       ├── default.tsx, page.tsx   # null (igual que en el slot del listado)
@@ -120,7 +120,7 @@ src/
 │       └── components/
 │           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
 │           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
-│           ├── AlumnoDetalle.tsx        # página de detalle con tabs (Datos del alumno, Turnos)
+│           ├── AlumnoDetalle.tsx        # página de detalle (tab "Turnos" oculta hasta implementarla; ver "Modales con URL propia")
 │           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
 │           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
@@ -207,7 +207,7 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 El **detalle de una entidad sencilla** (una hora del horario, y a futuro materias y otras con pocos datos y sin secciones propias) no es una página: es un **modal de solo lectura** con `DetalleModal` de `components/ui/` (decisión T-34). La feature solo arma sus datos con `Datos` / `Dato` y le pasa la query (`cargando`, `error`, `onReintentar`) y la auditoría: el modal resuelve la carga, el 404, el 403, la sección "Trazabilidad" y el pie con "Cerrar" y las acciones (por ejemplo, un link a la edición). Se abre con un parámetro de la pantalla que queda de fondo, con el mismo criterio que `?editar=<id>` (en el horario del profesor, `?tab=horario&detalle=<id>`), y se cierra también con un clic afuera: no hay nada que perder.
 
-El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs cuando tiene más de una sección: `alumnos` hoy solo muestra "Datos del alumno", sin `Tabs` (una sola pestaña no se envuelve en tabs). Existió ahí una segunda pestaña "Turnos", oculta a propósito hasta que haya un endpoint que devuelva los turnos de un alumno (comentario en `AlumnoDetalle.tsx` con el JSX que se sacó): cuando se implemente, se vuelve a envolver `DatosAlumno` en `Tabs`. El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
 - Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
 - **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).

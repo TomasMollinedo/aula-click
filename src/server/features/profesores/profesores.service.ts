@@ -213,6 +213,16 @@ export function crearProfesoresService({
     listarMateriasAsignadas,
 
     /**
+     * Materias del profesor de la sesión (el `id` nunca viaja en un parámetro: sale del `Actor`,
+     * igual que `agenda-propia` de `turnos`). Sin ficha de profesor → `NotFoundError`.
+     */
+    async misMaterias(actor: Actor): Promise<MateriasAsignadas> {
+      const profesorId = await repository.buscarIdPorUsuario(actor.userId)
+      if (profesorId === null) throw new NotFoundError('El usuario no tiene ficha de profesor')
+      return listarMateriasAsignadas(profesorId)
+    },
+
+    /**
      * Asigna una o varias materias (todas o ninguna) y devuelve las asignadas actualizadas.
      * Orden de los chequeos: profesor inexistente (404), profesor inactivo (409), materias
      * inexistentes (404), materias inactivas (409) y materias ya asignadas (409). Cada error
