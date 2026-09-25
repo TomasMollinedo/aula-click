@@ -70,6 +70,24 @@ export function listarMateriasAsignadas(id: number): Promise<MateriaAsignada[]> 
   return fetchJson<MateriaAsignada[]>(`${BASE}/${id}/materias`)
 }
 
+/** Asigna una o varias materias (todas o ninguna); devuelve las asignadas actualizadas. */
+export function asignarMaterias(id: number, materiaIds: number[]): Promise<MateriaAsignada[]> {
+  return fetchJson<MateriaAsignada[]>(`${BASE}/${id}/materias`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ materiaIds }),
+  })
+}
+
+/** Baja lógica de una o varias asignaciones (todas o ninguna); devuelve las que quedan. */
+export function quitarMaterias(id: number, materiaIds: number[]): Promise<MateriaAsignada[]> {
+  return fetchJson<MateriaAsignada[]>(`${BASE}/${id}/materias`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ materiaIds }),
+  })
+}
+
 // Horario de atención (bloques). Es su propia feature en la API (`/api/v1/bloques`, T-29), con el
 // profesor en la query o el body; en la UI es una sección de la ficha del profesor.
 const BLOQUES = '/api/v1/bloques'
