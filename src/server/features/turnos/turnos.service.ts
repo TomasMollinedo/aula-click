@@ -263,7 +263,7 @@ export function crearTurnosService({
     },
     /**
      * Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service).
-     * `profesorId` (decisión T-41) da la vista personal de ese profesor ese día. `q` (T-36) busca
+     * `profesorId` (decisión T-42) da la vista personal de ese profesor ese día. `q` (T-36) busca
      * por nombre de alumno o de profesor, o sólo de alumno si ya se filtró por `profesorId`: se
      * normaliza igual que en el resto de la API (`terminosDeBusqueda`) antes de pasarla al
      * repository.

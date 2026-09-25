@@ -370,7 +370,7 @@ export const turnosRepository = {
   /**
    * Página de la agenda de una fecha: turnos que aplican ese día (`condicionTurnoOcupaLugar`) cuyo
    * bloque cae en el día de la semana correspondiente, excluyendo los `CANCELADO`. Filtrable por
-   * materia, aula, profesor (vista personal de su agenda, decisión T-41) y `terminos` de búsqueda
+   * materia, aula, profesor (vista personal de su agenda, decisión T-42) y `terminos` de búsqueda
    * (T-36: cada palabra tiene que coincidir en la `busqueda` del alumno, o todas en la del
    * `Usuario` del profesor, nunca mezcladas entre los dos; con `profesorId`, sólo busca por
    * alumno, porque el profesor ya está fijo). Ordenada por hora de inicio y, dentro de la hora,

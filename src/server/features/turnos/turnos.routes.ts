@@ -54,7 +54,7 @@ export const listarAgendaRoute = createRoute({
   tags,
   summary: 'Agenda diaria del centro',
   description:
-    'Turnos ACTIVO de una fecha (por defecto hoy), con alumno, profesor, materia y aula. Paginada (decisión T-35); filtrable por materia, aula, profesor (vista personal de su agenda, decisión T-41) y `q` (búsqueda por nombre de alumno o profesor, o sólo de alumno con `profesorId`, decisión T-36). Ordenada por hora y, dentro de la hora, por profesor.',
+    'Turnos ACTIVO de una fecha (por defecto hoy), con alumno, profesor, materia y aula. Paginada (decisión T-35); filtrable por materia, aula, profesor (vista personal de su agenda, decisión T-42) y `q` (búsqueda por nombre de alumno o profesor, o sólo de alumno con `profesorId`, decisión T-36). Ordenada por hora y, dentro de la hora, por profesor.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: agendaQuerySchema },
   responses: {
