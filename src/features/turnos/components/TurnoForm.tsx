@@ -1,12 +1,12 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { type UseFormReturn, useWatch } from 'react-hook-form'
+import { Controller, type UseFormReturn, useWatch } from 'react-hook-form'
 import { CalendarPlus } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+import { CalendarioFecha } from '@/components/ui/calendario-fecha'
 import { Field, fieldErrorId } from '@/components/ui/field'
-import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/utils/cn'
 import { nombreDiaSemana } from '@/utils/dias-semana'
@@ -24,8 +24,14 @@ const TIPOS: { valor: TipoTurno; titulo: string; ayuda: string }[] = [
 type TurnoFormProps = {
   /** El formulario vive en la pantalla: lo resetea al elegir un bloque y le marca los 400. */
   form: UseFormReturn<TurnoFormValues>
-  /** Día del bloque elegido: solo para la ayuda "Tiene que ser un lunes" (no se valida acá). */
+  /** Día del bloque elegido: la ayuda "Tiene que ser un lunes" y los días que ofrecen los calendarios. */
   diaSemana: number
+  /**
+   * Próxima ocurrencia del día del bloque (`fecha` del resultado de la API, `YYYY-MM-DD`). Los
+   * calendarios solo ofrecen ese día de la semana, de esa fecha en adelante. Es una ayuda para
+   * elegir: la API valida igual el día y que no sea pasada.
+   */
+  fechaMinima: string
   onSubmit: (valores: TurnoFormValues) => void
   isPending: boolean
   /** No hay horas tildadas (o la lista es de otros filtros): no se puede registrar todavía. */
@@ -42,6 +48,7 @@ type TurnoFormProps = {
 export function TurnoForm({
   form,
   diaSemana,
+  fechaMinima,
   onSubmit,
   isPending,
   sinHoras,
@@ -78,12 +85,26 @@ export function TurnoForm({
         error={error}
         className="sm:max-w-xs"
       >
-        <Input
-          id={id}
-          type="date"
-          aria-invalid={!!error}
-          aria-describedby={cn(fieldErrorId(id), `${id}-ayuda`)}
-          {...register(nombre)}
+        {/* Solo deja elegir el día del bloque, desde su próxima ocurrencia: así cada fecha que se
+            elige refresca la ocupación (§7). La API valida igual el día y que no sea pasada. */}
+        <Controller
+          control={control}
+          name={nombre}
+          render={({ field }) => (
+            <CalendarioFecha
+              id={id}
+              ref={field.ref}
+              value={typeof field.value === 'string' ? field.value : ''}
+              onChange={field.onChange}
+              onBlur={field.onBlur}
+              min={fechaMinima}
+              diaSemana={diaSemana}
+              placeholder={requerido ? 'Elegí una fecha' : 'Sin fecha de fin'}
+              textoVaciar={requerido ? undefined : 'Sin fecha de fin'}
+              aria-invalid={!!error}
+              aria-describedby={cn(fieldErrorId(id), `${id}-ayuda`)}
+            />
+          )}
         />
         <p id={`${id}-ayuda`} className="text-muted-foreground text-xs">
           {ayuda}
@@ -165,7 +186,7 @@ export function TurnoForm({
 
       <div className="flex flex-wrap items-center justify-end gap-3">
         {sinHoras && (
-          <p className="text-muted-foreground text-sm">Tildá al menos una hora para registrar.</p>
+          <p className="text-destructive text-sm">Tildá al menos una hora para registrar.</p>
         )}
         <Button type="submit" size="lg" variant="confirmado" disabled={isPending || sinHoras}>
           <CalendarPlus />
