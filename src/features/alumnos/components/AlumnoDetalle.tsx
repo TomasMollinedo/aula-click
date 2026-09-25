@@ -6,8 +6,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  CalendarClock,
-  Construction,
   GraduationCap,
   IdCard,
   NotebookPen,
@@ -26,7 +24,6 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Dato, Datos } from '@/components/ui/datos'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Trazabilidad } from '@/components/ui/trazabilidad'
 
 import { parsearAlumnoId } from '../alumnos.schema'
@@ -139,32 +136,16 @@ export function AlumnoDetalle({ alumnoId, rutaBase, puedeEditar = true }: Alumno
         }
       />
 
-      <Tabs defaultValue="datos" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="datos" className="px-4">
-            <UserRound />
-            Datos del alumno
-          </TabsTrigger>
-          <TabsTrigger value="turnos" className="px-4">
-            <CalendarClock />
-            Turnos
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="datos">
-          <DatosAlumno alumno={alumno} />
-        </TabsContent>
-
-        <TabsContent value="turnos">
-          <Card className="p-0">
-            <EmptyState
-              icon={Construction}
-              title="Función en construcción"
-              description="Pronto vas a poder ver acá los turnos del alumno."
-            />
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/*
+        Existió acá una tab "Turnos" (con Tabs/TabsList/TabsTrigger/TabsContent y un ícono
+        CalendarClock, más un EmptyState "Función en construcción" con el ícono Construction),
+        oculta a propósito hasta que HU-07/turnos del alumno esté implementado: no hay endpoint
+        que devuelva los turnos de un alumno todavía. Vale para los dos roles que ven este
+        componente (mesa de entradas y, desde que GET /alumnos/{id} admite PROFESOR, el profesor).
+        Cuando se implemente, se vuelve a envolver `DatosAlumno` en un Tabs con esa segunda tab
+        (ver el historial de este archivo para el JSX exacto que se sacó).
+      */}
+      <DatosAlumno alumno={alumno} />
     </div>
   )
 }
