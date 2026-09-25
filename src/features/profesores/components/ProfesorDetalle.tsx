@@ -1,5 +1,6 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import {
@@ -12,6 +13,8 @@ import {
   Pencil,
   Phone,
   SearchX,
+  Trash2,
+  Undo2,
   UserRound,
   type LucideIcon,
 } from 'lucide-react'
@@ -32,6 +35,7 @@ import { getInitials } from '@/utils/initials'
 import { parsearProfesorId } from '../profesores.schema'
 import type { ProfesorDetalle as ProfesorDetalleType } from '../profesores.types'
 import { useProfesor } from '../hooks/use-profesor'
+import { ConfirmarEstadoProfesor } from './ConfirmarEstadoProfesor'
 import { HorarioProfesor } from './HorarioProfesor'
 
 type ProfesorDetalleProps = {
@@ -53,6 +57,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
   const searchParams = useSearchParams()
   const router = useRouter()
   const rutaDetalle = `${rutaBase}/${profesorId}`
+  const [confirmandoEstado, setConfirmandoEstado] = useState(false)
 
   const tabParam = searchParams.get('tab')
   const tab: Tab = TABS.includes(tabParam as Tab) ? (tabParam as Tab) : 'datos'
@@ -150,14 +155,32 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
           </span>
         }
         actions={
-          tab === 'datos' && (
-            <Button size="lg" variant="accent" asChild>
-              <Link href={`${rutaBase}/${profesor.id}/editar`}>
-                <Pencil />
-                Editar datos
-              </Link>
-            </Button>
-          )
+          <div className="flex flex-wrap items-center gap-2">
+            {tab === 'datos' && (
+              <Button size="lg" variant="accent" asChild>
+                <Link href={`${rutaBase}/${profesor.id}/editar`}>
+                  <Pencil />
+                  Editar datos
+                </Link>
+              </Button>
+            )}
+            {profesor.estado === 'ACTIVO' ? (
+              <Button
+                size="lg"
+                variant="outline"
+                className="text-cancelado hover:bg-cancelado/10"
+                onClick={() => setConfirmandoEstado(true)}
+              >
+                <Trash2 />
+                Dar de baja
+              </Button>
+            ) : (
+              <Button size="lg" variant="outline" onClick={() => setConfirmandoEstado(true)}>
+                <Undo2 />
+                Reactivar
+              </Button>
+            )}
+          </div>
         }
       />
 
@@ -195,6 +218,11 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
           <HorarioProfesor profesor={profesor} rutaDetalle={rutaDetalle} />
         </TabsContent>
       </Tabs>
+
+      <ConfirmarEstadoProfesor
+        profesor={confirmandoEstado ? profesor : null}
+        onCerrar={() => setConfirmandoEstado(false)}
+      />
     </div>
   )
 }
