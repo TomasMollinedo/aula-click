@@ -7,6 +7,7 @@ import { minutosAHora } from '@/server/shared/zod'
 import type {
   Bloque,
   BloqueConAula,
+  BloqueDeProfesor,
   BloqueDetalleGuardado,
   BloqueGuardado,
   DatosCrearBloques,
@@ -119,6 +120,39 @@ export const bloquesRepository = {
       horaInicio: fila.horaInicio,
       horaFin: fila.horaFin,
       aula: fila.aula,
+    }))
+  },
+
+  /**
+   * Filas activas de esos profesores (opcionalmente de un solo día), con el aula y la capacidad
+   * del profesor, en una sola consulta, ordenadas por profesor, día y hora. Lectura para otras
+   * features: la usa `turnos` para la disponibilidad (HU-07).
+   */
+  async listarActivasDeProfesores(filtro: {
+    profesorIds: number[]
+    diaSemana?: number
+  }): Promise<BloqueDeProfesor[]> {
+    if (filtro.profesorIds.length === 0) return []
+    const filas = await prisma.bloqueAgenda.findMany({
+      where: {
+        profesorId: { in: filtro.profesorIds },
+        estado: 'ACTIVO',
+        ...(filtro.diaSemana === undefined ? {} : { diaSemana: filtro.diaSemana }),
+      },
+      select: {
+        id: true,
+        profesorId: true,
+        diaSemana: true,
+        horaInicio: true,
+        horaFin: true,
+        aula: { select: { id: true, nombre: true, capacidad: true } },
+        profesor: { select: { capacidad: true } },
+      },
+      orderBy: [{ profesorId: 'asc' }, { diaSemana: 'asc' }, { horaInicio: 'asc' }],
+    })
+    return filas.map(({ profesor, ...fila }) => ({
+      ...fila,
+      profesorCapacidad: profesor.capacidad,
     }))
   },
 
@@ -317,8 +351,9 @@ export const bloquesRepository = {
 
   /**
    * Baja lógica (`estado = INACTIVO`), nunca borrado físico. El service ya validó que no tenga
-   * turnos vigentes; acá no se repite esa lectura (no hay ningún escritor
-   * concurrente de turnos todavía: T-21 no está implementado). Idempotente: si ya estaba
+   * turnos vigentes; acá no se repite esa lectura, así que una reserva simultánea (T-21) se
+   * puede colar entre el chequeo y el `UPDATE` (carrera conocida, anotada en su issue: lo mismo
+   * vale para la edición y la baja de varias horas). Idempotente: si ya estaba
    * `INACTIVO`, el `UPDATE` no cambia nada. `NotFoundError` si la fila no existe (P2025).
    */
   async eliminarBloque(id: number, actor: Actor): Promise<Bloque> {

@@ -738,6 +738,19 @@ Completar la feature `src/server/features/turnos/`, que hoy sólo tiene la consu
 - Un alumno con un turno el lunes de 9:00 a 10:00 no puede tomar otro que se pise.
 - Tests del service con reloj fijo, con el repository mockeado: camino feliz de una y de varias horas, cada 4xx que lanza, y dos reservas simultáneas del último lugar.
 
+**Actualización (T-37/T-38)**
+
+Sacar los turnos recurrentes (T-30) fue un error y esta tarea lo corrige (decisión T-37); `TurnoExcepcion` sigue eliminada. Lo que cambia respecto del alcance de arriba:
+
+- **Tipos:** `RECURRENTE` (fecha de inicio y fin opcional) o `SESION_UNICA` (una fecha), como pide la HU-07. Las fechas caen en el día de las horas elegidas y la de inicio es hoy o posterior.
+- **Fechas sin lugar:** si un recurrente no tiene lugar en algunas fechas, el alta responde 409 `BLOQUE_LLENO` con las fechas llenas por hora (o `completoDesde`). El usuario elige crearlo solo en las fechas con lugar (se reenvía con `asignarDondeHayLugar: true` y se guarda como varios turnos `RECURRENTE`, "tramos") o no crearlo. Sin lugar en ninguna fecha, o una sesión única en una hora llena, se rechaza siempre.
+- **`ALUMNO_SUPERPUESTO`** es rechazo total, también entre profesores distintos.
+- **Disponibilidad:** acepta `fecha` opcional (sin ella, la próxima ocurrencia de cada día, T-33) y agrupa las horas como la UI. Materia inactiva → 409 `MATERIA_INACTIVA` sin `details`.
+- **Alta:** recibe `bloqueIds` de un mismo profesor y día (una hora = un turno por tramo). Materia no asignada → 409 con el código nuevo `MATERIA_NO_ASIGNADA`.
+- **Concurrencia (T-38):** la reserva bloquea `profesor` (`FOR SHARE`), las filas de `bloque_agenda` por id (`FOR UPDATE`) y `alumno` (`FOR UPDATE`), en ese orden, y relee todo antes de insertar.
+- "Ocupa lugar" es una sola condición para los dos tipos (`convenciones-backend.md` → Turno que ocupa lugar). `listarVigentesPorProfesor` suma `tipo` y `fechaFin` (cambio aditivo en el 409 `TURNOS_VIGENTES` de la baja de profesor).
+- El contrato final está en `contrato-api.md` → Turnos.
+
 ---
 
 ## T-22 · [Front] HU-07 · Pantalla de registrar turno
@@ -769,6 +782,8 @@ Crear `src/features/turnos/` con `/nueva-feature-ui turnos turno` y la pantalla 
 - Una hora completa se ve como completa y no se puede tildar.
 - La pantalla no calcula capacidad, prioridad, vigencia ni solapamientos.
 
+**Nota (T-37/T-38):** la pantalla vuelve a tener **"Recurrente / Sesión única"**: un recurrente pide fecha de inicio y fin opcional (sin fin). Ante un 409 `BLOQUE_LLENO` con fechas llenas (no `sinLugar`), se muestran las fechas por hora y se ofrece **"Asignar donde hay lugar"** (reenvía con `asignarDondeHayLugar: true`) o "Cancelar"; el éxito muestra `fechasSinTurno` ("en estas fechas no hay turno"). `ALUMNO_SUPERPUESTO` y `sinLugar` no ofrecen esa opción. Contrato en `contrato-api.md` → Turnos.
+
 ---
 
 ## T-23 · [Back] HU-09 · API de la agenda diaria del centro
@@ -799,6 +814,8 @@ Agregar a la feature `turnos` la lectura de la agenda de un día, con todos los 
 - Con turnos cargados, la agenda del día los devuelve todos, paginados y ordenados por hora.
 - Sin `fecha`, responde la del día en curso según la zona del negocio.
 - Los filtros por materia y aula, y la búsqueda `q` por alumno o profesor, acotan la página, combinados con la fecha.
+
+**Nota (T-37/T-38):** `condicionTurnoEnFecha` (punto 2) era la misma condición que "ocupa lugar" con recurrentes: al integrar T-21 se unificaron y la agenda y sus selectores usan `condicionTurnoOcupaLugar` de `turnos.repository` (una sola implementación), combinada con el día de la semana del bloque. Incluye los recurrentes cuyo rango contiene la fecha y excluye los cancelados.
 
 ---
 

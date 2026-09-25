@@ -50,7 +50,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - Un aula no puede tener dos bloques activos a la misma hora el mismo día, sin importar de qué profesor sean.
 - Un pedido de varias horas se crea todo junto o nada: si alguna hora del rango ya está tomada (por el profesor o por el aula), no se crea ninguna.
 - **Capacidad efectiva** de cada hora: `min(profesor.capacidad, aula.capacidad)` (T-27/T-28), calculada al leer, nunca guardada.
-- **Ocupación** de cada hora (T-33): la cantidad de turnos `ACTIVO` de esa hora en su **próxima ocurrencia**, es decir, la próxima fecha de ese día de la semana a partir de hoy, hoy incluido (aunque la hora de hoy ya haya pasado: es un horario semanal, no una agenda). Como todo turno es de una fecha puntual (T-30), sumar todos los turnos futuros de una hora no se puede comparar con su capacidad efectiva. Es la misma cuenta ("turnos que ocupan lugar en esa hora en esa fecha") que controla `BLOQUE_LLENO` al registrar un turno.
+- **Ocupación** de cada hora (T-33): la cantidad de turnos que **ocupan lugar** en esa hora (ver Turnos) en su **próxima ocurrencia**, es decir, la próxima fecha de ese día de la semana a partir de hoy, hoy incluido (aunque la hora de hoy ya haya pasado: es un horario semanal, no una agenda). Cuentan las sesiones únicas de esa fecha y los recurrentes cuyo rango la incluye. La capacidad se controla fecha por fecha, así que sumar todos los turnos futuros de una hora no se puede comparar con su capacidad efectiva. Es la misma cuenta que controla `BLOQUE_LLENO` al registrar un turno.
 - Un aula está **disponible** para un horario si está activa y ninguna de las horas pedidas ese día está ocupada por un bloque activo (de cualquier profesor). Al editar una hora, la propia fila no ocupa su aula.
 - Tienen baja lógica (estado activo / inactivo); no se puede editar ni eliminar un bloque con turnos vigentes (ver Profesores y materias).
 - **Editar un bloque** cambia el día, el horario y/o el aula de esa hora puntual; el profesor no se edita (para moverlo a otro profesor hay que dar de baja esa hora y cargar una nueva). El resultado tiene que seguir siendo una hora exacta, y las mismas reglas de superposición y aula libre valen para la edición, sin contar la propia fila como un conflicto consigo misma.
@@ -58,13 +58,23 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 
 ## Turnos
 
-- Un turno une a un alumno con un bloque de un profesor e indica la materia. La materia debe estar asignada a ese profesor.
-- Un turno es siempre de una fecha puntual (`SESION_UNICA`); no hay turnos recurrentes en este release (T-30). La fecha debe coincidir con el día de la semana del bloque.
-- **Turno vigente:** su fecha es >= hoy.
-- Un alumno no puede tener dos turnos superpuestos en fecha y horario.
-- **Capacidad del bloque:** se controla contra la capacidad efectiva de esa hora (T-27: `min(profesor.capacidad, aula.capacidad)`, con `Aula` como catálogo propio; no es un valor fijo guardado en el bloque). Si la hora está llena, se rechaza con `BLOQUE_LLENO`; el mecanismo de bloqueo concurrente sobre esta capacidad se define al implementar `turnos` (HU-07; ver `convenciones-backend.md` → Concurrencia en la capacidad de un bloque).
+- Un turno une a un alumno con **una hora** de un bloque de un profesor (una fila del horario) e indica la materia. La materia tiene que estar activa y asignada (con asignación activa) a ese profesor, y el profesor tiene que estar activo. Elegir varias horas del mismo profesor y el mismo día crea un turno por hora, todos o ninguno.
+- **Tipos** (T-37):
+  - `SESION_UNICA`: una fecha (`fechaFin = fechaInicio`).
+  - `RECURRENTE`: una fecha de inicio y una de fin opcional (sin fin = sigue indefinidamente). Sus **ocurrencias** son todas las fechas de ese día de la semana dentro del rango.
+  - La fecha de inicio y la de fin (si hay) tienen que caer en el día de la semana del bloque.
+- **La fecha de inicio es hoy o posterior**: no se registran turnos con fecha pasada (hoy se permite aunque la hora ya haya pasado).
+- **Turno vigente:** está `ACTIVO` y no tiene fecha de fin, o su fecha de fin es >= hoy.
+- **Turno que ocupa lugar** en una hora en una fecha `d`: está `ACTIVO`, su fecha de inicio es <= `d` y no tiene fin o su fin es >= `d`. Es una sola condición para los dos tipos (una sesión única es el caso inicio = fin).
+- **Capacidad:** se controla por hora y por fecha contra la capacidad efectiva de esa hora (T-27: `min(profesor.capacidad, aula.capacidad)`, calculada al leer). Una fecha está llena si los turnos que ocupan lugar en ella son >= la capacidad efectiva.
+- **Fechas sin lugar en un recurrente:** si algunas fechas del pedido están llenas, se rechaza con `BLOQUE_LLENO` informando, por hora, qué fechas están llenas (o desde qué fecha lo están todas). El usuario decide:
+  - crearlo **solo en las fechas con lugar**: se guarda como varios turnos `RECURRENTE` ("tramos"), uno por cada racha de fechas consecutivas con lugar, que saltean las llenas. Ejemplo: lunes 9:00 del 05/10 al 30/11 con el 26/10 lleno → del 05/10 al 19/10 y del 02/11 al 30/11. El alta informa las fechas que quedaron sin turno;
+  - o no crearlo.
+- **Al confirmar se recalcula todo:** si alguien ocupó un lugar mientras tanto, entra en la cuenta.
+- **Sin lugar en ninguna fecha** (incluida una sesión única en una hora llena): se rechaza con `BLOQUE_LLENO`, sin opción de crearlo.
+- **Superposición del alumno:** un alumno no puede tener dos turnos que se pisen (mismo día y hora, con rangos de fechas que se cruzan), aunque sean de profesores distintos. Es un **rechazo total** (`ALUMNO_SUPERPUESTO`): no hay opción de crearlo en las fechas libres.
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
-- Un turno está `ACTIVO` o `CANCELADO`; que sea vigente se decide por su fecha, no por su estado. Un turno `CANCELADO` no cuenta como vigente: no impide ninguna baja.
+- Un turno está `ACTIVO` o `CANCELADO`; la UI muestra `ACTIVO` como **"Agendado"** (no es otro valor). Que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no es vigente ni ocupa lugar: no impide ninguna baja.
 
 ## Auditoría
 

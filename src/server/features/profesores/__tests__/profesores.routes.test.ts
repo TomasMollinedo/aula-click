@@ -386,7 +386,9 @@ describe('PATCH /profesores/{id}/baja', () => {
       {
         alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
         materia: { id: 2, nombre: 'Matemática' },
+        tipo: 'SESION_UNICA',
         fecha: '2026-09-25',
+        fechaFin: '2026-09-25',
         horaInicio: '09:00',
         horaFin: '10:00',
       },
@@ -401,7 +403,9 @@ describe('PATCH /profesores/{id}/baja', () => {
       {
         alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
         materia: { id: 2, nombre: 'Matemática' },
+        tipo: 'SESION_UNICA',
         fecha: '2026-09-25',
+        fechaFin: '2026-09-25',
         horaInicio: '09:00',
         horaFin: '10:00',
       },
