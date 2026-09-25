@@ -182,7 +182,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         </TabsContent>
 
         <TabsContent value="materias">
-          <MateriasProfesor profesorId={profesor.id} />
+          <MateriasProfesor profesor={profesor} />
         </TabsContent>
 
         <TabsContent value="horario">
