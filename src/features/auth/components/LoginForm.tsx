@@ -43,8 +43,8 @@ export function LoginForm() {
   })
 
   return (
-    <form noValidate onSubmit={enviar} className="space-y-5">
-      <div className="space-y-1.5">
+    <form noValidate onSubmit={enviar} className="space-y-6">
+      <div className="space-y-2">
         <Label htmlFor="email">Correo electrónico</Label>
 
         <div className="relative">
@@ -56,7 +56,7 @@ export function LoginForm() {
             autoComplete="email"
             placeholder="tu@institucion.edu"
             aria-invalid={errors.email ? true : undefined}
-            className="h-11 pl-9"
+            className="h-12 pl-9"
             {...register('email')}
           />
         </div>
@@ -68,7 +68,7 @@ export function LoginForm() {
         )}
       </div>
 
-      <div className="space-y-1.5">
+      <div className="space-y-2">
         <Label htmlFor="password">Contraseña</Label>
 
         <div className="relative">
@@ -80,7 +80,7 @@ export function LoginForm() {
             autoComplete="current-password"
             placeholder="Tu contraseña"
             aria-invalid={errors.password ? true : undefined}
-            className="h-11 pr-10 pl-9"
+            className="h-12 pr-10 pl-9"
             {...register('password')}
           />
 
@@ -107,7 +107,7 @@ export function LoginForm() {
         </Alert>
       )}
 
-      <Button type="submit" disabled={isSubmitting} size="lg" className="h-11 w-full">
+      <Button type="submit" disabled={isSubmitting} size="lg" className="h-12 w-full">
         {isSubmitting ? (
           'Ingresando…'
         ) : (

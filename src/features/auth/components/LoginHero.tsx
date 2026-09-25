@@ -26,7 +26,7 @@ const caracteristicas = [
  * foto se ve nítida a la izquierda y cada vez más borrosa según se acerca a la tarjeta del login,
  * en vez de pasar de golpe de nítida a borrosa en el borde de la tarjeta.
  */
-// Porcentajes relativos al ancho de esta sección (78%, no de la pantalla completa).
+// Porcentajes relativos al ancho de esta sección (62%, no de la pantalla completa).
 const CAPAS_BLUR = [
   { blur: 'backdrop-blur-[3px]', desde: '45%', hasta: '60%' },
   { blur: 'backdrop-blur-[8px]', desde: '55%', hasta: '70%' },
@@ -35,18 +35,18 @@ const CAPAS_BLUR = [
   { blur: 'backdrop-blur-[40px]', desde: '85%', hasta: '100%' },
 ]
 
-// Columna del 78% (no toda la pantalla): la foto se ve nítida a la izquierda, se va desenfocando
+// Columna del 62% (no toda la pantalla): la foto se ve nítida a la izquierda, se va desenfocando
 // (CAPAS_BLUR) y funde a blanco (--canvas, el fondo de LoginPanel) en su ~20% final, así el borde
 // con el panel es un difuminado, no un corte recto ni una foto completa detrás del formulario.
 export function LoginHero() {
   return (
-    <section className="relative hidden w-[68%] overflow-hidden lg:block">
+    <section className="relative hidden w-[62%] overflow-hidden lg:block">
       <Image
         src="/login-hero.webp"
         alt=""
         fill
         priority
-        sizes="78vw"
+        sizes="62vw"
         className="object-cover object-bottom"
       />
 
