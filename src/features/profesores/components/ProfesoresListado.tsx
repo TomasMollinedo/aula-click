@@ -10,6 +10,7 @@ import { PaginationControls } from '@/components/ui/pagination'
 
 import type { EstadoFiltro, ProfesorListadoItem } from '../profesores.types'
 import { useBuscadorProfesores } from '../hooks/use-buscador-profesores'
+import { rutaAgendaDelSegmento } from '../turnos-vigentes'
 import { BuscadorProfesores } from './BuscadorProfesores'
 import { ConfirmarEstadoProfesor } from './ConfirmarEstadoProfesor'
 import { FiltroEstadoProfesores } from './FiltroEstadoProfesores'
@@ -174,6 +175,7 @@ export function ProfesoresListado({ rutaBase }: ProfesoresListadoProps) {
 
       <ConfirmarEstadoProfesor
         profesor={cambiandoEstado}
+        rutaAgenda={rutaAgendaDelSegmento(rutaBase)}
         onCerrar={() => setCambiandoEstado(null)}
       />
     </Card>
