@@ -1,3 +1,5 @@
+import { MisAlumnosPantalla } from '@/features/alumnos/components/MisAlumnosPantalla'
+
 export default function AlumnosDelProfesorPage() {
-  return <h1 className="text-2xl font-semibold">Mis alumnos</h1>
+  return <MisAlumnosPantalla rutaBase="/profesor/alumnos" />
 }

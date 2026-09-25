@@ -1,4 +1,5 @@
 import { NotFoundError, ValidationError } from '@/server/errors'
+import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
 import { hoy, type Reloj } from '@/server/shared/fechas'
@@ -6,9 +7,11 @@ import type { AlumnosRepository } from './alumnos.repository'
 import type {
   AlumnoDetalle,
   AlumnoGuardado,
+  AlumnosDeProfesorListado,
   CrearAlumno,
   EditarAlumno,
   ListarAlumnosQuery,
+  ListarMisAlumnosQuery,
 } from './alumnos.validation'
 import { esMenorDeEdad } from './edad'
 
@@ -63,9 +66,11 @@ function sinOmitidos<T extends object>(cambios: T): Partial<T> {
  */
 export function crearAlumnosService({
   repository,
+  profesoresRepository,
   reloj,
 }: {
   repository: AlumnosRepository
+  profesoresRepository: Pick<ProfesoresRepository, 'buscarIdPorUsuario'>
   reloj?: Reloj
 }) {
   // `fechaHoy` se calcula una vez por operación: validación y `menorDeEdad` usan el mismo día.
@@ -80,6 +85,26 @@ export function crearAlumnosService({
         page: query.page,
         pageSize: query.pageSize,
         terminos: terminosDeBusqueda(query.q),
+      })
+    },
+
+    /**
+     * Alumnos del profesor de la sesión (el `id` nunca viaja en un parámetro: sale del `Actor`,
+     * igual que `agenda-propia` de `turnos`). Sin ficha de profesor → `NotFoundError`.
+     */
+    async listarMisAlumnos(
+      query: ListarMisAlumnosQuery,
+      actor: Actor,
+    ): Promise<AlumnosDeProfesorListado> {
+      const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
+      if (profesorId === null) throw new NotFoundError('El usuario no tiene ficha de profesor')
+      return repository.listarDeProfesor({
+        profesorId,
+        materiaId: query.materiaId,
+        terminos: terminosDeBusqueda(query.q),
+        page: query.page,
+        pageSize: query.pageSize,
+        fechaHoy: hoy(reloj),
       })
     },
 

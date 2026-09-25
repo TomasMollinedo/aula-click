@@ -8,14 +8,7 @@ import { LoginForm } from '@/features/auth/components/LoginForm'
 export function LoginPanel() {
   return (
     <section className="bg-canvas relative flex min-h-screen flex-1 items-center justify-center overflow-hidden p-6 sm:p-10">
-      {/* Luz decorativa: espejo de la del hero (LoginHero), mismo dorado — el acento de marca es
-          uno solo en toda la pantalla; el cobalto queda reservado para la acción (el botón). */}
-      <div
-        aria-hidden
-        className="bg-dorado/15 pointer-events-none absolute -bottom-24 -left-24 size-96 rounded-full blur-3xl"
-      />
-
-      <div className="relative w-full max-w-sm">
+      <div className="relative w-full max-w-md">
         {/* Logo visible únicamente cuando desaparece el hero */}
         <div className="mb-10 flex items-center gap-2.5 lg:hidden">
           <span className="bg-dorado flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm">

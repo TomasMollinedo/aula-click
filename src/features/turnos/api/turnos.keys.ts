@@ -1,4 +1,9 @@
-import type { AgendaListadoParams, AgendaPropiaParams, DisponibilidadParams } from '../turnos.types'
+import type {
+  AgendaListadoParams,
+  AgendaProfesorParams,
+  AgendaPropiaParams,
+  DisponibilidadParams,
+} from '../turnos.types'
 
 // Todo cuelga de `all`: el alta invalida `all` y así alcanza también a la agenda (T-24).
 export const turnosKeys = {
@@ -12,4 +17,7 @@ export const turnosKeys = {
   agenda: (params: AgendaListadoParams) => [...turnosKeys.agendas(), params] as const,
   agendasPropias: () => [...turnosKeys.all, 'agenda-propia'] as const,
   agendaPropia: (params: AgendaPropiaParams) => [...turnosKeys.agendasPropias(), params] as const,
+  agendasProfesor: () => [...turnosKeys.all, 'agenda-profesor'] as const,
+  agendaProfesor: (params: AgendaProfesorParams) =>
+    [...turnosKeys.agendasProfesor(), params] as const,
 }

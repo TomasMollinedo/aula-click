@@ -52,6 +52,29 @@ export const listarAlumnosQuerySchema = paginacionQuerySchema.extend({
 
 export type ListarAlumnosQuery = z.infer<typeof listarAlumnosQuerySchema>
 
+/**
+ * Query de `GET /alumnos/mis-alumnos`: paginación + `q` (igual que el listado general) +
+ * `materiaId` opcional, para acotar a una sola materia.
+ */
+export const listarMisAlumnosQuerySchema = paginacionQuerySchema.extend({
+  q: qBusqueda.openapi({
+    description:
+      'Búsqueda por apellido, nombre o DNI, sobre los alumnos del profesor. Mismas reglas que en el listado general',
+  }),
+  materiaId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .optional()
+    .openapi({
+      param: { name: 'materiaId', in: 'query' },
+      description: 'Filtra por materia: solo alumnos con un turno vigente de esa materia',
+      example: 3,
+    }),
+})
+
+export type ListarMisAlumnosQuery = z.infer<typeof listarMisAlumnosQuerySchema>
+
 export const alumnoListadoItemSchema = z
   .object({ id: z.number().int(), apellido: z.string(), nombre: z.string(), dni: z.string() })
   .openapi('AlumnoListadoItem')
@@ -61,6 +84,33 @@ export type AlumnoListadoItem = z.infer<typeof alumnoListadoItemSchema>
 export const alumnosListadoSchema = paginatedSchema(alumnoListadoItemSchema)
 
 export type AlumnosListado = z.infer<typeof alumnosListadoSchema>
+
+/** Materia de un turno vigente del alumno con el profesor. Resumen: solo id y nombre. */
+const alumnoMateriaSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('AlumnoMateria')
+
+export type AlumnoMateria = z.infer<typeof alumnoMateriaSchema>
+
+/**
+ * Item de `GET /alumnos/mis-alumnos`: el mismo de `GET /alumnos` más `materias`, las materias
+ * (todas, sin importar el filtro `materiaId`) que el alumno cursa vigente con ese profesor, para
+ * que se entienda por qué aparece y para qué sirve filtrar por una.
+ */
+export const alumnoDeProfesorItemSchema = alumnoListadoItemSchema
+  .extend({
+    materias: z.array(alumnoMateriaSchema).openapi({
+      description:
+        'Materias que el alumno cursa vigente con este profesor (no se filtran por `materiaId`: son todas)',
+    }),
+  })
+  .openapi('AlumnoDeProfesorListadoItem')
+
+export type AlumnoDeProfesorItem = z.infer<typeof alumnoDeProfesorItemSchema>
+
+export const alumnosDeProfesorListadoSchema = paginatedSchema(alumnoDeProfesorItemSchema)
+
+export type AlumnosDeProfesorListado = z.infer<typeof alumnosDeProfesorListadoSchema>
 
 // Campos del body. Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (T-25).
 // busqueda, estado y la auditoría no están: z.object descarta las claves desconocidas.

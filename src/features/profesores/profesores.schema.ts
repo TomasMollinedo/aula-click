@@ -77,7 +77,7 @@ const matriculaSchema = z
 const capacidadSchema = z
   .string({ message: 'Campo obligatorio' })
   .min(1, { message: 'Campo obligatorio' })
-  .regex(CAPACIDAD_FORMATO, { message: 'Debe ser entero y mayor que 1' })
+  .regex(CAPACIDAD_FORMATO, { message: 'Debe ser entero y mayor que 0' })
   .refine((v) => Number(v) >= 1, { message: 'Debe ser mayor o igual a 1' })
 
 const passwordSchema = z

@@ -34,6 +34,8 @@ nadie del frontend     → server/, lib/, config/, generated/ (ESLint, con alias
 
 Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx` usa el hook `use-alumnos` de `features/alumnos/hooks/`; no llama a `alumnos.api.ts` ni importa `AlumnosTable`.
 
+Cuando una pantalla de una feature tiene que mostrar un **componente** de otra (no solo sus datos), lo compone `app/`, que puede importar de cualquier feature, y la feature que lo muestra lo recibe por una prop de render. Ejemplo: el tab "Agenda" de la ficha del profesor. `ProfesorDetalle` recibe `renderAgenda: (profesor) => ReactNode`, y `app/mesa/profesores/[profesorId]/page.tsx` (y `editar/page.tsx`, que monta el detalle de fondo) le pasa `<AgendaProfesorListado profesorId={profesor.id} />` de `features/turnos`. No se mueve el componente a `components/ui/` para saltear la regla.
+
 ## Estructura
 
 ```
@@ -52,7 +54,7 @@ src/
 │   │   │   ├── nuevo/page.tsx          # alta entrando por URL: el listado de fondo
 │   │   │   ├── [alumnoId]/
 │   │   │   │   ├── layout.tsx          # {children} + {modal}: el slot de la edición
-│   │   │   │   ├── page.tsx            # página de detalle (tabs Datos y Turnos)
+│   │   │   │   ├── page.tsx            # página de detalle (una sola sección hoy; ver "Modales con URL propia" → tabs)
 │   │   │   │   ├── editar/page.tsx     # edición entrando por URL: el detalle de fondo
 │   │   │   │   └── @modal/             # edición, siempre como modal sobre el detalle
 │   │   │   │       ├── default.tsx, page.tsx   # null (igual que en el slot del listado)
@@ -91,12 +93,12 @@ src/
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
-│   ├── turnos/                         # registrar turno (HU-07), agenda diaria (HU-09, T-24) y agenda propia (HU-10, T-26)
+│   ├── turnos/                         # registrar turno (HU-07), agenda diaria (HU-09, T-24), agenda propia (HU-10, T-26) y agenda de la ficha del profesor (HU-02)
 │   │   ├── turnos.types.ts, turnos.schema.ts
 │   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, agenda-propia.ts
 │   │   ├── api/{turnos.api.ts, turnos.keys.ts}
 │   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-turno.ts,
-│   │   │   use-agenda.ts, use-agenda-propia.ts}
+│   │   │   use-agenda.ts, use-agenda-propia.ts, use-agenda-profesor.ts, use-rango-agenda-en-url.ts}
 │   │   └── components/
 │   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
 │   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
@@ -104,8 +106,10 @@ src/
 │   │       ├── TurnoDetalleModal.tsx    # detalle de solo lectura (?detalle=<id>)
 │   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
 │   │       │   FiltroProfesorAgenda.tsx # agenda diaria (HU-09, T-24); NavegacionFecha la comparten las dos agendas
-│   │       └── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx, AgendaPropiaTable.tsx,
-│   │           SelectorVistaAgenda.tsx  # agenda propia del profesor (HU-10, T-26)
+│   │       ├── AgendaPorRango.tsx, AgendaPropiaTable.tsx, SelectorVistaAgenda.tsx # vista por día o por
+│   │       │   semana (controlada) que comparten las dos agendas por rango
+│   │       ├── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx # agenda propia del profesor (HU-10, T-26)
+│   │       └── AgendaProfesorListado.tsx # tab "Agenda" de la ficha del profesor (HU-02); lo compone app/
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
@@ -117,7 +121,7 @@ src/
 │       └── components/
 │           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
 │           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
-│           ├── AlumnoDetalle.tsx        # página de detalle con tabs (Datos del alumno, Turnos)
+│           ├── AlumnoDetalle.tsx        # página de detalle (tab "Turnos" oculta hasta implementarla; ver "Modales con URL propia")
 │           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
 │           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
@@ -132,7 +136,7 @@ src/
 │
 ├── hooks/{use-debounce.ts, use-toast.ts}   # use-toast: contexto y hook de los toasts
 ├── types/index.ts                      # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
-└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, auditoria.ts}
+└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, auditoria.ts}
 ```
 
 ## Anatomía de una feature de UI
@@ -204,7 +208,7 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 El **detalle de una entidad sencilla** (una hora del horario, y a futuro materias y otras con pocos datos y sin secciones propias) no es una página: es un **modal de solo lectura** con `DetalleModal` de `components/ui/` (decisión T-34). La feature solo arma sus datos con `Datos` / `Dato` y le pasa la query (`cargando`, `error`, `onReintentar`) y la auditoría: el modal resuelve la carga, el 404, el 403, la sección "Trazabilidad" y el pie con "Cerrar" y las acciones (por ejemplo, un link a la edición). Se abre con un parámetro de la pantalla que queda de fondo, con el mismo criterio que `?editar=<id>` (en el horario del profesor, `?tab=horario&detalle=<id>`), y se cierra también con un clic afuera: no hay nada que perder.
 
-El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs: en `alumnos`, "Datos del alumno" y "Turnos" (este último, en construcción). El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs cuando tiene más de una sección: `alumnos` hoy solo muestra "Datos del alumno", sin `Tabs` (una sola pestaña no se envuelve en tabs). Existió ahí una segunda pestaña "Turnos", oculta a propósito hasta que haya un endpoint que devuelva los turnos de un alumno (comentario en `AlumnoDetalle.tsx` con el JSX que se sacó): cuando se implemente, se vuelve a envolver `DatosAlumno` en `Tabs`. El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
 - Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
 - **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
@@ -216,7 +220,8 @@ El **detalle** de una entidad con secciones propias es una **página** (`[id]/pa
 - `AlumnoNuevo` y `AlumnoEditar` se arman con `Panel` de `components/ui/` y **no navegan solos**. Quien los monta les pasa qué hacer al cerrar o al guardar:
   - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`, o al detalle); guardar también, tanto el alta como la edición. Tras un alta se vuelve al listado, que ya se invalidó y muestra al alumno nuevo.
   - **Por URL:** puede no haber historial dentro de la app. Cerrar el alta va al listado con `router.push` y crear, con `router.replace` (Atrás no reabre el formulario). Cerrar o guardar la edición vuelve al detalle con `router.replace`.
-- **Tab del detalle y formularios de una sección:** el tab activo del detalle va en la URL (`?tab=materias`, `?tab=horario`; sin `tab`, el primero), con `router.replace` para que cambiar de tab no sume entradas al historial. Así, un formulario que vive dentro de un tab se abre con un parámetro más, con el mismo criterio que `?editar=<id>` (sin interceptor con parámetro dinámico): el horario del profesor usa `?tab=horario&bloque=nuevo` (alta) y `?tab=horario&bloque=<id>` (edición de esa hora), y `HorarioProfesor` monta el `Panel` modal. Se abre con un `Link` (`push`: Atrás lo cierra); cerrar o guardar es `router.back()` si se abrió desde la sección en esa pestaña, o `router.replace` a `?tab=horario` si se entró por URL. La URL sigue la misma ayuda visual que los botones: si la sección no ofrece ese formulario (profesor inactivo, o alta sin materias asignadas), no lo monta y, una vez que lo sabe, saca el parámetro con `router.replace`. Convive con el slot `@modal` de la edición del profesor, que es otra ruta (`[id]/editar`). El detalle lee la URL con `useSearchParams`, así que su página lo monta dentro de `<Suspense>`. Las confirmaciones (por ejemplo, eliminar un bloque) son un `Dialog` sin URL propia.
+- **Tab del detalle y formularios de una sección:** el tab activo del detalle va en la URL (`?tab=materias`, `?tab=horario`, `?tab=agenda`; sin `tab`, el primero), con `router.replace` para que cambiar de tab no sume entradas al historial. Así, un formulario que vive dentro de un tab se abre con un parámetro más, con el mismo criterio que `?editar=<id>` (sin interceptor con parámetro dinámico): el horario del profesor usa `?tab=horario&bloque=nuevo` (alta) y `?tab=horario&bloque=<id>` (edición de esa hora), y `HorarioProfesor` monta el `Panel` modal. Se abre con un `Link` (`push`: Atrás lo cierra); cerrar o guardar es `router.back()` si se abrió desde la sección en esa pestaña, o `router.replace` a `?tab=horario` si se entró por URL. La URL sigue la misma ayuda visual que los botones: si la sección no ofrece ese formulario (profesor inactivo, o alta sin materias asignadas), no lo monta y, una vez que lo sabe, saca el parámetro con `router.replace`. Convive con el slot `@modal` de la edición del profesor, que es otra ruta (`[id]/editar`). El detalle lee la URL con `useSearchParams`, así que su página lo monta dentro de `<Suspense>`. Las confirmaciones (por ejemplo, eliminar un bloque) son un `Dialog` sin URL propia.
+- **Agendas por rango (vista por día o por semana):** "Mi agenda" (`/profesor/agenda`) y el tab "Agenda" de la ficha del profesor comparten `AgendaPorRango` (navegación, selector, tabla, error y pie; controlado, no conoce el endpoint) y el hook `useRangoAgendaEnUrl({ vistaPorDefecto })`, que guarda `vista` y `fecha` en la URL con `router.replace` sobre la ruta actual y conserva los demás parámetros (el `tab`). Los parámetros los arma `paramsDeRango` (`agenda-propia.ts`, con tests): omite la vista por defecto y el rango de hoy, y en la vista semanal guarda el lunes. "Mi agenda" es por día por defecto (`?vista=semana&fecha=…`); la ficha, por semana (`?tab=agenda&vista=dia&fecha=…`). Cada contenedor elige su hook de datos (`useAgendaPropia` o `useAgendaProfesor`) y su texto para el 404. Cambiar de tab descarta `vista` y `fecha`: al volver, se ve la semana actual.
 - `Panel` conserva `mode="page"` (tarjeta dentro de la página) para pantallas que no sean modales.
 - El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
 - Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.
@@ -330,6 +335,7 @@ mutation.mutate(datos, {
     - `Datos` / `Dato` (`datos.tsx`): lista de datos de solo lectura (`<dl>`) en dos columnas; un dato sin valor muestra `—`. La usan todos los detalles, página o modal.
     - `Trazabilidad`: quién creó el registro y quién lo modificó por última vez, con fecha y hora local (`utils/auditoria.ts`). Recibe los cuatro campos de auditoría del contrato (tipo `Auditoria` de `types/index.ts`); cualquier detalle (`AlumnoDetalle`, `ProfesorDetalle`…) se le pasa entero.
     - `DetalleModal`: el detalle de solo lectura de una entidad sencilla (ver Modales con URL propia): encabezado, datos, trazabilidad, pie con "Cerrar" y acciones, y los estados de carga, 404, 403 y error con reintentar.
+    - `CalendarioFecha` (`calendario-fecha.tsx`): selector de fecha con una grilla mensual que solo deja elegir los días de una restricción (`min` y/o un `diaSemana` ISO), con teclado (flechas, Enter, Escape) y un botón opcional para vaciar el campo (`textoVaciar`). Entrega `YYYY-MM-DD`. Se usa en lugar de `<input type="date">` cuando la fecha tiene que caer en un día de la semana (el turno, en el día de su bloque): el input nativo deja escribir cualquier día, aun con `min` y `step`. La grilla sale de `utils/calendario.ts`. Es una ayuda para elegir: la API valida igual.
     - `ToastProvider` (`toast.tsx`): la pila de notificaciones. Se usa con `useToast()` de `hooks/use-toast.ts` (ver Notificaciones (toasts)).
   - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
 - Íconos: `lucide-react`.
@@ -337,3 +343,4 @@ mutation.mutate(datos, {
 ## Tests
 
 El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `agenda-propia.ts`: el rango de la vista por día o por semana y el agrupado por fecha; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.

@@ -10,6 +10,7 @@ import type {
   editarProfesorRoute,
   listarMateriasAsignadasRoute,
   listarProfesoresRoute,
+  misMateriasRoute,
   obtenerProfesorRoute,
   quitarFotoRoute,
   quitarMateriasRoute,
@@ -33,6 +34,9 @@ const profesoresService = crearProfesoresService({
 
 export const listar: RouteHandler<typeof listarProfesoresRoute, AppEnv> = async (c) =>
   c.json(await profesoresService.listar(c.req.valid('query')), 200)
+
+export const misMaterias: RouteHandler<typeof misMateriasRoute, AppEnv> = async (c) =>
+  c.json(await profesoresService.misMaterias(c.get('actor')), 200)
 
 export const obtener: RouteHandler<typeof obtenerProfesorRoute, AppEnv> = async (c) =>
   c.json(await profesoresService.obtener(c.req.valid('param').id), 200)

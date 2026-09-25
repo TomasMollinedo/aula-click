@@ -498,6 +498,9 @@ export const turnosRepository = {
    *
    * Ordenados por hora de inicio y luego `id`: al expandir, las ocurrencias de cada fecha quedan
    * en ese mismo orden.
+   *
+   * A pesar del nombre, la usan la agenda propia (el profesor de la sesión) y la agenda de un
+   * profesor para mesa de entradas (T-44): recibe el `profesorId` ya resuelto.
    */
   async listarAgendaPropia(filtro: {
     profesorId: number

@@ -80,6 +80,11 @@ export function listarMateriasAsignadas(id: number): Promise<MateriaAsignada[]> 
   return fetchJson<MateriaAsignada[]>(`${BASE}/${id}/materias`)
 }
 
+/** Materias del profesor de la sesión (rol PROFESOR): el `id` sale de la cookie, no se pasa. */
+export function listarMisMaterias(): Promise<MateriaAsignada[]> {
+  return fetchJson<MateriaAsignada[]>(`${BASE}/mis-materias`)
+}
+
 /** Asigna una o varias materias (todas o ninguna); devuelve las asignadas actualizadas. */
 export function asignarMaterias(id: number, materiaIds: number[]): Promise<MateriaAsignada[]> {
   return fetchJson<MateriaAsignada[]>(`${BASE}/${id}/materias`, {

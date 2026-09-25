@@ -16,6 +16,7 @@ import {
 } from './turnos.ejemplos'
 import {
   agendaListadoSchema,
+  agendaProfesorQuerySchema,
   agendaPropiaListadoSchema,
   agendaPropiaQuerySchema,
   agendaQuerySchema,
@@ -32,8 +33,9 @@ import {
 } from './turnos.validation'
 
 // Contrato HTTP de turnos: cada endpoint se declara con createRoute() y se registra acá.
-// `/{turnoId}` se registra al final: si no, capturaría `/agenda`, `/materias`, `/aulas` y
-// `/disponibilidad` (y respondería 400, porque el id tiene que ser un entero).
+// `/{turnoId}` se registra al final: si no, capturaría `/agenda`, `/agenda-propia`,
+// `/agenda-profesor`, `/materias`, `/aulas` y `/disponibilidad` (y respondería 400, porque el id
+// tiene que ser un entero).
 
 const tags = ['Turnos']
 
@@ -111,6 +113,32 @@ export const listarAgendaPropiaRoute = createRoute({
       'El rol no es profesor (SIN_PERMISO) o el usuario está inhabilitado (USUARIO_INHABILITADO)',
     ),
     404: respuestaError('El usuario de la sesión no tiene ficha de profesor (NO_ENCONTRADO)'),
+  },
+})
+
+// La respuesta es `agendaPropiaListadoSchema` (componente `AgendaPropiaItem`) aunque el profesor
+// no sea el de la sesión: misma forma y misma lógica que `/agenda-propia` (decisión T-44).
+export const listarAgendaProfesorRoute = createRoute({
+  method: 'get',
+  path: '/agenda-profesor',
+  tags,
+  summary: 'Agenda de un profesor',
+  description:
+    'Turnos del profesor `profesorId` para un día o un rango, para la ficha del profesor (HU-02): misma forma que `/agenda-propia` (una entrada por ocurrencia, sin datos del profesor). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango no puede superar los 31 días. Sin paginar (decisiones T-43 y T-44), ordenada por fecha y, dentro del día, por hora. Un profesor inactivo también se puede consultar. Sólo lectura.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: agendaProfesorQuerySchema },
+  responses: {
+    200: {
+      description: 'Ocurrencias del rango (arreglo vacío si no hay turnos)',
+      content: {
+        'application/json': { schema: agendaPropiaListadoSchema, example: ejemploAgendaPropia },
+      },
+    },
+    400: respuestaError(
+      '`profesorId` faltante o inválido, query inválido, `hasta` anterior a `desde` o rango mayor al máximo (VALIDACION)',
+    ),
+    ...errores,
+    404: respuestaError('El profesor no existe (NO_ENCONTRADO)'),
   },
 })
 
@@ -275,6 +303,7 @@ export const obtenerTurnoRoute = createRoute({
 export const turnosRoutes = createRouter()
   .openapi(listarAgendaRoute, turnosController.listarAgenda)
   .openapi(listarAgendaPropiaRoute, turnosController.listarAgendaPropia)
+  .openapi(listarAgendaProfesorRoute, turnosController.listarAgendaDeProfesor)
   .openapi(listarMateriasConTurnoRoute, turnosController.listarMateriasConTurno)
   .openapi(listarAulasConTurnoRoute, turnosController.listarAulasConTurno)
   .openapi(disponibilidadRoute, turnosController.disponibilidad)

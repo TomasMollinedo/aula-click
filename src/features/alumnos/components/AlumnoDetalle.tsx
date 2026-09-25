@@ -6,8 +6,6 @@ import {
   AlertCircle,
   AlertTriangle,
   ArrowLeft,
-  CalendarClock,
-  Construction,
   GraduationCap,
   IdCard,
   NotebookPen,
@@ -26,7 +24,6 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Dato, Datos } from '@/components/ui/datos'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Trazabilidad } from '@/components/ui/trazabilidad'
 
 import { parsearAlumnoId } from '../alumnos.schema'
@@ -38,11 +35,17 @@ type AlumnoDetalleProps = {
   alumnoId: string
   /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
   rutaBase: string
+  /**
+   * Si se muestra "Editar". `PATCH /alumnos/{id}` sigue siendo solo de `MESA_ENTRADAS`: un
+   * profesor ve el mismo detalle (datos del tutor y auditoría incluidos), pero sin poder editar.
+   * Default `true` (mesa de entradas, que no cambia).
+   */
+  puedeEditar?: boolean
 }
 
 // Página de detalle del alumno, con tabs. "Editar" abre la edición como modal encima de esta página
 // (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia.
-export function AlumnoDetalle({ alumnoId, rutaBase }: AlumnoDetalleProps) {
+export function AlumnoDetalle({ alumnoId, rutaBase, puedeEditar = true }: AlumnoDetalleProps) {
   const id = parsearAlumnoId(alumnoId)
   const { data: alumno, isLoading, isError, error, refetch } = useAlumno(id ?? 0)
 
@@ -122,41 +125,27 @@ export function AlumnoDetalle({ alumnoId, rutaBase }: AlumnoDetalleProps) {
           </span>
         }
         actions={
-          <Button size="lg" variant="accent" asChild>
-            <Link href={`${rutaBase}/${alumno.id}/editar`}>
-              <Pencil />
-              Editar
-            </Link>
-          </Button>
+          puedeEditar && (
+            <Button size="lg" variant="accent" asChild>
+              <Link href={`${rutaBase}/${alumno.id}/editar`}>
+                <Pencil />
+                Editar
+              </Link>
+            </Button>
+          )
         }
       />
 
-      <Tabs defaultValue="datos" className="space-y-6">
-        <TabsList>
-          <TabsTrigger value="datos" className="px-4">
-            <UserRound />
-            Datos del alumno
-          </TabsTrigger>
-          <TabsTrigger value="turnos" className="px-4">
-            <CalendarClock />
-            Turnos
-          </TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="datos">
-          <DatosAlumno alumno={alumno} />
-        </TabsContent>
-
-        <TabsContent value="turnos">
-          <Card className="p-0">
-            <EmptyState
-              icon={Construction}
-              title="Función en construcción"
-              description="Pronto vas a poder ver acá los turnos del alumno."
-            />
-          </Card>
-        </TabsContent>
-      </Tabs>
+      {/*
+        Existió acá una tab "Turnos" (con Tabs/TabsList/TabsTrigger/TabsContent y un ícono
+        CalendarClock, más un EmptyState "Función en construcción" con el ícono Construction),
+        oculta a propósito hasta que HU-07/turnos del alumno esté implementado: no hay endpoint
+        que devuelva los turnos de un alumno todavía. Vale para los dos roles que ven este
+        componente (mesa de entradas y, desde que GET /alumnos/{id} admite PROFESOR, el profesor).
+        Cuando se implemente, se vuelve a envolver `DatosAlumno` en un Tabs con esa segunda tab
+        (ver el historial de este archivo para el JSX exacto que se sacó).
+      */}
+      <DatosAlumno alumno={alumno} />
     </div>
   )
 }

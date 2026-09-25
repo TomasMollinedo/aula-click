@@ -6,6 +6,8 @@ import {
   etiquetaDelRango,
   moverRango,
   normalizarFecha,
+  paramsDeRango,
+  parsearFecha,
   parsearVista,
   rangoDeVista,
 } from '../agenda-propia'
@@ -41,6 +43,12 @@ describe('parsearVista', () => {
     expect(parsearVista(null)).toBe('dia')
     expect(parsearVista('')).toBe('dia')
     expect(parsearVista('mes')).toBe('dia')
+  })
+
+  it('con otra vista por defecto, cualquier otra cosa cae en esa', () => {
+    expect(parsearVista(null, 'semana')).toBe('semana')
+    expect(parsearVista('mes', 'semana')).toBe('semana')
+    expect(parsearVista('dia', 'semana')).toBe('dia')
   })
 })
 
@@ -125,5 +133,65 @@ describe('agruparPorFecha', () => {
     const items = [turno(31, LUNES), turno(31, '2026-10-05')]
 
     expect(agruparPorFecha(items)).toHaveLength(2)
+  })
+})
+
+describe('parsearFecha', () => {
+  it('acepta una fecha de calendario real', () => {
+    expect(parsearFecha(MIERCOLES, LUNES)).toBe(MIERCOLES)
+  })
+
+  it('cualquier otra cosa cae en la fecha por defecto', () => {
+    expect(parsearFecha(null, LUNES)).toBe(LUNES)
+    expect(parsearFecha('basura', LUNES)).toBe(LUNES)
+    expect(parsearFecha('30-09-2026', LUNES)).toBe(LUNES)
+    expect(parsearFecha('2026-02-30', LUNES)).toBe(LUNES)
+    expect(parsearFecha('2026-13-01', LUNES)).toBe(LUNES)
+  })
+})
+
+describe('paramsDeRango', () => {
+  const MI_AGENDA = { vistaPorDefecto: 'dia' as const, hoy: MIERCOLES }
+  const FICHA = { vistaPorDefecto: 'semana' as const, hoy: MIERCOLES }
+  const SIGUIENTE_LUNES = '2026-10-05'
+
+  it('conserva tab y cualquier otro parámetro', () => {
+    const actuales = new URLSearchParams('tab=agenda&otro=1')
+    const params = paramsDeRango(actuales, { vista: 'dia', fecha: SIGUIENTE_LUNES }, FICHA)
+    expect(params.toString()).toBe('tab=agenda&otro=1&vista=dia&fecha=2026-10-05')
+  })
+
+  it('omite la vista cuando es la de por defecto (día en Mi agenda, semana en la ficha)', () => {
+    const vacios = new URLSearchParams()
+    expect(paramsDeRango(vacios, { vista: 'dia', fecha: MIERCOLES }, MI_AGENDA).has('vista')).toBe(
+      false,
+    )
+    expect(paramsDeRango(vacios, { vista: 'semana', fecha: LUNES }, FICHA).has('vista')).toBe(false)
+    expect(paramsDeRango(vacios, { vista: 'semana', fecha: LUNES }, MI_AGENDA).get('vista')).toBe(
+      'semana',
+    )
+    expect(paramsDeRango(vacios, { vista: 'dia', fecha: LUNES }, FICHA).get('vista')).toBe('dia')
+  })
+
+  it('omite la fecha cuando es el rango actual, y la saca si ya estaba', () => {
+    const actuales = new URLSearchParams('tab=agenda&vista=dia&fecha=2026-10-05')
+    // Vuelta a la semana actual desde otro día de la misma semana: el rango es el de hoy.
+    const params = paramsDeRango(actuales, { vista: 'semana', fecha: DOMINGO }, FICHA)
+    expect(params.toString()).toBe('tab=agenda')
+  })
+
+  it('normaliza la fecha al lunes en la vista por semana', () => {
+    const params = paramsDeRango(
+      new URLSearchParams(),
+      { vista: 'semana', fecha: '2026-10-07' },
+      MI_AGENDA,
+    )
+    expect(params.get('fecha')).toBe(SIGUIENTE_LUNES)
+  })
+
+  it('no muta los parámetros que recibe', () => {
+    const actuales = new URLSearchParams('tab=agenda&vista=dia')
+    paramsDeRango(actuales, { vista: 'semana', fecha: SIGUIENTE_LUNES }, FICHA)
+    expect(actuales.toString()).toBe('tab=agenda&vista=dia')
   })
 })
