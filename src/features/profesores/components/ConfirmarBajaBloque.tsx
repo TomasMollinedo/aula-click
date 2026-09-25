@@ -12,9 +12,10 @@ import {
 import { useToast } from '@/hooks/use-toast'
 import { nombreDiaSemana } from '@/utils/dias-semana'
 import type { ApiError } from '@/utils/fetch-json'
+import { rangoHoras } from '@/utils/horas'
 
 import { textoErrorBloque } from '../errores-bloques'
-import { type BloqueAgrupado, rangoHoras } from '../horario'
+import type { BloqueAgrupado } from '../horario'
 import type { BloqueHorario } from '../profesores.types'
 import { useEliminarBloque } from '../hooks/use-eliminar-bloque'
 import { useEliminarBloques } from '../hooks/use-eliminar-bloques'

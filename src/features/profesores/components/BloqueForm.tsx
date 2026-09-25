@@ -20,10 +20,11 @@ import {
 import { useAulasDisponibles } from '@/features/aulas/hooks/use-aulas-disponibles'
 import { DIAS_SEMANA } from '@/utils/dias-semana'
 import type { ApiError } from '@/utils/fetch-json'
+import { horaCorta } from '@/utils/horas'
 
 import { aplicarErroresApi } from '../errores-api'
 import { CAMPOS_BLOQUE, interpretarErrorBloque, MENSAJE_SIN_AULAS } from '../errores-bloques'
-import { horaCorta, OPCIONES_HORA_FIN, OPCIONES_HORA_INICIO, unaHoraDespues } from '../horario'
+import { OPCIONES_HORA_FIN, OPCIONES_HORA_INICIO, unaHoraDespues } from '../horario'
 import { bloqueFormSchema, type BloqueFormValues } from '../profesores.schema'
 
 type BloqueFormProps = {

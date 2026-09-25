@@ -79,16 +79,6 @@ export function unaHoraDespues(hora: string): string | null {
   return indice === -1 ? null : (OPCIONES_HORA_FIN[indice] ?? null)
 }
 
-/** `HH:mm` para mostrar, sin el cero adelante de la hora (`'08:00'` → `'8:00'`). */
-export function horaCorta(hora: string): string {
-  return hora.replace(/^0(\d)/, '$1')
-}
-
-/** Rango para mostrar: `'8:00 a 12:00'`. */
-export function rangoHoras(horaInicio: string, horaFin: string): string {
-  return `${horaCorta(horaInicio)} a ${horaCorta(horaFin)}`
-}
-
 /**
  * A qué fecha corresponde la ocupación de una hora (`proximaFecha`, `YYYY-MM-DD`, que calcula la
  * API): `'próximo lunes 28/09'`, o `'hoy, lunes 22/09'` si es `hoy` (la fecha local, `YYYY-MM-DD`).
