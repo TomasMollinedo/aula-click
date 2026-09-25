@@ -35,8 +35,9 @@ export type OcupacionPorBloque = { bloqueAgendaId: number; fecha: string; cantid
 export const ESTADOS_TURNO = ['ACTIVO', 'CANCELADO'] as const
 
 /**
- * Query de la agenda diaria (T-23, decisiones T-35 y T-36): paginación + `fecha` (sin ella, hoy) +
- * filtros opcionales por materia y aula (por id) + `q` (búsqueda por nombre de alumno o profesor).
+ * Query de la agenda diaria (T-23, decisiones T-35, T-36 y T-37): paginación + `fecha` (sin ella,
+ * hoy) + filtros opcionales por materia, aula y profesor (por id) + `q` (búsqueda por nombre;
+ * de alumno o profesor, o sólo de alumno si ya se filtró por `profesorId`).
  */
 export const agendaQuerySchema = paginacionQuerySchema.extend({
   fecha: fechaISO.optional().openapi({
@@ -46,7 +47,7 @@ export const agendaQuerySchema = paginacionQuerySchema.extend({
   }),
   q: qBusqueda.openapi({
     description:
-      'Búsqueda por palabras sobre el nombre del alumno o del profesor (decisión T-36): todas las palabras deben coincidir en el mismo, alumno o profesor. No distingue mayúsculas ni tildes',
+      'Búsqueda por palabras (decisión T-36): sin `profesorId`, coinciden todas en el nombre del alumno o todas en el del profesor (nunca mezcladas entre los dos). Con `profesorId` (T-37, vista personal del profesor), busca sólo por alumno. No distingue mayúsculas ni tildes',
   }),
   materiaId: z.coerce
     .number({ error: 'Debe ser un número' })
@@ -67,6 +68,17 @@ export const agendaQuerySchema = paginacionQuerySchema.extend({
       param: { name: 'aulaId', in: 'query' },
       description: 'Filtra por aula',
       example: 1,
+    }),
+  profesorId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .optional()
+    .openapi({
+      param: { name: 'profesorId', in: 'query' },
+      description:
+        'Filtra por profesor: vista personal de su agenda ese día (decisión T-37). Combinado con `q`, la búsqueda pasa a ser solo por alumno',
+      example: 3,
     }),
 })
 
