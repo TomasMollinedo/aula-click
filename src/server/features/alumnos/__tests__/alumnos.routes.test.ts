@@ -6,11 +6,19 @@ import { alumnosRoutes } from '../alumnos.routes'
 // Contrato HTTP de alumnos: validación de Zod, auth y OpenAPI. Sin base ni variables de entorno:
 // el repository y Better Auth se reemplazan por mocks. Las reglas se prueban en el service.
 
-const { repository, getSession } = vi.hoisted(() => ({
-  repository: { listar: vi.fn(), buscarPorId: vi.fn(), crear: vi.fn(), actualizar: vi.fn() },
+const { repository, profesoresRepository, getSession } = vi.hoisted(() => ({
+  repository: {
+    listar: vi.fn(),
+    listarDeProfesor: vi.fn(),
+    buscarPorId: vi.fn(),
+    crear: vi.fn(),
+    actualizar: vi.fn(),
+  },
+  profesoresRepository: { buscarIdPorUsuario: vi.fn() },
   getSession: vi.fn(),
 }))
 vi.mock('../alumnos.repository', () => ({ alumnosRepository: repository }))
+vi.mock('@/server/features/profesores/profesores.repository', () => ({ profesoresRepository }))
 vi.mock('@/lib/auth', () => ({ auth: { api: { getSession } } }))
 
 const app = createRouter().basePath('/api/v1')
@@ -79,6 +87,85 @@ describe('auth', () => {
   it('con un rol que no es MESA_ENTRADAS → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR'))
     expect((await pedir('/1')).status).toBe(403)
+  })
+})
+
+describe('GET /alumnos/mis-alumnos', () => {
+  const vacio = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }
+
+  beforeEach(() => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(3)
+    repository.listarDeProfesor.mockResolvedValue(vacio)
+  })
+
+  it('con rol PROFESOR responde 200 y resuelve el profesor con el userId de la sesión', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+
+    const res = await pedir('/mis-alumnos')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(vacio)
+    expect(profesoresRepository.buscarIdPorUsuario).toHaveBeenCalledWith('usr_mesa')
+  })
+
+  it('devuelve las materias que trae el repository, tal cual', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    repository.listarDeProfesor.mockResolvedValue({
+      data: [
+        {
+          id: 12,
+          apellido: 'Álvarez',
+          nombre: 'Lucía',
+          dni: '52345678',
+          materias: [
+            { id: 2, nombre: 'Matemática' },
+            { id: 7, nombre: 'Física' },
+          ],
+        },
+      ],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    })
+
+    const res = await pedir('/mis-alumnos')
+
+    expect((await res.json()).data[0].materias).toEqual([
+      { id: 2, nombre: 'Matemática' },
+      { id: 7, nombre: 'Física' },
+    ])
+  })
+
+  it('pasa materiaId y q al repository', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+
+    await pedir('/mis-alumnos?materiaId=7&q=gonz')
+
+    expect(repository.listarDeProfesor).toHaveBeenCalledWith(
+      expect.objectContaining({ profesorId: 3, materiaId: 7, terminos: ['gonz'] }),
+    )
+  })
+
+  it('materiaId inválido → 400', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('/mis-alumnos?materiaId=0')).status).toBe(400)
+  })
+
+  it('el usuario de la sesión sin ficha de profesor → 404 NO_ENCONTRADO', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(null)
+
+    const res = await pedir('/mis-alumnos')
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('/mis-alumnos')).status).toBe(401)
+  })
+
+  it('con MESA_ENTRADAS (no PROFESOR) → 403', async () => {
+    expect((await pedir('/mis-alumnos')).status).toBe(403)
   })
 })
 
@@ -228,8 +315,15 @@ describe('OpenAPI', () => {
   const status = (path: string, metodo: 'get' | 'post' | 'patch') =>
     Object.keys(doc.paths[path]?.[metodo]?.responses ?? {}).sort()
 
-  it('declara los 4 endpoints con todos sus status codes', () => {
+  it('declara los 5 endpoints con todos sus status codes', () => {
     expect(status('/api/v1/alumnos', 'get')).toEqual(['200', '400', '401', '403'])
+    expect(status('/api/v1/alumnos/mis-alumnos', 'get')).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+      '404',
+    ])
     expect(status('/api/v1/alumnos/{id}', 'get')).toEqual(['200', '400', '401', '403', '404'])
     expect(status('/api/v1/alumnos', 'post')).toEqual(['201', '400', '401', '403', '409'])
     expect(status('/api/v1/alumnos/{id}', 'patch')).toEqual([
@@ -246,6 +340,8 @@ describe('OpenAPI', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
       expect.arrayContaining([
         'AlumnoListadoItem',
+        'AlumnoDeProfesorListadoItem',
+        'AlumnoMateria',
         'AlumnoCrear',
         'AlumnoEditar',
         'AlumnoDetalle',

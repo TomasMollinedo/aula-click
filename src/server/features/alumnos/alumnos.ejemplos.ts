@@ -1,7 +1,9 @@
 import type { ErrorResponse } from '@/server/errors'
 import type {
+  AlumnoDeProfesorItem,
   AlumnoDetalle,
   AlumnoListadoItem,
+  AlumnosDeProfesorListado,
   AlumnosListado,
   CrearAlumno,
   EditarAlumno,
@@ -53,6 +55,31 @@ export const ejemploListado = {
   data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan', dni: '30123456' }],
   meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
 } satisfies AlumnosListado
+
+export const ejemploDeProfesorItem = {
+  id: 12,
+  apellido: 'Álvarez',
+  nombre: 'Lucía',
+  dni: '52345678',
+  materias: [{ id: 2, nombre: 'Matemática' }],
+} satisfies AlumnoDeProfesorItem
+
+export const ejemploMisAlumnos = {
+  data: [
+    ejemploDeProfesorItem,
+    {
+      id: 7,
+      apellido: 'González',
+      nombre: 'Juan',
+      dni: '30123456',
+      materias: [
+        { id: 2, nombre: 'Matemática' },
+        { id: 7, nombre: 'Física' },
+      ],
+    },
+  ],
+  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+} satisfies AlumnosDeProfesorListado
 
 export const ejemploDetalle = {
   id: 12,

@@ -11,14 +11,17 @@ import {
   ejemploErrorDni,
   ejemploErrorTutor,
   ejemploListado,
+  ejemploMisAlumnos,
 } from './alumnos.ejemplos'
 import {
   alumnoDetalleSchema,
   alumnoIdParamsSchema,
+  alumnosDeProfesorListadoSchema,
   alumnosListadoSchema,
   crearAlumnoSchema,
   editarAlumnoSchema,
   listarAlumnosQuerySchema,
+  listarMisAlumnosQuerySchema,
 } from './alumnos.validation'
 
 // Contrato HTTP de alumnos: cada endpoint se declara con createRoute() y se registra acá.
@@ -66,6 +69,31 @@ export const listarAlumnosRoute = createRoute({
       content: { 'application/json': { schema: alumnosListadoSchema, example: ejemploListado } },
     },
     ...errores,
+  },
+})
+
+// Se registra antes de `/{id}`: si no, `/mis-alumnos` caería en ese path param (ver el mismo
+// cuidado en `turnos.routes.ts` con `/agenda`, `/materias` y `/aulas` antes de `/{turnoId}`).
+export const listarMisAlumnosRoute = createRoute({
+  method: 'get',
+  path: '/mis-alumnos',
+  tags,
+  summary: 'Alumnos del profesor de la sesión',
+  description:
+    'Listado paginado de los alumnos con al menos un turno vigente (activo y no vencido) con el profesor de la sesión (sale del `Actor`, nunca de un parámetro). Mismo orden y búsqueda que el listado general; `materiaId` acota a una sola materia. Cada alumno trae también `materias`: todas las que cursa vigente con este profesor (no solo la del filtro), para que se entienda por qué aparece.',
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  request: { query: listarMisAlumnosQuerySchema },
+  responses: {
+    200: {
+      description: 'Página de alumnos del profesor (arreglo vacío si no tiene ninguno)',
+      content: {
+        'application/json': { schema: alumnosDeProfesorListadoSchema, example: ejemploMisAlumnos },
+      },
+    },
+    400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es profesor o el usuario está inhabilitado'),
+    404: respuestaError('El usuario de la sesión no tiene ficha de profesor (NO_ENCONTRADO)'),
   },
 })
 
@@ -140,6 +168,7 @@ export const editarAlumnoRoute = createRoute({
 
 export const alumnosRoutes = createRouter()
   .openapi(listarAlumnosRoute, alumnosController.listar)
+  .openapi(listarMisAlumnosRoute, alumnosController.listarMisAlumnos)
   .openapi(obtenerAlumnoRoute, alumnosController.obtener)
   .openapi(crearAlumnoRoute, alumnosController.crear)
   .openapi(editarAlumnoRoute, alumnosController.editar)
