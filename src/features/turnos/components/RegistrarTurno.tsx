@@ -459,6 +459,7 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno }: RegistrarTurnoProps
           <TurnoForm
             form={form}
             diaSemana={bloqueMostrado.diaSemana}
+            fechaMinima={bloqueElegido?.fecha ?? bloqueMostrado.fecha}
             onSubmit={registrar}
             isPending={crear.isPending}
             sinHoras={tildadas.length === 0}
