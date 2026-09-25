@@ -16,8 +16,8 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 import type { ApiError } from '@/utils/fetch-json'
+import { rangoHoras } from '@/utils/horas'
 
-import { rangoHoras } from '../horario'
 import type { Estado, TurnoVigenteProfesor } from '../profesores.types'
 import { useDarDeBajaProfesor } from '../hooks/use-dar-de-baja-profesor'
 import { useReactivarProfesor } from '../hooks/use-reactivar-profesor'
