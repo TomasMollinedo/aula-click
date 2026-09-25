@@ -16,7 +16,7 @@ Las convenciones valen desde ya para todo código nuevo, pero **parte del códig
 | `Actor` en el contexto desde `requireAuth()` (403 si el usuario no tiene rol)                                | **Construido** (`src/server/middlewares/auth.ts`)                                      |
 | `disableSignUp: true` en `src/lib/auth.ts`                                                                   | **Construido**                                                                         |
 | Columna `busqueda`, enum `estado` (`ACTIVO` / `INACTIVO`), campos de auditoría en el schema                  | **Construido** (`prisma/schema.prisma`)                                                |
-| Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`                         | **A construir** (dependen de la feature `turnos`)                                      |
+| Consulta de "turno vigente" y transacción con bloqueo de fila en `turnos.repository`                         | **Construido** (`condicionTurnoVigente` y `reservar`, T-21)                            |
 | Seed (`prisma/seed.ts`)                                                                                      | **Construido**                                                                         |
 | Auditoría completada por el repository                                                                       | **Construido** (patrón en `alumnos.repository`)                                        |
 
@@ -46,7 +46,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Filtros y respuestas
 
-- Nombres fijos de query: `q` (búsqueda), `estado`, `materiaId`, y para un horario semanal `diaSemana`, `horaInicio`, `horaFin` y `excluirBloqueId` (con `diaSemanaQuery`, `horaHHmm` y `rangoHorasEnPunto` de `shared/zod.ts`). Un filtro nuevo se agrega a esta lista y a `contrato-api.md`.
+- Nombres fijos de query: `q` (búsqueda), `estado`, `materiaId`, `profesorId`, para un horario semanal `diaSemana`, `horaInicio`, `horaFin` y `excluirBloqueId` (con `diaSemanaQuery`, `horaHHmm` y `rangoHorasEnPunto` de `shared/zod.ts`), y `fecha` (`fechaISO`) para calcular algo en una fecha puntual (la ocupación en la disponibilidad de turnos). Un filtro nuevo se agrega a esta lista y a `contrato-api.md`.
 - El recurso individual se devuelve directo, sin `{ data }`. Los errores usan siempre `ErrorResponseSchema`.
 - Idioma: el dominio en español (rutas, campos JSON, códigos de error, mensajes al usuario); la infraestructura y el código genérico en inglés.
 
@@ -91,14 +91,23 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Turno que ocupa lugar (ocupación de un bloque)
 
-- Otra condición, distinta de "vigente": un turno **ocupa lugar** en una fila de `bloque_agenda` en una fecha si está `ACTIVO` y su `fechaInicio` es esa fecha (`dominio.md` → Bloques de clase, T-33). Se implementa una sola vez, en `turnos.repository`: `condicionTurnoOcupaLugar(fecha)`.
-- `contarOcupacionPorBloque(pares)` cuenta en una sola consulta los turnos de cada par fila–fecha (lo usa el horario de `bloques`). El control de capacidad de T-21 (`BLOQUE_LLENO`) usa la misma condición: no se reescribe.
+- Otra condición, distinta de "vigente": un turno **ocupa lugar** en una fila de `bloque_agenda` en una fecha `d` si está `ACTIVO`, `fechaInicio <= d` y `fechaFin` es nula o `>= d` (`dominio.md` → Turnos, T-36). Es una sola condición para los dos tipos: una sesión única es el caso `fechaInicio = fechaFin` y un recurrente ocupa lugar en cada fecha de su rango (todas caen en el día de su fila). Se implementa una sola vez, en `turnos.repository`: `condicionTurnoOcupaLugar(fecha)`, que se combina con el `bloqueAgendaId`.
+- Su equivalente puro, para calcular en memoria, es `ocupaLugarEn(turno, fecha)` de `turnos/turnos.reglas.ts`. Un test de `turnos.repository.test.ts` fija que los dos dicen lo mismo en los bordes; si uno cambia, cambia el otro.
+- `condicionTurnoSeCruzaCon(inicio, fin | null)` (en el mismo repository, con su equivalente puro `seCruzaCon`): turno `ACTIVO` con al menos una fecha en `[inicio, fin]` (`fin` nulo = sin fin). Es la lectura de "los turnos que pueden chocar con un pedido"; `condicionTurnoOcupaLugar(d)` es `condicionTurnoSeCruzaCon(d, d)`.
+- `contarOcupacionPorBloque(pares)` cuenta los turnos de cada par fila–fecha en una sola consulta: trae los turnos de esas filas que se cruzan con `[min(fechas), max(fechas)]` y cuenta en memoria con `ocupaLugarEn`. Lo usan el horario de `bloques` y la disponibilidad de `turnos`. El control de capacidad del alta (`BLOQUE_LLENO`) usa la misma condición: no se reescribe.
 
 ## Concurrencia en la capacidad de un bloque
 
-- La verificación de capacidad y la inserción del turno se hacen en una sola transacción de `turnos.repository` que bloquea la fila del bloque (`SELECT ... FOR UPDATE` dentro de `$transaction`). El service decide la regla; el repository la ejecuta de forma atómica.
-- Debe existir un test que cubra dos reservas simultáneas del último lugar.
-- La capacidad efectiva de la hora es `min(profesor.capacidad, aula.capacidad)` (T-27; `Aula` ya está en el schema, decisión T-28, antes D-12). Qué fila bloquear (`Profesor`, `Aula` o ambas) se termina de definir al implementar `turnos` (HU-07): es un detalle de esa transacción, no un dato que falte en el modelo.
+- La verificación de capacidad y la inserción del turno se hacen en una sola transacción de `turnosRepository.reservar`. Las reglas las decide el service con un callback puro (`planificar`, que envuelve `planificarReserva` de `turnos.reglas.ts`); el repository toma los locks, relee y ejecuta el callback: si lanza, no se inserta nada.
+- Qué se bloquea, en este orden (T-36), con `Prisma.sql` y nunca con strings interpolados:
+  1. `SELECT id FROM profesor WHERE id = $1 FOR SHARE`: dos reservas del mismo profesor no se esperan acá, pero sí un alta o edición de bloques de ese profesor, que lo toma `FOR UPDATE`.
+  2. `SELECT id FROM bloque_agenda WHERE id IN (…) ORDER BY id FOR UPDATE`: serializa la capacidad de cada hora (el orden por id evita deadlocks entre reservas de varias horas).
+  3. `SELECT id FROM alumno WHERE id = $1 FOR UPDATE`: serializa `ALUMNO_SUPERPUESTO` entre reservas del mismo alumno con profesores distintos (que no comparten filas).
+- Por qué ese orden: es el de `bloques`, que bloquea `profesor` y después escribe `bloque_agenda`. Con el mismo orden, dos transacciones nunca esperan una a la otra en sentido cruzado.
+- Con los locks tomados se relee todo (filas, profesor y su estado, materia, asignación, turnos que se cruzan con el pedido y turnos del alumno en el mismo día y hora). Materia y asignación se leen sin lock propio: cubren una baja que confirmó antes que la reserva.
+- La capacidad efectiva de la hora es `min(profesor.capacidad, aula.capacidad)` (T-27, T-28), calculada con lo releído.
+- El test de dos reservas simultáneas del último lugar está en `turnos.service.test.ts`, contra un repository en memoria que serializa como el lock. La garantía real es el `FOR UPDATE` de Postgres.
+- Del lado de `bloques` y `profesores` (editar o dar de baja una hora, dar de baja un profesor) el chequeo de turnos vigentes corre fuera de su transacción: una reserva simultánea se puede colar.
 
 ## Seguridad de cuentas
 

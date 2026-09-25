@@ -332,9 +332,11 @@ model BloqueAgenda {
   @@map("bloque_agenda")
 }
 
-// Un recurrente guarda la regla (fechaInicio y fechaFin opcional); las ocurrencias se expanden
-// al consultar y las excepciones van en TurnoExcepcion. La prioridad no se persiste.
-// En una SESION_UNICA, fechaFin = fechaInicio.
+// Un turno es una hora de un bloque (una fila de bloque_agenda). Un RECURRENTE guarda la regla
+// (fechaInicio y fechaFin opcional; null = sin fin) y sus ocurrencias son las fechas de ese día de
+// la semana dentro del rango, calculadas al consultar. No hay excepciones: un recurrente creado
+// solo en las fechas con lugar se guarda como varios turnos RECURRENTE ("tramos") que saltean las
+// fechas llenas (T-35). En una SESION_UNICA, fechaFin = fechaInicio. La prioridad no se persiste.
 // CHECK (a mano en la migración): fecha_fin >= fecha_inicio; SESION_UNICA => fecha_fin = fecha_inicio.
 model Turno {
   id             Int         @id @default(autoincrement())

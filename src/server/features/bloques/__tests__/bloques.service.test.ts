@@ -55,6 +55,7 @@ function crearRepositories() {
       buscarPorIds: vi.fn<BloquesRepository['buscarPorIds']>(),
       eliminarBloques: vi.fn<BloquesRepository['eliminarBloques']>(),
       buscarDetalle: vi.fn<BloquesRepository['buscarDetalle']>(),
+      listarActivasDeProfesores: vi.fn<BloquesRepository['listarActivasDeProfesores']>(),
     },
     profesoresRepository: {
       buscarParaBloque: vi.fn<ProfesoresRepository['buscarParaBloque']>(),

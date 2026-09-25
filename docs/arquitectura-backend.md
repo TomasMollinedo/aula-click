@@ -90,7 +90,7 @@ Flujo: cliente → routes (valida con Zod) → controller → service → reposi
 
 Una feature solo puede importar el **repository** de otra, y solo para lecturas; nunca su service, controller ni routes. Ejemplo: si `turnos` necesita confirmar que un alumno existe, lee `alumnos.repository.ts`, pero no usa las reglas de `alumnos.service.ts`.
 
-Un repository importa Prisma, `@/server/errors` y `@/server/shared/*`; no importa otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
+Un repository importa Prisma, `@/server/errors`, `@/server/shared/*` y módulos puros de su propia feature (como `<dominio>.reglas.ts`, por ejemplo para un predicado que tiene que coincidir con una condición de consulta); nunca otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
 
 Dentro de una misma feature, los imports son relativos (`./alumnos.repository`, o `../alumnos.service` desde `__tests__`). Con alias (`@/server/features/alumnos/...`), ESLint no distingue la propia feature de otra y lo marca como error.
 
@@ -98,7 +98,7 @@ Dentro de una misma feature, los imports son relativos (`./alumnos.repository`, 
 
 Jerarquía en `src/server/errors/`; todas las clases heredan de `AppError(message, statusCode = 500, { code?, details?, cause? })`. La tabla de clases, status y códigos es parte del contrato con el frontend y está en [`contrato-api.md` → Errores](./contrato-api.md#errores).
 
-- Los services lanzan las clases importadas de `@/server/errors`: `throw new ConflictError('DNI ya registrado')`. Para un código específico: `new ConflictError('...', { code: 'BLOQUE_LLENO', details: fechas })`.
+- Los services lanzan las clases importadas de `@/server/errors`: `throw new ConflictError('DNI ya registrado')`. Para un código específico: `new ConflictError('...', { code: 'BLOQUE_LLENO', details: detallesPorHora })`.
 - `errorHandler` (`src/server/errors/error-handler.ts`, instalado con `app.onError`) serializa todo `AppError` con el formato `{ "error": { "code", "message", "details"? } }`.
 - Un error no controlado (ni `AppError` ni `HTTPException` de Hono) se registra con `console.error` y responde 500 genérico, sin exponer detalles internos.
 - Los fallos de validación de Zod los convierte el `defaultHook` de `createRouter()`: no se lanzan a mano en el controller.

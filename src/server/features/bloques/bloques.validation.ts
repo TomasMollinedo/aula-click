@@ -247,6 +247,13 @@ export type BloqueConAula = {
 }
 
 /**
+ * Fila activa de alguno de varios profesores, con la capacidad del aula y la del profesor (para la
+ * capacidad efectiva): todo en minutos. La lee `turnos` para la disponibilidad (HU-07). No viaja
+ * por HTTP así.
+ */
+export type BloqueDeProfesor = BloqueConAula & { profesorId: number; profesorCapacidad: number }
+
+/**
  * Una fila con todo lo que necesita su detalle, tal como la lee `bloques.repository`: horas en
  * minutos, la capacidad del profesor (para la capacidad efectiva) y la auditoría ya armada. El
  * service le agrega la próxima fecha y la ocupación. No viaja por HTTP así.
