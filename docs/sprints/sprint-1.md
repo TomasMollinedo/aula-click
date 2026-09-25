@@ -327,6 +327,8 @@ Crear `src/features/profesores/` con `/nueva-feature-ui profesores profesor` y s
 - Recorrido completo: alta con foto y contraseña, cerrar sesión e ingresar como ese profesor, volver como mesa de entradas, editar reemplazando la foto y quitarla.
 - Filtros y búsqueda funcionan combinados.
 
+**Actualización (agenda en la ficha):** a pedido de los PO, la ficha del profesor suma un cuarto tab, "Agenda" (`?tab=agenda`), porque HU-02 pide ver su horario de atención junto con su agenda. Muestra los turnos del profesor por semana (por defecto) o por día con `GET /api/v1/turnos/agenda-profesor` (decisión T-44) y reutiliza la vista de T-26 ("Mi agenda"): la misma tabla, el mismo selector Día/Semana y la misma navegación, con la vista y la fecha en la URL junto con el tab. Un profesor inactivo también muestra su agenda, de sólo lectura.
+
 ---
 
 ## T-09 · [Back] HU-03 · API del catálogo de materias: listado, selector, detalle, alta, edición y baja lógica

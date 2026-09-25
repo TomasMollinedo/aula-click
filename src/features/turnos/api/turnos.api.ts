@@ -3,6 +3,7 @@ import { fetchJson } from '@/utils/fetch-json'
 import type {
   AgendaListadoParams,
   AgendaListadoResponse,
+  AgendaProfesorParams,
   AgendaPropiaItem,
   AgendaPropiaParams,
   BloqueDisponible,
@@ -36,6 +37,16 @@ export function listarAgendaPropia(params: AgendaPropiaParams): Promise<AgendaPr
 
   const qs = searchParams.toString()
   return fetchJson<AgendaPropiaItem[]>(qs ? `${BASE}/agenda-propia?${qs}` : `${BASE}/agenda-propia`)
+}
+
+/** Agenda de un profesor cualquiera para mesa de entradas (ficha del profesor, HU-02). */
+export function listarAgendaProfesor(params: AgendaProfesorParams): Promise<AgendaPropiaItem[]> {
+  const searchParams = new URLSearchParams()
+  searchParams.set('profesorId', String(params.profesorId))
+  if (params.desde) searchParams.set('desde', params.desde)
+  if (params.hasta) searchParams.set('hasta', params.hasta)
+
+  return fetchJson<AgendaPropiaItem[]>(`${BASE}/agenda-profesor?${searchParams.toString()}`)
 }
 
 export function buscarDisponibilidad(params: DisponibilidadParams): Promise<BloqueDisponible[]> {

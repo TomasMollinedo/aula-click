@@ -200,3 +200,9 @@ export type AgendaPropiaParams = {
   desde?: string
   hasta?: string
 }
+
+/**
+ * Agenda de un profesor para mesa de entradas (ficha del profesor, HU-02): mismo rango, con el
+ * profesor fijo. La respuesta tiene la forma de la agenda propia (`AgendaPropiaItem[]`).
+ */
+export type AgendaProfesorParams = AgendaPropiaParams & { profesorId: number }

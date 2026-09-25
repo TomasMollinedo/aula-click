@@ -66,6 +66,10 @@ function pedirAgendaPropia(query = '') {
   return app.request(`/api/v1/turnos/agenda-propia${query}`)
 }
 
+function pedirAgendaProfesor(query = '') {
+  return app.request(`/api/v1/turnos/agenda-profesor${query}`)
+}
+
 function pedirMaterias(query = '') {
   return app.request(`/api/v1/turnos/materias${query}`)
 }
@@ -400,6 +404,55 @@ describe('GET /turnos/agenda-propia', () => {
     const res = await pedirAgendaPropia()
     expect(res.status).toBe(403)
     expect(repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /turnos/agenda-profesor', () => {
+  beforeEach(() => {
+    getSession.mockResolvedValue(sesion())
+    profesoresRepository.buscarConAsignaciones.mockResolvedValue({
+      estado: 'ACTIVO',
+      asignaciones: [],
+    })
+    repository.listarAgendaPropia.mockResolvedValue([])
+  })
+
+  it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
+    const res = await pedirAgendaProfesor('?profesorId=7&desde=2099-01-05&hasta=2099-01-11')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+    expect(repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 7,
+      desde: '2099-01-05',
+      hasta: '2099-01-11',
+    })
+  })
+
+  it.each([
+    ['sin profesorId', '?desde=2099-01-05'],
+    ['profesorId inválido', '?profesorId=abc'],
+    ['rango mayor al máximo', '?profesorId=7&desde=2099-01-05&hasta=2099-02-05'],
+  ])('%s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedirAgendaProfesor(query)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('el profesor no existe → 404', async () => {
+    profesoresRepository.buscarConAsignaciones.mockResolvedValue(null)
+    expect((await pedirAgendaProfesor('?profesorId=99')).status).toBe(404)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    const res = await pedirAgendaProfesor('?profesorId=7')
+    expect(res.status).toBe(403)
+    expect(repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+
+  it('/{turnoId} no lo captura', async () => {
+    expect((await pedirAgendaProfesor('?profesorId=7')).status).toBe(200)
+    expect(repository.buscarDetalle).not.toHaveBeenCalled()
   })
 })
 
