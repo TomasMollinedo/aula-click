@@ -3,8 +3,8 @@
 import { Panel, PanelDescription, PanelHeader, PanelTitle } from '@/components/ui/panel'
 import { useToast } from '@/hooks/use-toast'
 import { nombreDiaSemana } from '@/utils/dias-semana'
+import { rangoHoras } from '@/utils/horas'
 
-import { rangoHoras } from '../horario'
 import {
   BLOQUE_FORM_VACIO,
   bloqueAValoresForm,
