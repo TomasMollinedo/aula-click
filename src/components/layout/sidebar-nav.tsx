@@ -19,9 +19,7 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
 
   return (
     <nav>
-      <p className="text-luminoso/50 mb-4 px-3 text-xs font-medium tracking-wide uppercase">
-        {label}
-      </p>
+      <p className="mb-4 px-3 text-xs font-medium tracking-wide text-white/60 uppercase">{label}</p>
       <ul className="space-y-1">
         {links.map((link) => {
           const activo = pathname.startsWith(link.href)
@@ -31,20 +29,13 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
                 href={link.href}
                 aria-current={activo ? 'page' : undefined}
                 className={cn(
-                  'text-luminoso/70 hover:text-luminoso flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm transition-colors hover:bg-white/5',
-                  activo && 'bg-cobalto/20 text-luminoso hover:bg-cobalto/20 font-medium',
+                  'flex items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/5 hover:text-white',
+                  activo &&
+                    'border-dorado bg-dorado/10 hover:bg-dorado/10 font-semibold text-white',
                 )}
               >
-                <link.icon className="size-4 shrink-0" />
-                <span className="flex-1">
-                  {link.label}
-                  {activo && (
-                    <span
-                      aria-hidden
-                      className="bg-dorado ml-2 inline-block size-1.5 rounded-full align-middle"
-                    />
-                  )}
-                </span>
+                <link.icon className={cn('size-4 shrink-0', activo && 'text-dorado')} />
+                <span className="flex-1">{link.label}</span>
               </Link>
             </li>
           )
