@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Eye, Pencil } from 'lucide-react'
+import { Eye, Pencil, Trash2, Undo2 } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
@@ -28,6 +28,8 @@ type ProfesoresTableProps = {
   hrefEditar: (id: number) => string
   /** Se llama al abrir la edición con el lápiz en esta pestaña (no con Cmd/Ctrl+clic). */
   onEditar: () => void
+  /** Abre la confirmación de baja (profesor activo) o de reactivación (inactivo) de esa fila. */
+  onCambiarEstado: (profesor: ProfesorListadoItem) => void
   data?: ProfesorListadoItem[]
   isLoading: boolean
   /** Hay datos en pantalla y se está pidiendo otra página o búsqueda. */
@@ -44,6 +46,7 @@ export function ProfesoresTable({
   rutaBase,
   hrefEditar,
   onEditar,
+  onCambiarEstado,
   data,
   isLoading,
   isFetching,
@@ -59,7 +62,7 @@ export function ProfesoresTable({
           <TableHead>Nombre</TableHead>
           <TableHead className="w-36">DNI</TableHead>
           <TableHead className="w-32">Estado</TableHead>
-          <TableHead className="w-32 text-right">Acciones</TableHead>
+          <TableHead className="w-40 text-right">Acciones</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -138,6 +141,31 @@ export function ProfesoresTable({
                     >
                       <Pencil className="size-5" />
                     </Link>
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onCambiarEstado(profesor)
+                      }}
+                      aria-label={
+                        profesor.estado === 'ACTIVO'
+                          ? `Dar de baja a ${profesor.nombre} ${profesor.apellido}`
+                          : `Reactivar a ${profesor.nombre} ${profesor.apellido}`
+                      }
+                      title={profesor.estado === 'ACTIVO' ? 'Dar de baja' : 'Reactivar'}
+                      className={cn(
+                        accionDeFila,
+                        profesor.estado === 'ACTIVO'
+                          ? 'text-cancelado hover:bg-cancelado/10'
+                          : 'text-confirmado hover:bg-confirmado/10',
+                      )}
+                    >
+                      {profesor.estado === 'ACTIVO' ? (
+                        <Trash2 className="size-5" />
+                      ) : (
+                        <Undo2 className="size-5" />
+                      )}
+                    </button>
                   </div>
                 </TableCell>
               </TableRow>

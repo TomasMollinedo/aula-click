@@ -41,6 +41,15 @@ export type ProfesorCrear = {
 
 export type ProfesorEditar = Partial<Omit<ProfesorCrear, 'password'>>
 
+/** Un turno vigente que impide la baja (409 `TURNOS_VIGENTES` de `PATCH /profesores/{id}/baja`). */
+export type TurnoVigenteProfesor = {
+  alumno: { id: number; nombre: string; apellido: string }
+  materia: { id: number; nombre: string }
+  fecha: string
+  horaInicio: string
+  horaFin: string
+}
+
 export type ListarProfesoresParams = {
   page?: number
   pageSize?: number
