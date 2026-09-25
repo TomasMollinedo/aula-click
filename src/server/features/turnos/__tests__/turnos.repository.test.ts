@@ -784,6 +784,32 @@ describe('listarAgenda', () => {
     expect(where.AND[0]).toEqual(condicionTurnoOcupaLugar(HOY))
   })
 
+  it('filtra por profesorId (vista personal): va en la misma rama que aula y día de semana', async () => {
+    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20, profesorId: 3 })
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [condicionTurnoEnFecha(HOY), { bloqueAgenda: { diaSemana: 2, profesorId: 3 } }],
+        },
+      }),
+    )
+  })
+
+  it('con profesorId y `terminos`, la búsqueda es solo por alumno (sin OR por profesor)', async () => {
+    await turnosRepository.listarAgenda({
+      fecha: HOY,
+      page: 1,
+      pageSize: 20,
+      profesorId: 3,
+      terminos: ['juan'],
+    })
+
+    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
+    expect(where.AND).toHaveLength(3)
+    expect(where.AND[2]).toEqual({ alumno: { AND: [{ busqueda: { contains: 'juan' } }] } })
+  })
+
   it('ordena por hora, dentro de la hora por profesor, y por id como desempate final', async () => {
     await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
 

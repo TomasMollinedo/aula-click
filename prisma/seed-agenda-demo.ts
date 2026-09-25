@@ -317,6 +317,13 @@ async function crear() {
       '(hoy: 1; Suárez tiene un turno cancelado y uno con rango, el cancelado nunca aparece)',
   )
   console.log(
+    `  GET /api/v1/turnos/agenda?profesorId=${ramirez.id}      → vista personal de Ramírez (hoy: 2)`,
+  )
+  console.log(
+    `  GET /api/v1/turnos/agenda?profesorId=${ramirez.id}&q=cruz → ` +
+      'vacío: con profesorId, q ya no busca por nombre de profesor',
+  )
+  console.log(
     `  GET /api/v1/turnos/agenda?fecha=${sumarDias(hoyStr, 7)} → el turno con rango, otra vez`,
   )
   console.log('El turno CANCELADO nunca debería aparecer, en ningún filtro.')

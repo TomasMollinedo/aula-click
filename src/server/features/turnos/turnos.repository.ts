@@ -370,10 +370,12 @@ export const turnosRepository = {
   /**
    * Página de la agenda de una fecha: turnos que aplican ese día (`condicionTurnoOcupaLugar`) cuyo
    * bloque cae en el día de la semana correspondiente, excluyendo los `CANCELADO`. Filtrable por
-   * materia, aula y `terminos` de búsqueda (decisión T-36: cada palabra tiene que coincidir en la
-   * `busqueda` del alumno, o todas en la del `Usuario` del profesor; nunca mezcladas entre los
-   * dos). Ordenada por hora de inicio y, dentro de la hora, por profesor (apellido y nombre, vía
-   * `busqueda` de su `Usuario`), y por `id` del turno si todo lo anterior coincide.
+   * materia, aula, profesor (vista personal de su agenda, decisión T-41) y `terminos` de búsqueda
+   * (T-36: cada palabra tiene que coincidir en la `busqueda` del alumno, o todas en la del
+   * `Usuario` del profesor, nunca mezcladas entre los dos; con `profesorId`, sólo busca por
+   * alumno, porque el profesor ya está fijo). Ordenada por hora de inicio y, dentro de la hora,
+   * por profesor (apellido y nombre, vía `busqueda` de su `Usuario`), y por `id` del turno si todo
+   * lo anterior coincide.
    */
   async listarAgenda(filtro: {
     fecha: string
@@ -381,13 +383,32 @@ export const turnosRepository = {
     pageSize: number
     materiaId?: number
     aulaId?: number
+    profesorId?: number
     terminos?: string[]
   }): Promise<AgendaListado> {
     const terminos = filtro.terminos ?? []
+    const alumnoCoincide = {
+      alumno: { AND: terminos.map((termino) => ({ busqueda: { contains: termino } })) },
+    } satisfies Prisma.TurnoWhereInput
+    const profesorCoincide = {
+      bloqueAgenda: {
+        profesor: {
+          usuario: { AND: terminos.map((termino) => ({ busqueda: { contains: termino } })) },
+        },
+      },
+    } satisfies Prisma.TurnoWhereInput
+    // Con profesorId ya fijo, buscar también por nombre de profesor no aportaría nada.
+    const busqueda =
+      terminos.length === 0
+        ? []
+        : filtro.profesorId === undefined
+          ? [{ OR: [alumnoCoincide, profesorCoincide] }]
+          : [alumnoCoincide]
+
     // `condicionTurnoOcupaLugar` ya usa la clave `OR` (fechaFin nula o >= fecha): la búsqueda por
-    // alumno/profesor no puede ir suelta en el mismo objeto (la pisaría). Van como dos ramas
-    // separadas de un `AND` explícito. Combinada con el día de la semana del bloque, la condición
-    // incluye los recurrentes cuyo rango contiene la fecha.
+    // alumno/profesor no puede ir suelta en el mismo objeto (la pisaría). Van como ramas separadas
+    // de un `AND` explícito. Combinada con el día de la semana del bloque, la condición incluye los
+    // recurrentes cuyo rango contiene la fecha.
     const where = {
       AND: [
         condicionTurnoOcupaLugar(filtro.fecha),
@@ -395,31 +416,11 @@ export const turnosRepository = {
           bloqueAgenda: {
             diaSemana: diaSemanaISO(filtro.fecha),
             ...(filtro.aulaId === undefined ? {} : { aulaId: filtro.aulaId }),
+            ...(filtro.profesorId === undefined ? {} : { profesorId: filtro.profesorId }),
           },
           ...(filtro.materiaId === undefined ? {} : { materiaId: filtro.materiaId }),
         },
-        ...(terminos.length === 0
-          ? []
-          : [
-              {
-                OR: [
-                  {
-                    alumno: {
-                      AND: terminos.map((termino) => ({ busqueda: { contains: termino } })),
-                    },
-                  },
-                  {
-                    bloqueAgenda: {
-                      profesor: {
-                        usuario: {
-                          AND: terminos.map((termino) => ({ busqueda: { contains: termino } })),
-                        },
-                      },
-                    },
-                  },
-                ],
-              },
-            ]),
+        ...busqueda,
       ],
     } satisfies Prisma.TurnoWhereInput
 

@@ -302,12 +302,13 @@ describe('GET /turnos/agenda', () => {
     )
   })
 
-  it('pasa fecha, materiaId, aulaId y los términos de q al service', async () => {
-    await pedirAgenda('?fecha=2026-09-28&materiaId=2&aulaId=1&q=juan+perez')
+  it('pasa fecha, materiaId, aulaId, profesorId y los términos de q al service', async () => {
+    await pedirAgenda('?fecha=2026-09-28&materiaId=2&aulaId=1&profesorId=3&q=juan+perez')
     expect(repository.listarAgenda).toHaveBeenCalledWith({
       fecha: '2026-09-28',
       materiaId: 2,
       aulaId: 1,
+      profesorId: 3,
       terminos: ['juan', 'perez'],
       page: 1,
       pageSize: 20,
@@ -319,6 +320,7 @@ describe('GET /turnos/agenda', () => {
     ['fecha inexistente', '?fecha=2026-02-30'],
     ['materiaId no numérico', '?materiaId=abc'],
     ['aulaId cero', '?aulaId=0'],
+    ['profesorId negativo', '?profesorId=-1'],
     ['q de más de 100 caracteres', `?q=${'a'.repeat(101)}`],
     ['pageSize mayor a 100', '?pageSize=101'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
