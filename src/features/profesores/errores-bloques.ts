@@ -1,8 +1,8 @@
 import { nombreDiaSemana } from '@/utils/dias-semana'
 import type { ApiError } from '@/utils/fetch-json'
+import { rangoHoras } from '@/utils/horas'
 
 import { interpretarErroresApi } from './errores-api'
-import { rangoHoras } from './horario'
 
 // Errores de la API de bloques en lo que muestra la UI (docs/contrato-api.md → Errores). Es el
 // único lugar que conoce la forma de sus `details`.

@@ -90,16 +90,22 @@ src/
 │   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
-│   ├── turnos/                         # por ahora, solo la agenda diaria (HU-09, T-24): sin schema (sin formulario)
-│   │   ├── turnos.types.ts
+│   ├── turnos/                         # registrar turno (HU-07) y agenda diaria (HU-09, T-24)
+│   │   ├── turnos.types.ts, turnos.schema.ts
+│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts
 │   │   ├── api/{turnos.api.ts, turnos.keys.ts}
-│   │   ├── hooks/use-agenda.ts
+│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-turno.ts, use-agenda.ts}
 │   │   └── components/
-│   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx
-│   │       └── NavegacionFecha.tsx, FiltroProfesorAgenda.tsx
+│   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
+│   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
+│   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx)
+│   │       ├── TurnoDetalleModal.tsx    # detalle de solo lectura (?detalle=<id>)
+│   │       └── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
+│   │           FiltroProfesorAgenda.tsx # agenda diaria (HU-09, T-24)
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
+│       ├── volver-a.ts                  # ida y vuelta al alta desde otra pantalla (?volverA=, lista blanca)
 │       ├── edad.ts                      # "menor de edad" en el formulario: solo ayuda visual (ver Formularios)
 │       ├── errores-api.ts               # helper: mapea ApiError a errores del formulario
 │       ├── api/{alumnos.api.ts, alumnos.keys.ts}
@@ -122,7 +128,7 @@ src/
 │
 ├── hooks/{use-debounce.ts, use-toast.ts}   # use-toast: contexto y hook de los toasts
 ├── types/index.ts                      # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
-└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, auditoria.ts}
+└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, auditoria.ts}
 ```
 
 ## Anatomía de una feature de UI
@@ -211,12 +217,21 @@ El **detalle** de una entidad con secciones propias es una **página** (`[id]/pa
 - El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
 - Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.
 
+### Ida y vuelta al alta desde otra pantalla (`volverA`)
+
+Una pantalla que necesita un alta de otra entidad y volver con lo creado (registrar turno → alta de alumno) abre el alta con `?volverA=<destino>`. Al crear, el alta va al destino con el id (`/mesa/turnos?alumnoId=<id>`); al cancelar, al destino solo. Sin `volverA`, el alta se comporta como siempre.
+
+- `volverA` es un **nombre de una lista blanca**, nunca una URL (así el query no puede mandar a cualquier lado: open redirect). La lista y las rutas de vuelta viven en un solo lugar, `features/alumnos/volver-a.ts` (`parsearVolverA`, `rutasDeVuelta`, `hrefAltaConVuelta`); un valor que no está en la lista se ignora.
+- Las dos rutas del alta (la interceptada `@modal/(.)nuevo` y la de URL `@modal/nuevo`) leen `volverA` con `useSearchParams`, dentro de `<Suspense>`. Las rutas de la lista son relativas al segmento del rol: la página pasa el segmento (`/mesa`).
+- La pantalla de destino lee el id (`?alumnoId=`) con el hook de detalle de la otra feature (`useAlumno`) y lo deja elegido; si da 404, avisa y deja el buscador. Al terminar ("Registrar otro turno"), saca el id de la URL con `router.replace`.
+- **Para sumar un destino:** agregarlo a `DESTINOS` de `volver-a.ts` con sus dos rutas (al crear y al cerrar), y armar el link con `hrefAltaConVuelta` desde la página del destino. Otra entidad con alta (profesores, materias) que necesite lo mismo tiene su propio `volver-a.ts` con el mismo patrón.
+
 ## Llamadas a la API: `fetchJson` y `ApiError`
 
 - `src/utils/fetch-json.ts` es el **único** lugar que interpreta la respuesta de error de la API (`{ error: { code, message, details? } }`) y la convierte en un `ApiError` con `status`, `code` y `details`.
 - Cada `<entidad>.api.ts` llama a `fetchJson<T>(...)` en lugar de repetir el parseo. No hay `fetch` directo en componentes, hooks ni páginas, ni `fetch` a otros orígenes.
 - Los hooks se tipan con el error: `useQuery<TData, ApiError>(...)` y `useMutation<TData, ApiError, TVariables>(...)`, para tener `error.status` y `error.code` sin cast.
-- Las query keys salen solo de `<entidad>.keys.ts`. Una mutación invalida las keys de su entidad. Si además cambia datos que cachea otra feature, la invalida con un hook que esa feature expone (por ejemplo `useInvalidarAulas` de `features/aulas/hooks/`, que usan las mutaciones de bloques, o `useInvalidarMaterias`, que tienen que usar las de asignar y quitar materias a un profesor: el detalle de la materia lista sus profesores), no importando sus keys: de otra feature solo se usan sus hooks.
+- Las query keys salen solo de `<entidad>.keys.ts`. Una mutación invalida las keys de su entidad. Si además cambia datos que cachea otra feature, la invalida con un hook que esa feature expone (por ejemplo `useInvalidarAulas` de `features/aulas/hooks/`, que usan las mutaciones de bloques, o `useInvalidarMaterias`, que tienen que usar las de asignar y quitar materias a un profesor: el detalle de la materia lista sus profesores; o `useInvalidarHorarioDe` de `features/profesores/hooks/use-invalidar-horario.ts`, que recibe el profesor al invocarla y usa el alta de turnos porque el horario muestra la ocupación, T-33; las mutaciones de bloques usan `useInvalidarHorario(profesorId)`, que es la misma con el profesor fijo), no importando sus keys: de otra feature solo se usan sus hooks.
 - Una feature mínima que solo expone un selector a otras (`aulas`) tiene `types`, `api/`, `keys` y el hook; no necesita tabla ni formulario (no se crea con `/nueva-feature-ui`). Una feature completa también puede exponer el suyo: `materias` tiene su pantalla y además `useMateriasSelector`, que consume el filtro por materia de profesores. Si el selector depende de lo elegido en el formulario (aulas libres para un día y horario), los parámetros van en la key y la query queda deshabilitada (`enabled`) hasta que estén completos. Si el hook conserva la lista anterior mientras llega la nueva (`keepPreviousData`), el formulario arma las opciones solo con los datos del horario actual (descarta los de `isPlaceholderData`): mientras tanto el selector queda deshabilitado y Guardar también, porque lo elegido puede ya no estar disponible.
 - Los tipos siguen el contrato: los listados son `PaginatedResponse<T>` (`{ data, meta }`) y el recurso individual viene directo.
 
@@ -317,4 +332,4 @@ mutation.mutate(datos, {
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.

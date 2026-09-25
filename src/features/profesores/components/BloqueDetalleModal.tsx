@@ -10,8 +10,9 @@ import { Dato, Datos } from '@/components/ui/datos'
 import { DetalleModal } from '@/components/ui/detalle-modal'
 import { nombreDiaSemana } from '@/utils/dias-semana'
 import { ApiError } from '@/utils/fetch-json'
+import { rangoHoras } from '@/utils/horas'
 
-import { etiquetaProximaFecha, rangoHoras } from '../horario'
+import { etiquetaProximaFecha } from '../horario'
 import { useBloque } from '../hooks/use-bloque'
 
 type BloqueDetalleModalProps = {

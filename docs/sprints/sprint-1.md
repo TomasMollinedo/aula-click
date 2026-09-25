@@ -784,7 +784,17 @@ Crear `src/features/turnos/` con `/nueva-feature-ui turnos turno` y la pantalla 
 - Una hora completa se ve como completa y no se puede tildar.
 - La pantalla no calcula capacidad, prioridad, vigencia ni solapamientos.
 
-**Nota (T-37/T-38):** la pantalla vuelve a tener **"Recurrente / Sesión única"**: un recurrente pide fecha de inicio y fin opcional (sin fin). Ante un 409 `BLOQUE_LLENO` con fechas llenas (no `sinLugar`), se muestran las fechas por hora y se ofrece **"Asignar donde hay lugar"** (reenvía con `asignarDondeHayLugar: true`) o "Cancelar"; el éxito muestra `fechasSinTurno` ("en estas fechas no hay turno"). `ALUMNO_SUPERPUESTO` y `sinLugar` no ofrecen esa opción. Contrato en `contrato-api.md` → Turnos.
+**Nota (T-37/T-38):** la pantalla vuelve a tener **"Recurrente / Sesión única"**: un recurrente pide fecha de inicio y fin opcional (sin fin). Ante un 409 `BLOQUE_LLENO` con fechas llenas (no `sinLugar`), se muestran las fechas por hora y se ofrece **"Asignar igual"** (reenvía con `asignarDondeHayLugar: true`) o "Cancelar"; el éxito muestra `fechasSinTurno` ("en estas fechas no hay turno"). `ALUMNO_SUPERPUESTO` y `sinLugar` no ofrecen esa opción. Contrato en `contrato-api.md` → Turnos.
+
+**Actualización (T-22 UI):** el alcance de arriba se implementó con estos cambios (decisión T-41):
+
+- **Hay recurrentes:** "Recurrente" (fecha de inicio y fin opcional; sin fin, se repite todas las semanas) o "Sesión única" (una fecha). El punto 4 ("una sola fecha") quedó reemplazado por la nota T-37/T-38.
+- El botón que reenvía un recurrente con fechas llenas es **"Asignar igual"**, con la aclaración "Se crea solo en las fechas con lugar" (el campo sigue siendo `asignarDondeHayLugar`).
+- **No hay fechas exceptuadas:** la confirmación muestra `fechasSinTurno` ("En estas fechas no hay turno", incluido `completoDesde`) y el detalle de cada turno muestra el rango de su tramo.
+- El hook de materias es `useMateriasSelector` (`features/materias`), no `use-materias-activas`.
+- La ocupación de las horas se refresca con la fecha elegida (disponibilidad con `fecha`); la etiqueta "Ocupación del …" sale de la `fecha` de la respuesta.
+- El alta de alumno funciona con ida y vuelta: "Dar de alta un alumno" abre `/mesa/alumnos/nuevo?volverA=turnos` y, al crear, vuelve con el alumno elegido (`?alumnoId=`).
+- El detalle de un turno es un modal con `?detalle=<id>` sobre la pantalla (T-34), reutilizable desde la agenda (T-24).
 
 ---
 
