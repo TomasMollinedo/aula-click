@@ -24,7 +24,11 @@ const { repository, materiasRepository, turnosRepository, getPresignedUrl, getSe
       reactivar: vi.fn(),
     },
     materiasRepository: { buscarPorIds: vi.fn() },
-    turnosRepository: { contarVigentesPorMateria: vi.fn(), listarVigentesPorProfesor: vi.fn() },
+    turnosRepository: {
+      contarVigentesPorMateria: vi.fn(),
+      listarVigentesPorProfesor: vi.fn(),
+      ocupacionMaximaPorFila: vi.fn(),
+    },
     getPresignedUrl: vi.fn(),
     getSession: vi.fn(),
   }))
@@ -117,6 +121,7 @@ beforeEach(() => {
   repository.reactivar.mockResolvedValue(GUARDADO)
   turnosRepository.contarVigentesPorMateria.mockResolvedValue([])
   turnosRepository.listarVigentesPorProfesor.mockResolvedValue([])
+  turnosRepository.ocupacionMaximaPorFila.mockResolvedValue([])
   materiasRepository.buscarPorIds.mockResolvedValue([
     { id: 2, nombre: 'Matemática', estado: 'ACTIVO' },
   ])
@@ -312,6 +317,7 @@ describe('PATCH /profesores/{id}', () => {
       3,
       { telefono: '3874000000', busqueda: 'perez martin 28333444' },
       { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      undefined,
     )
   })
 
@@ -351,6 +357,7 @@ describe('PATCH /profesores/{id}', () => {
       3,
       expect.objectContaining({ capacidad: 8 }),
       { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      expect.objectContaining({ verificar: expect.any(Function) }),
     )
     expect((await res.json()).capacidad).toBe(8)
   })
@@ -375,10 +382,11 @@ describe('PATCH /profesores/{id}/baja', () => {
 
     expect(res.status).toBe(200)
     expect((await res.json()).estado).toBe('INACTIVO')
-    expect(repository.darDeBaja).toHaveBeenCalledWith(3, {
-      userId: 'usr_mesa',
-      role: 'MESA_ENTRADAS',
-    })
+    expect(repository.darDeBaja).toHaveBeenCalledWith(
+      3,
+      { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      expect.objectContaining({ verificar: expect.any(Function) }),
+    )
   })
 
   it('con turnos vigentes → 409 TURNOS_VIGENTES con cada uno en details, sin dar de baja', async () => {
@@ -624,10 +632,12 @@ describe('DELETE /profesores/{id}/materias', () => {
     const res = await pedir('/3/materias', 'DELETE', { materiaIds: [2] })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual([])
-    expect(repository.quitarMaterias).toHaveBeenCalledWith(3, [2], {
-      userId: 'usr_mesa',
-      role: 'MESA_ENTRADAS',
-    })
+    expect(repository.quitarMaterias).toHaveBeenCalledWith(
+      3,
+      [2],
+      { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      expect.objectContaining({ verificar: expect.any(Function) }),
+    )
   })
 
   it('con turnos vigentes → 409 TURNOS_VIGENTES con la cantidad en details', async () => {

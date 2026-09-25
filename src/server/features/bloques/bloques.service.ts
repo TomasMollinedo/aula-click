@@ -57,17 +57,57 @@ export function crearBloquesService({
     }
   }
 
-  /**
-   * Turnos vigentes de la fila (`estado` `ACTIVO` y fecha no pasada, `condicionTurnoVigente` de
-   * `turnos.repository`, T-11): recurrente o sesión única, es la misma condición. Lanza
-   * `ConflictError` `TURNOS_VIGENTES` si hay alguno.
-   */
-  async function exigirSinTurnosVigentes(bloqueId: number): Promise<void> {
-    const cantidad = await turnosRepository.contarVigentesPorBloque(bloqueId, hoy(reloj))
+  /** `ConflictError` `TURNOS_VIGENTES` si la fila tiene turnos vigentes (con la cantidad). */
+  function exigirCeroVigentes(cantidad: number): void {
     if (cantidad > 0) {
       throw new ConflictError(MENSAJE_TURNOS_VIGENTES, {
         code: 'TURNOS_VIGENTES',
         details: { cantidad },
+      })
+    }
+  }
+
+  /**
+   * Turnos vigentes de la fila (`estado` `ACTIVO` y fecha no pasada, `condicionTurnoVigente`,
+   * T-11): recurrente o sesión única, es la misma condición. Lanza `ConflictError`
+   * `TURNOS_VIGENTES` si hay alguno. Es el chequeo previo (errores claros y en orden); el
+   * repository lo repite con el lock tomado, con `exigirCeroVigentes` como `verificar`.
+   */
+  async function exigirSinTurnosVigentes(bloqueId: number): Promise<void> {
+    exigirCeroVigentes(await turnosRepository.contarVigentesPorBloque(bloqueId, hoy(reloj)))
+  }
+
+  /**
+   * `TURNOS_VIGENTES` si alguna de las filas tiene turnos vigentes, con un detalle por fila
+   * (`path` = posición en `bloqueIds`, `message` y `cantidad`). Se usa antes de la transacción
+   * y como `verificar` dentro de ella.
+   */
+  function exigirFilasSinVigentes(
+    bloqueIds: number[],
+    filas: ReadonlyMap<number, { horaInicio: number; horaFin: number }>,
+    porFila: readonly { bloqueAgendaId: number; cantidad: number }[],
+  ): void {
+    const vigentes = new Map(
+      porFila.map(({ bloqueAgendaId, cantidad }) => [bloqueAgendaId, cantidad]),
+    )
+    const conTurnos = detallesPorPosicion(
+      'bloqueIds',
+      bloqueIds,
+      (id) => (vigentes.get(id) ?? 0) > 0,
+      (id) => {
+        const fila = filas.get(id)
+        const cantidad = vigentes.get(id) ?? 0
+        const hora = fila
+          ? ` de ${minutosAHora(fila.horaInicio)} a ${minutosAHora(fila.horaFin)}`
+          : ''
+        return `La hora${hora} tiene ${cantidad} ${cantidad === 1 ? 'turno vigente' : 'turnos vigentes'}`
+      },
+      (id) => ({ cantidad: vigentes.get(id) ?? 0 }),
+    )
+    if (conTurnos.length > 0) {
+      throw new ConflictError(MENSAJE_TURNOS_VIGENTES, {
+        code: 'TURNOS_VIGENTES',
+        details: conTurnos,
       })
     }
   }
@@ -200,7 +240,10 @@ export function crearBloquesService({
 
       await validarProfesor(actual.profesorId)
 
-      return repository.editarBloque(id, { diaSemana, horaInicio, horaFin, aulaId }, actor)
+      return repository.editarBloque(id, { diaSemana, horaInicio, horaFin, aulaId }, actor, {
+        fechaHoy: hoy(reloj),
+        verificar: exigirCeroVigentes,
+      })
     },
 
     /**
@@ -215,7 +258,10 @@ export function crearBloquesService({
 
       await exigirSinTurnosVigentes(id)
 
-      return repository.eliminarBloque(id, actor)
+      return repository.eliminarBloque(id, actor, {
+        fechaHoy: hoy(reloj),
+        verificar: exigirCeroVigentes,
+      })
     },
 
     /**
@@ -249,33 +295,17 @@ export function crearBloquesService({
         })
       }
 
-      const vigentes = new Map(
-        (await turnosRepository.contarVigentesPorBloques(bloqueIds, hoy(reloj))).map(
-          ({ bloqueAgendaId, cantidad }) => [bloqueAgendaId, cantidad],
-        ),
-      )
-      const conTurnos = detallesPorPosicion(
-        'bloqueIds',
+      const fechaHoy = hoy(reloj)
+      exigirFilasSinVigentes(
         bloqueIds,
-        (id) => (vigentes.get(id) ?? 0) > 0,
-        (id) => {
-          const fila = filas.get(id)
-          const cantidad = vigentes.get(id) ?? 0
-          const hora = fila
-            ? ` de ${minutosAHora(fila.horaInicio)} a ${minutosAHora(fila.horaFin)}`
-            : ''
-          return `La hora${hora} tiene ${cantidad} ${cantidad === 1 ? 'turno vigente' : 'turnos vigentes'}`
-        },
-        (id) => ({ cantidad: vigentes.get(id) ?? 0 }),
+        filas,
+        await turnosRepository.contarVigentesPorBloques(bloqueIds, fechaHoy),
       )
-      if (conTurnos.length > 0) {
-        throw new ConflictError(MENSAJE_TURNOS_VIGENTES, {
-          code: 'TURNOS_VIGENTES',
-          details: conTurnos,
-        })
-      }
 
-      const bloques = await repository.eliminarBloques(bloqueIds, actor)
+      const bloques = await repository.eliminarBloques(bloqueIds, actor, {
+        fechaHoy,
+        verificar: (porFila) => exigirFilasSinVigentes(bloqueIds, filas, porFila),
+      })
       return { cantidad: bloques.length, bloques }
     },
   }

@@ -5,6 +5,15 @@ import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/audito
 import { dateAFecha, diaSemanaISO, fechaADate } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
+import {
+  condicionTurnoOcupaLugar,
+  condicionTurnoSeCruzaCon,
+  condicionTurnoVigente,
+  contarVigentesPorBloques,
+  contarVigentesPorMateria,
+  listarVigentesPorProfesor,
+  ocupacionMaximaPorFila,
+} from './turnos.condiciones'
 import { ocupaLugarEn } from './turnos.reglas'
 import type {
   AgendaListado,
@@ -12,6 +21,7 @@ import type {
   EntradaReserva,
   FechasSinTurno,
   MateriasConTurnoListado,
+  OcupacionMaximaPorFila,
   OcupacionPorBloque,
   PlanReserva,
   SnapshotReserva,
@@ -22,57 +32,10 @@ import type {
   TurnoVigentePorProfesor,
 } from './turnos.validation'
 
-// Único lugar de la feature que usa Prisma. Sin reglas de negocio: las decide el service con
-// `turnos.reglas.ts`. Lo que vive acá son las condiciones de consulta que otras features
-// reutilizan (vigente, ocupa lugar, se cruza con) y la atomicidad de la reserva.
-
-/**
- * Condición de **turno vigente** (docs/dominio.md → Turnos): `fechaFin` nula (recurrente sin fin)
- * o >= hoy, y estado `ACTIVO`. Un turno `CANCELADO` no cuenta: la vigencia se decide por fecha,
- * pero un cancelado no bloquea nada.
- *
- * Es la **única** implementación de la condición (convenciones-backend.md → Turno vigente): se
- * reutiliza desde acá, nunca se reescribe en otra feature. `fechaHoy` la calcula el service con
- * `hoy()` y su reloj inyectable.
- */
-export function condicionTurnoVigente(fechaHoy: string) {
-  return {
-    estado: 'ACTIVO',
-    OR: [{ fechaFin: null }, { fechaFin: { gte: fechaADate(fechaHoy) } }],
-  } satisfies Prisma.TurnoWhereInput
-}
-
-/**
- * Turno `ACTIVO` con al menos una fecha en `[inicio, fin]` (`fin` `null` = sin fin): `fechaInicio
- * <= fin` y `fechaFin` nula o `>= inicio`. Es la lectura de "los turnos que pueden chocar con un
- * pedido" (reserva) y la base de `condicionTurnoOcupaLugar`. Equivale al predicado puro
- * `seCruzaCon` de `turnos.reglas.ts`. Se combina con el `bloqueAgendaId` o el `alumnoId`.
- *
- * Ojo al combinarla: tiene un `OR` (y puede tener `fechaInicio`) en el primer nivel. Se puede
- * mezclar por spread con otras claves (`bloqueAgendaId`, `alumnoId`, un `OR` anidado en una
- * relación), pero no con otra condición que también tenga `OR` o `fechaInicio` en el primer nivel
- * (como `condicionTurnoVigente`): el spread pisaría uno con otro. En ese caso, `AND: [a, b]`.
- */
-export function condicionTurnoSeCruzaCon(inicio: string, fin: string | null) {
-  return {
-    estado: 'ACTIVO',
-    ...(fin === null ? {} : { fechaInicio: { lte: fechaADate(fin) } }),
-    OR: [{ fechaFin: null }, { fechaFin: { gte: fechaADate(inicio) } }],
-  } satisfies Prisma.TurnoWhereInput
-}
-
-/**
- * Condición de **turno que ocupa lugar** en una fila de `bloque_agenda` en `fecha` (una sola para
- * los dos tipos): `ACTIVO`, `fechaInicio <= fecha` y `fechaFin` nula o `>= fecha`. Una sesión
- * única es el caso `fechaInicio = fechaFin`; un recurrente ocupa lugar en cada fecha de su rango
- * (todas caen en el día de su fila). Es la ocupación del horario (T-33) y del control de
- * capacidad (`BLOQUE_LLENO`): se reutiliza desde acá, nunca se reescribe. Equivale al predicado
- * puro `ocupaLugarEn` de `turnos.reglas.ts`. Se combina con el `bloqueAgendaId` de la fila o, en la
- * agenda diaria (T-23) y sus selectores, con el día de la semana del bloque (`bloqueAgenda.diaSemana`).
- */
-export function condicionTurnoOcupaLugar(fecha: string) {
-  return condicionTurnoSeCruzaCon(fecha, fecha)
-}
+// Único lugar de la feature que crea consultas con el cliente de Prisma. Sin reglas de negocio: las
+// decide el service con `turnos.reglas.ts`. Las condiciones de consulta que otras features
+// reutilizan (vigente, ocupa lugar, se cruza con) y las lecturas que hacen dentro de su propia
+// transacción viven en `turnos.condiciones.ts`; acá se usan con el cliente común.
 
 /** Opciones de la transacción de `reservar` (ver el comentario ahí). */
 const TRANSACCION_RESERVA = { timeout: 10_000 } as const
@@ -256,19 +219,7 @@ export const turnosRepository = {
     profesorId?: number
     materiaIds?: number[]
   }): Promise<TurnosVigentesPorMateria[]> {
-    const grupos = await prisma.turno.groupBy({
-      by: ['materiaId'],
-      where: {
-        ...condicionTurnoVigente(filtro.fechaHoy),
-        ...(filtro.profesorId === undefined
-          ? {}
-          : { bloqueAgenda: { profesorId: filtro.profesorId } }),
-        ...(filtro.materiaIds === undefined ? {} : { materiaId: { in: filtro.materiaIds } }),
-      },
-      _count: { _all: true },
-      orderBy: { materiaId: 'asc' },
-    })
-    return grupos.map((grupo) => ({ materiaId: grupo.materiaId, cantidad: grupo._count._all }))
+    return contarVigentesPorMateria(prisma, filtro)
   },
 
   /**
@@ -291,27 +242,19 @@ export const turnosRepository = {
     profesorId: number,
     fechaHoy: string,
   ): Promise<TurnoVigentePorProfesor[]> {
-    const filas = await prisma.turno.findMany({
-      where: { ...condicionTurnoVigente(fechaHoy), bloqueAgenda: { profesorId } },
-      select: {
-        alumno: { select: { id: true, nombre: true, apellido: true } },
-        materia: { select: { id: true, nombre: true } },
-        tipo: true,
-        fechaInicio: true,
-        fechaFin: true,
-        bloqueAgenda: { select: { horaInicio: true, horaFin: true } },
-      },
-      orderBy: [{ fechaInicio: 'asc' }, { id: 'asc' }],
-    })
-    return filas.map((fila) => ({
-      alumno: fila.alumno,
-      materia: fila.materia,
-      tipo: fila.tipo,
-      fecha: dateAFecha(fila.fechaInicio),
-      fechaFin: fila.fechaFin && dateAFecha(fila.fechaFin),
-      horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
-      horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
-    }))
+    return listarVigentesPorProfesor(prisma, profesorId, fechaHoy)
+  },
+
+  /**
+   * Ocupación simultánea máxima de cada hora activa del profesor desde hoy (la mayor cantidad de
+   * turnos que ocupan lugar en una misma fecha). La usa `profesores` para decidir
+   * `CAPACIDAD_INSUFICIENTE` antes de bajar la capacidad (T-15).
+   */
+  async ocupacionMaximaPorFila(
+    profesorId: number,
+    fechaHoy: string,
+  ): Promise<OcupacionMaximaPorFila[]> {
+    return ocupacionMaximaPorFila(prisma, profesorId, fechaHoy)
   },
 
   /**
@@ -322,16 +265,7 @@ export const turnosRepository = {
     bloqueAgendaIds: number[],
     fechaHoy: string,
   ): Promise<TurnosVigentesPorBloque[]> {
-    const grupos = await prisma.turno.groupBy({
-      by: ['bloqueAgendaId'],
-      where: { ...condicionTurnoVigente(fechaHoy), bloqueAgendaId: { in: bloqueAgendaIds } },
-      _count: { _all: true },
-      orderBy: { bloqueAgendaId: 'asc' },
-    })
-    return grupos.map((grupo) => ({
-      bloqueAgendaId: grupo.bloqueAgendaId,
-      cantidad: grupo._count._all,
-    }))
+    return contarVigentesPorBloques(prisma, bloqueAgendaIds, fechaHoy)
   },
 
   /**

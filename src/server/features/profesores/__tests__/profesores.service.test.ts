@@ -81,6 +81,7 @@ function crearRepositories() {
     turnosRepository: {
       contarVigentesPorMateria: vi.fn<TurnosRepository['contarVigentesPorMateria']>(),
       listarVigentesPorProfesor: vi.fn<TurnosRepository['listarVigentesPorProfesor']>(),
+      ocupacionMaximaPorFila: vi.fn<TurnosRepository['ocupacionMaximaPorFila']>(),
     },
     getPresignedUrl: vi.fn<(key: string) => Promise<string>>(),
   }
@@ -106,6 +107,7 @@ beforeEach(() => {
     { id: 2, nombre: 'Matemática' },
   ])
   getPresignedUrl.mockImplementation((key) => Promise.resolve(`https://minio.local/${key}`))
+  turnosRepository.ocupacionMaximaPorFila.mockResolvedValue([])
 })
 
 /** Ejecuta `accion`, que debe fallar, y devuelve el error. */
@@ -263,6 +265,7 @@ describe('editar', () => {
       3,
       { apellido: 'Gómez', busqueda: 'gomez martin 28333444' },
       actor,
+      undefined, // sin capacidad no se verifica la ocupación
     )
   })
 
@@ -273,6 +276,93 @@ describe('editar', () => {
 
     expect(error).toBeInstanceOf(NotFoundError)
     expect(repository.actualizar).not.toHaveBeenCalled()
+  })
+})
+
+describe('editar: capacidad (T-15, CAPACIDAD_INSUFICIENTE)', () => {
+  const LUNES_9 = {
+    bloqueId: 10,
+    diaSemana: 1,
+    horaInicio: '09:00',
+    horaFin: '10:00',
+    fecha: '2026-10-12',
+    cantidad: 4,
+  }
+
+  beforeEach(() => {
+    repository.buscarPorId.mockResolvedValue(GUARDADO)
+    repository.actualizar.mockResolvedValue(GUARDADO)
+  })
+
+  it('consulta la ocupación máxima de sus horas desde hoy y pasa la verificación al repository', async () => {
+    await service.editar(3, { capacidad: 8 }, actor)
+
+    expect(turnosRepository.ocupacionMaximaPorFila).toHaveBeenCalledWith(3, HOY)
+    expect(repository.actualizar).toHaveBeenCalledWith(
+      3,
+      expect.objectContaining({ capacidad: 8 }),
+      actor,
+      { fechaHoy: HOY, verificar: expect.any(Function) },
+    )
+  })
+
+  it('bajarla a la ocupación exacta de una hora se permite (no es menor)', async () => {
+    turnosRepository.ocupacionMaximaPorFila.mockResolvedValue([LUNES_9])
+
+    await service.editar(3, { capacidad: 4 }, actor)
+
+    expect(repository.actualizar).toHaveBeenCalled()
+  })
+
+  it('por debajo de la ocupación de alguna hora → 409 CAPACIDAD_INSUFICIENTE con la hora, la fecha y la cantidad', async () => {
+    turnosRepository.ocupacionMaximaPorFila.mockResolvedValue([
+      LUNES_9,
+      { ...LUNES_9, bloqueId: 11, horaInicio: '10:00', horaFin: '11:00', cantidad: 2 },
+    ])
+
+    const error = await errorDe(service.editar(3, { capacidad: 3 }, actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect((error as ConflictError).code).toBe('CAPACIDAD_INSUFICIENTE')
+    expect((error as ConflictError).details).toEqual([
+      {
+        path: ['capacidad'],
+        message: 'El 12/10, la hora de 09:00 a 10:00 ya tiene 4 turnos a la vez',
+        ...LUNES_9,
+      },
+    ])
+    expect(repository.actualizar).not.toHaveBeenCalled()
+  })
+
+  it('bajo lock: si una reserva se coló entre el chequeo y la escritura, el repository rechaza igual', async () => {
+    repository.actualizar.mockImplementation(async (_id, _cambios, _actor, ocupacion) => {
+      ocupacion?.verificar([LUNES_9])
+      return GUARDADO
+    })
+
+    const error = await errorDe(service.editar(3, { capacidad: 3 }, actor))
+
+    expect((error as ConflictError).code).toBe('CAPACIDAD_INSUFICIENTE')
+  })
+
+  it('con un solo turno usa el singular en el mensaje', async () => {
+    // El schema exige capacidad >= 1, así que en la API un solo turno nunca excede la capacidad:
+    // se llama al service directo para fijar el texto.
+    turnosRepository.ocupacionMaximaPorFila.mockResolvedValue([{ ...LUNES_9, cantidad: 1 }])
+
+    const error = await errorDe(service.editar(3, { capacidad: 0 }, actor))
+
+    expect((error as ConflictError).details).toEqual([
+      expect.objectContaining({
+        message: 'El 12/10, la hora de 09:00 a 10:00 ya tiene 1 turno a la vez',
+      }),
+    ])
+  })
+
+  it('sin capacidad en los cambios no consulta la ocupación', async () => {
+    await service.editar(3, { telefono: '3874000000' }, actor)
+
+    expect(turnosRepository.ocupacionMaximaPorFila).not.toHaveBeenCalled()
   })
 })
 
@@ -455,7 +545,10 @@ describe('quitarMaterias', () => {
     const resultado = await service.quitarMaterias(3, { materiaIds: [2, 7] }, actor)
 
     expect(repository.quitarMaterias).toHaveBeenCalledOnce()
-    expect(repository.quitarMaterias).toHaveBeenCalledWith(3, [2, 7], actor)
+    expect(repository.quitarMaterias).toHaveBeenCalledWith(3, [2, 7], actor, {
+      fechaHoy: HOY,
+      verificar: expect.any(Function),
+    })
     expect(resultado).toEqual([])
   })
 
@@ -476,7 +569,10 @@ describe('quitarMaterias', () => {
 
     await service.quitarMaterias(3, { materiaIds: [2] }, actor)
 
-    expect(repository.quitarMaterias).toHaveBeenCalledWith(3, [2], actor)
+    expect(repository.quitarMaterias).toHaveBeenCalledWith(3, [2], actor, {
+      fechaHoy: HOY,
+      verificar: expect.any(Function),
+    })
   })
 
   it('profesor inexistente → NotFoundError, sin consultar turnos ni quitar', async () => {
@@ -527,6 +623,16 @@ describe('quitarMaterias', () => {
     expect(repository.quitarMaterias).not.toHaveBeenCalled()
   })
 
+  it('bajo lock: si una reserva se coló entre el chequeo y la escritura, el repository rechaza igual', async () => {
+    repository.quitarMaterias.mockImplementation(async (_id, _materias, _actor, vigentes) => {
+      vigentes.verificar([{ materiaId: MATEMATICA.id, cantidad: 1 }])
+    })
+
+    const error = await errorDe(service.quitarMaterias(3, { materiaIds: [MATEMATICA.id] }, actor))
+
+    expect((error as ConflictError).code).toBe('TURNOS_VIGENTES')
+  })
+
   it('un solo turno vigente usa el singular en el mensaje', async () => {
     turnosRepository.contarVigentesPorMateria.mockResolvedValue([{ materiaId: 2, cantidad: 1 }])
 
@@ -560,7 +666,10 @@ describe('darDeBaja', () => {
 
     const resultado = await service.darDeBaja(3, actor)
 
-    expect(repository.darDeBaja).toHaveBeenCalledWith(3, actor)
+    expect(repository.darDeBaja).toHaveBeenCalledWith(3, actor, {
+      fechaHoy: HOY,
+      verificar: expect.any(Function),
+    })
     expect(resultado.estado).toBe('INACTIVO')
   })
 
@@ -578,6 +687,18 @@ describe('darDeBaja', () => {
     expect(error).toBeInstanceOf(ConflictError)
     expect(error).toMatchObject({ code: 'TURNOS_VIGENTES', details: [TURNO_VIGENTE] })
     expect(repository.darDeBaja).not.toHaveBeenCalled()
+  })
+
+  it('bajo lock: si una reserva se coló entre el chequeo y la baja, el repository rechaza igual', async () => {
+    repository.darDeBaja.mockImplementation(async (_id, _actor, vigentes) => {
+      vigentes.verificar([TURNO_VIGENTE])
+      return GUARDADO
+    })
+
+    const error = await errorDe(service.darDeBaja(3, actor))
+
+    expect((error as ConflictError).code).toBe('TURNOS_VIGENTES')
+    expect((error as ConflictError).details).toEqual([TURNO_VIGENTE])
   })
 
   it('profesor inexistente → NotFoundError, sin consultar turnos ni dar de baja', async () => {

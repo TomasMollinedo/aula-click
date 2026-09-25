@@ -338,8 +338,23 @@ describe('editar', () => {
       10,
       { diaSemana: 1, horaInicio: 900, horaFin: 960, aulaId: 7 },
       actor,
+      { fechaHoy: HOY, verificar: expect.any(Function) },
     )
     expect(resultado).toEqual(editado)
+  })
+
+  it('bajo lock: si una reserva se coló después del chequeo, el repository rechaza con TURNOS_VIGENTES', async () => {
+    repository.editarBloque.mockImplementation(async (_id, _datos, _actor, vigentes) => {
+      vigentes.verificar(1)
+      return bloque('15:00', '16:00', 10)
+    })
+
+    const error = await errorDe(
+      service.editar(10, { horaInicio: '15:00', horaFin: '16:00' }, actor),
+    )
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error).toMatchObject({ code: 'TURNOS_VIGENTES', details: { cantidad: 1 } })
   })
 
   it('cambia solo el aula: conserva día y horario actuales', async () => {
@@ -351,6 +366,7 @@ describe('editar', () => {
       10,
       { diaSemana: 1, horaInicio: 840, horaFin: 900, aulaId: 9 },
       actor,
+      { fechaHoy: HOY, verificar: expect.any(Function) },
     )
   })
 
@@ -448,9 +464,23 @@ describe('eliminar', () => {
 
     const resultado = await service.eliminar(10, actor)
 
-    expect(repository.eliminarBloque).toHaveBeenCalledWith(10, actor)
+    expect(repository.eliminarBloque).toHaveBeenCalledWith(10, actor, {
+      fechaHoy: HOY,
+      verificar: expect.any(Function),
+    })
     expect(profesoresRepository.buscarParaBloque).not.toHaveBeenCalled()
     expect(resultado).toEqual(eliminado)
+  })
+
+  it('bajo lock: si una reserva se coló después del chequeo, el repository rechaza con TURNOS_VIGENTES', async () => {
+    repository.eliminarBloque.mockImplementation(async (_id, _actor, vigentes) => {
+      vigentes.verificar(2)
+      return bloque('14:00', '15:00', 10)
+    })
+
+    const error = await errorDe(service.eliminar(10, actor))
+
+    expect(error).toMatchObject({ code: 'TURNOS_VIGENTES', details: { cantidad: 2 } })
   })
 
   it('se puede dar de baja aunque el profesor esté inactivo', async () => {
@@ -521,9 +551,32 @@ describe('eliminarVarios', () => {
     const resultado = await service.eliminarVarios({ bloqueIds: [10, 11, 12] }, actor)
 
     expect(turnosRepository.contarVigentesPorBloques).toHaveBeenCalledWith([10, 11, 12], HOY)
-    expect(repository.eliminarBloques).toHaveBeenCalledWith([10, 11, 12], actor)
+    expect(repository.eliminarBloques).toHaveBeenCalledWith([10, 11, 12], actor, {
+      fechaHoy: HOY,
+      verificar: expect.any(Function),
+    })
     expect(profesoresRepository.buscarParaBloque).not.toHaveBeenCalled()
     expect(resultado).toEqual({ cantidad: 3, bloques: eliminados })
+  })
+
+  it('bajo lock: si una reserva se coló después del chequeo, el repository rechaza con el detalle por fila', async () => {
+    repository.eliminarBloques.mockImplementation(async (_ids, _actor, vigentes) => {
+      vigentes.verificar([{ bloqueAgendaId: 11, cantidad: 1 }])
+      return []
+    })
+
+    const error = await errorDe(service.eliminarVarios({ bloqueIds: [10, 11, 12] }, actor))
+
+    expect(error).toMatchObject({
+      code: 'TURNOS_VIGENTES',
+      details: [
+        {
+          path: ['bloqueIds', 1],
+          message: 'La hora de 15:00 a 16:00 tiene 1 turno vigente',
+          cantidad: 1,
+        },
+      ],
+    })
   })
 
   it('ids repetidos: el service tampoco los acepta como válidos (los frena el schema)', async () => {

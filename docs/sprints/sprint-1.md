@@ -544,6 +544,8 @@ El backlog v4 sumó `capacidad` a los datos obligatorios del profesor, con una r
 - Bajar la capacidad de un profesor con más turnos vigentes en alguna hora responde 409 `CAPACIDAD_INSUFICIENTE` e indica cuál es esa hora.
 - Subir la capacidad, o bajarla a un valor que sigue alcanzando, funciona.
 
+**Actualización (T-40):** con los recurrentes de vuelta (T-37), "la cantidad de turnos vigentes en una hora" se reemplaza por la **ocupación simultánea máxima** de esa hora desde hoy: la mayor cantidad de turnos que ocupan lugar en una misma fecha (la cuenta de `BLOQUE_LLENO`). `details` suma la `fecha` de esa ocupación. Además, la edición relee la ocupación con el lock del profesor tomado (T-39), así una reserva simultánea no deja la capacidad por debajo.
+
 ---
 
 ## T-16 · [Front] FIX · HU-02 · Capacidad del profesor en las pantallas de profesores

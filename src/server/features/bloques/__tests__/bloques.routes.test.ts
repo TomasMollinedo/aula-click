@@ -265,6 +265,7 @@ describe('PATCH /bloques/{bloqueId}', () => {
       10,
       { diaSemana: 1, horaInicio: 840, horaFin: 900, aulaId: 9 },
       { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      expect.objectContaining({ verificar: expect.any(Function) }),
     )
   })
 
@@ -343,10 +344,11 @@ describe('DELETE /bloques/{bloqueId}', () => {
     const res = await pedir('/10', 'DELETE')
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual(BLOQUE_RESPUESTA)
-    expect(repository.eliminarBloque).toHaveBeenCalledWith(10, {
-      userId: 'usr_mesa',
-      role: 'MESA_ENTRADAS',
-    })
+    expect(repository.eliminarBloque).toHaveBeenCalledWith(
+      10,
+      { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      expect.objectContaining({ verificar: expect.any(Function) }),
+    )
   })
 
   it('bloque inexistente → 404 NO_ENCONTRADO', async () => {
@@ -471,10 +473,11 @@ describe('DELETE /bloques', () => {
     const res = await pedir('', 'DELETE', { bloqueIds: [10, 11] })
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({ cantidad: 2, bloques: RESPUESTA })
-    expect(repository.eliminarBloques).toHaveBeenCalledWith([10, 11], {
-      userId: 'usr_mesa',
-      role: 'MESA_ENTRADAS',
-    })
+    expect(repository.eliminarBloques).toHaveBeenCalledWith(
+      [10, 11],
+      { userId: 'usr_mesa', role: 'MESA_ENTRADAS' },
+      expect.objectContaining({ verificar: expect.any(Function) }),
+    )
   })
 
   it('acepta hasta 24 bloques (las horas de un día)', async () => {

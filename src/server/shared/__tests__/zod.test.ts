@@ -10,9 +10,11 @@ import {
   horaHHmm,
   minutosAHora,
   nombrePersona,
+  opcional,
   partirEnHoras,
   rangoHorasEnPunto,
   telefono,
+  textoOpcional,
   textoRequerido,
 } from '../zod'
 
@@ -93,6 +95,48 @@ describe('textoRequerido', () => {
 
   it.each([0, -1, 1.5, Number.NaN])('lanza RangeError con max %s', (max) => {
     expect(() => textoRequerido(max)).toThrow(RangeError)
+  })
+})
+
+describe('textoOpcional', () => {
+  const campo = textoOpcional(5, 'Motivo')
+
+  it('omitido queda undefined; null queda null', () => {
+    expect(campo.parse(undefined)).toBeUndefined()
+    expect(campo.parse(null)).toBeNull()
+  })
+
+  it('"" o solo espacios se guarda como null; con texto, recortado', () => {
+    expect(campo.parse('')).toBeNull()
+    expect(campo.parse('   ')).toBeNull()
+    expect(campo.parse('  hola ')).toBe('hola')
+  })
+
+  it('el máximo se mide después del trim', () => {
+    expect(campo.safeParse('  12345  ').success).toBe(true)
+    expect(mensaje(campo.safeParse('123456'))).toBe('No puede superar los 5 caracteres')
+  })
+
+  it('rechaza lo que no es texto', () => {
+    expect(mensaje(campo.safeParse(12))).toBe('Debe ser un texto')
+  })
+
+  it.each([0, -1, 1.5, Number.NaN])('lanza RangeError con max %s', (max) => {
+    expect(() => textoOpcional(max, 'Motivo')).toThrow(RangeError)
+  })
+})
+
+describe('opcional', () => {
+  const tutorDni = opcional(dni, { description: 'DNI del tutor' })
+
+  it('con contenido valida con la primitiva (y la aplica: el DNI sale solo con dígitos)', () => {
+    expect(tutorDni.parse('20.111.222')).toBe('20111222')
+    expect(tutorDni.safeParse('12').success).toBe(false)
+  })
+
+  it('vacío o null no se validan con la primitiva: salen como null', () => {
+    expect(tutorDni.parse('  ')).toBeNull()
+    expect(tutorDni.parse(null)).toBeNull()
   })
 })
 

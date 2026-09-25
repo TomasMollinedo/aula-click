@@ -3,7 +3,15 @@ import { auditoriaSchema } from '@/server/shared/auditoria'
 import { ESTADOS } from '@/server/shared/estado'
 import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
-import { dni, email, fechaISO, nombrePersona, telefono } from '@/server/shared/zod'
+import {
+  dni,
+  email,
+  fechaISO,
+  nombrePersona,
+  opcional,
+  telefono,
+  textoOpcional,
+} from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio:
 // la edad y el tutor de los menores los decide el service.
@@ -24,38 +32,6 @@ export const nivelEscolaridadSchema = z
   .openapi({ description: 'Nivel de escolaridad', example: 'SECUNDARIO' })
 
 export type NivelEscolaridad = z.infer<typeof nivelEscolaridadSchema>
-
-const VACIO = 'Opcional: acepta null, y "" o solo espacios se guarda como null'
-
-/**
- * Campo opcional del body: acepta `null`, omitirse o un texto. Un texto vacío o solo con espacios
- * se guarda como `null` (el formulario manda `""`); con contenido, se valida con `primitiva`.
- * Candidato a `shared/` si profesores o materias lo repiten.
- *
- * Con `.pipe()` el OpenAPI solo ve un `string`: `openapi` agrega lo que se pierde (enum, largo).
- */
-function opcional<T extends z.ZodType<unknown, string>>(
-  primitiva: T,
-  openapi: { description: string; example?: string; maxLength?: number; enum?: string[] },
-) {
-  return z
-    .string({ error: 'Debe ser un texto' })
-    .trim()
-    .transform((valor) => (valor === '' ? null : valor))
-    .pipe(primitiva.nullable())
-    .openapi({ ...openapi, description: `${openapi.description}. ${VACIO}` })
-    .nullable()
-    .optional()
-}
-
-/** Texto opcional de hasta `max` caracteres (ver `opcional`). */
-function textoOpcional(max: number, description: string, example?: string) {
-  return opcional(z.string().max(max, { error: `No puede superar los ${max} caracteres` }), {
-    description,
-    example,
-    maxLength: max,
-  })
-}
 
 /** `id` del path. Uno no numérico, cero o negativo responde 400. */
 export const alumnoIdParamsSchema = z.object({
