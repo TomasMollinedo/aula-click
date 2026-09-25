@@ -141,3 +141,29 @@ export type MateriaConTurno = z.infer<typeof materiaConTurnoSchema>
 export const materiasConTurnoListadoSchema = z.array(materiaConTurnoSchema)
 
 export type MateriasConTurnoListado = z.infer<typeof materiasConTurnoListadoSchema>
+
+/** Query del selector de profesores con turno: `fecha` (sin ella, hoy), como en la agenda. */
+export const profesoresConTurnoQuerySchema = z.object({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+})
+
+export type ProfesoresConTurnoQuery = z.infer<typeof profesoresConTurnoQuerySchema>
+
+/**
+ * Ítem del selector de profesores con turno en una fecha: `apellido` y `nombre` por separado
+ * (como en el resto de la API: `AgendaItem.profesor`, `ProfesorListadoItem`), no un nombre
+ * completo armado. Es su propio componente porque vive en `turnos`.
+ */
+export const profesorConTurnoSchema = z
+  .object({ id: z.number().int(), apellido: z.string(), nombre: z.string() })
+  .openapi('ProfesorConTurno')
+
+export type ProfesorConTurno = z.infer<typeof profesorConTurnoSchema>
+
+export const profesoresConTurnoListadoSchema = z.array(profesorConTurnoSchema)
+
+export type ProfesoresConTurnoListado = z.infer<typeof profesoresConTurnoListadoSchema>

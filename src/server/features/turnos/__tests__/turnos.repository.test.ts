@@ -10,18 +10,22 @@ import {
 // reemplaza por un mock y se verifica la condición que recibe. Que Postgres la evalúe bien lo
 // garantiza el `gte` sobre una columna @db.Date.
 
-const { groupBy, count, findMany, materiaFindMany, $transaction } = vi.hoisted(() => ({
-  groupBy: vi.fn(),
-  count: vi.fn(),
-  findMany: vi.fn(),
-  materiaFindMany: vi.fn(),
-  // Emula la forma "arreglo" de $transaction: ejecuta las consultas ya lanzadas por los mocks.
-  $transaction: vi.fn((operaciones: Promise<unknown>[]) => Promise.all(operaciones)),
-}))
+const { groupBy, count, findMany, materiaFindMany, profesorFindMany, $transaction } = vi.hoisted(
+  () => ({
+    groupBy: vi.fn(),
+    count: vi.fn(),
+    findMany: vi.fn(),
+    materiaFindMany: vi.fn(),
+    profesorFindMany: vi.fn(),
+    // Emula la forma "arreglo" de $transaction: ejecuta las consultas ya lanzadas por los mocks.
+    $transaction: vi.fn((operaciones: Promise<unknown>[]) => Promise.all(operaciones)),
+  }),
+)
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     turno: { groupBy, count, findMany },
     materia: { findMany: materiaFindMany },
+    profesor: { findMany: profesorFindMany },
     $transaction,
   },
 }))
@@ -35,6 +39,7 @@ beforeEach(() => {
   count.mockResolvedValue(0)
   findMany.mockResolvedValue([])
   materiaFindMany.mockResolvedValue([])
+  profesorFindMany.mockResolvedValue([])
 })
 
 describe('condicionTurnoVigente', () => {
@@ -362,5 +367,43 @@ describe('listarMateriasConTurno', () => {
 
   it('sin materias con turno ese día, devuelve un arreglo vacío', async () => {
     await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([])
+  })
+})
+
+describe('listarProfesoresConTurno', () => {
+  it('arma el item con apellido y nombre (los de su Usuario), separados', async () => {
+    profesorFindMany.mockResolvedValue([
+      { id: 3, usuario: { apellido: 'Pérez', nombre: 'Ana' } },
+      { id: 5, usuario: { apellido: 'Ramírez', nombre: 'Sofía' } },
+    ])
+
+    await expect(turnosRepository.listarProfesoresConTurno(HOY)).resolves.toEqual([
+      { id: 3, apellido: 'Pérez', nombre: 'Ana' },
+      { id: 5, apellido: 'Ramírez', nombre: 'Sofía' },
+    ])
+  })
+
+  it('filtra profesores con algún bloque en el día de semana con un turno que aplica esa fecha', async () => {
+    await turnosRepository.listarProfesoresConTurno(HOY)
+
+    // 2026-09-22 es martes: diaSemanaISO = 2.
+    expect(profesorFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          bloques: { some: { diaSemana: 2, turnos: { some: condicionTurnoEnFecha(HOY) } } },
+        },
+      }),
+    )
+  })
+
+  it('no filtra por el estado del profesor: importa si dictó clase esa fecha, no si sigue activo', async () => {
+    await turnosRepository.listarProfesoresConTurno(HOY)
+
+    const { where } = profesorFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
+    expect(where).not.toHaveProperty('usuario')
+  })
+
+  it('sin profesores con turno ese día, devuelve un arreglo vacío', async () => {
+    await expect(turnosRepository.listarProfesoresConTurno(HOY)).resolves.toEqual([])
   })
 })

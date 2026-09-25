@@ -5,6 +5,8 @@ import type {
   AgendaQuery,
   MateriasConTurnoListado,
   MateriasConTurnoQuery,
+  ProfesoresConTurnoListado,
+  ProfesoresConTurnoQuery,
 } from './turnos.validation'
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
@@ -38,6 +40,11 @@ export function crearTurnosService({
     /** Selector de materias con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
     listarMateriasConTurno(query: MateriasConTurnoQuery): Promise<MateriasConTurnoListado> {
       return repository.listarMateriasConTurno(query.fecha ?? hoy(reloj))
+    },
+
+    /** Selector de profesores con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
+    listarProfesoresConTurno(query: ProfesoresConTurnoQuery): Promise<ProfesoresConTurnoListado> {
+      return repository.listarProfesoresConTurno(query.fecha ?? hoy(reloj))
     },
   }
 }

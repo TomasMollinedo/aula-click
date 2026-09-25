@@ -7,6 +7,7 @@ import type {
   AgendaListado,
   MateriasConTurnoListado,
   OcupacionPorBloque,
+  ProfesoresConTurnoListado,
   TurnosVigentesPorBloque,
   TurnosVigentesPorMateria,
   TurnoVigentePorProfesor,
@@ -270,6 +271,32 @@ export const turnosRepository = {
       select: { id: true, nombre: true },
       orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
     })
+  },
+
+  /**
+   * Profesores con al menos un bloque que ese día de la semana tiene un turno que aplica esa
+   * fecha (`condicionTurnoEnFecha`, excluyendo los `CANCELADO`), para el selector de profesor de
+   * la agenda en el frontend. Ordenados por apellido y nombre (`busqueda` de su `Usuario`) y luego
+   * `id`. Sin paginar: es un selector de catálogo.
+   *
+   * A propósito **no filtra por el estado del profesor** (el de su `Usuario`): importa si dictó
+   * clase ese día, no si hoy sigue activo. Con una fecha pasada, un profesor dado de baja después
+   * sigue apareciendo si tuvo un turno `ACTIVO` ese día.
+   */
+  async listarProfesoresConTurno(fecha: string): Promise<ProfesoresConTurnoListado> {
+    const filas = await prisma.profesor.findMany({
+      where: {
+        bloques: {
+          some: {
+            diaSemana: diaSemanaISO(fecha),
+            turnos: { some: condicionTurnoEnFecha(fecha) },
+          },
+        },
+      },
+      select: { id: true, usuario: { select: { apellido: true, nombre: true } } },
+      orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
+    })
+    return filas.map(({ id, usuario }) => ({ id, ...usuario }))
   },
 }
 
