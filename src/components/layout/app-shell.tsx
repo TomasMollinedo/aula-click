@@ -15,7 +15,7 @@ export function AppShell({
   children: ReactNode
 }) {
   return (
-    <div className="bg-canvas flex min-h-full flex-1">
+    <div className="bg-canvas fixed inset-0 flex">
       <aside className="bg-sidebar flex w-64 shrink-0 flex-col">
         <SidebarLogo />
         <div className="flex-1 overflow-y-auto px-3 pb-4">{sidebar}</div>
