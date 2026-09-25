@@ -275,7 +275,7 @@ export type TurnosAlta = z.infer<typeof turnosAltaSchema>
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Query de la agenda diaria (T-23, decisiones T-35, T-36 y T-37): paginación + `fecha` (sin ella,
+ * Query de la agenda diaria (T-23, decisiones T-35, T-36 y T-41): paginación + `fecha` (sin ella,
  * hoy) + filtros opcionales por materia, aula y profesor (por id) + `q` (búsqueda por nombre;
  * de alumno o profesor, o sólo de alumno si ya se filtró por `profesorId`).
  */
@@ -287,7 +287,7 @@ export const agendaQuerySchema = paginacionQuerySchema.extend({
   }),
   q: qBusqueda.openapi({
     description:
-      'Búsqueda por palabras (decisión T-36): sin `profesorId`, coinciden todas en el nombre del alumno o todas en el del profesor (nunca mezcladas entre los dos). Con `profesorId` (T-37, vista personal del profesor), busca sólo por alumno. No distingue mayúsculas ni tildes',
+      'Búsqueda por palabras (decisión T-36): sin `profesorId`, coinciden todas en el nombre del alumno o todas en el del profesor (nunca mezcladas entre los dos). Con `profesorId` (T-41, vista personal del profesor), busca sólo por alumno. No distingue mayúsculas ni tildes',
   }),
   materiaId: z.coerce
     .number({ error: 'Debe ser un número' })
@@ -317,7 +317,7 @@ export const agendaQuerySchema = paginacionQuerySchema.extend({
     .openapi({
       param: { name: 'profesorId', in: 'query' },
       description:
-        'Filtra por profesor: vista personal de su agenda ese día (decisión T-37). Combinado con `q`, la búsqueda pasa a ser solo por alumno',
+        'Filtra por profesor: vista personal de su agenda ese día (decisión T-41). Combinado con `q`, la búsqueda pasa a ser solo por alumno',
       example: 3,
     }),
 })

@@ -790,7 +790,7 @@ describe('listarAgenda', () => {
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
         where: {
-          AND: [condicionTurnoEnFecha(HOY), { bloqueAgenda: { diaSemana: 2, profesorId: 3 } }],
+          AND: [condicionTurnoOcupaLugar(HOY), { bloqueAgenda: { diaSemana: 2, profesorId: 3 } }],
         },
       }),
     )

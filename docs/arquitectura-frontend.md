@@ -67,7 +67,7 @@ src/
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
-│   │   └── calendario/page.tsx
+│   │   └── agenda/page.tsx              # "Agenda diaria" (HU-09, T-24)
 │   ├── profesor/                       # rol PROFESOR → /profesor/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /profesor/agenda
@@ -90,6 +90,13 @@ src/
 │   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
+│   ├── turnos/                         # por ahora, solo la agenda diaria (HU-09, T-24): sin schema (sin formulario)
+│   │   ├── turnos.types.ts
+│   │   ├── api/{turnos.api.ts, turnos.keys.ts}
+│   │   ├── hooks/use-agenda.ts
+│   │   └── components/
+│   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx
+│   │       └── NavegacionFecha.tsx, FiltroProfesorAgenda.tsx
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API

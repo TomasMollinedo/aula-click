@@ -1,3 +1,5 @@
-export default function CalendarioPage() {
-  return <h1 className="text-2xl font-semibold">Calendario</h1>
+import { AgendaDiariaPantalla } from '@/features/turnos/components/AgendaDiariaPantalla'
+
+export default function AgendaPage() {
+  return <AgendaDiariaPantalla />
 }
