@@ -45,7 +45,11 @@ export type ProfesorEditar = Partial<Omit<ProfesorCrear, 'password'>>
 export type TurnoVigenteProfesor = {
   alumno: { id: number; nombre: string; apellido: string }
   materia: { id: number; nombre: string }
+  tipo: 'RECURRENTE' | 'SESION_UNICA'
+  /** Fecha de inicio (`YYYY-MM-DD`); en un recurrente, la primera de sus ocurrencias. */
   fecha: string
+  /** Última fecha, o `null` en un recurrente sin fin. */
+  fechaFin: string | null
   horaInicio: string
   horaFin: string
 }

@@ -34,6 +34,7 @@ import { getInitials } from '@/utils/initials'
 import { parsearProfesorId } from '../profesores.schema'
 import type { ProfesorDetalle as ProfesorDetalleType } from '../profesores.types'
 import { useProfesor } from '../hooks/use-profesor'
+import { rutaAgendaDelSegmento } from '../turnos-vigentes'
 import { ConfirmarEstadoProfesor } from './ConfirmarEstadoProfesor'
 import { HorarioProfesor } from './HorarioProfesor'
 import { MateriasProfesor } from './MateriasProfesor'
@@ -216,6 +217,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
 
       <ConfirmarEstadoProfesor
         profesor={confirmandoEstado ? profesor : null}
+        rutaAgenda={rutaAgendaDelSegmento(rutaBase)}
         onCerrar={() => setConfirmandoEstado(false)}
       />
     </div>
