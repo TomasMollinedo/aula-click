@@ -58,6 +58,7 @@ export function AgendaDiariaListado() {
     actualizarUrl({ fecha: format(addDays(parseISO(fecha), dias), 'yyyy-MM-dd'), page: 1 })
   }
   const irAHoy = () => actualizarUrl({ fecha: fechaDeHoy(), page: 1 })
+  const setFecha = (nuevaFecha: string) => actualizarUrl({ fecha: nuevaFecha, page: 1 })
   const setProfesorId = (nuevoProfesorId: number | null) =>
     actualizarUrl({ profesorId: nuevoProfesorId, page: 1 })
   const setPage = (nuevaPagina: number) => actualizarUrl({ page: nuevaPagina })
@@ -74,6 +75,7 @@ export function AgendaDiariaListado() {
           onAnterior={() => irADia(-1)}
           onSiguiente={() => irADia(1)}
           onHoy={irAHoy}
+          onCambiarFecha={setFecha}
         />
         <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
       </div>

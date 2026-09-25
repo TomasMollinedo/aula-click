@@ -31,7 +31,7 @@ export function AgendaTable({ data, isLoading, isFetching, hayFiltroProfesor }: 
     <Table aria-busy={isFetching} className={cn(isFetching && !isLoading && 'opacity-60')}>
       <TableHeader>
         <TableRow>
-          <TableHead className="w-28">Horario</TableHead>
+          <TableHead className="w-32">Horario</TableHead>
           <TableHead>Alumno</TableHead>
           <TableHead>Profesor</TableHead>
           <TableHead>Materia</TableHead>
@@ -66,7 +66,7 @@ export function AgendaTable({ data, isLoading, isFetching, hayFiltroProfesor }: 
         ) : data?.length ? (
           data.map((turno) => (
             <TableRow key={turno.id} className="hover:bg-transparent">
-              <TableCell className="tabular-nums">
+              <TableCell className="whitespace-nowrap tabular-nums">
                 {turno.horaInicio}–{turno.horaFin}
               </TableCell>
               <TableCell className="font-medium">
