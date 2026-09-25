@@ -1,23 +1,21 @@
-import type { ChangeEvent, ComponentProps } from 'react'
+import { type ChangeEvent, type ComponentProps, forwardRef } from 'react'
 
 import { type TipoDeCaracteres, filtrarCaracteres } from '@/utils/caracteres'
 import { cn } from '@/utils/cn'
 
-function Input({
-  className,
-  type,
-  caracteres,
-  onChange,
-  ...props
-}: ComponentProps<'input'> & {
-  /**
-   * Descarta, mientras se escribe o se pega, lo que el tipo no acepta (`utils/caracteres.ts`). Es
-   * una ayuda: el schema del formulario y la API validan igual.
-   */
-  caracteres?: TipoDeCaracteres
-}) {
+const Input = forwardRef<
+  HTMLInputElement,
+  ComponentProps<'input'> & {
+    /**
+     * Descarta, mientras se escribe o se pega, lo que el tipo no acepta (`utils/caracteres.ts`). Es
+     * una ayuda: el schema del formulario y la API validan igual.
+     */
+    caracteres?: TipoDeCaracteres
+  }
+>(function Input({ className, type, caracteres, onChange, ...props }, ref) {
   return (
     <input
+      ref={ref}
       type={type}
       data-slot="input"
       className={cn(
@@ -35,7 +33,7 @@ function Input({
       {...props}
     />
   )
-}
+})
 
 /**
  * Filtra el valor antes de que lo lea `onChange` (sirve igual con inputs controlados y con

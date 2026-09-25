@@ -905,6 +905,7 @@ describe('listarAgenda', () => {
       pageSize: 20,
       materiaId: undefined,
       aulaId: undefined,
+      profesorId: undefined,
       terminos: [],
     })
   })
@@ -917,12 +918,13 @@ describe('listarAgenda', () => {
     )
   })
 
-  it('pasa la paginación y los filtros de materia y aula tal cual', async () => {
+  it('pasa la paginación y los filtros de materia, aula y profesor tal cual', async () => {
     await service.listarAgenda({
       page: 2,
       pageSize: 10,
       materiaId: 2,
       aulaId: 1,
+      profesorId: 3,
     })
 
     expect(repos.repository.listarAgenda).toHaveBeenCalledWith({
@@ -931,6 +933,7 @@ describe('listarAgenda', () => {
       pageSize: 10,
       materiaId: 2,
       aulaId: 1,
+      profesorId: 3,
       terminos: [],
     })
   })

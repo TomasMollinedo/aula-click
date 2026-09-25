@@ -262,9 +262,11 @@ export function crearTurnosService({
       return turno
     },
     /**
-     * Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service). `q`
-     * (decisión T-36) busca por nombre de alumno o de profesor: se normaliza igual que en el
-     * resto de la API (`terminosDeBusqueda`) antes de pasarla al repository.
+     * Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service).
+     * `profesorId` (decisión T-42) da la vista personal de ese profesor ese día. `q` (T-36) busca
+     * por nombre de alumno o de profesor, o sólo de alumno si ya se filtró por `profesorId`: se
+     * normaliza igual que en el resto de la API (`terminosDeBusqueda`) antes de pasarla al
+     * repository.
      */
     listarAgenda(query: AgendaQuery): Promise<AgendaListado> {
       return repository.listarAgenda({
@@ -273,6 +275,7 @@ export function crearTurnosService({
         pageSize: query.pageSize,
         materiaId: query.materiaId,
         aulaId: query.aulaId,
+        profesorId: query.profesorId,
         terminos: terminosDeBusqueda(query.q),
       })
     },

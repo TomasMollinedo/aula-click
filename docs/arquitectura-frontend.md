@@ -67,7 +67,7 @@ src/
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
 │   │   ├── turnos/page.tsx
-│   │   └── calendario/page.tsx
+│   │   └── agenda/page.tsx              # "Agenda diaria" (HU-09, T-24)
 │   ├── profesor/                       # rol PROFESOR → /profesor/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /profesor/agenda
@@ -90,8 +90,18 @@ src/
 │   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
-│   ├── turnos/                         # registrar turno (HU-07): una pantalla por secciones (RegistrarTurno) y el detalle
-│   │                                   # (TurnoDetalleModal, ?detalle=<id>); errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts
+│   ├── turnos/                         # registrar turno (HU-07) y agenda diaria (HU-09, T-24)
+│   │   ├── turnos.types.ts, turnos.schema.ts
+│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts
+│   │   ├── api/{turnos.api.ts, turnos.keys.ts}
+│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-turno.ts, use-agenda.ts}
+│   │   └── components/
+│   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
+│   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
+│   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx)
+│   │       ├── TurnoDetalleModal.tsx    # detalle de solo lectura (?detalle=<id>)
+│   │       └── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
+│   │           FiltroProfesorAgenda.tsx # agenda diaria (HU-09, T-24)
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
