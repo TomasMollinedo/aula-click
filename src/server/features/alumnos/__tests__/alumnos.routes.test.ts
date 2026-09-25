@@ -84,9 +84,34 @@ describe('auth', () => {
     expect((await pedir('')).status).toBe(401)
   })
 
-  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+  it('con un rol que no es MESA_ENTRADAS (el listado general no admite PROFESOR) → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('')).status).toBe(403)
+  })
+})
+
+describe('GET /alumnos/{id}', () => {
+  it('con MESA_ENTRADAS responde 200', async () => {
+    expect((await pedir('/1')).status).toBe(200)
+  })
+
+  // El detalle es el único endpoint de alumnos que también admite PROFESOR (un profesor ve la
+  // ficha de un alumno con quien tiene turnos, sin poder editarla: PATCH sigue siendo MESA_ENTRADAS).
+  it('con PROFESOR responde 200', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedir('/1')).status).toBe(200)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS ni PROFESOR → 403', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE'))
     expect((await pedir('/1')).status).toBe(403)
+  })
+
+  it('inexistente → 404 NO_ENCONTRADO', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+    const res = await pedir('/99')
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
   })
 })
 

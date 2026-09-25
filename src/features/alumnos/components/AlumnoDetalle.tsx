@@ -38,11 +38,17 @@ type AlumnoDetalleProps = {
   alumnoId: string
   /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
   rutaBase: string
+  /**
+   * Si se muestra "Editar". `PATCH /alumnos/{id}` sigue siendo solo de `MESA_ENTRADAS`: un
+   * profesor ve el mismo detalle (datos del tutor y auditoría incluidos), pero sin poder editar.
+   * Default `true` (mesa de entradas, que no cambia).
+   */
+  puedeEditar?: boolean
 }
 
 // Página de detalle del alumno, con tabs. "Editar" abre la edición como modal encima de esta página
 // (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia.
-export function AlumnoDetalle({ alumnoId, rutaBase }: AlumnoDetalleProps) {
+export function AlumnoDetalle({ alumnoId, rutaBase, puedeEditar = true }: AlumnoDetalleProps) {
   const id = parsearAlumnoId(alumnoId)
   const { data: alumno, isLoading, isError, error, refetch } = useAlumno(id ?? 0)
 
@@ -122,12 +128,14 @@ export function AlumnoDetalle({ alumnoId, rutaBase }: AlumnoDetalleProps) {
           </span>
         }
         actions={
-          <Button size="lg" variant="accent" asChild>
-            <Link href={`${rutaBase}/${alumno.id}/editar`}>
-              <Pencil />
-              Editar
-            </Link>
-          </Button>
+          puedeEditar && (
+            <Button size="lg" variant="accent" asChild>
+              <Link href={`${rutaBase}/${alumno.id}/editar`}>
+                <Pencil />
+                Editar
+              </Link>
+            </Button>
+          )
         }
       />
 

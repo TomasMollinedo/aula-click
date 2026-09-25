@@ -102,12 +102,16 @@ export const obtenerAlumnoRoute = createRoute({
   path: '/{id}',
   tags,
   summary: 'Detalle de un alumno',
-  description: 'Todos los datos del alumno, si es menor de edad y quién lo creó y modificó.',
-  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  description:
+    'Todos los datos del alumno, si es menor de edad y quién lo creó y modificó. El único endpoint de alumnos que también admite el rol PROFESOR (sin poder editar: PATCH sigue siendo solo de MESA_ENTRADAS).',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'PROFESOR')] as const,
   request: { params: alumnoIdParamsSchema },
   responses: {
     200: detalle('Detalle del alumno'),
     ...errores,
+    403: respuestaError(
+      'El rol no es mesa de entradas ni profesor, o el usuario está inhabilitado',
+    ),
     404: noEncontrado,
   },
 })

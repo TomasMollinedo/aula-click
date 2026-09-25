@@ -14,9 +14,14 @@ import { FiltroMateriaAlumnos } from './FiltroMateriaAlumnos'
 import { MisAlumnosTable } from './MisAlumnosTable'
 import { SinResultadosMisAlumnos } from './SinResultadosMisAlumnos'
 
-// Sin `rutaBase`: a diferencia del listado de mesa, acá no hay detalle, alta ni edición a los que
-// linkear (GET /alumnos/{id} sigue siendo de MESA_ENTRADAS). Solo lectura.
-export function MisAlumnosListado() {
+type MisAlumnosListadoProps = {
+  /** URL del listado de "Mis alumnos" en el segmento del rol (`/profesor/alumnos`). */
+  rutaBase: string
+}
+
+// Solo lectura: sin alta ni edición (eso es de mesa de entradas). El detalle sí es el mismo que
+// mesa: GET /alumnos/{id} ahora también admite PROFESOR.
+export function MisAlumnosListado({ rutaBase }: MisAlumnosListadoProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
 
@@ -34,9 +39,9 @@ export function MisAlumnosListado() {
       if (page > 1) params.set('page', String(page))
       if (materiaId != null) params.set('materiaId', String(materiaId))
       const qs = params.toString()
-      router.replace(qs ? `/profesor/alumnos?${qs}` : '/profesor/alumnos', { scroll: false })
+      router.replace(qs ? `${rutaBase}?${qs}` : rutaBase, { scroll: false })
     },
-    [router],
+    [router, rutaBase],
   )
 
   const buscador = useBuscadorMisAlumnos({
@@ -76,6 +81,7 @@ export function MisAlumnosListado() {
         </div>
       ) : (
         <MisAlumnosTable
+          rutaBase={rutaBase}
           data={buscador.data}
           isLoading={buscador.isLoading}
           isFetching={buscador.isFetching}
