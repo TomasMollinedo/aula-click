@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { AlertCircle, ArrowDownAZ } from 'lucide-react'
 
@@ -8,9 +8,10 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Card } from '@/components/ui/card'
 import { PaginationControls } from '@/components/ui/pagination'
 
-import type { EstadoFiltro } from '../profesores.types'
+import type { EstadoFiltro, ProfesorListadoItem } from '../profesores.types'
 import { useBuscadorProfesores } from '../hooks/use-buscador-profesores'
 import { BuscadorProfesores } from './BuscadorProfesores'
+import { ConfirmarEstadoProfesor } from './ConfirmarEstadoProfesor'
 import { FiltroEstadoProfesores } from './FiltroEstadoProfesores'
 import { FiltroMateriaProfesores } from './FiltroMateriaProfesores'
 import { ProfesorEditar } from './ProfesorEditar'
@@ -78,6 +79,10 @@ export function ProfesoresListado({ rutaBase }: ProfesoresListadoProps) {
     [searchParams, rutaBase],
   )
 
+  // Baja / reactivación desde el ícono de la fila: diálogo sin URL propia, igual que la baja de un
+  // bloque (docs/arquitectura-frontend.md → Modales con URL propia, "confirmaciones").
+  const [cambiandoEstado, setCambiandoEstado] = useState<ProfesorListadoItem | null>(null)
+
   const cerrarEdicion = () => {
     if (abiertoConLapiz.current) {
       abiertoConLapiz.current = false
@@ -135,6 +140,7 @@ export function ProfesoresListado({ rutaBase }: ProfesoresListadoProps) {
           onEditar={() => {
             abiertoConLapiz.current = true
           }}
+          onCambiarEstado={setCambiandoEstado}
           data={buscador.data}
           isLoading={buscador.isLoading}
           isFetching={buscador.isFetching}
@@ -165,6 +171,11 @@ export function ProfesoresListado({ rutaBase }: ProfesoresListadoProps) {
           onGuardado={cerrarEdicion}
         />
       )}
+
+      <ConfirmarEstadoProfesor
+        profesor={cambiandoEstado}
+        onCerrar={() => setCambiandoEstado(null)}
+      />
     </Card>
   )
 }

@@ -51,6 +51,16 @@ export function editarProfesor(id: number, cambios: ProfesorEditar): Promise<Pro
   })
 }
 
+/** Baja lógica del profesor (la de su Usuario). 409 `TURNOS_VIGENTES` si tiene turnos vigentes. */
+export function darDeBajaProfesor(id: number): Promise<ProfesorDetalle> {
+  return fetchJson<ProfesorDetalle>(`${BASE}/${id}/baja`, { method: 'PATCH' })
+}
+
+/** Reactivación: vuelve el profesor a ACTIVO. No revalida nada. */
+export function reactivarProfesor(id: number): Promise<ProfesorDetalle> {
+  return fetchJson<ProfesorDetalle>(`${BASE}/${id}/reactivacion`, { method: 'PATCH' })
+}
+
 /** Multipart con un único campo `foto` (JPG o PNG, hasta 5 MB). Reemplaza la anterior si tenía. */
 export function subirFotoProfesor(id: number, foto: File): Promise<ProfesorDetalle> {
   const formData = new FormData()
