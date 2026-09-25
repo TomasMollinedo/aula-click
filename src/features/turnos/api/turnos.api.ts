@@ -3,6 +3,8 @@ import { fetchJson } from '@/utils/fetch-json'
 import type {
   AgendaListadoParams,
   AgendaListadoResponse,
+  AgendaPropiaItem,
+  AgendaPropiaParams,
   BloqueDisponible,
   DisponibilidadParams,
   TurnoCrear,
@@ -21,6 +23,19 @@ export function listarAgenda(params: AgendaListadoParams): Promise<AgendaListado
 
   const qs = searchParams.toString()
   return fetchJson<AgendaListadoResponse>(qs ? `${BASE}/agenda?${qs}` : `${BASE}/agenda`)
+}
+
+/**
+ * Agenda del profesor de la sesión (HU-10). El profesor no es un parámetro: lo resuelve la API con
+ * la sesión, así que no hay forma de pedir la agenda de otro.
+ */
+export function listarAgendaPropia(params: AgendaPropiaParams): Promise<AgendaPropiaItem[]> {
+  const searchParams = new URLSearchParams()
+  if (params.desde) searchParams.set('desde', params.desde)
+  if (params.hasta) searchParams.set('hasta', params.hasta)
+
+  const qs = searchParams.toString()
+  return fetchJson<AgendaPropiaItem[]>(qs ? `${BASE}/agenda-propia?${qs}` : `${BASE}/agenda-propia`)
 }
 
 export function buscarDisponibilidad(params: DisponibilidadParams): Promise<BloqueDisponible[]> {
