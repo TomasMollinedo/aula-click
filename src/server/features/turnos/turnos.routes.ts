@@ -4,6 +4,7 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as turnosController from './turnos.controller'
 import {
+  ejemploAgendaPropia,
   ejemploAltaEnTramos,
   ejemploAltaRecurrente,
   ejemploAltaSesionUnica,
@@ -15,6 +16,8 @@ import {
 } from './turnos.ejemplos'
 import {
   agendaListadoSchema,
+  agendaPropiaListadoSchema,
+  agendaPropiaQuerySchema,
   agendaQuerySchema,
   aulasConTurnoListadoSchema,
   aulasConTurnoQuerySchema,
@@ -83,6 +86,31 @@ export const listarAgendaRoute = createRoute({
     },
     400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
     ...errores,
+  },
+})
+
+export const listarAgendaPropiaRoute = createRoute({
+  method: 'get',
+  path: '/agenda-propia',
+  tags,
+  summary: 'Agenda propia del profesor',
+  description:
+    'Turnos del profesor **de la sesión** (sale del `Actor`, nunca de un parámetro) para un día o un rango: una entrada por cada ocurrencia, con alumno, materia, aula, horario y estado. Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango no puede superar los 31 días. Sin paginar (decisión T-43), ordenada por fecha y, dentro del día, por hora. Sólo lectura.',
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  request: { query: agendaPropiaQuerySchema },
+  responses: {
+    200: {
+      description: 'Ocurrencias del rango (arreglo vacío si no hay turnos)',
+      content: {
+        'application/json': { schema: agendaPropiaListadoSchema, example: ejemploAgendaPropia },
+      },
+    },
+    400: respuestaError('Query inválido, `hasta` anterior a `desde` o rango mayor al máximo'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(
+      'El rol no es profesor (SIN_PERMISO) o el usuario está inhabilitado (USUARIO_INHABILITADO)',
+    ),
+    404: respuestaError('El usuario de la sesión no tiene ficha de profesor (NO_ENCONTRADO)'),
   },
 })
 
@@ -246,6 +274,7 @@ export const obtenerTurnoRoute = createRoute({
 
 export const turnosRoutes = createRouter()
   .openapi(listarAgendaRoute, turnosController.listarAgenda)
+  .openapi(listarAgendaPropiaRoute, turnosController.listarAgendaPropia)
   .openapi(listarMateriasConTurnoRoute, turnosController.listarMateriasConTurno)
   .openapi(listarAulasConTurnoRoute, turnosController.listarAulasConTurno)
   .openapi(disponibilidadRoute, turnosController.disponibilidad)

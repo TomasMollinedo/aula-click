@@ -48,7 +48,7 @@ Respuesta:
 ```
 
 - `totalPages` es 0 cuando no hay resultados.
-- Se pagina todo listado de entidades, incluida la agenda diaria (decisión T-35). **No** se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni un horario semanal completo (bloques de un profesor): esos devuelven un arreglo.
+- Se pagina todo listado de entidades, incluida la agenda diaria (decisión T-35). **No** se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown), un horario semanal completo (bloques de un profesor) ni la agenda propia del profesor, acotada por su rango de fechas (decisión T-43): esos devuelven un arreglo.
 - En el frontend, el tipo de la respuesta es `PaginatedResponse<T>` de `src/types/index.ts`, que debe coincidir exactamente con esta forma.
 
 ## Selectores de catálogo
@@ -93,7 +93,7 @@ Ejemplo: `GET /api/v1/aulas/disponibles?diaSemana=1&horaInicio=14:00&horaFin=16:
 
 ## Turnos
 
-Todos los endpoints son de `MESA_ENTRADAS`. Reglas en `dominio.md` → Turnos.
+Todos los endpoints son de `MESA_ENTRADAS`, salvo `GET /api/v1/turnos/agenda-propia`, que es de `PROFESOR`. Reglas en `dominio.md` → Turnos.
 
 - **Estado:** `ACTIVO` / `CANCELADO`. La UI muestra `ACTIVO` como **"Agendado"**: es el texto de la pantalla, no un valor del enum, y el frontend no lo inventa como estado.
 - **Tipos:** `SESION_UNICA` (una fecha, `fechaFin = fechaInicio`) o `RECURRENTE` (de `fechaInicio` a `fechaFin`, o sin fin con `fechaFin: null`). Las dos fechas caen en el día de la semana de la hora.
@@ -158,6 +158,34 @@ Todos los endpoints son de `MESA_ENTRADAS`. Reglas en `dominio.md` → Turnos.
 
 - **`GET /api/v1/turnos/{turnoId}`**: `{ "id", "tipo", "estado", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "bloqueId", "alumno": { "id", "nombre", "apellido", "dni" }, "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" }, "aula": { "id", "nombre" }, "motivoConsulta" }` más la auditoría plana. `fechaFin` es `null` en un recurrente sin fin. 404 si no existe.
 
+### Agenda propia del profesor
+
+**`GET /api/v1/turnos/agenda-propia?desde&hasta`** (rol `PROFESOR`, sólo lectura): los turnos del profesor **de la sesión** para un día o un rango. El profesor sale de la sesión, **nunca de un parámetro**: no hay forma de pedir la agenda de otro, y un `profesorId` en el query se ignora.
+
+- `desde` (`YYYY-MM-DD`, opcional): primer día. Sin `desde`, hoy. `hasta` (opcional): último día, incluido; sin `hasta`, el mismo día que `desde` (la vista por día). Se admiten fechas pasadas.
+- Devuelve un **arreglo sin paginar** (decisión T-43), ordenado por fecha y, dentro del día, por hora de inicio e id del turno.
+- Cada ítem es una **ocurrencia**, no un turno: un recurrente aparece una vez por cada fecha del rango que cae en el día de su bloque, así que `turnoId` se repite. La ocurrencia se identifica por `turnoId` + `fecha`; `turnoId` es el id que usa `GET /api/v1/turnos/{turnoId}`.
+
+  ```json
+  [
+    {
+      "turnoId": 31,
+      "fecha": "2026-09-28",
+      "diaSemana": 1,
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "alumno": { "id": 12, "apellido": "González", "nombre": "Lucía" },
+      "materia": { "id": 3, "nombre": "Matemática" },
+      "aula": { "id": 3, "nombre": "Aula 3" },
+      "tipo": "RECURRENTE",
+      "estado": "ACTIVO"
+    }
+  ]
+  ```
+
+- Los turnos `CANCELADO` no salen; `estado` es siempre `ACTIVO`, que la UI muestra como "Agendado".
+- Errores: 400 `VALIDACION` si una fecha tiene formato inválido, si `hasta` es anterior a `desde` o si el rango supera los **31 días** (`details` sobre `hasta`); 404 `NO_ENCONTRADO` si el usuario de la sesión no tiene ficha de profesor; 403 para cualquier rol que no sea `PROFESOR`.
+
 ## Filtros
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
@@ -171,6 +199,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                                                          |
 | `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                   |
+| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (agenda propia del profesor). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                                                                         |
 | `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Recursos individuales

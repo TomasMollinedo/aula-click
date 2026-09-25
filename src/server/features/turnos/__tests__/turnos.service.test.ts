@@ -10,7 +10,7 @@ import type { Actor } from '@/server/shared/actor'
 import type { Estado } from '@/server/shared/estado'
 import { minutosAHora } from '@/server/shared/zod'
 import type { TurnosRepository } from '../turnos.repository'
-import { seCruzaCon } from '../turnos.reglas'
+import { MENSAJE_RANGO_INVERTIDO, MENSAJE_RANGO_MAXIMO, seCruzaCon } from '../turnos.reglas'
 import { crearTurnosService } from '../turnos.service'
 import type {
   AgendaListado,
@@ -232,6 +232,7 @@ function crearRepositories() {
       reservar: vi.fn<TurnosRepository['reservar']>(),
       buscarDetalle: vi.fn<TurnosRepository['buscarDetalle']>(),
       listarAgenda: vi.fn<TurnosRepository['listarAgenda']>(),
+      listarAgendaPropia: vi.fn<TurnosRepository['listarAgendaPropia']>(),
       listarMateriasConTurno: vi.fn<TurnosRepository['listarMateriasConTurno']>(),
       listarAulasConTurno: vi.fn<TurnosRepository['listarAulasConTurno']>(),
     },
@@ -244,6 +245,7 @@ function crearRepositories() {
       listarProfesoresActivosDeMateria:
         vi.fn<ProfesoresRepository['listarProfesoresActivosDeMateria']>(),
       buscarConAsignaciones: vi.fn<ProfesoresRepository['buscarConAsignaciones']>(),
+      buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
     },
     materiasRepository: { buscarPorIds: vi.fn<MateriasRepository['buscarPorIds']>() },
   }
@@ -965,6 +967,176 @@ describe('listarAgenda', () => {
     repos.repository.listarAgenda.mockResolvedValue(pagina)
 
     await expect(service.listarAgenda({ page: 1, pageSize: 20 })).resolves.toEqual(pagina)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Agenda propia del profesor (HU-10)
+// ---------------------------------------------------------------------------------------------
+
+describe('listarAgendaPropia', () => {
+  // HOY (22/09/2026) es martes; los lunes siguientes son 28/09, 05/10…
+  const MARTES = HOY
+  const LUNES = '2026-09-28'
+  const actorProfesor: Actor = { userId: 'usr_ana', role: 'PROFESOR' }
+
+  /** Turnos de dos profesores: el fake del repository filtra como lo hace la consulta real. */
+  function sembrarAgenda() {
+    turnos.push(
+      // Ana (profesor 4): recurrente sin fin los lunes 9–10 y una sesión única de hoy (martes).
+      {
+        id: 31,
+        bloqueAgendaId: 11,
+        alumnoId: 12,
+        materiaId: 3,
+        tipo: 'RECURRENTE',
+        estado: 'ACTIVO',
+        fechaInicio: LUNES,
+        fechaFin: null,
+      },
+      {
+        id: 32,
+        bloqueAgendaId: 13,
+        alumnoId: 13,
+        materiaId: 3,
+        tipo: 'SESION_UNICA',
+        estado: 'ACTIVO',
+        fechaInicio: MARTES,
+        fechaFin: MARTES,
+      },
+      // Juan (profesor 7): mismo lunes, misma hora. No tiene que salir en la agenda de Ana.
+      {
+        id: 90,
+        bloqueAgendaId: 20,
+        alumnoId: 12,
+        materiaId: 3,
+        tipo: 'RECURRENTE',
+        estado: 'ACTIVO',
+        fechaInicio: LUNES,
+        fechaFin: null,
+      },
+    )
+  }
+
+  beforeEach(() => {
+    sembrarAgenda()
+    repos.profesoresRepository.buscarIdPorUsuario.mockImplementation(async (usuarioId) =>
+      usuarioId === 'usr_ana' ? 4 : null,
+    )
+    // Filtra por profesor y por cruce con el rango, como `listarAgendaPropia` del repository.
+    repos.repository.listarAgendaPropia.mockImplementation(async ({ profesorId, desde, hasta }) =>
+      turnos
+        .flatMap((turno) => {
+          const bloque = filas.find((f) => f.id === turno.bloqueAgendaId)
+          return bloque && bloque.profesorId === profesorId ? [{ turno, bloque }] : []
+        })
+        .filter(({ turno }) => seCruzaCon(turno, desde, hasta))
+        .sort((a, b) => a.bloque.horaInicio - b.bloque.horaInicio || a.turno.id - b.turno.id)
+        .map(({ turno, bloque }) => ({
+          id: turno.id,
+          tipo: turno.tipo,
+          estado: turno.estado,
+          fechaInicio: turno.fechaInicio,
+          fechaFin: turno.fechaFin,
+          diaSemana: bloque.diaSemana,
+          horaInicio: minutosAHora(bloque.horaInicio),
+          horaFin: minutosAHora(bloque.horaFin),
+          alumno: { id: turno.alumnoId, apellido: 'González', nombre: 'Lucía' },
+          materia: { id: turno.materiaId, nombre: 'Matemática' },
+          aula: { id: 3, nombre: 'Aula 3' },
+        })),
+    )
+  })
+
+  it('el profesor sale del actor: le pide al repository su id, no uno de la entrada', async () => {
+    await service.listarAgendaPropia({}, actorProfesor)
+
+    expect(repos.profesoresRepository.buscarIdPorUsuario).toHaveBeenCalledWith('usr_ana')
+    expect(repos.repository.listarAgendaPropia).toHaveBeenCalledWith({
+      profesorId: 4,
+      desde: HOY,
+      hasta: HOY,
+    })
+  })
+
+  it('devuelve solo los turnos del profesor de la sesión, no los de otro', async () => {
+    const agenda = await service.listarAgendaPropia({ desde: LUNES, hasta: LUNES }, actorProfesor)
+
+    expect(agenda.map((item) => item.turnoId)).toEqual([31])
+  })
+
+  it('sin desde ni hasta, la agenda del día de hoy', async () => {
+    const agenda = await service.listarAgendaPropia({}, actorProfesor)
+
+    expect(agenda).toEqual([
+      {
+        turnoId: 32,
+        fecha: MARTES,
+        diaSemana: 2,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        alumno: { id: 13, apellido: 'González', nombre: 'Lucía' },
+        materia: { id: 3, nombre: 'Matemática' },
+        aula: { id: 3, nombre: 'Aula 3' },
+        tipo: 'SESION_UNICA',
+        estado: 'ACTIVO',
+      },
+    ])
+  })
+
+  it('sin hasta, un solo día: el recurrente no aparece en los días que no son el suyo', async () => {
+    await expect(
+      service.listarAgendaPropia({ desde: '2026-09-30' }, actorProfesor),
+    ).resolves.toEqual([])
+  })
+
+  it('un rango de una semana trae cada día con lo que le corresponde', async () => {
+    const agenda = await service.listarAgendaPropia(
+      { desde: MARTES, hasta: '2026-09-28' },
+      actorProfesor,
+    )
+
+    expect(agenda.map((item) => [item.fecha, item.turnoId])).toEqual([
+      [MARTES, 32],
+      [LUNES, 31],
+    ])
+  })
+
+  it('un recurrente aparece una vez por semana dentro del rango', async () => {
+    const agenda = await service.listarAgendaPropia(
+      { desde: LUNES, hasta: '2026-10-12' },
+      actorProfesor,
+    )
+
+    expect(agenda.map((item) => item.fecha)).toEqual(['2026-09-28', '2026-10-05', '2026-10-12'])
+  })
+
+  it('un usuario sin ficha de profesor → 404', async () => {
+    const error = await errorDe(
+      service.listarAgendaPropia({}, { userId: 'usr_sin_ficha', role: 'PROFESOR' }),
+    )
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repos.repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+
+  it('`hasta` anterior a `desde` → 400 sobre `hasta`', async () => {
+    const error = await errorDe(
+      service.listarAgendaPropia({ desde: LUNES, hasta: MARTES }, actorProfesor),
+    )
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }])
+    expect(repos.repository.listarAgendaPropia).not.toHaveBeenCalled()
+  })
+
+  it('un rango mayor al máximo → 400 sobre `hasta`', async () => {
+    const error = await errorDe(
+      service.listarAgendaPropia({ desde: LUNES, hasta: '2026-10-29' }, actorProfesor),
+    )
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_MAXIMO }])
   })
 })
 

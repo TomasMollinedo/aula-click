@@ -421,6 +421,19 @@ export const profesoresRepository = {
   },
 
   /**
+   * Id del `Profesor` de un `Usuario`, o `null` si ese usuario no tiene ficha de profesor.
+   * Lectura para otras features: la usa `turnos` (HU-10) para resolver el profesor de la sesión a
+   * partir del `Actor`, sin que el id viaje nunca en un parámetro.
+   */
+  async buscarIdPorUsuario(usuarioId: string): Promise<number | null> {
+    const profesor = await prisma.profesor.findUnique({
+      where: { usuarioId },
+      select: { id: true },
+    })
+    return profesor?.id ?? null
+  },
+
+  /**
    * Asigna todas las materias en una sola transacción (todas o ninguna). El par profesor–materia
    * es único: si ya existe una fila (dada de baja), se reactiva; si no, se inserta.
    * Auditoría: `createdById` en el alta y `updatedById` siempre, con el actor.

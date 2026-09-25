@@ -214,6 +214,60 @@ export function analizarHora({
 }
 
 // ---------------------------------------------------------------------------------------------
+// Agenda de un rango de fechas (HU-10)
+// ---------------------------------------------------------------------------------------------
+
+/** Días que puede abarcar un rango de agenda, extremos incluidos (decisión T-43). */
+export const MAX_DIAS_AGENDA = 31
+
+export const MENSAJE_RANGO_INVERTIDO = '`hasta` no puede ser anterior a `desde`'
+export const MENSAJE_RANGO_MAXIMO = `El rango no puede superar los ${MAX_DIAS_AGENDA} días`
+
+/**
+ * El rango `[desde, hasta]` está en orden y no supera `MAX_DIAS_AGENDA` días (extremos incluidos);
+ * si no, 400 en `hasta`. Se valida acá y no en el schema porque los dos extremos pueden venir de
+ * un default que depende de hoy (`desde` sin mandar es hoy; `hasta` sin mandar es `desde`).
+ */
+export function validarRangoAgenda(desde: string, hasta: string): void {
+  if (hasta < desde) {
+    throw new ValidationError(MENSAJE_RANGO_INVERTIDO, {
+      details: [{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }],
+    })
+  }
+  const dias = (fechaADate(hasta).getTime() - fechaADate(desde).getTime()) / MS_POR_DIA + 1
+  if (dias > MAX_DIAS_AGENDA) {
+    throw new ValidationError(MENSAJE_RANGO_MAXIMO, {
+      details: [{ path: ['hasta'], message: MENSAJE_RANGO_MAXIMO }],
+    })
+  }
+}
+
+/**
+ * Ocurrencias de cada turno dentro de `[desde, hasta]`: una entrada por cada fecha del rango en la
+ * que el turno **ocupa lugar** (`ocupaLugarEn`, la misma condición que la agenda diaria de T-23) y
+ * que cae en el día de la semana de su fila. Una sesión única aparece una vez; un recurrente, una
+ * vez por semana mientras su rango cubra la fecha.
+ *
+ * Recorre el rango fecha por fecha (acotado por `validarRangoAgenda`), así cada día resuelve
+ * exactamente igual que `GET /turnos/agenda` para esa fecha. Dentro de cada fecha conserva el
+ * orden en que vienen los turnos (el repository ya los trae por hora e id).
+ */
+export function expandirOcurrencias<T extends TurnoFechas & { diaSemana: number }>(
+  turnos: readonly T[],
+  desde: string,
+  hasta: string,
+): { fecha: string; turno: T }[] {
+  const ocurrencias: { fecha: string; turno: T }[] = []
+  for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) {
+    const dia = diaSemanaISO(fecha)
+    for (const turno of turnos) {
+      if (turno.diaSemana === dia && ocupaLugarEn(turno, fecha)) ocurrencias.push({ fecha, turno })
+    }
+  }
+  return ocurrencias
+}
+
+// ---------------------------------------------------------------------------------------------
 // Validaciones compartidas por el service (antes de la transacción) y `planificarReserva`
 // (bajo lock): mismo criterio y mismos mensajes en los dos momentos.
 // ---------------------------------------------------------------------------------------------
