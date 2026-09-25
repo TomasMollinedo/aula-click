@@ -42,7 +42,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 - Por offset: query `page` (default 1) y `pageSize` (default 20, máximo 100), validados con `paginacionQuerySchema`.
 - Respuesta de listados: `{ data: [...], meta: { page, pageSize, total, totalPages } }`, con `paginatedSchema(itemSchema)`.
 - El repository ejecuta `findMany` y `count` en una sola transacción, usa `calcularSkipTake` y `armarMeta`, y el orden siempre incluye `id` como desempate, para que las páginas no se mezclen.
-- Se pagina todo listado de entidades. No se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni la agenda diaria, que se filtra por fecha.
+- Se pagina todo listado de entidades, incluida la agenda diaria (`GET /api/v1/turnos/agenda`, decisión T-35). No se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni un horario semanal completo (bloques de un profesor, T-17): esos devuelven un arreglo.
 
 ## Filtros y respuestas
 
@@ -91,7 +91,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Turno que ocupa lugar (ocupación de un bloque)
 
-- Otra condición, distinta de "vigente": un turno **ocupa lugar** en una fila de `bloque_agenda` en una fecha `d` si está `ACTIVO`, `fechaInicio <= d` y `fechaFin` es nula o `>= d` (`dominio.md` → Turnos, T-36). Es una sola condición para los dos tipos: una sesión única es el caso `fechaInicio = fechaFin` y un recurrente ocupa lugar en cada fecha de su rango (todas caen en el día de su fila). Se implementa una sola vez, en `turnos.repository`: `condicionTurnoOcupaLugar(fecha)`, que se combina con el `bloqueAgendaId`.
+- Otra condición, distinta de "vigente": un turno **ocupa lugar** en una fila de `bloque_agenda` en una fecha `d` si está `ACTIVO`, `fechaInicio <= d` y `fechaFin` es nula o `>= d` (`dominio.md` → Turnos, T-38). Es una sola condición para los dos tipos: una sesión única es el caso `fechaInicio = fechaFin` y un recurrente ocupa lugar en cada fecha de su rango (todas caen en el día de su fila). Se implementa una sola vez, en `turnos.repository`: `condicionTurnoOcupaLugar(fecha)`, que se combina con el `bloqueAgendaId` de la fila o, en la agenda diaria y sus selectores, con el día de la semana del bloque.
 - Su equivalente puro, para calcular en memoria, es `ocupaLugarEn(turno, fecha)` de `turnos/turnos.reglas.ts`. Un test de `turnos.repository.test.ts` fija que los dos dicen lo mismo en los bordes; si uno cambia, cambia el otro.
 - `condicionTurnoSeCruzaCon(inicio, fin | null)` (en el mismo repository, con su equivalente puro `seCruzaCon`): turno `ACTIVO` con al menos una fecha en `[inicio, fin]` (`fin` nulo = sin fin). Es la lectura de "los turnos que pueden chocar con un pedido"; `condicionTurnoOcupaLugar(d)` es `condicionTurnoSeCruzaCon(d, d)`.
 - `contarOcupacionPorBloque(pares)` cuenta los turnos de cada par fila–fecha en una sola consulta: trae los turnos de esas filas que se cruzan con `[min(fechas), max(fechas)]` y cuenta en memoria con `ocupaLugarEn`. Lo usan el horario de `bloques` y la disponibilidad de `turnos`. El control de capacidad del alta (`BLOQUE_LLENO`) usa la misma condición: no se reescribe.
@@ -99,7 +99,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 ## Concurrencia en la capacidad de un bloque
 
 - La verificación de capacidad y la inserción del turno se hacen en una sola transacción de `turnosRepository.reservar`. Las reglas las decide el service con un callback puro (`planificar`, que envuelve `planificarReserva` de `turnos.reglas.ts`); el repository toma los locks, relee y ejecuta el callback: si lanza, no se inserta nada.
-- Qué se bloquea, en este orden (T-36), con `Prisma.sql` y nunca con strings interpolados:
+- Qué se bloquea, en este orden (T-38), con `Prisma.sql` y nunca con strings interpolados:
   1. `SELECT id FROM profesor WHERE id = $1 FOR SHARE`: dos reservas del mismo profesor no se esperan acá, pero sí un alta o edición de bloques de ese profesor, que lo toma `FOR UPDATE`.
   2. `SELECT id FROM bloque_agenda WHERE id IN (…) ORDER BY id FOR UPDATE`: serializa la capacidad de cada hora (el orden por id evita deadlocks entre reservas de varias horas).
   3. `SELECT id FROM alumno WHERE id = $1 FOR UPDATE`: serializa `ALUMNO_SUPERPUESTO` entre reservas del mismo alumno con profesores distintos (que no comparten filas).

@@ -2,12 +2,16 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { Actor } from '@/server/shared/actor'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
-import { dateAFecha, fechaADate } from '@/server/shared/fechas'
+import { dateAFecha, diaSemanaISO, fechaADate } from '@/server/shared/fechas'
+import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
 import { ocupaLugarEn } from './turnos.reglas'
 import type {
+  AgendaListado,
+  AulasConTurnoListado,
   EntradaReserva,
   FechasSinTurno,
+  MateriasConTurnoListado,
   OcupacionPorBloque,
   PlanReserva,
   SnapshotReserva,
@@ -63,7 +67,8 @@ export function condicionTurnoSeCruzaCon(inicio: string, fin: string | null) {
  * única es el caso `fechaInicio = fechaFin`; un recurrente ocupa lugar en cada fecha de su rango
  * (todas caen en el día de su fila). Es la ocupación del horario (T-33) y del control de
  * capacidad (`BLOQUE_LLENO`): se reutiliza desde acá, nunca se reescribe. Equivale al predicado
- * puro `ocupaLugarEn` de `turnos.reglas.ts`. Se combina con el `bloqueAgendaId` de la fila.
+ * puro `ocupaLugarEn` de `turnos.reglas.ts`. Se combina con el `bloqueAgendaId` de la fila o, en la
+ * agenda diaria (T-23) y sus selectores, con el día de la semana del bloque (`bloqueAgenda.diaSemana`).
  */
 export function condicionTurnoOcupaLugar(fecha: string) {
   return condicionTurnoSeCruzaCon(fecha, fecha)
@@ -426,6 +431,160 @@ export const turnosRepository = {
       })
       return { turnos: filas.map(aDetalle), fechasSinTurno: plan.fechasSinTurno }
     }, TRANSACCION_RESERVA)
+  },
+
+  /**
+   * Página de la agenda de una fecha: turnos que aplican ese día (`condicionTurnoOcupaLugar`) cuyo
+   * bloque cae en el día de la semana correspondiente, excluyendo los `CANCELADO`. Filtrable por
+   * materia, aula y `terminos` de búsqueda (decisión T-36: cada palabra tiene que coincidir en la
+   * `busqueda` del alumno, o todas en la del `Usuario` del profesor; nunca mezcladas entre los
+   * dos). Ordenada por hora de inicio y, dentro de la hora, por profesor (apellido y nombre, vía
+   * `busqueda` de su `Usuario`), y por `id` del turno si todo lo anterior coincide.
+   */
+  async listarAgenda(filtro: {
+    fecha: string
+    page: number
+    pageSize: number
+    materiaId?: number
+    aulaId?: number
+    terminos?: string[]
+  }): Promise<AgendaListado> {
+    const terminos = filtro.terminos ?? []
+    // `condicionTurnoOcupaLugar` ya usa la clave `OR` (fechaFin nula o >= fecha): la búsqueda por
+    // alumno/profesor no puede ir suelta en el mismo objeto (la pisaría). Van como dos ramas
+    // separadas de un `AND` explícito. Combinada con el día de la semana del bloque, la condición
+    // incluye los recurrentes cuyo rango contiene la fecha.
+    const where = {
+      AND: [
+        condicionTurnoOcupaLugar(filtro.fecha),
+        {
+          bloqueAgenda: {
+            diaSemana: diaSemanaISO(filtro.fecha),
+            ...(filtro.aulaId === undefined ? {} : { aulaId: filtro.aulaId }),
+          },
+          ...(filtro.materiaId === undefined ? {} : { materiaId: filtro.materiaId }),
+        },
+        ...(terminos.length === 0
+          ? []
+          : [
+              {
+                OR: [
+                  {
+                    alumno: {
+                      AND: terminos.map((termino) => ({ busqueda: { contains: termino } })),
+                    },
+                  },
+                  {
+                    bloqueAgenda: {
+                      profesor: {
+                        usuario: {
+                          AND: terminos.map((termino) => ({ busqueda: { contains: termino } })),
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            ]),
+      ],
+    } satisfies Prisma.TurnoWhereInput
+
+    const [filas, total] = await prisma.$transaction([
+      prisma.turno.findMany({
+        where,
+        select: {
+          id: true,
+          estado: true,
+          alumno: { select: { id: true, apellido: true, nombre: true } },
+          materia: { select: { id: true, nombre: true } },
+          bloqueAgenda: {
+            select: {
+              horaInicio: true,
+              horaFin: true,
+              aula: { select: { id: true, nombre: true } },
+              profesor: {
+                select: { id: true, usuario: { select: { apellido: true, nombre: true } } },
+              },
+            },
+          },
+        },
+        orderBy: [
+          { bloqueAgenda: { horaInicio: 'asc' } },
+          { bloqueAgenda: { profesor: { usuario: { busqueda: 'asc' } } } },
+          { id: 'asc' },
+        ],
+        ...calcularSkipTake(filtro),
+      }),
+      prisma.turno.count({ where }),
+    ])
+
+    return {
+      data: filas.map((fila) => ({
+        id: fila.id,
+        alumno: fila.alumno,
+        profesor: {
+          id: fila.bloqueAgenda.profesor.id,
+          apellido: fila.bloqueAgenda.profesor.usuario.apellido,
+          nombre: fila.bloqueAgenda.profesor.usuario.nombre,
+        },
+        materia: fila.materia,
+        aula: fila.bloqueAgenda.aula,
+        horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
+        horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
+        estado: fila.estado,
+      })),
+      meta: armarMeta(filtro, total),
+    }
+  },
+
+  /**
+   * Materias con al menos un turno que aplica esa fecha (`condicionTurnoOcupaLugar`, excluyendo los
+   * `CANCELADO`), para el selector de materias de la agenda en el frontend. Ordenadas por nombre
+   * (`busqueda`, sin tildes ni mayúsculas) y luego `id`. Sin paginar: es un selector de catálogo.
+   *
+   * A propósito **no filtra por `Materia.estado`**: importa si esa materia se dictó ese día, no si
+   * hoy sigue activa. Con una fecha pasada, una materia dada de baja después sigue apareciendo si
+   * tuvo un turno `ACTIVO` ese día (a diferencia de `materiasRepository.listarActivas()`, el
+   * selector del catálogo vigente, que sí filtra por `estado`).
+   */
+  async listarMateriasConTurno(fecha: string): Promise<MateriasConTurnoListado> {
+    return prisma.materia.findMany({
+      where: {
+        turnos: {
+          some: {
+            ...condicionTurnoOcupaLugar(fecha),
+            bloqueAgenda: { diaSemana: diaSemanaISO(fecha) },
+          },
+        },
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+    })
+  },
+
+  /**
+   * Aulas con al menos un bloque que ese día de la semana tiene un turno que aplica esa fecha
+   * (`condicionTurnoOcupaLugar`, excluyendo los `CANCELADO`), para el selector de aula de la agenda
+   * en el frontend. Ordenadas por nombre y luego `id`, como `aulasRepository.listar()`. Sin
+   * paginar: es un selector de catálogo.
+   *
+   * A propósito **no filtra por `Aula.estado`**: importa si se usó ese día, no si hoy sigue
+   * activa. Con una fecha pasada, un aula dada de baja después sigue apareciendo si tuvo un turno
+   * `ACTIVO` ese día.
+   */
+  async listarAulasConTurno(fecha: string): Promise<AulasConTurnoListado> {
+    return prisma.aula.findMany({
+      where: {
+        bloques: {
+          some: {
+            diaSemana: diaSemanaISO(fecha),
+            turnos: { some: condicionTurnoOcupaLugar(fecha) },
+          },
+        },
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
+    })
   },
 }
 

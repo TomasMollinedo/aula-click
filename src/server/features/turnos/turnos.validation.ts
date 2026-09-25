@@ -1,6 +1,8 @@
 import { z } from '@hono/zod-openapi'
 import { auditoriaSchema } from '@/server/shared/auditoria'
+import { qBusqueda } from '@/server/shared/busqueda'
 import type { Estado } from '@/server/shared/estado'
+import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import { diaSemana, diaSemanaQuery, fechaISO, horaHHmm } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio: que
@@ -287,6 +289,128 @@ export const turnosAltaSchema = z
   .openapi('TurnosAlta')
 
 export type TurnosAlta = z.infer<typeof turnosAltaSchema>
+
+// ---------------------------------------------------------------------------------------------
+// Agenda diaria (T-23)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Query de la agenda diaria (T-23, decisiones T-35 y T-36): paginación + `fecha` (sin ella, hoy) +
+ * filtros opcionales por materia y aula (por id) + `q` (búsqueda por nombre de alumno o profesor).
+ */
+export const agendaQuerySchema = paginacionQuerySchema.extend({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+  q: qBusqueda.openapi({
+    description:
+      'Búsqueda por palabras sobre el nombre del alumno o del profesor (decisión T-36): todas las palabras deben coincidir en el mismo, alumno o profesor. No distingue mayúsculas ni tildes',
+  }),
+  materiaId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .optional()
+    .openapi({
+      param: { name: 'materiaId', in: 'query' },
+      description: 'Filtra por materia',
+      example: 2,
+    }),
+  aulaId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .optional()
+    .openapi({
+      param: { name: 'aulaId', in: 'query' },
+      description: 'Filtra por aula',
+      example: 1,
+    }),
+})
+
+export type AgendaQuery = z.infer<typeof agendaQuerySchema>
+
+/** Ítem de la agenda: alumno, profesor, materia, aula, horario y estado (siempre `ACTIVO`: la
+ * consulta excluye los `CANCELADO`, dominio.md → Turnos). Sin `fecha`: es la misma para toda la página. */
+export const agendaItemSchema = z
+  .object({
+    id: z.number().int(),
+    alumno: z.object({
+      id: z.number().int(),
+      apellido: z.string(),
+      nombre: z.string(),
+    }),
+    profesor: z.object({
+      id: z.number().int(),
+      apellido: z.string(),
+      nombre: z.string(),
+    }),
+    materia: z.object({ id: z.number().int(), nombre: z.string() }),
+    aula: z.object({ id: z.number().int(), nombre: z.string() }),
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    estado: z.enum(ESTADOS_TURNO),
+  })
+  .openapi('AgendaItem')
+
+export type AgendaItem = z.infer<typeof agendaItemSchema>
+
+export const agendaListadoSchema = paginatedSchema(agendaItemSchema)
+
+export type AgendaListado = z.infer<typeof agendaListadoSchema>
+
+/** Query del selector de materias con turno: `fecha` (sin ella, hoy), como en la agenda. */
+export const materiasConTurnoQuerySchema = z.object({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+})
+
+export type MateriasConTurnoQuery = z.infer<typeof materiasConTurnoQuerySchema>
+
+/**
+ * Ítem del selector de materias con turno en una fecha (id y nombre, como el resto de los
+ * selectores de catálogo: `materias.validation.ts` → `MateriaSelectorItem`). Es su propio
+ * componente porque vive en `turnos`: una feature no importa la validation de otra.
+ */
+export const materiaConTurnoSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('MateriaConTurno')
+
+export type MateriaConTurno = z.infer<typeof materiaConTurnoSchema>
+
+export const materiasConTurnoListadoSchema = z.array(materiaConTurnoSchema)
+
+export type MateriasConTurnoListado = z.infer<typeof materiasConTurnoListadoSchema>
+
+/** Query del selector de aulas con turno: `fecha` (sin ella, hoy), como en la agenda. */
+export const aulasConTurnoQuerySchema = z.object({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+})
+
+export type AulasConTurnoQuery = z.infer<typeof aulasConTurnoQuerySchema>
+
+/**
+ * Ítem del selector de aulas con turno en una fecha (id y nombre, como `aulas.validation.ts` →
+ * `AulaGuardada` sin `capacidad`/`estado`). Es su propio componente porque vive en `turnos`.
+ */
+export const aulaConTurnoSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('AulaConTurno')
+
+export type AulaConTurno = z.infer<typeof aulaConTurnoSchema>
+
+export const aulasConTurnoListadoSchema = z.array(aulaConTurnoSchema)
+
+export type AulasConTurnoListado = z.infer<typeof aulasConTurnoListadoSchema>
 
 // ---------------------------------------------------------------------------------------------
 // Tipos internos (no viajan por HTTP así)

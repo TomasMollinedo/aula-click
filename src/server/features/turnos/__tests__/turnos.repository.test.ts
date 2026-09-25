@@ -14,7 +14,17 @@ import type { EntradaReserva, PlanReserva, TurnoFechas } from '../turnos.validat
 // atomicidad de la reserva. Sin base: Prisma se reemplaza por un mock y se verifica lo que recibe.
 // Que Postgres evalúe bien las condiciones lo garantizan `gte`/`lte` sobre columnas @db.Date.
 
-const { log, groupBy, count, findMany, findUnique, tx, transaction } = vi.hoisted(() => {
+const {
+  log,
+  groupBy,
+  count,
+  findMany,
+  findUnique,
+  materiaFindMany,
+  aulaFindMany,
+  tx,
+  transaction,
+} = vi.hoisted(() => {
   const log: string[] = []
   const registrar =
     <T>(nombre: string, valor: () => T) =>
@@ -30,6 +40,8 @@ const { log, groupBy, count, findMany, findUnique, tx, transaction } = vi.hoiste
     count: vi.fn(),
     findMany: vi.fn(),
     findUnique: vi.fn(),
+    materiaFindMany: vi.fn(),
+    aulaFindMany: vi.fn(),
     transaction: vi.fn(),
     tx: {
       $queryRaw: vi.fn(registrar('queryRaw', () => [])),
@@ -44,9 +56,17 @@ const { log, groupBy, count, findMany, findUnique, tx, transaction } = vi.hoiste
 vi.mock('@/lib/prisma', () => ({
   prisma: {
     turno: { groupBy, count, findMany, findUnique },
-    $transaction: (fn: (cliente: typeof tx) => Promise<unknown>, opciones?: unknown) => {
+    materia: { findMany: materiaFindMany },
+    aula: { findMany: aulaFindMany },
+    // Las dos formas de $transaction: la interactiva (reservar) corre el callback con `tx`; la de
+    // arreglo (listados paginados) resuelve las consultas ya lanzadas por los mocks.
+    $transaction: (
+      arg: ((cliente: typeof tx) => Promise<unknown>) | Promise<unknown>[],
+      opciones?: unknown,
+    ) => {
+      if (Array.isArray(arg)) return Promise.all(arg)
       transaction(opciones)
-      return fn(tx)
+      return arg(tx)
     },
   },
 }))
@@ -61,6 +81,8 @@ beforeEach(() => {
   groupBy.mockResolvedValue([])
   count.mockResolvedValue(0)
   findMany.mockResolvedValue([])
+  materiaFindMany.mockResolvedValue([])
+  aulaFindMany.mockResolvedValue([])
 })
 
 describe('condicionTurnoVigente', () => {
@@ -596,5 +618,234 @@ describe('buscarDetalle', () => {
       createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
       updatedBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
     })
+  })
+})
+
+describe('listarAgenda', () => {
+  function filaAgenda() {
+    return {
+      id: 15,
+      estado: 'ACTIVO' as const,
+      alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+      materia: { id: 2, nombre: 'Matemática' },
+      bloqueAgenda: {
+        horaInicio: 540,
+        horaFin: 600,
+        aula: { id: 1, nombre: 'Aula 1' },
+        profesor: { id: 3, usuario: { apellido: 'Pérez', nombre: 'Ana' } },
+      },
+    }
+  }
+
+  it('arma el item con profesor, materia, aula y horario en HH:mm', async () => {
+    findMany.mockResolvedValue([filaAgenda()])
+    count.mockResolvedValue(1)
+
+    const resultado = await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
+
+    expect(resultado).toEqual({
+      data: [
+        {
+          id: 15,
+          alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+          profesor: { id: 3, apellido: 'Pérez', nombre: 'Ana' },
+          materia: { id: 2, nombre: 'Matemática' },
+          aula: { id: 1, nombre: 'Aula 1' },
+          horaInicio: '09:00',
+          horaFin: '10:00',
+          estado: 'ACTIVO',
+        },
+      ],
+      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+    })
+  })
+
+  it('filtra por el día de la semana de la fecha, sin filtros opcionales ni búsqueda', async () => {
+    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
+
+    // 2026-09-22 es martes: diaSemanaISO = 2.
+    const whereEsperado = {
+      AND: [condicionTurnoOcupaLugar(HOY), { bloqueAgenda: { diaSemana: 2 } }],
+    }
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: whereEsperado }))
+    expect(count).toHaveBeenCalledWith({ where: whereEsperado })
+  })
+
+  it('combina los filtros de materia y aula en la segunda rama del AND', async () => {
+    await turnosRepository.listarAgenda({
+      fecha: HOY,
+      page: 1,
+      pageSize: 20,
+      materiaId: 2,
+      aulaId: 1,
+    })
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          AND: [
+            condicionTurnoOcupaLugar(HOY),
+            { bloqueAgenda: { diaSemana: 2, aulaId: 1 }, materiaId: 2 },
+          ],
+        },
+      }),
+    )
+  })
+
+  it('sin `terminos`, el AND tiene solo dos ramas: no agrega ninguna de búsqueda', async () => {
+    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20, terminos: [] })
+
+    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
+    expect(where.AND).toHaveLength(2)
+  })
+
+  it('con `terminos`, agrega una tercera rama: todas las palabras en el alumno, o todas en el profesor', async () => {
+    await turnosRepository.listarAgenda({
+      fecha: HOY,
+      page: 1,
+      pageSize: 20,
+      terminos: ['juan', 'gonz'],
+    })
+
+    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
+    expect(where.AND).toHaveLength(3)
+    expect(where.AND[2]).toEqual({
+      OR: [
+        {
+          alumno: {
+            AND: [{ busqueda: { contains: 'juan' } }, { busqueda: { contains: 'gonz' } }],
+          },
+        },
+        {
+          bloqueAgenda: {
+            profesor: {
+              usuario: {
+                AND: [{ busqueda: { contains: 'juan' } }, { busqueda: { contains: 'gonz' } }],
+              },
+            },
+          },
+        },
+      ],
+    })
+  })
+
+  it('la condición de vigencia por fecha (fechaFin nula o >= fecha) se mantiene con `terminos`', async () => {
+    await turnosRepository.listarAgenda({
+      fecha: HOY,
+      page: 1,
+      pageSize: 20,
+      terminos: ['juan'],
+    })
+
+    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
+    expect(where.AND[0]).toEqual(condicionTurnoOcupaLugar(HOY))
+  })
+
+  it('ordena por hora, dentro de la hora por profesor, y por id como desempate final', async () => {
+    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
+
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        orderBy: [
+          { bloqueAgenda: { horaInicio: 'asc' } },
+          { bloqueAgenda: { profesor: { usuario: { busqueda: 'asc' } } } },
+          { id: 'asc' },
+        ],
+      }),
+    )
+  })
+
+  it('pagina con calcularSkipTake y arma meta con armarMeta', async () => {
+    count.mockResolvedValue(45)
+
+    const resultado = await turnosRepository.listarAgenda({ fecha: HOY, page: 2, pageSize: 20 })
+
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 20, take: 20 }))
+    expect(resultado.meta).toEqual({ page: 2, pageSize: 20, total: 45, totalPages: 3 })
+  })
+
+  it('sin turnos ese día, devuelve una página vacía', async () => {
+    const resultado = await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
+
+    expect(resultado).toEqual({
+      data: [],
+      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+    })
+  })
+})
+
+describe('listarMateriasConTurno', () => {
+  it('devuelve las materias que trae Prisma, tal cual', async () => {
+    materiaFindMany.mockResolvedValue([
+      { id: 2, nombre: 'Matemática' },
+      { id: 7, nombre: 'Física' },
+    ])
+
+    await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([
+      { id: 2, nombre: 'Matemática' },
+      { id: 7, nombre: 'Física' },
+    ])
+  })
+
+  it('filtra materias con algún turno que aplica esa fecha, en el día de semana del bloque', async () => {
+    await turnosRepository.listarMateriasConTurno(HOY)
+
+    // 2026-09-22 es martes: diaSemanaISO = 2.
+    expect(materiaFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          turnos: { some: { ...condicionTurnoOcupaLugar(HOY), bloqueAgenda: { diaSemana: 2 } } },
+        },
+      }),
+    )
+  })
+
+  it('no filtra por el estado de la materia: importa si se dictó esa fecha, no si sigue activa', async () => {
+    await turnosRepository.listarMateriasConTurno(HOY)
+
+    const { where } = materiaFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
+    expect(where).not.toHaveProperty('estado')
+  })
+
+  it('sin materias con turno ese día, devuelve un arreglo vacío', async () => {
+    await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([])
+  })
+})
+
+describe('listarAulasConTurno', () => {
+  it('devuelve las aulas que trae Prisma, tal cual', async () => {
+    aulaFindMany.mockResolvedValue([
+      { id: 1, nombre: 'Aula 1' },
+      { id: 2, nombre: 'Aula 2' },
+    ])
+
+    await expect(turnosRepository.listarAulasConTurno(HOY)).resolves.toEqual([
+      { id: 1, nombre: 'Aula 1' },
+      { id: 2, nombre: 'Aula 2' },
+    ])
+  })
+
+  it('filtra aulas con algún bloque en el día de semana con un turno que aplica esa fecha', async () => {
+    await turnosRepository.listarAulasConTurno(HOY)
+
+    // 2026-09-22 es martes: diaSemanaISO = 2.
+    expect(aulaFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          bloques: { some: { diaSemana: 2, turnos: { some: condicionTurnoOcupaLugar(HOY) } } },
+        },
+      }),
+    )
+  })
+
+  it('no filtra por el estado del aula: importa si se usó esa fecha, no si sigue activa', async () => {
+    await turnosRepository.listarAulasConTurno(HOY)
+
+    const { where } = aulaFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
+    expect(where).not.toHaveProperty('estado')
+  })
+
+  it('sin aulas con turno ese día, devuelve un arreglo vacío', async () => {
+    await expect(turnosRepository.listarAulasConTurno(HOY)).resolves.toEqual([])
   })
 })

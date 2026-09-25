@@ -20,6 +20,9 @@ const {
     contarOcupacionPorBloque: vi.fn(),
     reservar: vi.fn(),
     buscarDetalle: vi.fn(),
+    listarAgenda: vi.fn(),
+    listarMateriasConTurno: vi.fn(),
+    listarAulasConTurno: vi.fn(),
   },
   alumnosRepository: { buscarPorId: vi.fn() },
   bloquesRepository: { buscarPorIds: vi.fn(), listarActivasDeProfesores: vi.fn() },
@@ -49,6 +52,20 @@ const BODY = {
   bloqueIds: [10],
   tipo: 'SESION_UNICA',
   fechaInicio: LUNES,
+}
+
+const paginaVacia = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }
+
+function pedirAgenda(query = '') {
+  return app.request(`/api/v1/turnos/agenda${query}`)
+}
+
+function pedirMaterias(query = '') {
+  return app.request(`/api/v1/turnos/materias${query}`)
+}
+
+function pedirAulas(query = '') {
+  return app.request(`/api/v1/turnos/aulas${query}`)
 }
 
 function sesion(role = 'MESA_ENTRADAS') {
@@ -100,6 +117,9 @@ beforeEach(() => {
     asignaciones: [{ materiaId: 3, nombre: 'Matemática', estado: 'ACTIVO' }],
   })
   repository.reservar.mockResolvedValue({ turnos: [ejemploDetalle], fechasSinTurno: [] })
+  repository.listarAgenda.mockResolvedValue(paginaVacia)
+  repository.listarMateriasConTurno.mockResolvedValue([])
+  repository.listarAulasConTurno.mockResolvedValue([])
 })
 
 describe('auth', () => {
@@ -261,5 +281,165 @@ describe('OpenAPI', () => {
       'bloqueLleno',
       'alumnoSuperpuesto',
     ])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Agenda diaria (T-23)
+// ---------------------------------------------------------------------------------------------
+
+describe('GET /turnos/agenda', () => {
+  it('responde 200 con la página que arma el service', async () => {
+    const res = await pedirAgenda()
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(paginaVacia)
+  })
+
+  it('sin query, pagina con los defaults y sin fecha (el service la completa)', async () => {
+    await pedirAgenda()
+    expect(repository.listarAgenda).toHaveBeenCalledWith(
+      expect.objectContaining({ page: 1, pageSize: 20 }),
+    )
+  })
+
+  it('pasa fecha, materiaId, aulaId y los términos de q al service', async () => {
+    await pedirAgenda('?fecha=2026-09-28&materiaId=2&aulaId=1&q=juan+perez')
+    expect(repository.listarAgenda).toHaveBeenCalledWith({
+      fecha: '2026-09-28',
+      materiaId: 2,
+      aulaId: 1,
+      terminos: ['juan', 'perez'],
+      page: 1,
+      pageSize: 20,
+    })
+  })
+
+  it.each([
+    ['fecha con formato inválido', '?fecha=28-09-2026'],
+    ['fecha inexistente', '?fecha=2026-02-30'],
+    ['materiaId no numérico', '?materiaId=abc'],
+    ['aulaId cero', '?aulaId=0'],
+    ['q de más de 100 caracteres', `?q=${'a'.repeat(101)}`],
+    ['pageSize mayor a 100', '?pageSize=101'],
+  ])('%s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedirAgenda(query)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedirAgenda()).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedirAgenda()).status).toBe(403)
+  })
+})
+
+describe('GET /turnos/materias', () => {
+  it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
+    repository.listarMateriasConTurno.mockResolvedValue([{ id: 2, nombre: 'Matemática' }])
+    const res = await pedirMaterias('?fecha=2026-09-28')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([{ id: 2, nombre: 'Matemática' }])
+    expect(repository.listarMateriasConTurno).toHaveBeenCalledWith('2026-09-28')
+  })
+
+  it('sin fecha, responde 200 (el service completa con la de hoy)', async () => {
+    const res = await pedirMaterias()
+    expect(res.status).toBe(200)
+    expect(repository.listarMateriasConTurno).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it.each([
+    ['formato inválido', '?fecha=28-09-2026'],
+    ['fecha inexistente', '?fecha=2026-02-30'],
+  ])('fecha con %s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedirMaterias(query)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedirMaterias('?fecha=2026-09-28')).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedirMaterias('?fecha=2026-09-28')).status).toBe(403)
+  })
+})
+
+describe('GET /turnos/aulas', () => {
+  it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
+    repository.listarAulasConTurno.mockResolvedValue([{ id: 1, nombre: 'Aula 1' }])
+    const res = await pedirAulas('?fecha=2026-09-28')
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([{ id: 1, nombre: 'Aula 1' }])
+    expect(repository.listarAulasConTurno).toHaveBeenCalledWith('2026-09-28')
+  })
+
+  it('sin fecha, responde 200 (el service completa con la de hoy)', async () => {
+    const res = await pedirAulas()
+    expect(res.status).toBe(200)
+    expect(repository.listarAulasConTurno).toHaveBeenCalledWith(expect.any(String))
+  })
+
+  it.each([
+    ['formato inválido', '?fecha=28-09-2026'],
+    ['fecha inexistente', '?fecha=2026-02-30'],
+  ])('fecha con %s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedirAulas(query)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedirAulas('?fecha=2026-09-28')).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    expect((await pedirAulas('?fecha=2026-09-28')).status).toBe(403)
+  })
+})
+
+describe('OpenAPI de la agenda', () => {
+  const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
+
+  it('declara los endpoints con todos sus status codes', () => {
+    const responsesAgenda = doc.paths['/api/v1/turnos/agenda']?.get?.responses ?? {}
+    expect(Object.keys(responsesAgenda).sort()).toEqual(['200', '400', '401', '403'])
+
+    const responsesMaterias = doc.paths['/api/v1/turnos/materias']?.get?.responses ?? {}
+    expect(Object.keys(responsesMaterias).sort()).toEqual(['200', '400', '401', '403'])
+
+    const responsesAulas = doc.paths['/api/v1/turnos/aulas']?.get?.responses ?? {}
+    expect(Object.keys(responsesAulas).sort()).toEqual(['200', '400', '401', '403'])
+  })
+
+  it('no expone /turnos/profesores: el filtro de profesor se sacó (decisión T-36)', () => {
+    expect(doc.paths['/api/v1/turnos/profesores']).toBeUndefined()
+  })
+
+  it('registra los componentes de agenda y de los selectores de materias y aulas', () => {
+    expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
+      expect.arrayContaining(['AgendaItem', 'MateriaConTurno', 'AulaConTurno']),
+    )
+    expect(Object.keys(doc.components?.schemas ?? {})).not.toContain('ProfesorConTurno')
+  })
+})
+
+describe('orden de las rutas', () => {
+  it('/agenda, /materias, /aulas y /disponibilidad no los captura /{turnoId}', async () => {
+    expect((await pedirAgenda()).status).toBe(200)
+    expect((await pedirMaterias()).status).toBe(200)
+    expect((await pedirAulas()).status).toBe(200)
+    expect((await pedir('/disponibilidad?materiaId=3')).status).toBe(200)
+    expect(repository.buscarDetalle).not.toHaveBeenCalled()
   })
 })

@@ -59,7 +59,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 ## Turnos
 
 - Un turno une a un alumno con **una hora** de un bloque de un profesor (una fila del horario) e indica la materia. La materia tiene que estar activa y asignada (con asignación activa) a ese profesor, y el profesor tiene que estar activo. Elegir varias horas del mismo profesor y el mismo día crea un turno por hora, todos o ninguno.
-- **Tipos** (T-35):
+- **Tipos** (T-37):
   - `SESION_UNICA`: una fecha (`fechaFin = fechaInicio`).
   - `RECURRENTE`: una fecha de inicio y una de fin opcional (sin fin = sigue indefinidamente). Sus **ocurrencias** son todas las fechas de ese día de la semana dentro del rango.
   - La fecha de inicio y la de fin (si hay) tienen que caer en el día de la semana del bloque.

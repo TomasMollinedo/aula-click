@@ -4,6 +4,7 @@ import type { BloquesRepository } from '@/server/features/bloques/bloques.reposi
 import type { MateriasRepository } from '@/server/features/materias/materias.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
+import { terminosDeBusqueda } from '@/server/shared/busqueda'
 import { diaSemanaISO, hoy, proximaFechaDelDia, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import type { TurnosRepository } from './turnos.repository'
@@ -21,9 +22,15 @@ import {
   type PedidoReserva,
 } from './turnos.reglas'
 import type {
+  AgendaListado,
+  AgendaQuery,
+  AulasConTurnoListado,
+  AulasConTurnoQuery,
   CrearTurno,
   DisponibilidadItem,
   DisponibilidadQuery,
+  MateriasConTurnoListado,
+  MateriasConTurnoQuery,
   TurnoDetalle,
   TurnosAlta,
 } from './turnos.validation'
@@ -45,7 +52,15 @@ export function crearTurnosService({
   materiasRepository,
   reloj,
 }: {
-  repository: Pick<TurnosRepository, 'contarOcupacionPorBloque' | 'reservar' | 'buscarDetalle'>
+  repository: Pick<
+    TurnosRepository,
+    | 'contarOcupacionPorBloque'
+    | 'reservar'
+    | 'buscarDetalle'
+    | 'listarAgenda'
+    | 'listarMateriasConTurno'
+    | 'listarAulasConTurno'
+  >
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   bloquesRepository: Pick<BloquesRepository, 'buscarPorIds' | 'listarActivasDeProfesores'>
   profesoresRepository: Pick<
@@ -245,6 +260,31 @@ export function crearTurnosService({
       const turno = await repository.buscarDetalle(id)
       if (!turno) throw new NotFoundError('Turno no encontrado')
       return turno
+    },
+    /**
+     * Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service). `q`
+     * (decisión T-36) busca por nombre de alumno o de profesor: se normaliza igual que en el
+     * resto de la API (`terminosDeBusqueda`) antes de pasarla al repository.
+     */
+    listarAgenda(query: AgendaQuery): Promise<AgendaListado> {
+      return repository.listarAgenda({
+        fecha: query.fecha ?? hoy(reloj),
+        page: query.page,
+        pageSize: query.pageSize,
+        materiaId: query.materiaId,
+        aulaId: query.aulaId,
+        terminos: terminosDeBusqueda(query.q),
+      })
+    },
+
+    /** Selector de materias con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
+    listarMateriasConTurno(query: MateriasConTurnoQuery): Promise<MateriasConTurnoListado> {
+      return repository.listarMateriasConTurno(query.fecha ?? hoy(reloj))
+    },
+
+    /** Selector de aulas con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
+    listarAulasConTurno(query: AulasConTurnoQuery): Promise<AulasConTurnoListado> {
+      return repository.listarAulasConTurno(query.fecha ?? hoy(reloj))
     },
   }
 }
