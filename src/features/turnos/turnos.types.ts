@@ -172,3 +172,31 @@ export type AgendaListadoParams = {
 }
 
 export type AgendaListadoResponse = PaginatedResponse<AgendaItem>
+
+// ---------------------------------------------------------------------------------------------
+// Agenda propia del profesor (`GET /turnos/agenda-propia`)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Una **ocurrencia** de un turno propio en una fecha (docs/contrato-api.md → Agenda propia del
+ * profesor): en un recurrente, `turnoId` se repite entre fechas, así que la clave de la fila es
+ * `turnoId` + `fecha`. Sin profesor: son todos del profesor de la sesión.
+ */
+export type AgendaPropiaItem = {
+  turnoId: number
+  fecha: string
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  alumno: { id: number; apellido: string; nombre: string }
+  materia: Referencia
+  aula: Referencia
+  tipo: TipoTurno
+  estado: EstadoTurno
+}
+
+/** Rango pedido, extremos incluidos. Sin `desde`, la API usa hoy; sin `hasta`, el mismo `desde`. */
+export type AgendaPropiaParams = {
+  desde?: string
+  hasta?: string
+}

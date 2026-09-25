@@ -71,7 +71,7 @@ src/
 │   ├── profesor/                       # rol PROFESOR → /profesor/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /profesor/agenda
-│   │   ├── agenda/page.tsx
+│   │   ├── agenda/page.tsx             # "Mi agenda" (HU-10, T-26): ?vista=dia|semana y ?fecha=
 │   │   └── alumnos/page.tsx
 │   ├── gerente/  portal/               # se crean con las HU de cada rol (portal: Sprint 3)
 │   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
@@ -90,18 +90,21 @@ src/
 │   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
-│   ├── turnos/                         # registrar turno (HU-07) y agenda diaria (HU-09, T-24)
+│   ├── turnos/                         # registrar turno (HU-07), agenda diaria (HU-09, T-24) y agenda propia (HU-10, T-26)
 │   │   ├── turnos.types.ts, turnos.schema.ts
-│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts
+│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, agenda-propia.ts
 │   │   ├── api/{turnos.api.ts, turnos.keys.ts}
-│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-turno.ts, use-agenda.ts}
+│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-turno.ts,
+│   │   │   use-agenda.ts, use-agenda-propia.ts}
 │   │   └── components/
 │   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
 │   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
 │   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx)
 │   │       ├── TurnoDetalleModal.tsx    # detalle de solo lectura (?detalle=<id>)
-│   │       └── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
-│   │           FiltroProfesorAgenda.tsx # agenda diaria (HU-09, T-24)
+│   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
+│   │       │   FiltroProfesorAgenda.tsx # agenda diaria (HU-09, T-24); NavegacionFecha la comparten las dos agendas
+│   │       └── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx, AgendaPropiaTable.tsx,
+│   │           SelectorVistaAgenda.tsx  # agenda propia del profesor (HU-10, T-26)
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
@@ -332,4 +335,4 @@ mutation.mutate(datos, {
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `agenda-propia.ts`: el rango de la vista por día o por semana y el agrupado por fecha; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.

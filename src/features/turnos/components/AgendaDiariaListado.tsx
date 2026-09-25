@@ -71,10 +71,10 @@ export function AgendaDiariaListado() {
       <div className="border-border flex flex-col gap-4 border-b p-6 sm:flex-row sm:items-center sm:justify-between">
         <NavegacionFecha
           fecha={fecha}
-          esHoy={fecha === fechaDeHoy()}
+          esActual={fecha === fechaDeHoy()}
           onAnterior={() => irADia(-1)}
           onSiguiente={() => irADia(1)}
-          onHoy={irAHoy}
+          onActual={irAHoy}
           onCambiarFecha={setFecha}
         />
         <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
