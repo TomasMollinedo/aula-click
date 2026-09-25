@@ -7,7 +7,6 @@ import {
   ArrowLeft,
   BookOpen,
   CalendarClock,
-  Construction,
   IdCard,
   Pencil,
   Phone,
@@ -33,6 +32,7 @@ import { parsearProfesorId } from '../profesores.schema'
 import type { ProfesorDetalle as ProfesorDetalleType } from '../profesores.types'
 import { useProfesor } from '../hooks/use-profesor'
 import { HorarioProfesor } from './HorarioProfesor'
+import { MateriasProfesor } from './MateriasProfesor'
 
 type ProfesorDetalleProps = {
   /** `profesorId` tal como llega en la URL. */
@@ -182,13 +182,7 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         </TabsContent>
 
         <TabsContent value="materias">
-          <Card className="p-0">
-            <EmptyState
-              icon={Construction}
-              title="Función en construcción"
-              description="Pronto vas a poder ver y asignar acá las materias del profesor."
-            />
-          </Card>
+          <MateriasProfesor profesorId={profesor.id} />
         </TabsContent>
 
         <TabsContent value="horario">
