@@ -24,7 +24,6 @@ function crearRepository() {
     contarOcupacionPorBloque: vi.fn<TurnosRepository['contarOcupacionPorBloque']>(),
     listarAgenda: vi.fn<TurnosRepository['listarAgenda']>(),
     listarMateriasConTurno: vi.fn<TurnosRepository['listarMateriasConTurno']>(),
-    listarProfesoresConTurno: vi.fn<TurnosRepository['listarProfesoresConTurno']>(),
     listarAulasConTurno: vi.fn<TurnosRepository['listarAulasConTurno']>(),
   }
 }
@@ -48,8 +47,7 @@ describe('listarAgenda', () => {
       pageSize: 20,
       materiaId: undefined,
       aulaId: undefined,
-      profesorId: undefined,
-      alumnoId: undefined,
+      terminos: [],
     })
   })
 
@@ -61,14 +59,12 @@ describe('listarAgenda', () => {
     )
   })
 
-  it('pasa la paginación y los filtros de materia, aula, profesor y alumno tal cual', async () => {
+  it('pasa la paginación y los filtros de materia y aula tal cual', async () => {
     await service.listarAgenda({
       page: 2,
       pageSize: 10,
       materiaId: 2,
       aulaId: 1,
-      profesorId: 3,
-      alumnoId: 12,
     })
 
     expect(repository.listarAgenda).toHaveBeenCalledWith({
@@ -77,9 +73,16 @@ describe('listarAgenda', () => {
       pageSize: 10,
       materiaId: 2,
       aulaId: 1,
-      profesorId: 3,
-      alumnoId: 12,
+      terminos: [],
     })
+  })
+
+  it('normaliza `q` con terminosDeBusqueda antes de pasarlo al repository', async () => {
+    await service.listarAgenda({ page: 1, pageSize: 20, q: 'gonz pérez' })
+
+    expect(repository.listarAgenda).toHaveBeenCalledWith(
+      expect.objectContaining({ terminos: ['gonz', 'perez'] }),
+    )
   })
 
   it('devuelve la página tal como la arma el repository', async () => {
@@ -126,33 +129,6 @@ describe('listarMateriasConTurno', () => {
     repository.listarMateriasConTurno.mockResolvedValue([])
 
     await expect(service.listarMateriasConTurno({ fecha: '2026-09-28' })).resolves.toEqual([])
-  })
-})
-
-describe('listarProfesoresConTurno', () => {
-  it('sin fecha, consulta la de hoy según el reloj del service', async () => {
-    await service.listarProfesoresConTurno({})
-
-    expect(repository.listarProfesoresConTurno).toHaveBeenCalledWith(HOY)
-  })
-
-  it('pide al repository los profesores con turno de la fecha pedida', async () => {
-    const profesores = [
-      { id: 3, apellido: 'Pérez', nombre: 'Ana' },
-      { id: 5, apellido: 'Ramírez', nombre: 'Sofía' },
-    ]
-    repository.listarProfesoresConTurno.mockResolvedValue(profesores)
-
-    await expect(service.listarProfesoresConTurno({ fecha: '2026-09-28' })).resolves.toEqual(
-      profesores,
-    )
-    expect(repository.listarProfesoresConTurno).toHaveBeenCalledWith('2026-09-28')
-  })
-
-  it('sin profesores con turno ese día, devuelve un arreglo vacío', async () => {
-    repository.listarProfesoresConTurno.mockResolvedValue([])
-
-    await expect(service.listarProfesoresConTurno({ fecha: '2026-09-28' })).resolves.toEqual([])
   })
 })
 

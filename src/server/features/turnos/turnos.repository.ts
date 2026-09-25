@@ -8,7 +8,6 @@ import type {
   AulasConTurnoListado,
   MateriasConTurnoListado,
   OcupacionPorBloque,
-  ProfesoresConTurnoListado,
   TurnosVigentesPorBloque,
   TurnosVigentesPorMateria,
   TurnoVigentePorProfesor,
@@ -177,9 +176,10 @@ export const turnosRepository = {
   /**
    * Página de la agenda de una fecha: turnos que aplican ese día (`condicionTurnoEnFecha`) cuyo
    * bloque cae en el día de la semana correspondiente, excluyendo los `CANCELADO`. Filtrable por
-   * materia, aula, profesor y alumno. Ordenada por hora de inicio y, dentro de la hora, por
-   * profesor (apellido y nombre, vía `busqueda` de su `Usuario`), y por `id` del turno si todo lo
-   * anterior coincide.
+   * materia, aula y `terminos` de búsqueda (decisión T-36: cada palabra tiene que coincidir en la
+   * `busqueda` del alumno, o todas en la del `Usuario` del profesor; nunca mezcladas entre los
+   * dos). Ordenada por hora de inicio y, dentro de la hora, por profesor (apellido y nombre, vía
+   * `busqueda` de su `Usuario`), y por `id` del turno si todo lo anterior coincide.
    */
   async listarAgenda(filtro: {
     fecha: string
@@ -187,18 +187,45 @@ export const turnosRepository = {
     pageSize: number
     materiaId?: number
     aulaId?: number
-    profesorId?: number
-    alumnoId?: number
+    terminos?: string[]
   }): Promise<AgendaListado> {
+    const terminos = filtro.terminos ?? []
+    // `condicionTurnoEnFecha` ya usa la clave `OR` (fechaFin nula o >= fecha): la búsqueda por
+    // alumno/profesor no puede ir suelta en el mismo objeto (la pisaría). Van como dos ramas
+    // separadas de un `AND` explícito.
     const where = {
-      ...condicionTurnoEnFecha(filtro.fecha),
-      bloqueAgenda: {
-        diaSemana: diaSemanaISO(filtro.fecha),
-        ...(filtro.aulaId === undefined ? {} : { aulaId: filtro.aulaId }),
-        ...(filtro.profesorId === undefined ? {} : { profesorId: filtro.profesorId }),
-      },
-      ...(filtro.materiaId === undefined ? {} : { materiaId: filtro.materiaId }),
-      ...(filtro.alumnoId === undefined ? {} : { alumnoId: filtro.alumnoId }),
+      AND: [
+        condicionTurnoEnFecha(filtro.fecha),
+        {
+          bloqueAgenda: {
+            diaSemana: diaSemanaISO(filtro.fecha),
+            ...(filtro.aulaId === undefined ? {} : { aulaId: filtro.aulaId }),
+          },
+          ...(filtro.materiaId === undefined ? {} : { materiaId: filtro.materiaId }),
+        },
+        ...(terminos.length === 0
+          ? []
+          : [
+              {
+                OR: [
+                  {
+                    alumno: {
+                      AND: terminos.map((termino) => ({ busqueda: { contains: termino } })),
+                    },
+                  },
+                  {
+                    bloqueAgenda: {
+                      profesor: {
+                        usuario: {
+                          AND: terminos.map((termino) => ({ busqueda: { contains: termino } })),
+                        },
+                      },
+                    },
+                  },
+                ],
+              },
+            ]),
+      ],
     } satisfies Prisma.TurnoWhereInput
 
     const [filas, total] = await prisma.$transaction([
@@ -272,32 +299,6 @@ export const turnosRepository = {
       select: { id: true, nombre: true },
       orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
     })
-  },
-
-  /**
-   * Profesores con al menos un bloque que ese día de la semana tiene un turno que aplica esa
-   * fecha (`condicionTurnoEnFecha`, excluyendo los `CANCELADO`), para el selector de profesor de
-   * la agenda en el frontend. Ordenados por apellido y nombre (`busqueda` de su `Usuario`) y luego
-   * `id`. Sin paginar: es un selector de catálogo.
-   *
-   * A propósito **no filtra por el estado del profesor** (el de su `Usuario`): importa si dictó
-   * clase ese día, no si hoy sigue activo. Con una fecha pasada, un profesor dado de baja después
-   * sigue apareciendo si tuvo un turno `ACTIVO` ese día.
-   */
-  async listarProfesoresConTurno(fecha: string): Promise<ProfesoresConTurnoListado> {
-    const filas = await prisma.profesor.findMany({
-      where: {
-        bloques: {
-          some: {
-            diaSemana: diaSemanaISO(fecha),
-            turnos: { some: condicionTurnoEnFecha(fecha) },
-          },
-        },
-      },
-      select: { id: true, usuario: { select: { apellido: true, nombre: true } } },
-      orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
-    })
-    return filas.map(({ id, usuario }) => ({ id, ...usuario }))
   },
 
   /**

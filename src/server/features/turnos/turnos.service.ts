@@ -1,3 +1,4 @@
+import { terminosDeBusqueda } from '@/server/shared/busqueda'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { TurnosRepository } from './turnos.repository'
 import type {
@@ -7,8 +8,6 @@ import type {
   AulasConTurnoQuery,
   MateriasConTurnoListado,
   MateriasConTurnoQuery,
-  ProfesoresConTurnoListado,
-  ProfesoresConTurnoQuery,
 } from './turnos.validation'
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
@@ -26,7 +25,11 @@ export function crearTurnosService({
   reloj?: Reloj
 }) {
   return {
-    /** Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service). */
+    /**
+     * Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service). `q`
+     * (decisión T-36) busca por nombre de alumno o de profesor: se normaliza igual que en el
+     * resto de la API (`terminosDeBusqueda`) antes de pasarla al repository.
+     */
     listarAgenda(query: AgendaQuery): Promise<AgendaListado> {
       return repository.listarAgenda({
         fecha: query.fecha ?? hoy(reloj),
@@ -34,19 +37,13 @@ export function crearTurnosService({
         pageSize: query.pageSize,
         materiaId: query.materiaId,
         aulaId: query.aulaId,
-        profesorId: query.profesorId,
-        alumnoId: query.alumnoId,
+        terminos: terminosDeBusqueda(query.q),
       })
     },
 
     /** Selector de materias con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
     listarMateriasConTurno(query: MateriasConTurnoQuery): Promise<MateriasConTurnoListado> {
       return repository.listarMateriasConTurno(query.fecha ?? hoy(reloj))
-    },
-
-    /** Selector de profesores con turno activo en la fecha pedida; sin `fecha`, la de hoy. */
-    listarProfesoresConTurno(query: ProfesoresConTurnoQuery): Promise<ProfesoresConTurnoListado> {
-      return repository.listarProfesoresConTurno(query.fecha ?? hoy(reloj))
     },
 
     /** Selector de aulas con turno activo en la fecha pedida; sin `fecha`, la de hoy. */

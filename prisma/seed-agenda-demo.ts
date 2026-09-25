@@ -310,11 +310,11 @@ async function crear() {
     `  GET /api/v1/turnos/agenda?aulaId=${ramirez.aulaId}       → filtra por Aula de Ramírez (hoy: 2)`,
   )
   console.log(
-    `  GET /api/v1/turnos/agenda?profesorId=${ramirez.id}       → filtra por Ramírez (hoy: 2)`,
+    `  GET /api/v1/turnos/agenda?q=ramirez     → busca por nombre de profesor (hoy: 2, Ramírez)`,
   )
   console.log(
-    `  GET /api/v1/turnos/agenda?alumnoId=${alumnos.get('Suárez')}       → filtra por Suárez ` +
-      '(hoy: 1; tiene un turno cancelado y uno con rango, el cancelado nunca aparece)',
+    '  GET /api/v1/turnos/agenda?q=suarez      → busca por nombre de alumno ' +
+      '(hoy: 1; Suárez tiene un turno cancelado y uno con rango, el cancelado nunca aparece)',
   )
   console.log(
     `  GET /api/v1/turnos/agenda?fecha=${sumarDias(hoyStr, 7)} → el turno con rango, otra vez`,

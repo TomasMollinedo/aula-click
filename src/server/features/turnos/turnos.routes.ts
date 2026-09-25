@@ -10,8 +10,6 @@ import {
   aulasConTurnoQuerySchema,
   materiasConTurnoListadoSchema,
   materiasConTurnoQuerySchema,
-  profesoresConTurnoListadoSchema,
-  profesoresConTurnoQuerySchema,
 } from './turnos.validation'
 
 // Contrato HTTP de turnos: cada endpoint se declara con createRoute() y se registra acá.
@@ -34,7 +32,7 @@ export const listarAgendaRoute = createRoute({
   tags,
   summary: 'Agenda diaria del centro',
   description:
-    'Turnos ACTIVO de una fecha (por defecto hoy), con alumno, profesor, materia y aula. Paginada (decisión T-35); filtrable por materia, aula, profesor y alumno. Ordenada por hora y, dentro de la hora, por profesor.',
+    'Turnos ACTIVO de una fecha (por defecto hoy), con alumno, profesor, materia y aula. Paginada (decisión T-35); filtrable por materia, aula y `q` (búsqueda por nombre de alumno o profesor, decisión T-36). Ordenada por hora y, dentro de la hora, por profesor.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: agendaQuerySchema },
   responses: {
@@ -91,32 +89,6 @@ export const listarMateriasConTurnoRoute = createRoute({
   },
 })
 
-export const listarProfesoresConTurnoRoute = createRoute({
-  method: 'get',
-  path: '/profesores',
-  tags,
-  summary: 'Profesores con turno en una fecha',
-  description:
-    'Selector para el filtro de profesor de la agenda: profesores con al menos un turno ACTIVO en la fecha pedida (id, apellido y nombre, sin paginar). Sin `fecha`, la de hoy, igual que la agenda.',
-  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
-  request: { query: profesoresConTurnoQuerySchema },
-  responses: {
-    200: {
-      description: 'Profesores con turno ese día (arreglo vacío si no hay ninguno)',
-      content: {
-        'application/json': {
-          schema: profesoresConTurnoListadoSchema,
-          example: [
-            { id: 3, apellido: 'Pérez', nombre: 'Ana' },
-            { id: 5, apellido: 'Ramírez', nombre: 'Sofía' },
-          ],
-        },
-      },
-    },
-    ...errores,
-  },
-})
-
 export const listarAulasConTurnoRoute = createRoute({
   method: 'get',
   path: '/aulas',
@@ -146,5 +118,4 @@ export const listarAulasConTurnoRoute = createRoute({
 export const turnosRoutes = createRouter()
   .openapi(listarAgendaRoute, turnosController.listarAgenda)
   .openapi(listarMateriasConTurnoRoute, turnosController.listarMateriasConTurno)
-  .openapi(listarProfesoresConTurnoRoute, turnosController.listarProfesoresConTurno)
   .openapi(listarAulasConTurnoRoute, turnosController.listarAulasConTurno)

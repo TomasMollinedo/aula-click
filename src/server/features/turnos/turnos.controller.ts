@@ -4,7 +4,6 @@ import type {
   listarAgendaRoute,
   listarAulasConTurnoRoute,
   listarMateriasConTurnoRoute,
-  listarProfesoresConTurnoRoute,
 } from './turnos.routes'
 import { turnosRepository } from './turnos.repository'
 import { crearTurnosService } from './turnos.service'
@@ -23,11 +22,6 @@ export const listarMateriasConTurno: RouteHandler<
   typeof listarMateriasConTurnoRoute,
   AppEnv
 > = async (c) => c.json(await turnosService.listarMateriasConTurno(c.req.valid('query')), 200)
-
-export const listarProfesoresConTurno: RouteHandler<
-  typeof listarProfesoresConTurnoRoute,
-  AppEnv
-> = async (c) => c.json(await turnosService.listarProfesoresConTurno(c.req.valid('query')), 200)
 
 export const listarAulasConTurno: RouteHandler<typeof listarAulasConTurnoRoute, AppEnv> = async (
   c,

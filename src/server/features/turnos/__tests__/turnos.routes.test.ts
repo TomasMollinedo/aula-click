@@ -10,7 +10,6 @@ const { repository, getSession } = vi.hoisted(() => ({
   repository: {
     listarAgenda: vi.fn(),
     listarMateriasConTurno: vi.fn(),
-    listarProfesoresConTurno: vi.fn(),
     listarAulasConTurno: vi.fn(),
   },
   getSession: vi.fn(),
@@ -39,10 +38,6 @@ function pedirMaterias(query = '') {
   return app.request(`/api/v1/turnos/materias${query}`)
 }
 
-function pedirProfesores(query = '') {
-  return app.request(`/api/v1/turnos/profesores${query}`)
-}
-
 function pedirAulas(query = '') {
   return app.request(`/api/v1/turnos/aulas${query}`)
 }
@@ -52,7 +47,6 @@ beforeEach(() => {
   getSession.mockResolvedValue(sesion())
   repository.listarAgenda.mockResolvedValue(paginaVacia)
   repository.listarMateriasConTurno.mockResolvedValue([])
-  repository.listarProfesoresConTurno.mockResolvedValue([])
   repository.listarAulasConTurno.mockResolvedValue([])
 })
 
@@ -70,14 +64,13 @@ describe('GET /turnos/agenda', () => {
     )
   })
 
-  it('pasa fecha, materiaId, aulaId, profesorId y alumnoId al service', async () => {
-    await pedir('?fecha=2026-09-28&materiaId=2&aulaId=1&profesorId=3&alumnoId=12')
+  it('pasa fecha, materiaId, aulaId y los términos de q al service', async () => {
+    await pedir('?fecha=2026-09-28&materiaId=2&aulaId=1&q=juan+perez')
     expect(repository.listarAgenda).toHaveBeenCalledWith({
       fecha: '2026-09-28',
       materiaId: 2,
       aulaId: 1,
-      profesorId: 3,
-      alumnoId: 12,
+      terminos: ['juan', 'perez'],
       page: 1,
       pageSize: 20,
     })
@@ -88,8 +81,7 @@ describe('GET /turnos/agenda', () => {
     ['fecha inexistente', '?fecha=2026-02-30'],
     ['materiaId no numérico', '?materiaId=abc'],
     ['aulaId cero', '?aulaId=0'],
-    ['profesorId negativo', '?profesorId=-1'],
-    ['alumnoId no entero', '?alumnoId=1.5'],
+    ['q de más de 100 caracteres', `?q=${'a'.repeat(101)}`],
     ['pageSize mayor a 100', '?pageSize=101'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
     const res = await pedir(query)
@@ -143,43 +135,6 @@ describe('GET /turnos/materias', () => {
   })
 })
 
-describe('GET /turnos/profesores', () => {
-  it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
-    repository.listarProfesoresConTurno.mockResolvedValue([
-      { id: 3, apellido: 'Pérez', nombre: 'Ana' },
-    ])
-    const res = await pedirProfesores('?fecha=2026-09-28')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual([{ id: 3, apellido: 'Pérez', nombre: 'Ana' }])
-    expect(repository.listarProfesoresConTurno).toHaveBeenCalledWith('2026-09-28')
-  })
-
-  it('sin fecha, responde 200 (el service completa con la de hoy)', async () => {
-    const res = await pedirProfesores()
-    expect(res.status).toBe(200)
-    expect(repository.listarProfesoresConTurno).toHaveBeenCalledWith(expect.any(String))
-  })
-
-  it.each([
-    ['formato inválido', '?fecha=28-09-2026'],
-    ['fecha inexistente', '?fecha=2026-02-30'],
-  ])('fecha con %s → 400 VALIDACION', async (_caso, query) => {
-    const res = await pedirProfesores(query)
-    expect(res.status).toBe(400)
-    expect((await res.json()).error.code).toBe('VALIDACION')
-  })
-
-  it('sin sesión → 401', async () => {
-    getSession.mockResolvedValue({ headers: new Headers(), response: null })
-    expect((await pedirProfesores('?fecha=2026-09-28')).status).toBe(401)
-  })
-
-  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
-    getSession.mockResolvedValue(sesion('PROFESOR'))
-    expect((await pedirProfesores('?fecha=2026-09-28')).status).toBe(403)
-  })
-})
-
 describe('GET /turnos/aulas', () => {
   it('responde 200 con el arreglo que arma el service, sin envolver en { data }', async () => {
     repository.listarAulasConTurno.mockResolvedValue([{ id: 1, nombre: 'Aula 1' }])
@@ -225,16 +180,18 @@ describe('OpenAPI', () => {
     const responsesMaterias = doc.paths['/api/v1/turnos/materias']?.get?.responses ?? {}
     expect(Object.keys(responsesMaterias).sort()).toEqual(['200', '400', '401', '403'])
 
-    const responsesProfesores = doc.paths['/api/v1/turnos/profesores']?.get?.responses ?? {}
-    expect(Object.keys(responsesProfesores).sort()).toEqual(['200', '400', '401', '403'])
-
     const responsesAulas = doc.paths['/api/v1/turnos/aulas']?.get?.responses ?? {}
     expect(Object.keys(responsesAulas).sort()).toEqual(['200', '400', '401', '403'])
   })
 
-  it('registra los componentes de agenda y de los selectores de materias, profesores y aulas', () => {
+  it('no expone /turnos/profesores: el filtro de profesor se sacó (decisión T-36)', () => {
+    expect(doc.paths['/api/v1/turnos/profesores']).toBeUndefined()
+  })
+
+  it('registra los componentes de agenda y de los selectores de materias y aulas', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['AgendaItem', 'MateriaConTurno', 'ProfesorConTurno', 'AulaConTurno']),
+      expect.arrayContaining(['AgendaItem', 'MateriaConTurno', 'AulaConTurno']),
     )
+    expect(Object.keys(doc.components?.schemas ?? {})).not.toContain('ProfesorConTurno')
   })
 })
