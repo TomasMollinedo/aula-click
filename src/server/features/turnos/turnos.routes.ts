@@ -1,4 +1,59 @@
+import { createRoute } from '@hono/zod-openapi'
+import { ErrorResponseSchema } from '@/server/errors'
+import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
+import * as turnosController from './turnos.controller'
+import { agendaListadoSchema, agendaQuerySchema } from './turnos.validation'
 
 // Contrato HTTP de turnos: cada endpoint se declara con createRoute() y se registra acá.
-export const turnosRoutes = createRouter()
+
+const tags = ['Turnos']
+
+function respuestaError(description: string) {
+  return { description, content: { 'application/json': { schema: ErrorResponseSchema } } }
+}
+
+const errores = {
+  400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
+  401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+  403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
+}
+
+export const listarAgendaRoute = createRoute({
+  method: 'get',
+  path: '/agenda',
+  tags,
+  summary: 'Agenda diaria del centro',
+  description:
+    'Turnos ACTIVO de una fecha (por defecto hoy), con alumno, profesor, materia y aula. Paginada (decisión T-35); filtrable por materia, aula, profesor y alumno. Ordenada por hora y, dentro de la hora, por profesor.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: agendaQuerySchema },
+  responses: {
+    200: {
+      description: 'Página de la agenda (arreglo vacío si no hay turnos ese día)',
+      content: {
+        'application/json': {
+          schema: agendaListadoSchema,
+          example: {
+            data: [
+              {
+                id: 15,
+                alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+                profesor: { id: 3, apellido: 'Pérez', nombre: 'Ana' },
+                materia: { id: 2, nombre: 'Matemática' },
+                aula: { id: 1, nombre: 'Aula 1' },
+                horaInicio: '09:00',
+                horaFin: '10:00',
+                estado: 'ACTIVO',
+              },
+            ],
+            meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+          },
+        },
+      },
+    },
+    ...errores,
+  },
+})
+
+export const turnosRoutes = createRouter().openapi(listarAgendaRoute, turnosController.listarAgenda)

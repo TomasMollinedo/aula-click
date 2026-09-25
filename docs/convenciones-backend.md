@@ -42,7 +42,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 - Por offset: query `page` (default 1) y `pageSize` (default 20, máximo 100), validados con `paginacionQuerySchema`.
 - Respuesta de listados: `{ data: [...], meta: { page, pageSize, total, totalPages } }`, con `paginatedSchema(itemSchema)`.
 - El repository ejecuta `findMany` y `count` en una sola transacción, usa `calcularSkipTake` y `armarMeta`, y el orden siempre incluye `id` como desempate, para que las páginas no se mezclen.
-- Se pagina todo listado de entidades. No se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni la agenda diaria, que se filtra por fecha.
+- Se pagina todo listado de entidades, incluida la agenda diaria (`GET /api/v1/turnos/agenda`, decisión T-35). No se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni un horario semanal completo (bloques de un profesor, T-17): esos devuelven un arreglo.
 
 ## Filtros y respuestas
 

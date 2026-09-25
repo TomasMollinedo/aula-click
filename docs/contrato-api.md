@@ -48,7 +48,7 @@ Respuesta:
 ```
 
 - `totalPages` es 0 cuando no hay resultados.
-- Se pagina todo listado de entidades. **No** se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni la agenda diaria, que se filtra por fecha: esos devuelven un arreglo.
+- Se pagina todo listado de entidades, incluida la agenda diaria (decisión T-35). **No** se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown) ni un horario semanal completo (bloques de un profesor): esos devuelven un arreglo.
 - En el frontend, el tipo de la respuesta es `PaginatedResponse<T>` de `src/types/index.ts`, que debe coincidir exactamente con esta forma.
 
 ## Selectores de catálogo
@@ -97,6 +97,9 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                               |
 | `materiaId`                          | Filtra por materia                                                                                                                                                                                                                                                                                                        |
 | `profesorId`                         | Filtra por profesor                                                                                                                                                                                                                                                                                                       |
+| `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                           |
+| `alumnoId`                           | Filtra por alumno                                                                                                                                                                                                                                                                                                         |
+| `fecha`                              | Día a consultar (`YYYY-MM-DD`, agenda diaria). Sin fecha, el de hoy (zona del negocio)                                                                                                                                                                                                                                    |
 | `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                 |
 | `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                     |
 

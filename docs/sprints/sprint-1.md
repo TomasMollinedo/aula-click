@@ -785,17 +785,18 @@ Agregar a la feature `turnos` la lectura de la agenda de un día, con todos los 
 
 **Alcance**
 
-1. `GET /api/v1/turnos/agenda?fecha=YYYY-MM-DD&profesorId?`: devuelve un arreglo (la agenda diaria **no se pagina**, `convenciones-backend.md` → Paginación). Si no se manda `fecha`, la de hoy, que la decide la API con `hoy()`.
-2. Se listan los turnos de esa fecha (`fechaInicio = fecha` pedida; decisión T-20, sin recurrentes), **excluyendo** los turnos `CANCELADO`.
+1. `GET /api/v1/turnos/agenda?fecha=YYYY-MM-DD&page&pageSize&materiaId?&aulaId?&profesorId?&alumnoId?`: **pagina** como cualquier listado (decisión T-35; se aparta de lo previsto originalmente, un arreglo sin paginar). Si no se manda `fecha`, la de hoy, que la decide la API con `hoy()`.
+2. Se listan los turnos que aplican esa fecha (`condicionTurnoEnFecha` de `turnos.repository`: `fechaInicio <= fecha` y `fechaFin` nula o >= fecha, combinado con que la fecha caiga en el día de la semana del bloque), **excluyendo** los turnos `CANCELADO`. En este release todo turno es `SESION_UNICA` (T-20), con `fechaInicio = fechaFin`, así que en la práctica es `fechaInicio = fecha`; la condición generaliza sin cambios a un turno con rango si alguna vez se carga uno.
    - Es la única implementación de esta consulta: la reutiliza T-25 y cualquier vista futura, sin reescribirla.
-3. Cada ítem: alumno (apellido y nombre), profesor (apellido y nombre), materia, aula, hora de inicio y fin, y estado. Ordenado por hora y, dentro de la hora, por profesor.
-4. Filtro opcional por profesor.
-5. Tests del service con reloj fijo: un turno aparece sólo en su fecha; un turno cancelado no aparece; el filtro por profesor acota.
+3. Cada ítem: alumno (id, apellido y nombre), profesor (id, apellido y nombre), materia, aula, hora de inicio y fin, y estado. Ordenado por hora y, dentro de la hora, por profesor, con el id del turno como desempate final.
+4. Filtros opcionales por materia, aula, profesor y alumno.
+5. Tests del service con reloj fijo: sin `fecha` usa la de hoy; con `fecha`, filtros y paginación se pasan tal cual al repository. Tests del repository (excepcional, condición de dominio reutilizada): un turno aparece sólo en su fecha; un turno cancelado no aparece; los cuatro filtros acotan; el orden es por hora, luego profesor, luego id; pagina con `calcularSkipTake`/`armarMeta`.
 
 **Criterios de aceptación**
 
-- Con turnos cargados, la agenda del día los devuelve todos, ordenados por hora.
+- Con turnos cargados, la agenda del día los devuelve todos, paginados y ordenados por hora.
 - Sin `fecha`, responde la del día en curso según la zona del negocio.
+- Los filtros por materia, aula, profesor y alumno acotan la página, combinados con la fecha.
 
 ---
 

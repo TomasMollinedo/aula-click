@@ -1,2 +1,35 @@
+import { hoy, type Reloj } from '@/server/shared/fechas'
+import type { TurnosRepository } from './turnos.repository'
+import type { AgendaListado, AgendaQuery } from './turnos.validation'
+
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
-export {}
+
+/**
+ * Crea el service con sus dependencias. El controller arma la instancia con el repository real;
+ * los tests, con uno falso y un reloj fijo. Importa el repository solo como tipo, así el service
+ * no carga Prisma ni `@/config/env`.
+ */
+export function crearTurnosService({
+  repository,
+  reloj,
+}: {
+  repository: TurnosRepository
+  reloj?: Reloj
+}) {
+  return {
+    /** Agenda de la fecha pedida; sin `fecha`, la de hoy (`hoy()` con el reloj del service). */
+    listarAgenda(query: AgendaQuery): Promise<AgendaListado> {
+      return repository.listarAgenda({
+        fecha: query.fecha ?? hoy(reloj),
+        page: query.page,
+        pageSize: query.pageSize,
+        materiaId: query.materiaId,
+        aulaId: query.aulaId,
+        profesorId: query.profesorId,
+        alumnoId: query.alumnoId,
+      })
+    },
+  }
+}
+
+export type TurnosService = ReturnType<typeof crearTurnosService>
