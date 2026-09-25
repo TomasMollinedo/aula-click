@@ -23,7 +23,7 @@ Next.js (App Router) + API con Hono/OpenAPI + Prisma (PostgreSQL) + Better Auth 
 2. Usar la versión de Node del proyecto y activar pnpm:
 
    ```bash
-   nvm install 24.19.0 && nvm use 24.19.0
+    nvm install 24.19.0 && nvm use 24.19.0
    corepack enable
    ```
 

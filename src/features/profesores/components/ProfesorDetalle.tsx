@@ -157,28 +157,29 @@ export function ProfesorDetalle({ profesorId, rutaBase }: ProfesorDetalleProps) 
         actions={
           <div className="flex flex-wrap items-center gap-2">
             {tab === 'datos' && (
-              <Button size="lg" variant="accent" asChild>
-                <Link href={`${rutaBase}/${profesor.id}/editar`}>
-                  <Pencil />
-                  Editar datos
-                </Link>
-              </Button>
-            )}
-            {profesor.estado === 'ACTIVO' ? (
-              <Button
-                size="lg"
-                variant="outline"
-                className="text-cancelado hover:bg-cancelado/10"
-                onClick={() => setConfirmandoEstado(true)}
-              >
-                <Trash2 />
-                Dar de baja
-              </Button>
-            ) : (
-              <Button size="lg" variant="outline" onClick={() => setConfirmandoEstado(true)}>
-                <Undo2 />
-                Reactivar
-              </Button>
+              <>
+                <Button size="lg" variant="accent" asChild>
+                  <Link href={`${rutaBase}/${profesor.id}/editar`}>
+                    <Pencil />
+                    Editar datos
+                  </Link>
+                </Button>
+                {profesor.estado === 'ACTIVO' ? (
+                  <Button
+                    size="lg"
+                    variant="destructive"
+                    onClick={() => setConfirmandoEstado(true)}
+                  >
+                    <Trash2 />
+                    Dar de baja
+                  </Button>
+                ) : (
+                  <Button size="lg" variant="outline" onClick={() => setConfirmandoEstado(true)}>
+                    <Undo2 />
+                    Reactivar
+                  </Button>
+                )}
+              </>
             )}
           </div>
         }

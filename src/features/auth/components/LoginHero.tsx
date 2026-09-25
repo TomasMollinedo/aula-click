@@ -41,20 +41,20 @@ export function LoginHero() {
       {/* Luz decorativa */}
       <div
         aria-hidden
-        className="bg-cobalto/15 pointer-events-none absolute -top-24 -right-24 size-96 rounded-full blur-3xl"
+        className="bg-dorado/20 pointer-events-none absolute -top-24 -right-24 size-96 rounded-full blur-3xl"
       />
 
       {/* Contenido */}
       <div className="relative z-10 flex max-w-xl flex-col px-12 pt-10">
         <div className="mb-10 flex items-center gap-2.5">
-          <span className="bg-cobalto flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm">
+          <span className="bg-dorado flex size-10 shrink-0 items-center justify-center rounded-xl shadow-sm">
             <MousePointer2 className="size-5 fill-white text-white" />
           </span>
 
           <div>
             <p className="text-lg leading-tight font-semibold">
               <span className="text-tinta">Aula</span>
-              <span className="text-cobalto">Click</span>
+              <span className="text-dorado">Click</span>
             </p>
 
             <p className="text-oscuro text-xs">Centro de Atención Académica</p>
@@ -75,8 +75,8 @@ export function LoginHero() {
         <ul className="mt-8 space-y-4">
           {caracteristicas.map(({ icono: Icono, titulo, descripcion }) => (
             <li key={titulo} className="flex items-center gap-3">
-              <span className="bg-cobalto/10 text-cobalto flex size-9 shrink-0 items-center justify-center rounded-lg">
-                <Icono className="size-4" />
+              <span className="bg-dorado/15 text-dorado shadow-dorado/20 ring-dorado/10 flex size-14 shrink-0 items-center justify-center rounded-2xl shadow-md ring-1">
+                <Icono className="size-6" />
               </span>
 
               <div>
