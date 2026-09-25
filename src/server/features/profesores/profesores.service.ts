@@ -1,6 +1,11 @@
 import { ConflictError, NotFoundError } from '@/server/errors'
 import type { MateriasRepository } from '@/server/features/materias/materias.repository'
 import type { TurnosRepository } from '@/server/features/turnos/turnos.repository'
+import type {
+  OcupacionMaximaPorFila,
+  TurnosVigentesPorMateria,
+  TurnoVigentePorProfesor,
+} from '@/server/features/turnos/turnos.condiciones'
 import type { Actor } from '@/server/shared/actor'
 import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
 import { detallesPorPosicion } from '@/server/shared/detalles'
@@ -22,6 +27,42 @@ import type {
 } from './profesores.validation'
 
 const MENSAJE_NO_ENCONTRADO = 'Profesor no encontrado'
+const MENSAJE_CAPACIDAD_INSUFICIENTE =
+  'La capacidad no puede ser menor que la cantidad de turnos que el profesor ya tiene a la vez en una hora'
+
+/** `YYYY-MM-DD` → `DD/MM`. */
+function diaMes(fecha: string): string {
+  return `${fecha.slice(8, 10)}/${fecha.slice(5, 7)}`
+}
+
+/**
+ * 409 `CAPACIDAD_INSUFICIENTE` (T-15) si `capacidad` es menor que la ocupación simultánea máxima
+ * de alguna hora del profesor desde hoy (la mayor cantidad de turnos que ocupan lugar en una
+ * misma fecha, la misma cuenta que `BLOQUE_LLENO`). `details`: una entrada por hora en
+ * conflicto, sobre el campo `capacidad`, con la hora, la fecha y la cantidad.
+ */
+function exigirCapacidadSuficiente(capacidad: number, porFila: OcupacionMaximaPorFila[]): void {
+  const conflictos = porFila.filter((fila) => fila.cantidad > capacidad)
+  if (conflictos.length === 0) return
+  throw new ConflictError(MENSAJE_CAPACIDAD_INSUFICIENTE, {
+    code: 'CAPACIDAD_INSUFICIENTE',
+    details: conflictos.map((fila) => ({
+      path: ['capacidad'],
+      message: `El ${diaMes(fila.fecha)}, la hora de ${fila.horaInicio} a ${fila.horaFin} ya tiene ${fila.cantidad} ${fila.cantidad === 1 ? 'turno' : 'turnos'} a la vez`,
+      ...fila,
+    })),
+  })
+}
+
+/** 409 `TURNOS_VIGENTES` con cada turno en `details` si el profesor tiene alguno. */
+function exigirSinTurnosVigentes(turnos: TurnoVigentePorProfesor[]): void {
+  if (turnos.length > 0) {
+    throw new ConflictError('No se puede dar de baja un profesor con turnos vigentes', {
+      code: 'TURNOS_VIGENTES',
+      details: turnos,
+    })
+  }
+}
 
 // Mismo formato que el seed y alumnos usan para los usuarios: apellido, nombre y DNI.
 function calcularBusqueda(datos: { apellido: string; nombre: string; dni: string }): string {
@@ -66,7 +107,10 @@ export function crearProfesoresService({
 }: {
   repository: ProfesoresRepository
   materiasRepository: Pick<MateriasRepository, 'buscarPorIds'>
-  turnosRepository: Pick<TurnosRepository, 'contarVigentesPorMateria' | 'listarVigentesPorProfesor'>
+  turnosRepository: Pick<
+    TurnosRepository,
+    'contarVigentesPorMateria' | 'listarVigentesPorProfesor' | 'ocupacionMaximaPorFila'
+  >
   getPresignedUrl: (key: string) => Promise<string>
   reloj?: Reloj
 }) {
@@ -117,21 +161,33 @@ export function crearProfesoresService({
     /**
      * Edición parcial. `busqueda` se recalcula sobre el estado resultante (actual + cambios).
      *
-     * Pendiente (HU-05/HU-07, ver decisiones.md → D-12): cuando existan turnos reales, si
-     * `cambios.capacidad` es menor a la ocupación simultánea máxima vigente del profesor en
-     * alguna franja, esta función debe rechazar la edición (ConflictError). Hoy no hay bloques ni
-     * turnos cargados para calcular esa ocupación, así que no se implementa: no hay datos con los
-     * que decidir, y agregar la validación ahora obligaría a inventar un cálculo.
+     * Si cambia la capacidad, no puede quedar menor que la ocupación simultánea máxima de alguna
+     * hora del profesor desde hoy (409 `CAPACIDAD_INSUFICIENTE`, T-15, decisión T-40). Se chequea
+     * antes y el repository lo repite con el lock del profesor tomado.
      */
     async editar(id: number, cambios: EditarProfesor, actor: Actor): Promise<ProfesorDetalle> {
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
 
       const resultado = { ...actual, ...sinOmitidos(cambios) }
+      const { capacidad } = cambios
+      let ocupacion: Parameters<typeof repository.actualizar>[3]
+      if (capacidad !== undefined) {
+        const fechaHoy = hoy(reloj)
+        exigirCapacidadSuficiente(
+          capacidad,
+          await turnosRepository.ocupacionMaximaPorFila(id, fechaHoy),
+        )
+        ocupacion = {
+          fechaHoy,
+          verificar: (porFila) => exigirCapacidadSuficiente(capacidad, porFila),
+        }
+      }
       const profesor = await repository.actualizar(
         id,
         { ...cambios, busqueda: calcularBusqueda(resultado) },
         actor,
+        ocupacion,
       )
       return conFotoUrl(profesor)
     },
@@ -249,32 +305,33 @@ export function crearProfesoresService({
         throw new NotFoundError('Materia no asignada al profesor', { details: noAsignadas })
       }
 
-      const vigentes = new Map(
-        (
-          await turnosRepository.contarVigentesPorMateria({
-            fechaHoy: hoy(reloj),
-            profesorId,
-            materiaIds,
+      const fechaHoy = hoy(reloj)
+      const exigirSinVigentes = (porMateria: TurnosVigentesPorMateria[]) => {
+        const vigentes = new Map(porMateria.map(({ materiaId, cantidad }) => [materiaId, cantidad]))
+        const conTurnos = detallesDe(
+          materiaIds,
+          (id) => (vigentes.get(id) ?? 0) > 0,
+          (id) => {
+            const cantidad = vigentes.get(id) ?? 0
+            return `La materia ${asignadas.get(id)} tiene ${cantidad} ${cantidad === 1 ? 'turno vigente' : 'turnos vigentes'} con el profesor`
+          },
+          (id) => ({ cantidad: vigentes.get(id) ?? 0 }),
+        )
+        if (conTurnos.length > 0) {
+          throw new ConflictError('No se pueden quitar materias con turnos vigentes', {
+            code: 'TURNOS_VIGENTES',
+            details: conTurnos,
           })
-        ).map(({ materiaId, cantidad }) => [materiaId, cantidad]),
-      )
-      const conTurnos = detallesDe(
-        materiaIds,
-        (id) => (vigentes.get(id) ?? 0) > 0,
-        (id) => {
-          const cantidad = vigentes.get(id) ?? 0
-          return `La materia ${asignadas.get(id)} tiene ${cantidad} ${cantidad === 1 ? 'turno vigente' : 'turnos vigentes'} con el profesor`
-        },
-        (id) => ({ cantidad: vigentes.get(id) ?? 0 }),
-      )
-      if (conTurnos.length > 0) {
-        throw new ConflictError('No se pueden quitar materias con turnos vigentes', {
-          code: 'TURNOS_VIGENTES',
-          details: conTurnos,
-        })
+        }
       }
+      exigirSinVigentes(
+        await turnosRepository.contarVigentesPorMateria({ fechaHoy, profesorId, materiaIds }),
+      )
 
-      await repository.quitarMaterias(profesorId, materiaIds, actor)
+      await repository.quitarMaterias(profesorId, materiaIds, actor, {
+        fechaHoy,
+        verificar: exigirSinVigentes,
+      })
       return listarMateriasAsignadas(profesorId)
     },
 
@@ -288,15 +345,12 @@ export function crearProfesoresService({
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
 
-      const turnosVigentes = await turnosRepository.listarVigentesPorProfesor(id, hoy(reloj))
-      if (turnosVigentes.length > 0) {
-        throw new ConflictError('No se puede dar de baja un profesor con turnos vigentes', {
-          code: 'TURNOS_VIGENTES',
-          details: turnosVigentes,
-        })
-      }
+      const fechaHoy = hoy(reloj)
+      exigirSinTurnosVigentes(await turnosRepository.listarVigentesPorProfesor(id, fechaHoy))
 
-      return conFotoUrl(await repository.darDeBaja(id, actor))
+      return conFotoUrl(
+        await repository.darDeBaja(id, actor, { fechaHoy, verificar: exigirSinTurnosVigentes }),
+      )
     },
 
     /**

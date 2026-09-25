@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
-import { analizarHora, ocupaLugarEn, planificarReserva, type PedidoReserva } from '../turnos.reglas'
+import {
+  analizarHora,
+  ocupacionMaxima,
+  ocupaLugarEn,
+  planificarReserva,
+  type PedidoReserva,
+} from '../turnos.reglas'
 import type { SnapshotReserva, TurnoFechas } from '../turnos.validation'
 
 // Reglas puras: sin base, sin reloj. Todas las fechas de 2026-09-28 en adelante con paso de 7 días
@@ -48,6 +54,40 @@ describe('ocupaLugarEn', () => {
 
   it('un cancelado no ocupa lugar', () => {
     expect(ocupaLugarEn(turno('2026-10-05', null, 'CANCELADO'), '2026-10-05')).toBe(false)
+  })
+})
+
+describe('ocupacionMaxima', () => {
+  it('sin turnos, o sin ninguno que ocupe lugar desde la fecha: null', () => {
+    expect(ocupacionMaxima([], '2026-10-05')).toBeNull()
+    expect(ocupacionMaxima([sesion('2026-09-28')], '2026-10-05')).toBeNull()
+  })
+
+  it('dos tramos del mismo recurrente no suman: nunca coinciden en una fecha', () => {
+    expect(
+      ocupacionMaxima(
+        [turno('2026-10-05', '2026-10-19'), turno('2026-11-02', '2026-11-30')],
+        '2026-10-05',
+      ),
+    ).toEqual({ fecha: '2026-10-05', cantidad: 1 })
+  })
+
+  it('el máximo puede estar en el futuro, cuando empieza otro turno', () => {
+    expect(
+      ocupacionMaxima(
+        [turno('2026-10-05', null), sesion('2026-10-26'), turno('2026-10-26', '2026-11-02')],
+        '2026-10-05',
+      ),
+    ).toEqual({ fecha: '2026-10-26', cantidad: 3 })
+  })
+
+  it('un recurrente que empezó antes cuenta desde la fecha pedida; los cancelados no cuentan', () => {
+    expect(
+      ocupacionMaxima(
+        [turno('2026-09-28', null), turno('2026-09-28', null, 'CANCELADO')],
+        '2026-10-05',
+      ),
+    ).toEqual({ fecha: '2026-10-05', cantidad: 1 })
   })
 })
 

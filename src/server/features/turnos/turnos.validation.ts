@@ -3,7 +3,7 @@ import { auditoriaSchema } from '@/server/shared/auditoria'
 import { qBusqueda } from '@/server/shared/busqueda'
 import type { Estado } from '@/server/shared/estado'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
-import { diaSemana, diaSemanaQuery, fechaISO, horaHHmm } from '@/server/shared/zod'
+import { diaSemana, diaSemanaQuery, fechaISO, horaHHmm, textoOpcional } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio: que
 // las fechas caigan en el día del bloque, la capacidad y los solapamientos los decide el service
@@ -116,27 +116,7 @@ export const disponibilidadSchema = z.array(disponibilidadItemSchema)
 // Alta
 // ---------------------------------------------------------------------------------------------
 
-/**
- * `motivoConsulta` opcional: acepta `null`, omitirse o un texto; vacío o solo espacios se guarda
- * como `null`.
- */
-const motivoConsulta = z
-  .string({ error: 'Debe ser un texto' })
-  .trim()
-  .transform((valor) => (valor === '' ? null : valor))
-  .pipe(
-    z
-      .string()
-      .max(MAX_MOTIVO, { error: `No puede superar los ${MAX_MOTIVO} caracteres` })
-      .nullable(),
-  )
-  .openapi({
-    description: `Motivo de consulta. Opcional: acepta null, y "" o solo espacios se guarda como null`,
-    example: 'Repaso de funciones',
-    maxLength: MAX_MOTIVO,
-  })
-  .nullable()
-  .optional()
+const motivoConsulta = textoOpcional(MAX_MOTIVO, 'Motivo de consulta', 'Repaso de funciones')
 
 /**
  * Body de `POST /turnos`. Formato solamente: que las filas existan, sean del mismo profesor y día,
@@ -443,6 +423,20 @@ export type TurnosVigentesPorBloque = { bloqueAgendaId: number; cantidad: number
  * por HTTP: lo leen `bloques` (horario) y `turnos` (disponibilidad).
  */
 export type OcupacionPorBloque = { bloqueAgendaId: number; fecha: string; cantidad: number }
+
+/**
+ * Ocupación simultánea máxima de una hora del profesor desde hoy: la fecha en que más turnos
+ * ocupan lugar a la vez y cuántos son. No viaja por HTTP así: la lee `profesores` para decidir
+ * `CAPACIDAD_INSUFICIENTE` (T-15).
+ */
+export type OcupacionMaximaPorFila = {
+  bloqueId: number
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  fecha: string
+  cantidad: number
+}
 
 /** Lo mínimo de un turno para decidir si ocupa lugar en una fecha (fechas `YYYY-MM-DD`). */
 export type TurnoFechas = { estado: EstadoTurno; fechaInicio: string; fechaFin: string | null }

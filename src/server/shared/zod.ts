@@ -83,6 +83,45 @@ export function textoRequerido(max: number) {
     .max(max, { error: `No puede superar los ${max} caracteres` })
 }
 
+const MENSAJE_VACIO_ES_NULL = 'Opcional: acepta null, y "" o solo espacios se guarda como null'
+
+/**
+ * Campo opcional del body: acepta `null`, omitirse o un texto. Un texto vacío o solo con espacios
+ * sale como `null` (el formulario manda `""`); con contenido, se valida con `primitiva` (por
+ * ejemplo `dni`, `email` o `nombrePersona(100)`).
+ *
+ * Con `.pipe()` el OpenAPI solo ve un `string`: `openapi` agrega lo que se pierde (enum, largo), y
+ * a la descripción se le suma la aclaración de que el vacío se guarda como `null`.
+ */
+export function opcional<T extends z.ZodType<unknown, string>>(
+  primitiva: T,
+  openapi: { description: string; example?: string; maxLength?: number; enum?: string[] },
+) {
+  return z
+    .string({ error: MENSAJE_TEXTO })
+    .trim()
+    .transform((valor) => (valor === '' ? null : valor))
+    .pipe(primitiva.nullable())
+    .openapi({ ...openapi, description: `${openapi.description}. ${MENSAJE_VACIO_ES_NULL}` })
+    .nullable()
+    .optional()
+}
+
+/**
+ * Texto libre opcional de hasta `max` caracteres (ver `opcional`): `""` o solo espacios → `null`.
+ * Lanza `RangeError` si `max` no es un entero >= 1 (error de programación).
+ */
+export function textoOpcional(max: number, description: string, example?: string) {
+  if (!Number.isInteger(max) || max < 1) {
+    throw new RangeError(`textoOpcional: max debe ser un entero >= 1 (recibió ${max})`)
+  }
+  return opcional(z.string().max(max, { error: `No puede superar los ${max} caracteres` }), {
+    description,
+    example,
+    maxLength: max,
+  })
+}
+
 /**
  * Nombre o apellido de una persona. Entrada: texto con letras (con tildes, ñ, ü…) y espacios
  * (`"María José"`, `"Pérez Gil"`). Salida: recortado, entre 1 y `max` caracteres y con al menos

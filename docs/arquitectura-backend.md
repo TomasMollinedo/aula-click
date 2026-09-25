@@ -48,6 +48,7 @@ src/
 │       ├── <dominio>.repository.ts
 │       ├── <dominio>.ejemplos.ts      # opcional: ejemplos del OpenAPI
 │       ├── <regla>.ts                 # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
+│       ├── <dominio>.condiciones.ts   # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos)
 │       └── __tests__/                 # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts, <dominio>.repository.test.ts (excepcional)
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```
@@ -88,9 +89,11 @@ Flujo: cliente → routes (valida con Zod) → controller → service → reposi
 
 ## Dependencias entre features
 
-Una feature solo puede importar el **repository** de otra, y solo para lecturas; nunca su service, controller ni routes. Ejemplo: si `turnos` necesita confirmar que un alumno existe, lee `alumnos.repository.ts`, pero no usa las reglas de `alumnos.service.ts`.
+Una feature solo puede importar el **repository** de otra, y solo para lecturas, o sus **condiciones** (`<dominio>.condiciones.ts`); nunca su service, controller, routes, validation ni reglas (los tests sí pueden importar tipos de su validation para armar sus falsos). Ejemplo: si `turnos` necesita confirmar que un alumno existe, lee `alumnos.repository.ts`, pero no usa las reglas de `alumnos.service.ts`.
 
-Un repository importa Prisma, `@/server/errors`, `@/server/shared/*` y módulos puros de su propia feature (como `<dominio>.reglas.ts`, por ejemplo para un predicado que tiene que coincidir con una condición de consulta); nunca otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
+**Condiciones (`<dominio>.condiciones.ts`, decisión T-39).** Cuando una feature tiene que consultar datos de otra **dentro de su propia transacción** (por ejemplo, contar los turnos vigentes con el lock del profesor tomado antes de darlo de baja), no puede llamar al repository de la otra: una transacción no cruza repositories. La feature dueña de esos datos publica la condición y la lectura en su `*.condiciones.ts`: funciones que reciben el cliente (`prisma` o el `tx` de quien llama) y de Prisma solo importan **tipos**. Su propio repository las usa con `prisma` y los de otras features con su `tx`: una sola implementación. Por ejemplo, `turnos.condiciones.ts` publica las condiciones de turno vigente, ocupa lugar y se cruza con, y las lecturas de vigentes y de ocupación máxima. Los tipos que devuelven se re-exportan desde ahí, para que nadie importe la validation de otra feature.
+
+Un repository importa Prisma, `@/server/errors`, `@/server/shared/*`, módulos puros de su propia feature (como `<dominio>.reglas.ts`, por ejemplo para un predicado que tiene que coincidir con una condición de consulta) y las `*.condiciones` de otra feature; nunca otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
 
 Dentro de una misma feature, los imports son relativos (`./alumnos.repository`, o `../alumnos.service` desde `__tests__`). Con alias (`@/server/features/alumnos/...`), ESLint no distingue la propia feature de otra y lo marca como error.
 
@@ -300,7 +303,7 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 - Opcional: `<dominio>.routes.test.ts` prueba el contrato HTTP (validación de Zod, 401/403, que el OpenAPI declare todos los status codes) con el repository y `@/lib/auth` mockeados. Referencia: `alumnos/__tests__/`.
 - Casos mínimos: el camino feliz + uno por cada error que el service puede lanzar (uno por cada 4xx que declara su ruta). Un `it.todo` no cuenta como cobertura.
 - Las funciones puras (por ejemplo `prioridad.ts` en `turnos`) se testean directo.
-- Excepcional: `<dominio>.repository.test.ts`, solo cuando una **condición de consulta** es una regla del dominio que otras features reutilizan y hay que fijarla con casos (la de turno vigente: `turnos/__tests__/turnos.repository.test.ts`). Mockea `@/lib/prisma` con `vi.hoisted` y verifica el `where` que recibe Prisma; no usa base. No reemplaza al test del service: las reglas se siguen probando ahí.
+- Excepcional: `<dominio>.repository.test.ts`, solo cuando una **condición de consulta** es una regla del dominio que otras features reutilizan y hay que fijarla con casos (la de turno vigente: `turnos/__tests__/turnos.repository.test.ts`), o cuando hay que fijar un **invariante de atomicidad** que el service no puede observar (por ejemplo, que la verificación bajo lock no se pueda saltear: `profesores/__tests__/profesores.repository.test.ts`). Mockea `@/lib/prisma` con `vi.hoisted` y verifica el `where` que recibe Prisma; no usa base. No reemplaza al test del service: las reglas se siguen probando ahí.
 - Tests del middleware de auth (`server/middlewares/__tests__/auth.test.ts`): `vi.mock('@/lib/auth')` con `vi.hoisted`, sin base ni variables de entorno.
 - Las reglas de auth (`src/lib/__tests__/auth-reglas.test.ts`) se testean directo: `auth-reglas.ts` no importa `env` ni Prisma.
 - El `matcher` de `src/proxy.ts` se prueba en `src/__tests__/proxy.test.ts` con `unstable_doesMiddlewareMatch` de `next/experimental/testing/server` (en Next 16.3.5 se llama así, aunque la guía nombre `unstable_doesProxyMatch`).

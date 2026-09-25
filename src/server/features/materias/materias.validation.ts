@@ -3,7 +3,7 @@ import { auditoriaSchema } from '@/server/shared/auditoria'
 import { qBusqueda } from '@/server/shared/busqueda'
 import { ESTADOS, type Estado } from '@/server/shared/estado'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
-import { textoRequerido } from '@/server/shared/zod'
+import { textoOpcional, textoRequerido } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params. Son la fuente del OpenAPI. Sin reglas de negocio:
 // la unicidad del nombre la hace cumplir la base y los profesores asignados los trae el service.
@@ -19,31 +19,6 @@ export const ESTADOS_FILTRO = [...ESTADOS, 'TODOS'] as const
  * No viaja por HTTP: es lo que devuelve `materiasRepository.buscarPorIds`.
  */
 export type MateriaConEstado = { id: number; nombre: string; estado: Estado }
-
-const VACIO = 'Opcional: acepta null, y "" o solo espacios se guarda como null'
-
-/**
- * Texto opcional del body: acepta `null`, omitirse o un texto; `""` o solo espacios se guarda como
- * `null` (el formulario manda `""`). Es el mismo que el `textoOpcional` de `alumnos.validation`:
- * se extrae a `shared/` en la tercera repetición (`convenciones-backend.md` → `src/server/shared/`).
- *
- * Con `.pipe()` el OpenAPI solo ve un `string`: `openapi` agrega lo que se pierde (largo).
- */
-function textoOpcional(max: number, description: string, example?: string) {
-  return z
-    .string({ error: 'Debe ser un texto' })
-    .trim()
-    .transform((valor) => (valor === '' ? null : valor))
-    .pipe(
-      z
-        .string()
-        .max(max, { error: `No puede superar los ${max} caracteres` })
-        .nullable(),
-    )
-    .openapi({ description: `${description}. ${VACIO}`, example, maxLength: max })
-    .nullable()
-    .optional()
-}
 
 /** `id` del path. Uno no numérico, cero o negativo responde 400. */
 export const materiaIdParamsSchema = z.object({

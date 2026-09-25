@@ -89,6 +89,30 @@ export function ocupaLugarEn(turno: TurnoFechas, fecha: string): boolean {
   return seCruzaCon(turno, fecha, fecha)
 }
 
+/**
+ * Mayor cantidad de `turnos` (de una misma hora) que ocupan lugar en una misma fecha, desde
+ * `desde` (la próxima ocurrencia de su día, hoy incluido) en adelante: `{ fecha, cantidad }` de la
+ * primera fecha con esa ocupación, o `null` si ninguno ocupa lugar desde ahí. La ocupación solo
+ * sube cuando empieza un turno, así que alcanza con evaluar `desde` y cada `fechaInicio`
+ * posterior (todas caen en el día de la hora): no se itera fecha por fecha.
+ */
+export function ocupacionMaxima(
+  turnos: readonly TurnoFechas[],
+  desde: string,
+): { fecha: string; cantidad: number } | null {
+  const candidatas = [
+    ...new Set([desde, ...turnos.map((t) => t.fechaInicio).filter((f) => f > desde)]),
+  ].sort()
+  let maxima: { fecha: string; cantidad: number } | null = null
+  for (const fecha of candidatas) {
+    const cantidad = turnos.filter((turno) => ocupaLugarEn(turno, fecha)).length
+    if (cantidad > 0 && (maxima === null || cantidad > maxima.cantidad)) {
+      maxima = { fecha, cantidad }
+    }
+  }
+  return maxima
+}
+
 export type Tramo = { fechaInicio: string; fechaFin: string | null }
 
 export type AnalisisHora = {

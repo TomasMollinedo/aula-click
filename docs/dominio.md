@@ -33,7 +33,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - Un profesor inactivo no recibe materias, bloques ni turnos nuevos.
 - No se puede dar de baja un profesor, quitarle una materia, dar de baja una materia que tiene profesores, ni editar o eliminar un bloque, si hay **turnos vigentes**.
 - Un profesor dado de baja se puede reactivar: vuelve a `ACTIVO`, puede iniciar sesión de nuevo, vuelve a aparecer en el listado por defecto y queda disponible para agendar turnos, con sus materias y bloques intactos. La reactivación no revalida nada.
-- **Capacidad del profesor** (T-27, HU-02): entero obligatorio, mínimo 1. Es la cantidad máxima de alumnos que atiende a la vez en una franja de una hora; es un dato del profesor, no del bloque. No se puede bajar a un valor menor que la ocupación simultánea máxima vigente del profesor en alguna franja (pendiente de implementar: depende de que existan turnos reales, HU-05/HU-07).
+- **Capacidad del profesor** (T-27, HU-02): entero obligatorio, mínimo 1. Es la cantidad máxima de alumnos que atiende a la vez en una franja de una hora; es un dato del profesor, no del bloque. No se puede bajar a un valor menor que la **ocupación simultánea máxima** del profesor en alguna hora de sus bloques desde hoy: la mayor cantidad de turnos que ocupan lugar en esa hora en una misma fecha (la misma cuenta que controla `BLOQUE_LLENO`; dos tramos de un mismo recurrente no suman, porque nunca coinciden en una fecha). Igualarla sí se puede. Si no se cumple, se rechaza con `CAPACIDAD_INSUFICIENTE`, indicando la hora, la fecha y la cantidad (T-15, T-40).
 
 ## Aulas
 

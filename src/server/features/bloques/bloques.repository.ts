@@ -4,6 +4,10 @@ import { ConflictError, NotFoundError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { minutosAHora } from '@/server/shared/zod'
+import {
+  contarVigentesPorBloques,
+  type TurnosVigentesPorBloque,
+} from '@/server/features/turnos/turnos.condiciones'
 import type {
   Bloque,
   BloqueConAula,
@@ -20,7 +24,9 @@ import type {
 // `INSERT`/`UPDATE`. Sin reglas de negocio propias: las de profesor (activo, con materias) y
 // turnos vigentes las decide el service con lecturas de `profesores.repository` y
 // `turnos.repository`. Lo que sí vive acá es lo que tiene que ser atómico con la escritura
-// (superposición y ocupación del aula), porque no hay forma de garantizarlo si se separa.
+// (superposición y ocupación del aula), porque no hay forma de garantizarlo si se separa. Los
+// turnos vigentes se vuelven a contar dentro de la transacción, con el profesor bloqueado, con
+// `turnos.condiciones` (T-39), y la regla la aplica el callback `verificar` que pasa el service.
 
 const MENSAJE_AULA_OCUPADA =
   'No hay un aula disponible en ese horario. Por favor, elija otro horario.'
@@ -70,6 +76,16 @@ async function buscarConflictos(
     },
     select: { id: true, horaInicio: true, horaFin: true, profesorId: true, aulaId: true },
   })
+}
+
+/** Turnos vigentes de una fila, con la condición única de `turnos.condiciones` (T-39). */
+async function cantidadVigentes(
+  tx: Prisma.TransactionClient,
+  id: number,
+  fechaHoy: string,
+): Promise<number> {
+  const [grupo] = await contarVigentesPorBloques(tx, [id], fechaHoy)
+  return grupo?.cantidad ?? 0
 }
 
 function errorSuperpuesto(diaSemana: number, conflictos: ConflictoFila[]): ConflictError {
@@ -298,8 +314,17 @@ export const bloquesRepository = {
    * de locks que `crearBloques` (profesor primero, aula después) y excluyendo la propia fila de
    * los chequeos de superposición y ocupación. Mismos errores que el alta; `NotFoundError` también
    * si la fila ya no existe (P2025 al actualizar).
+   *
+   * Con el lock del profesor tomado (la reserva de turnos toma ese mismo profesor `FOR SHARE`,
+   * T-21), cuenta los turnos vigentes de la fila y se los pasa a `verificar`, la regla del service
+   * (`TURNOS_VIGENTES`): así una reserva simultánea no se cuela entre el chequeo y el `UPDATE`.
    */
-  async editarBloque(id: number, datos: DatosEditarBloque, actor: Actor): Promise<Bloque> {
+  async editarBloque(
+    id: number,
+    datos: DatosEditarBloque,
+    actor: Actor,
+    vigentes: { fechaHoy: string; verificar: (cantidad: number) => void },
+  ): Promise<Bloque> {
     const { diaSemana, horaInicio, horaFin, aulaId } = datos
 
     return prisma.$transaction(async (tx) => {
@@ -311,6 +336,7 @@ export const bloquesRepository = {
       const { profesorId } = actual
 
       await tx.$queryRaw`SELECT id FROM profesor WHERE id = ${profesorId} FOR UPDATE`
+      vigentes.verificar(await cantidadVigentes(tx, id, vigentes.fechaHoy))
 
       const aulaLock = await tx.$queryRaw<{ id: number; nombre: string }[]>`
         SELECT id, nombre FROM aula WHERE id = ${aulaId} FOR UPDATE
@@ -350,15 +376,28 @@ export const bloquesRepository = {
   },
 
   /**
-   * Baja lógica (`estado = INACTIVO`), nunca borrado físico. El service ya validó que no tenga
-   * turnos vigentes; acá no se repite esa lectura, así que una reserva simultánea (T-21) se
-   * puede colar entre el chequeo y el `UPDATE` (carrera conocida, anotada en su issue: lo mismo
-   * vale para la edición y la baja de varias horas). Idempotente: si ya estaba
-   * `INACTIVO`, el `UPDATE` no cambia nada. `NotFoundError` si la fila no existe (P2025).
+   * Baja lógica (`estado = INACTIVO`), nunca borrado físico, en una transacción que bloquea el
+   * profesor de la fila (`FOR UPDATE`, el mismo lock que toma la reserva de turnos), cuenta los
+   * turnos vigentes de la fila y se los pasa a `verificar` (la regla `TURNOS_VIGENTES` del
+   * service) antes del `UPDATE`. Idempotente: si ya estaba `INACTIVO`, el `UPDATE` no cambia
+   * nada. `NotFoundError` si la fila no existe.
    */
-  async eliminarBloque(id: number, actor: Actor): Promise<Bloque> {
-    try {
-      const fila = await prisma.bloqueAgenda.update({
+  async eliminarBloque(
+    id: number,
+    actor: Actor,
+    vigentes: { fechaHoy: string; verificar: (cantidad: number) => void },
+  ): Promise<Bloque> {
+    return prisma.$transaction(async (tx) => {
+      const actual = await tx.bloqueAgenda.findUnique({
+        where: { id },
+        select: { profesorId: true },
+      })
+      if (!actual) throw new NotFoundError('Bloque no encontrado')
+
+      await tx.$queryRaw`SELECT id FROM profesor WHERE id = ${actual.profesorId} FOR UPDATE`
+      vigentes.verificar(await cantidadVigentes(tx, id, vigentes.fechaHoy))
+
+      const fila = await tx.bloqueAgenda.update({
         where: { id },
         data: { estado: 'INACTIVO', updatedById: actor.userId },
         select: {
@@ -375,24 +414,35 @@ export const bloquesRepository = {
         horaFin: minutosAHora(fila.horaFin),
         aula: fila.aula,
       }
-    } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundError('Bloque no encontrado', { cause: error })
-      }
-      throw error
-    }
+    })
   },
 
   /**
    * Baja lógica (`estado = INACTIVO`) de varias filas, todas o ninguna, en una transacción, con
-   * el mismo criterio que `eliminarBloque`: el service ya validó que existan, estén activas, sean
-   * del mismo profesor y no tengan turnos vigentes, y acá no se repite la lectura de turnos. Si
-   * entre la validación y el `UPDATE` alguna fila dejó de estar activa (otra baja simultánea), no
-   * se actualiza ninguna y se lanza `NotFoundError`. Devuelve las filas ordenadas por día y hora.
-   * Auditoría: `updatedById` con el actor.
+   * el mismo criterio que `eliminarBloque`: bloquea los profesores de esas filas (`FOR UPDATE`,
+   * por id), cuenta los turnos vigentes de cada fila y se los pasa a `verificar` antes del
+   * `UPDATE`. Si entre la validación del service y el `UPDATE` alguna fila dejó de estar activa
+   * (otra baja simultánea), no se actualiza ninguna y se lanza `NotFoundError`. Devuelve las filas
+   * ordenadas por día y hora. Auditoría: `updatedById` con el actor.
    */
-  async eliminarBloques(ids: number[], actor: Actor): Promise<Bloque[]> {
+  async eliminarBloques(
+    ids: number[],
+    actor: Actor,
+    vigentes: { fechaHoy: string; verificar: (porFila: TurnosVigentesPorBloque[]) => void },
+  ): Promise<Bloque[]> {
     return prisma.$transaction(async (tx) => {
+      const profesores = await tx.bloqueAgenda.findMany({
+        where: { id: { in: ids } },
+        select: { profesorId: true },
+        distinct: ['profesorId'],
+      })
+      if (profesores.length > 0) {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT id FROM profesor WHERE id IN (${Prisma.join(profesores.map((p) => p.profesorId))}) ORDER BY id FOR UPDATE`,
+        )
+      }
+      vigentes.verificar(await contarVigentesPorBloques(tx, ids, vigentes.fechaHoy))
+
       const { count } = await tx.bloqueAgenda.updateMany({
         where: { id: { in: ids }, estado: 'ACTIVO' },
         data: { estado: 'INACTIVO', updatedById: actor.userId },

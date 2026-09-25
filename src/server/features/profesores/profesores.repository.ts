@@ -4,6 +4,14 @@ import { hashPassword } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { deleteObject, putObject } from '@/lib/storage'
 import { ConflictError, NotFoundError } from '@/server/errors'
+import {
+  contarVigentesPorMateria,
+  listarVigentesPorProfesor,
+  ocupacionMaximaPorFila,
+  type OcupacionMaximaPorFila,
+  type TurnosVigentesPorMateria,
+  type TurnoVigentePorProfesor,
+} from '@/server/features/turnos/turnos.condiciones'
 import type { Actor } from '@/server/shared/actor'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import type { Estado } from '@/server/shared/estado'
@@ -229,23 +237,41 @@ export const profesoresRepository = {
   /**
    * Edición parcial (lo `undefined` no cambia) con `updatedById` del actor. La contraseña no se
    * edita. Inexistente → `NotFoundError`; DNI, email o matrícula repetidos → `ConflictError`.
+   *
+   * Si cambia la capacidad, en la misma transacción bloquea el profesor (`FOR UPDATE`, el lock que
+   * la reserva de turnos toma `FOR SHARE`), lee la ocupación simultánea máxima de cada hora
+   * (`ocupacionMaximaPorFila` de `turnos.condiciones`) y se la pasa a `verificar`, la regla
+   * `CAPACIDAD_INSUFICIENTE` del service (T-15), antes del `UPDATE`. Si llega `capacidad` sin
+   * `ocupacion` lanza un `Error` de programación: la verificación bajo lock no se puede saltear.
    */
   async actualizar(
     id: number,
     cambios: EditarProfesor & { busqueda?: string },
     actor: Actor,
+    ocupacion?: { fechaHoy: string; verificar: (porFila: OcupacionMaximaPorFila[]) => void },
   ): Promise<ProfesorGuardado> {
     const { titulo, matricula, capacidad, ...usuarioCambios } = cambios
+    if (capacidad !== undefined && !ocupacion) {
+      throw new Error(
+        'profesoresRepository.actualizar: cambiar la capacidad requiere `ocupacion` (verificación bajo lock, T-15)',
+      )
+    }
     try {
-      await prisma.profesor.update({
-        where: { id },
-        data: {
-          ...(titulo === undefined ? {} : { titulo }),
-          ...(matricula === undefined ? {} : { matricula }),
-          ...(capacidad === undefined ? {} : { capacidad }),
-          usuario: { update: { ...usuarioCambios, updatedById: actor.userId } },
-        },
-        select: { id: true },
+      await prisma.$transaction(async (tx) => {
+        if (capacidad !== undefined && ocupacion) {
+          await tx.$queryRaw`SELECT id FROM profesor WHERE id = ${id} FOR UPDATE`
+          ocupacion.verificar(await ocupacionMaximaPorFila(tx, id, ocupacion.fechaHoy))
+        }
+        await tx.profesor.update({
+          where: { id },
+          data: {
+            ...(titulo === undefined ? {} : { titulo }),
+            ...(matricula === undefined ? {} : { matricula }),
+            ...(capacidad === undefined ? {} : { capacidad }),
+            usuario: { update: { ...usuarioCambios, updatedById: actor.userId } },
+          },
+          select: { id: true },
+        })
       })
       const guardado = await buscarPorId(id)
       if (!guardado) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
@@ -448,36 +474,61 @@ export const profesoresRepository = {
    * Baja lógica de las asignaciones activas de esas materias (`estado = INACTIVO`), nunca borrado
    * físico: reasignar la materia reactiva la misma fila. Un solo UPDATE: todas o ninguna.
    * Auditoría: `updatedById` con el actor.
+   *
+   * En una transacción que bloquea el profesor (`FOR UPDATE`, el lock que la reserva de turnos
+   * toma `FOR SHARE`): cuenta los turnos vigentes de esas materias con el profesor y se los pasa a
+   * `verificar` (la regla `TURNOS_VIGENTES` del service) antes del `UPDATE`. Así una reserva
+   * simultánea no se cuela, y una reserva posterior ve la asignación ya dada de baja.
    */
-  async quitarMaterias(profesorId: number, materiaIds: number[], actor: Actor): Promise<void> {
-    await prisma.asignacionMateria.updateMany({
-      where: { profesorId, materiaId: { in: materiaIds }, estado: 'ACTIVO' },
-      data: { estado: 'INACTIVO', updatedById: actor.userId },
+  async quitarMaterias(
+    profesorId: number,
+    materiaIds: number[],
+    actor: Actor,
+    vigentes: { fechaHoy: string; verificar: (porMateria: TurnosVigentesPorMateria[]) => void },
+  ): Promise<void> {
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM profesor WHERE id = ${profesorId} FOR UPDATE`
+      vigentes.verificar(
+        await contarVigentesPorMateria(tx, { fechaHoy: vigentes.fechaHoy, profesorId, materiaIds }),
+      )
+      await tx.asignacionMateria.updateMany({
+        where: { profesorId, materiaId: { in: materiaIds }, estado: 'ACTIVO' },
+        data: { estado: 'INACTIVO', updatedById: actor.userId },
+      })
     })
   },
 
   /**
    * Baja lógica del profesor: pasa el `Usuario` a `INACTIVO` y revoca sus sesiones abiertas (no
    * puede seguir usando una que ya tenía; tampoco puede iniciar una nueva, por la guarda del
-   * login). No toca materias, bloques ni turnos. El service ya validó que no tenga turnos
-   * vigentes. `NotFoundError` si el profesor no existe (P2025).
+   * login). No toca materias, bloques ni turnos. `NotFoundError` si el profesor no existe (P2025).
+   *
+   * Todo en una transacción que bloquea el profesor (`FOR UPDATE`, el lock que la reserva de
+   * turnos toma `FOR SHARE`): lista sus turnos vigentes y se los pasa a `verificar` (la regla
+   * `TURNOS_VIGENTES` del service) antes del `UPDATE`, así una reserva simultánea no se cuela.
    */
-  async darDeBaja(id: number, actor: Actor): Promise<ProfesorGuardado> {
-    let usuarioId: string
+  async darDeBaja(
+    id: number,
+    actor: Actor,
+    vigentes: { fechaHoy: string; verificar: (turnos: TurnoVigentePorProfesor[]) => void },
+  ): Promise<ProfesorGuardado> {
     try {
-      const profesor = await prisma.profesor.update({
-        where: { id },
-        data: { usuario: { update: { estado: 'INACTIVO', updatedById: actor.userId } } },
-        select: { usuarioId: true },
+      await prisma.$transaction(async (tx) => {
+        await tx.$queryRaw`SELECT id FROM profesor WHERE id = ${id} FOR UPDATE`
+        vigentes.verificar(await listarVigentesPorProfesor(tx, id, vigentes.fechaHoy))
+        const profesor = await tx.profesor.update({
+          where: { id },
+          data: { usuario: { update: { estado: 'INACTIVO', updatedById: actor.userId } } },
+          select: { usuarioId: true },
+        })
+        await tx.session.deleteMany({ where: { userId: profesor.usuarioId } })
       })
-      usuarioId = profesor.usuarioId
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
         throw new NotFoundError(MENSAJE_NO_ENCONTRADO, { cause: error })
       }
       throw error
     }
-    await prisma.session.deleteMany({ where: { userId: usuarioId } })
     const guardado = await buscarPorId(id)
     if (!guardado) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
     return guardado

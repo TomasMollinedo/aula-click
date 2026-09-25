@@ -5,8 +5,8 @@ import {
   condicionTurnoOcupaLugar,
   condicionTurnoSeCruzaCon,
   condicionTurnoVigente,
-  turnosRepository,
-} from '../turnos.repository'
+} from '../turnos.condiciones'
+import { turnosRepository } from '../turnos.repository'
 import { ocupaLugarEn, seCruzaCon } from '../turnos.reglas'
 import type { EntradaReserva, PlanReserva, TurnoFechas } from '../turnos.validation'
 
@@ -21,6 +21,7 @@ const {
   findMany,
   findUnique,
   materiaFindMany,
+  bloqueFindMany,
   aulaFindMany,
   tx,
   transaction,
@@ -41,6 +42,7 @@ const {
     findMany: vi.fn(),
     findUnique: vi.fn(),
     materiaFindMany: vi.fn(),
+    bloqueFindMany: vi.fn(),
     aulaFindMany: vi.fn(),
     transaction: vi.fn(),
     tx: {
@@ -57,6 +59,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     turno: { groupBy, count, findMany, findUnique },
     materia: { findMany: materiaFindMany },
+    bloqueAgenda: { findMany: bloqueFindMany },
     aula: { findMany: aulaFindMany },
     // Las dos formas de $transaction: la interactiva (reservar) corre el callback con `tx`; la de
     // arreglo (listados paginados) resuelve las consultas ya lanzadas por los mocks.
@@ -353,6 +356,46 @@ describe('listarVigentesPorProfesor', () => {
 
   it('sin turnos vigentes, devuelve un arreglo vacío', async () => {
     await expect(turnosRepository.listarVigentesPorProfesor(3, HOY)).resolves.toEqual([])
+  })
+})
+
+describe('ocupacionMaximaPorFila', () => {
+  it('lee las horas activas del profesor con turnos vigentes y devuelve la ocupación máxima de cada una', async () => {
+    bloqueFindMany.mockResolvedValue([
+      {
+        id: 10,
+        diaSemana: 1,
+        horaInicio: 540,
+        horaFin: 600,
+        turnos: [
+          { estado: 'ACTIVO', fechaInicio: d('2026-09-28'), fechaFin: null },
+          { estado: 'ACTIVO', fechaInicio: d('2026-10-12'), fechaFin: d('2026-10-12') },
+        ],
+      },
+    ])
+
+    const resultado = await turnosRepository.ocupacionMaximaPorFila(3, HOY)
+
+    // HOY es martes 22/09: el primer lunes que cuenta es el 28/09.
+    expect(resultado).toEqual([
+      {
+        bloqueId: 10,
+        diaSemana: 1,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        fecha: '2026-10-12',
+        cantidad: 2,
+      },
+    ])
+    expect(bloqueFindMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          profesorId: 3,
+          estado: 'ACTIVO',
+          turnos: { some: condicionTurnoVigente(HOY) },
+        },
+      }),
+    )
   })
 })
 
