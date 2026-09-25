@@ -24,6 +24,10 @@
 //     `fechaFin = fechaInicio`;
 //   - los profesores inactivos y las materias inactivas no tienen turnos vigentes.
 //
+// El **miércoles queda libre a propósito** (`DIAS_CON_HORARIO`): ningún profesor de demo tiene
+// bloques ese día, así que tampoco hay turnos. Sirve para ver una agenda vacía y para cargar un
+// horario nuevo sin chocar con nada.
+//
 // Los datos son deterministas (generador con semilla fija): dos corridas producen el mismo
 // centro, salvo el corrimiento de las fechas relativas a hoy.
 //
@@ -192,6 +196,14 @@ const MOTIVOS = [
 ]
 
 const NIVELES = ['SECUNDARIO', 'SECUNDARIO', 'SECUNDARIO', 'TERCIARIO', 'UNIVERSITARIO'] as const
+
+/**
+ * Días en los que el centro arma horario (ISO: 1 = lunes … 7 = domingo). **El miércoles (3) queda
+ * libre a propósito**: ningún profesor de demo tiene bloques ese día, así que tampoco hay turnos.
+ * Sirve para ver una agenda vacía, para cargar un bloque nuevo sin chocar con nada y para probar
+ * el alta de turnos sobre un día limpio.
+ */
+const DIAS_CON_HORARIO = [1, 2, 4, 5, 6]
 
 /** Franjas horarias típicas del centro: hora de inicio y cuántas horas seguidas atiende. */
 const FRANJAS = [
@@ -513,7 +525,7 @@ async function crear(azar: Azar) {
   const bloquesData: BloqueNuevo[] = []
   // Sólo los profesores activos reciben horario: uno inactivo no recibe bloques ni turnos nuevos.
   for (const profesor of profesores.slice(0, CANTIDAD_PROFESORES_ACTIVOS)) {
-    const dias = azar.mezclar([1, 2, 3, 4, 5, 6]).slice(0, azar.entero(2, 3))
+    const dias = azar.mezclar(DIAS_CON_HORARIO).slice(0, azar.entero(2, 3))
     for (const diaSemana of dias) {
       const franja = azar.de(FRANJAS)
       const horas = Array.from({ length: franja.horas }, (_, i) => (franja.desde + i) * 60)

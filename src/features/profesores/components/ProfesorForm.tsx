@@ -171,7 +171,7 @@ function ProfesorFormCrear({
             {...register('matricula')}
           />
           <CampoTexto
-            label="Capacidad"
+            label="Capacidad de alumnos"
             obligatorio
             type="number"
             min={1}
@@ -362,7 +362,7 @@ function ProfesorFormEditar({
             {...register('matricula')}
           />
           <CampoTexto
-            label="Capacidad"
+            label="Capacidad de alumnos"
             obligatorio
             type="number"
             min={1}

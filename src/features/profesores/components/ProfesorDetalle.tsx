@@ -233,7 +233,7 @@ function DatosProfesor({ profesor }: { profesor: ProfesorDetalleType }) {
             <Dato label="DNI" valor={profesor.dni} />
             <Dato label="Título" valor={profesor.titulo} />
             <Dato label="Matrícula" valor={profesor.matricula} />
-            <Dato label="Capacidad" valor={`${profesor.capacidad} alumnos por hora`} />
+            <Dato label="Capacidad de alumnos" valor={`${profesor.capacidad} alumnos por hora`} />
           </Datos>
         </Seccion>
 
