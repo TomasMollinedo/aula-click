@@ -6,10 +6,13 @@ import { z } from '@hono/zod-openapi'
 const DNI_SEPARADORES = /[.\s]/g
 const DNI_FORMATO = /^\d{7,8}$/
 const EMAIL_MAX = 254
-const TELEFONO_CARACTERES = /^[\d\s+\-()]+$/
+const TELEFONO_CARACTERES = /^\d*$/
 const TELEFONO_MIN = 8
 const TELEFONO_MAX = 20
-const TELEFONO_MIN_DIGITOS = 8
+// Letras de cualquier alfabeto (con sus marcas de acento) y espacio; sin guiones, apóstrofos ni
+// otros símbolos. Sin \s: un tab o un salto de línea no son parte de un nombre.
+const NOMBRE_CARACTERES = /^[\p{L}\p{M} ]+$/u
+const NOMBRE_ALGUNA_LETRA = /\p{L}/u
 // HH:mm de 00:00 a 23:59.
 const HORA_FORMATO = /^([01]\d|2[0-3]):([0-5]\d)$/
 const MINUTOS_POR_DIA = 1440
@@ -51,21 +54,19 @@ export const email = z
   })
 
 /**
- * Teléfono. Entrada: dígitos, espacios, `+`, `-` y paréntesis; 8 a 20 caracteres y al menos
- * 8 dígitos. Salida: tal como lo escribió el usuario, solo recortado (`"(387) 15-412-3456"`).
+ * Teléfono. Entrada: solo dígitos, de 8 a 20 (sin `+`, `-`, espacios ni paréntesis).
+ * Salida: recortado (`"3874123456"`).
  */
 export const telefono = z
   .string({ error: MENSAJE_TEXTO })
   .trim()
-  .min(TELEFONO_MIN, { error: `El teléfono debe tener al menos ${TELEFONO_MIN} caracteres` })
-  .max(TELEFONO_MAX, { error: `El teléfono no puede superar los ${TELEFONO_MAX} caracteres` })
-  .regex(TELEFONO_CARACTERES, {
-    error: 'El teléfono solo puede tener dígitos, espacios, +, - y paréntesis',
+  .regex(TELEFONO_CARACTERES, { error: 'El teléfono solo puede tener números' })
+  .min(TELEFONO_MIN, { error: `El teléfono debe tener al menos ${TELEFONO_MIN} dígitos` })
+  .max(TELEFONO_MAX, { error: `El teléfono no puede superar los ${TELEFONO_MAX} dígitos` })
+  .openapi({
+    description: `Teléfono: solo dígitos, de ${TELEFONO_MIN} a ${TELEFONO_MAX}`,
+    example: '3874123456',
   })
-  .refine((valor) => (valor.match(/\d/g) ?? []).length >= TELEFONO_MIN_DIGITOS, {
-    error: `El teléfono debe tener al menos ${TELEFONO_MIN_DIGITOS} dígitos`,
-  })
-  .openapi({ description: 'Teléfono: se devuelve tal como se cargó', example: '(387) 15-412-3456' })
 
 /**
  * Texto obligatorio. Entrada: texto. Salida: recortado, entre 1 y `max` caracteres.
@@ -80,6 +81,56 @@ export function textoRequerido(max: number) {
     .trim()
     .min(1, { error: MENSAJE_OBLIGATORIO })
     .max(max, { error: `No puede superar los ${max} caracteres` })
+}
+
+const MENSAJE_VACIO_ES_NULL = 'Opcional: acepta null, y "" o solo espacios se guarda como null'
+
+/**
+ * Campo opcional del body: acepta `null`, omitirse o un texto. Un texto vacío o solo con espacios
+ * sale como `null` (el formulario manda `""`); con contenido, se valida con `primitiva` (por
+ * ejemplo `dni`, `email` o `nombrePersona(100)`).
+ *
+ * Con `.pipe()` el OpenAPI solo ve un `string`: `openapi` agrega lo que se pierde (enum, largo), y
+ * a la descripción se le suma la aclaración de que el vacío se guarda como `null`.
+ */
+export function opcional<T extends z.ZodType<unknown, string>>(
+  primitiva: T,
+  openapi: { description: string; example?: string; maxLength?: number; enum?: string[] },
+) {
+  return z
+    .string({ error: MENSAJE_TEXTO })
+    .trim()
+    .transform((valor) => (valor === '' ? null : valor))
+    .pipe(primitiva.nullable())
+    .openapi({ ...openapi, description: `${openapi.description}. ${MENSAJE_VACIO_ES_NULL}` })
+    .nullable()
+    .optional()
+}
+
+/**
+ * Texto libre opcional de hasta `max` caracteres (ver `opcional`): `""` o solo espacios → `null`.
+ * Lanza `RangeError` si `max` no es un entero >= 1 (error de programación).
+ */
+export function textoOpcional(max: number, description: string, example?: string) {
+  if (!Number.isInteger(max) || max < 1) {
+    throw new RangeError(`textoOpcional: max debe ser un entero >= 1 (recibió ${max})`)
+  }
+  return opcional(z.string().max(max, { error: `No puede superar los ${max} caracteres` }), {
+    description,
+    example,
+    maxLength: max,
+  })
+}
+
+/**
+ * Nombre o apellido de una persona. Entrada: texto con letras (con tildes, ñ, ü…) y espacios
+ * (`"María José"`, `"Pérez Gil"`). Salida: recortado, entre 1 y `max` caracteres y con al menos
+ * una letra. Rechaza números, guiones, apóstrofos y otros símbolos.
+ */
+export function nombrePersona(max: number) {
+  return textoRequerido(max)
+    .regex(NOMBRE_CARACTERES, { error: 'Solo puede tener letras y espacios' })
+    .regex(NOMBRE_ALGUNA_LETRA, { error: 'Debe tener al menos una letra' })
 }
 
 /**
@@ -117,4 +168,89 @@ export function minutosAHora(minutos: number): string {
   const horas = String(Math.floor(minutos / 60)).padStart(2, '0')
   const resto = String(minutos % 60).padStart(2, '0')
   return `${horas}:${resto}`
+}
+
+/**
+ * Parte un rango `[horaInicio, horaFin)` de horas en punto (`HH:mm`) en tramos de una hora, en
+ * minutos (`"14:00"`–`"16:00"` → `[{ 840, 900 }, { 900, 960 }]`). Quien llama ya validó el rango
+ * con `rangoHorasEnPunto({ finPosterior: true })`, así que siempre es múltiplo de 60 minutos.
+ * Lanza `RangeError` si alguna hora no es `HH:mm` válida.
+ */
+export function partirEnHoras(
+  horaInicio: string,
+  horaFin: string,
+): { horaInicio: number; horaFin: number }[] {
+  const inicio = horaAMinutos(horaInicio)
+  const fin = horaAMinutos(horaFin)
+  const horas: { horaInicio: number; horaFin: number }[] = []
+  for (let minuto = inicio; minuto < fin; minuto += 60) {
+    horas.push({ horaInicio: minuto, horaFin: minuto + 60 })
+  }
+  return horas
+}
+
+const MENSAJE_DIA_SEMANA = 'Debe ser un día de la semana válido (1 a 7)'
+
+// Mismas reglas y mensajes para el body (número) y el query (texto que se coerciona).
+function conRangoDiaSemana(numero: z.ZodNumber): z.ZodNumber
+function conRangoDiaSemana(numero: z.ZodCoercedNumber): z.ZodCoercedNumber
+function conRangoDiaSemana(numero: z.ZodNumber | z.ZodCoercedNumber) {
+  return numero
+    .int({ error: 'Debe ser un número entero' })
+    .min(1, { error: MENSAJE_DIA_SEMANA })
+    .max(7, { error: MENSAJE_DIA_SEMANA })
+    .openapi({ description: 'Día de la semana, ISO: 1 = lunes … 7 = domingo', example: 1 })
+}
+
+/** Día de la semana ISO en un body: entero de 1 (lunes) a 7 (domingo). */
+export const diaSemana = conRangoDiaSemana(z.number({ error: 'Debe ser un número' }))
+
+/** Como `diaSemana`, pero para el query: llega como texto y se coerciona a número. */
+export const diaSemanaQuery = conRangoDiaSemana(z.coerce.number({ error: 'Debe ser un número' }))
+
+/**
+ * `horaAMinutos` sin excepción: si el formato ya es inválido, `horaHHmm` lo reporta solo (su
+ * propio mensaje de formato); acá alcanza con no volver a marcar el campo por lo mismo.
+ */
+function minutosSeguro(hora: string | undefined): number | null {
+  if (hora === undefined) return null
+  try {
+    return horaAMinutos(hora)
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Refinamiento de un objeto con `horaInicio` / `horaFin` (`HH:mm`, opcionales) para usar con
+ * `.superRefine(...)`: cada hora presente tiene que ser en punto y, con `finPosterior`, `horaFin`
+ * tiene que ser posterior a `horaInicio` (si las dos llegan con formato válido). Los errores
+ * quedan en el campo (`path: ['horaInicio']` / `['horaFin']`), como cualquier issue de Zod.
+ */
+export function rangoHorasEnPunto({ finPosterior }: { finPosterior: boolean }) {
+  return (datos: { horaInicio?: string; horaFin?: string }, ctx: z.RefinementCtx) => {
+    const inicio = minutosSeguro(datos.horaInicio)
+    const fin = minutosSeguro(datos.horaFin)
+    if (inicio !== null && inicio % 60 !== 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Debe ser una hora en punto (por ejemplo 14:00)',
+        path: ['horaInicio'],
+      })
+    }
+    if (fin !== null && fin % 60 !== 0) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Debe ser una hora en punto (por ejemplo 15:00)',
+        path: ['horaFin'],
+      })
+    }
+    if (finPosterior && inicio !== null && fin !== null && fin <= inicio) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'La hora de fin debe ser posterior a la de inicio',
+        path: ['horaFin'],
+      })
+    }
+  }
 }

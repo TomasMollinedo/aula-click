@@ -9,7 +9,7 @@ const links = [
   { href: '/mesa/profesores', label: 'Profesores', icon: Users },
   { href: '/mesa/materias', label: 'Materias', icon: BookOpen },
   { href: '/mesa/turnos', label: 'Registrar turno', icon: CalendarPlus },
-  { href: '/mesa/calendario', label: 'Agenda del centro', icon: CalendarClock },
+  { href: '/mesa/agenda', label: 'Agenda diaria', icon: CalendarClock },
 ]
 
 export function MesaSidebar() {

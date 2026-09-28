@@ -39,7 +39,7 @@ src/
 │   ├── router.ts                     # createRouter() y el tipo AppEnv
 │   ├── errors/                       # AppError y subclases, errorHandler, ErrorResponseSchema
 │   ├── middlewares/auth.ts           # requireAuth() + requireRole(...)
-│   ├── shared/                       # actor, paginacion, zod, busqueda, fechas (ver convenciones-backend.md)
+│   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, auditoria, detalles (ver convenciones-backend.md)
 │   └── features/<dominio>/
 │       ├── <dominio>.routes.ts
 │       ├── <dominio>.controller.ts
@@ -48,11 +48,23 @@ src/
 │       ├── <dominio>.repository.ts
 │       ├── <dominio>.ejemplos.ts      # opcional: ejemplos del OpenAPI
 │       ├── <regla>.ts                 # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
-│       └── __tests__/                 # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts
+│       ├── <dominio>.condiciones.ts   # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos)
+│       └── __tests__/                 # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts, <dominio>.repository.test.ts (excepcional)
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```
 
-Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignadas y bloques de clase), `materias` y `turnos` (prioridad, capacidad, solapamientos, agenda). La referencia para copiar el patrón es `alumnos`; una feature nueva se crea con `/nueva-feature-api <dominio>` (Claude Code) o copiando `alumnos` a mano.
+Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignadas), `materias`, `bloques` (horario de atención del profesor: día, horario y aula), `aulas` (catálogo de solo lectura: aulas disponibles para un horario) y `turnos` (prioridad, capacidad, solapamientos, agenda). La referencia para copiar el patrón es `alumnos`; una feature nueva se crea con `/nueva-feature-api <dominio>` (Claude Code) o copiando `alumnos` a mano.
+
+### Qué es una feature
+
+Una feature agrupa las reglas de **un concepto del negocio**, no de una tabla ni de un rol. El rol dice qué puede hacer alguien (se declara en la ruta con `requireRole(...)`); la feature dice de qué trata la regla.
+
+- **Rol ≠ feature.** `PROFESOR` es un rol de `Usuario`, pero `Profesor` es una entidad propia (1:1 con `Usuario`) con datos y reglas que otros usuarios no tienen: título, matrícula y materias asignadas. Por eso vive en `profesores` y no en una feature `usuarios`. Sus URLs usan `Profesor.id` (`/profesores/{id}/materias`), no `Usuario.id`.
+- **Todo lo del concepto va en su feature, aunque toque otras tablas.** El alta de un profesor escribe `Usuario`, `Account` y `Profesor`, y su baja cambia `Usuario.estado`: las dos son reglas de profesores y van en `profesores`. Lo mismo las asignaciones (`AsignacionMateria`), que son del profesor aunque tengan su propia tabla.
+- **`Usuario`, `Session` y `Account` son infraestructura de autenticación**: los maneja Better Auth (`src/lib/auth.ts`) y no forman una feature por sí solos.
+- **Una feature `usuarios` solo se crea para lo que vale para cualquier usuario sin importar su rol** (cambiar la contraseña propia, que un gerente habilite o inhabilite cuentas, listar todos los usuarios). Convive con `profesores`, no la reemplaza.
+- **Excepción: `BloqueAgenda` no vive en `profesores`, aunque es del profesor.** A diferencia de `AsignacionMateria` (una relación simple profesor–materia), un bloque involucra por igual a `Profesor` y a `Aula`, y de él cuelga `Turno` (T-21). Por eso es su propia feature, `bloques`, con `profesorId` como dato del body/query (no como segmento de URL: `/api/v1/bloques`, no `/api/v1/profesores/{id}/bloques`). `bloques.service` lee `profesores.repository` (solo como tipo) para los chequeos de profesor activo y con materias asignadas. `Aula` es de la feature `aulas` (solo lectura, T-28); su service lee `bloques.repository` (`aulasOcupadas`) para saber qué aulas están ocupadas, y `bloques.repository` solo toca `Aula` dentro de sus transacciones de alta y edición (lock y existencia, atómicos con la escritura).
+- **Criterio para una feature nueva:** tiene datos o reglas propias que el resto no tiene. Un rol nuevo que solo cambia permisos no es una feature: es un valor más en `requireRole(...)`.
 
 ## Capas de una feature
 
@@ -77,9 +89,11 @@ Flujo: cliente → routes (valida con Zod) → controller → service → reposi
 
 ## Dependencias entre features
 
-Una feature solo puede importar el **repository** de otra, y solo para lecturas; nunca su service, controller ni routes. Ejemplo: si `turnos` necesita confirmar que un alumno existe, lee `alumnos.repository.ts`, pero no usa las reglas de `alumnos.service.ts`.
+Una feature solo puede importar el **repository** de otra, y solo para lecturas, o sus **condiciones** (`<dominio>.condiciones.ts`); nunca su service, controller, routes, validation ni reglas (los tests sí pueden importar tipos de su validation para armar sus falsos). Ejemplo: si `turnos` necesita confirmar que un alumno existe, lee `alumnos.repository.ts`, pero no usa las reglas de `alumnos.service.ts`.
 
-Un repository importa Prisma, `@/server/errors` y `@/server/shared/*`; no importa otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
+**Condiciones (`<dominio>.condiciones.ts`, decisión T-39).** Cuando una feature tiene que consultar datos de otra **dentro de su propia transacción** (por ejemplo, contar los turnos vigentes con el lock del profesor tomado antes de darlo de baja), no puede llamar al repository de la otra: una transacción no cruza repositories. La feature dueña de esos datos publica la condición y la lectura en su `*.condiciones.ts`: funciones que reciben el cliente (`prisma` o el `tx` de quien llama) y de Prisma solo importan **tipos**. Su propio repository las usa con `prisma` y los de otras features con su `tx`: una sola implementación. Por ejemplo, `turnos.condiciones.ts` publica las condiciones de turno vigente, ocupa lugar y se cruza con, y las lecturas de vigentes y de ocupación máxima. Los tipos que devuelven se re-exportan desde ahí, para que nadie importe la validation de otra feature.
+
+Un repository importa Prisma, `@/server/errors`, `@/server/shared/*`, módulos puros de su propia feature (como `<dominio>.reglas.ts`, por ejemplo para un predicado que tiene que coincidir con una condición de consulta) y las `*.condiciones` de otra feature; nunca otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
 
 Dentro de una misma feature, los imports son relativos (`./alumnos.repository`, o `../alumnos.service` desde `__tests__`). Con alias (`@/server/features/alumnos/...`), ESLint no distingue la propia feature de otra y lo marca como error.
 
@@ -87,7 +101,7 @@ Dentro de una misma feature, los imports son relativos (`./alumnos.repository`, 
 
 Jerarquía en `src/server/errors/`; todas las clases heredan de `AppError(message, statusCode = 500, { code?, details?, cause? })`. La tabla de clases, status y códigos es parte del contrato con el frontend y está en [`contrato-api.md` → Errores](./contrato-api.md#errores).
 
-- Los services lanzan las clases importadas de `@/server/errors`: `throw new ConflictError('DNI ya registrado')`. Para un código específico: `new ConflictError('...', { code: 'BLOQUE_LLENO', details: fechas })`.
+- Los services lanzan las clases importadas de `@/server/errors`: `throw new ConflictError('DNI ya registrado')`. Para un código específico: `new ConflictError('...', { code: 'BLOQUE_LLENO', details: detallesPorHora })`.
 - `errorHandler` (`src/server/errors/error-handler.ts`, instalado con `app.onError`) serializa todo `AppError` con el formato `{ "error": { "code", "message", "details"? } }`.
 - Un error no controlado (ni `AppError` ni `HTTPException` de Hono) se registra con `console.error` y responde 500 genérico, sin exponer detalles internos.
 - Los fallos de validación de Zod los convierte el `defaultHook` de `createRouter()`: no se lanzan a mano en el controller.
@@ -270,7 +284,7 @@ sequenceDiagram
 El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `globalThis` (para que el hot reload no abra pools nuevos) y el adaptador `@prisma/adapter-pg`. Se importa `prisma` de ahí, solo desde repositories (y desde `src/lib/auth.ts`). Nunca `new PrismaClient()` en otro archivo.
 
 - **Seed** (`prisma/seed.ts`): la otra excepción. Usa Prisma directo, `env` e `hashPassword()` de `src/lib/auth.ts`, y `normalizarBusqueda()` de `src/server/shared/`. Está fuera de `src/`, así que las reglas de ESLint por zona no lo alcanzan. Es idempotente (todo `upsert` por clave natural) y se corre con `pnpm db:seed`: en Prisma 7, `migrate dev` ya no lo ejecuta solo. Está registrado en `prisma7.config.ts` (`migrations.seed`).
-- **Restricciones `CHECK`** (`bloque_agenda`: día, horas y capacidad; `turno`: orden de fechas y sesión única): Prisma no las genera, así que se agregan a mano al `migration.sql` de la migración que crea esas tablas.
+- **Restricciones `CHECK`** (`bloque_agenda`: día y horas; `turno`: orden de fechas y sesión única; `profesor`: capacidad >= 1; `aula`: capacidad > 0): Prisma no las genera, así que se agregan a mano al `migration.sql` de la migración que crea esas tablas.
 - Tablas y columnas en snake_case (`@@map` / `@map`); modelos en PascalCase y campos en camelCase.
 - **Errores del motor con Prisma 7 + `@prisma/adapter-pg`** (verificado en el runtime 7.10): se importa `Prisma` de `@/generated/prisma/client` y se compara con `error instanceof Prisma.PrismaClientKnownRequestError` y `error.code`. En un `P2002`, `meta` no trae `target` (eso era del engine clásico): trae `{ modelName, driverAdapterError }`, y la restricción está en `meta.driverAdapterError.cause.constraint`, como `{ index: '<tabla>_<campo>_key' }` (el nombre del índice único; `pg` lo informa siempre) o `{ fields: [...] }` si no hay nombre. Si la tabla tiene un solo `UNIQUE` y la forma no se puede leer, se asume ese campo. `P2025` (registro inexistente en un `update`) se traduce a `NotFoundError`. Ejemplo en `alumnos.repository`.
 
@@ -289,6 +303,7 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 - Opcional: `<dominio>.routes.test.ts` prueba el contrato HTTP (validación de Zod, 401/403, que el OpenAPI declare todos los status codes) con el repository y `@/lib/auth` mockeados. Referencia: `alumnos/__tests__/`.
 - Casos mínimos: el camino feliz + uno por cada error que el service puede lanzar (uno por cada 4xx que declara su ruta). Un `it.todo` no cuenta como cobertura.
 - Las funciones puras (por ejemplo `prioridad.ts` en `turnos`) se testean directo.
+- Excepcional: `<dominio>.repository.test.ts`, solo cuando una **condición de consulta** es una regla del dominio que otras features reutilizan y hay que fijarla con casos (la de turno vigente: `turnos/__tests__/turnos.repository.test.ts`), o cuando hay que fijar un **invariante de atomicidad** que el service no puede observar (por ejemplo, que la verificación bajo lock no se pueda saltear: `profesores/__tests__/profesores.repository.test.ts`). Mockea `@/lib/prisma` con `vi.hoisted` y verifica el `where` que recibe Prisma; no usa base. No reemplaza al test del service: las reglas se siguen probando ahí.
 - Tests del middleware de auth (`server/middlewares/__tests__/auth.test.ts`): `vi.mock('@/lib/auth')` con `vi.hoisted`, sin base ni variables de entorno.
 - Las reglas de auth (`src/lib/__tests__/auth-reglas.test.ts`) se testean directo: `auth-reglas.ts` no importa `env` ni Prisma.
 - El `matcher` de `src/proxy.ts` se prueba en `src/__tests__/proxy.test.ts` con `unstable_doesMiddlewareMatch` de `next/experimental/testing/server` (en Next 16.3.5 se llama así, aunque la guía nombre `unstable_doesProxyMatch`).

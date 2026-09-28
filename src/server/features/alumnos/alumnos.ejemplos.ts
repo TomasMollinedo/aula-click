@@ -1,7 +1,9 @@
 import type { ErrorResponse } from '@/server/errors'
 import type {
+  AlumnoDeProfesorItem,
   AlumnoDetalle,
   AlumnoListadoItem,
+  AlumnosDeProfesorListado,
   AlumnosListado,
   CrearAlumno,
   EditarAlumno,
@@ -17,7 +19,7 @@ export const ejemploAltaAdulto = {
   dni: '30123456',
   fechaNacimiento: '1990-05-14',
   email: 'juan.gonzalez@mail.com',
-  telefono: '(387) 15-412-3456',
+  telefono: '387154123456',
 } satisfies CrearAlumno
 
 /** Alta de un menor: los obligatorios más nombre, apellido, teléfono y email del tutor. */
@@ -27,18 +29,18 @@ export const ejemploAltaMenor = {
   dni: '52345678',
   fechaNacimiento: '2012-03-08',
   email: 'lucia.alvarez@mail.com',
-  telefono: '(387) 15-500-1122',
+  telefono: '387155001122',
   nivelEscolaridad: 'SECUNDARIO',
   grado: '2° año',
   institucionEducativa: 'Colegio Nacional de Salta',
   tutorNombre: 'Marta',
   tutorApellido: 'Álvarez',
-  tutorTelefono: '(387) 15-433-9876',
+  tutorTelefono: '387154339876',
   tutorEmail: 'marta.alvarez@mail.com',
 } satisfies CrearAlumno
 
 export const ejemploEdicion = {
-  telefono: '(387) 15-498-7654',
+  telefono: '387154987654',
   observaciones: null,
 } satisfies EditarAlumno
 
@@ -46,12 +48,38 @@ export const ejemploListadoItem = {
   id: 12,
   apellido: 'Álvarez',
   nombre: 'Lucía',
+  dni: '52345678',
 } satisfies AlumnoListadoItem
 
 export const ejemploListado = {
-  data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan' }],
+  data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan', dni: '30123456' }],
   meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
 } satisfies AlumnosListado
+
+export const ejemploDeProfesorItem = {
+  id: 12,
+  apellido: 'Álvarez',
+  nombre: 'Lucía',
+  dni: '52345678',
+  materias: [{ id: 2, nombre: 'Matemática' }],
+} satisfies AlumnoDeProfesorItem
+
+export const ejemploMisAlumnos = {
+  data: [
+    ejemploDeProfesorItem,
+    {
+      id: 7,
+      apellido: 'González',
+      nombre: 'Juan',
+      dni: '30123456',
+      materias: [
+        { id: 2, nombre: 'Matemática' },
+        { id: 7, nombre: 'Física' },
+      ],
+    },
+  ],
+  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+} satisfies AlumnosDeProfesorListado
 
 export const ejemploDetalle = {
   id: 12,

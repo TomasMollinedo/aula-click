@@ -43,6 +43,29 @@ const crossFeatureImports = {
   message:
     'Una feature solo puede importar el repository de otra (lecturas). Dentro de la propia feature, usar imports relativos.',
 }
+// Fuera de los tests, de otra feature solo se importa su repository (lecturas) o sus condiciones
+// (`<dominio>.condiciones.ts`: condiciones de consulta y lecturas para usar dentro de la
+// transacción propia, T-39). Con alias o con ruta relativa que sale de la feature.
+const soloRepositoryOCondiciones = 'repository|condiciones'
+const otraFeatureMessage =
+  'De otra feature solo se importa su repository o sus condiciones (*.repository, *.condiciones). Dentro de la propia feature, usar imports relativos.'
+const otraFeatureSoloLecturas = [
+  {
+    regex: String.raw`^@/server/features/[^/]+/(?![^/]+\.(${soloRepositoryOCondiciones})$)[^/]+$`,
+    message: otraFeatureMessage,
+  },
+  {
+    regex: String.raw`^(\.\./)+[^./][^/]*/(?![^/]+\.(${soloRepositoryOCondiciones})$)[^/]+$`,
+    message: otraFeatureMessage,
+  },
+]
+// Un repository (o un archivo de condiciones) no importa el repository de otra feature: así el
+// grafo de repositories no tiene ciclos. Lo que necesita de otra feature va en sus condiciones.
+const repositoryDeOtraFeature = {
+  group: ['@/server/features/*/*.repository', '../*/*.repository'],
+  message:
+    'Un repository no importa otro repository. Si necesita consultar datos de otra feature dentro de su transacción, usar sus *.condiciones.',
+}
 const sharedMessage =
   'shared/ no conoce a las features: son las features las que importan de shared.'
 // Con alias, la carpeta entera o cualquier cosa adentro; relativo, desde cualquier profundidad
@@ -180,21 +203,48 @@ const eslintConfig = defineConfig([
       }),
     },
   },
-  // Backend: features, salvo repositories.
+  // Backend: features, salvo repositories, condiciones y tests.
   {
     files: ['src/server/features/**/*.ts'],
-    ignores: ['src/server/features/**/*.repository.ts'],
+    ignores: [
+      'src/server/features/**/*.repository.ts',
+      'src/server/features/**/*.condiciones.ts',
+      'src/server/features/**/__tests__/**',
+    ],
+    rules: {
+      'no-restricted-imports': restrict({
+        patterns: [
+          prismaImports,
+          crossFeatureImports,
+          ...otraFeatureSoloLecturas,
+          frontendFromBackend,
+        ],
+      }),
+    },
+  },
+  // Backend: repositories y condiciones (únicos de las features que usan Prisma; las condiciones
+  // solo sus tipos: reciben el cliente).
+  {
+    files: ['src/server/features/**/*.repository.ts', 'src/server/features/**/*.condiciones.ts'],
+    rules: {
+      'no-restricted-imports': restrict({
+        patterns: [
+          crossFeatureImports,
+          repositoryDeOtraFeature,
+          ...otraFeatureSoloLecturas,
+          frontendFromBackend,
+        ],
+      }),
+    },
+  },
+  // Backend: tests de las features. Pueden importar tipos de la validation de otra feature (para
+  // armar sus falsos), pero no su service, controller ni routes, ni Prisma.
+  {
+    files: ['src/server/features/**/__tests__/**/*.ts'],
     rules: {
       'no-restricted-imports': restrict({
         patterns: [prismaImports, crossFeatureImports, frontendFromBackend],
       }),
-    },
-  },
-  // Backend: repositories (únicos de las features que usan Prisma).
-  {
-    files: ['src/server/features/**/*.repository.ts'],
-    rules: {
-      'no-restricted-imports': restrict({ patterns: [crossFeatureImports, frontendFromBackend] }),
     },
   },
   // Backend: adaptadores de Next para Hono y Better Auth.

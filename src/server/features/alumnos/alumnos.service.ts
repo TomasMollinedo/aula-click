@@ -1,38 +1,28 @@
 import { NotFoundError, ValidationError } from '@/server/errors'
+import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
-import { normalizarBusqueda } from '@/server/shared/busqueda'
+import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { AlumnosRepository } from './alumnos.repository'
 import type {
   AlumnoDetalle,
   AlumnoGuardado,
+  AlumnosDeProfesorListado,
   CrearAlumno,
   EditarAlumno,
   ListarAlumnosQuery,
+  ListarMisAlumnosQuery,
 } from './alumnos.validation'
 import { esMenorDeEdad } from './edad'
 
 // Reglas de negocio. No conoce HTTP ni Prisma: lanza AppError o sus subclases.
 
-const MAX_TERMINOS = 5
 const MENSAJE_INVALIDO = 'Datos de entrada inválidos'
 const MENSAJE_TUTOR = 'Obligatorio para menores de edad'
 // tutorDni no es obligatorio (HU-01).
 const TUTOR_OBLIGATORIO = ['tutorNombre', 'tutorApellido', 'tutorTelefono', 'tutorEmail'] as const
 
 type DatosReglas = Pick<CrearAlumno, 'fechaNacimiento' | (typeof TUTOR_OBLIGATORIO)[number]>
-
-/**
- * `q` → palabras para buscar en `busqueda`: normalizado, sin puntos (`30.123` encuentra el DNI
- * `30123456`) y hasta 5 palabras (el resto se ignora).
- */
-function terminosDeBusqueda(q: string | undefined): string[] {
-  if (!q) return []
-  return normalizarBusqueda(q.replace(/\./g, ''))
-    .split(' ')
-    .filter((termino) => termino !== '')
-    .slice(0, MAX_TERMINOS)
-}
 
 // Mismo formato que el seed usa para los usuarios: apellido, nombre y DNI.
 function calcularBusqueda(alumno: { apellido: string; nombre: string; dni: string }): string {
@@ -76,9 +66,11 @@ function sinOmitidos<T extends object>(cambios: T): Partial<T> {
  */
 export function crearAlumnosService({
   repository,
+  profesoresRepository,
   reloj,
 }: {
   repository: AlumnosRepository
+  profesoresRepository: Pick<ProfesoresRepository, 'buscarIdPorUsuario'>
   reloj?: Reloj
 }) {
   // `fechaHoy` se calcula una vez por operación: validación y `menorDeEdad` usan el mismo día.
@@ -93,6 +85,26 @@ export function crearAlumnosService({
         page: query.page,
         pageSize: query.pageSize,
         terminos: terminosDeBusqueda(query.q),
+      })
+    },
+
+    /**
+     * Alumnos del profesor de la sesión (el `id` nunca viaja en un parámetro: sale del `Actor`,
+     * igual que `agenda-propia` de `turnos`). Sin ficha de profesor → `NotFoundError`.
+     */
+    async listarMisAlumnos(
+      query: ListarMisAlumnosQuery,
+      actor: Actor,
+    ): Promise<AlumnosDeProfesorListado> {
+      const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
+      if (profesorId === null) throw new NotFoundError('El usuario no tiene ficha de profesor')
+      return repository.listarDeProfesor({
+        profesorId,
+        materiaId: query.materiaId,
+        terminos: terminosDeBusqueda(query.q),
+        page: query.page,
+        pageSize: query.pageSize,
+        fechaHoy: hoy(reloj),
       })
     },
 

@@ -2,6 +2,7 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { createAuthMiddleware } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
+import { openAPI } from 'better-auth/plugins'
 import { env } from '@/config/env'
 import {
   crearGuardaSesion,
@@ -74,7 +75,13 @@ export const auth = betterAuth({
       if (body) return { context: { body } }
     }),
   },
-  plugins: [nextCookies()], // debe ir último
+  plugins: [
+    // Documentación de /api/auth/* (login, logout, sesión): Swagger UI en /api/v1/docs es de la
+    // API de negocio (Hono) y no puede listar Better Auth, que es otro motor (decisión T-03,
+    // arquitectura-backend.md). openAPI() genera la suya propia, aparte, en /api/auth/reference.
+    openAPI(),
+    nextCookies(), // debe ir último
+  ],
 })
 
 export type Session = typeof auth.$Infer.Session

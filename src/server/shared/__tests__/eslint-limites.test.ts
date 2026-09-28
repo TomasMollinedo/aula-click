@@ -66,3 +66,51 @@ describe('ESLint: las features y shared/ pueden importar de shared/', { timeout:
     expect(await erroresDeImport('src/server/shared/zod.ts', codigo)).toEqual([])
   })
 })
+
+// Entre features (decisión T-39): de otra feature solo se importa su repository o sus condiciones,
+// y un repository no importa el repository de otra. Los tests pueden importar tipos de la
+// validation de otra feature para armar sus falsos.
+describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout: 30_000 }, () => {
+  it.each([
+    ['src/server/features/bloques/bloques.service.ts', '@/server/features/turnos/turnos.reglas'],
+    [
+      'src/server/features/bloques/bloques.service.ts',
+      '@/server/features/turnos/turnos.validation',
+    ],
+    ['src/server/features/bloques/bloques.service.ts', '../turnos/turnos.reglas'],
+    [
+      'src/server/features/bloques/bloques.repository.ts',
+      '@/server/features/turnos/turnos.repository',
+    ],
+    [
+      'src/server/features/bloques/bloques.repository.ts',
+      '@/server/features/turnos/turnos.validation',
+    ],
+    [
+      'src/server/features/turnos/turnos.condiciones.ts',
+      '@/server/features/profesores/profesores.repository',
+    ],
+  ])('desde %s, importar %s da error', async (filePath, ruta) => {
+    expect(await erroresDeImport(filePath, importar(ruta))).toHaveLength(1)
+  })
+
+  it.each([
+    [
+      'src/server/features/bloques/bloques.service.ts',
+      '@/server/features/turnos/turnos.repository',
+    ],
+    [
+      'src/server/features/bloques/bloques.repository.ts',
+      '@/server/features/turnos/turnos.condiciones',
+    ],
+    ['src/server/features/turnos/turnos.condiciones.ts', '@/generated/prisma/client'],
+    ['src/server/features/turnos/turnos.repository.ts', './turnos.condiciones'],
+    ['src/server/features/turnos/turnos.service.ts', './turnos.reglas'],
+    [
+      'src/server/features/bloques/__tests__/bloques.service.test.ts',
+      '@/server/features/profesores/profesores.validation',
+    ],
+  ])('desde %s, importar %s está permitido', async (filePath, ruta) => {
+    expect(await erroresDeImport(filePath, importar(ruta))).toEqual([])
+  })
+})

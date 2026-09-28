@@ -11,6 +11,7 @@ const badgeVariants = cva(
         default: 'border-transparent bg-primary text-primary-foreground',
         secondary: 'border-transparent bg-secondary text-secondary-foreground',
         outline: 'border-input text-foreground',
+        accent: 'border-transparent bg-accent font-semibold text-accent-foreground',
         confirmado: 'border-transparent bg-confirmado text-white',
         cancelado: 'border-transparent bg-cancelado text-white',
         urgente: 'border-transparent bg-urgente text-white',

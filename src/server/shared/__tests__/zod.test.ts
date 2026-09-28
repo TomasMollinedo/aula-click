@@ -1,12 +1,20 @@
+import { z } from '@hono/zod-openapi'
 import { describe, expect, it } from 'vitest'
 import {
+  diaSemana,
+  diaSemanaQuery,
   dni,
   email,
   fechaISO,
   horaAMinutos,
   horaHHmm,
   minutosAHora,
+  nombrePersona,
+  opcional,
+  partirEnHoras,
+  rangoHorasEnPunto,
   telefono,
+  textoOpcional,
   textoRequerido,
 } from '../zod'
 
@@ -53,27 +61,24 @@ describe('email', () => {
 })
 
 describe('telefono', () => {
-  it('devuelve lo que escribió el usuario, solo recortado', () => {
-    expect(telefono.parse('  (387) 15-412-3456 ')).toBe('(387) 15-412-3456')
-    expect(telefono.parse('+54 387 4123456')).toBe('+54 387 4123456')
+  it('acepta solo dígitos y los devuelve recortados', () => {
+    expect(telefono.parse('  3874123456 ')).toBe('3874123456')
   })
 
-  it('rechaza 7 dígitos aunque tenga 8 caracteres', () => {
-    const resultado = telefono.safeParse('123-4567')
-    expect(resultado.success).toBe(false)
-    expect(mensaje(resultado)).toBe('El teléfono debe tener al menos 8 dígitos')
-  })
+  it.each(['+54 387 4123456', '(387) 4123456', '387-412-3456', '387 412 3456', '387 412 ABCD'])(
+    'rechaza %o con mensaje en español',
+    (valor) => {
+      expect(mensaje(telefono.safeParse(valor))).toBe('El teléfono solo puede tener números')
+    },
+  )
 
-  it('rechaza letras', () => {
-    expect(mensaje(telefono.safeParse('387 412 ABCD'))).toBe(
-      'El teléfono solo puede tener dígitos, espacios, +, - y paréntesis',
-    )
-  })
-
-  it('acepta de 8 a 20 caracteres', () => {
-    expect(telefono.safeParse('1234567').success).toBe(false)
+  it('acepta de 8 a 20 dígitos', () => {
+    expect(mensaje(telefono.safeParse('1234567'))).toBe('El teléfono debe tener al menos 8 dígitos')
+    expect(telefono.parse('12345678')).toBe('12345678')
     expect(telefono.parse('1'.repeat(20))).toBe('1'.repeat(20))
-    expect(telefono.safeParse('1'.repeat(21)).success).toBe(false)
+    expect(mensaje(telefono.safeParse('1'.repeat(21)))).toBe(
+      'El teléfono no puede superar los 20 dígitos',
+    )
   })
 })
 
@@ -90,6 +95,75 @@ describe('textoRequerido', () => {
 
   it.each([0, -1, 1.5, Number.NaN])('lanza RangeError con max %s', (max) => {
     expect(() => textoRequerido(max)).toThrow(RangeError)
+  })
+})
+
+describe('textoOpcional', () => {
+  const campo = textoOpcional(5, 'Motivo')
+
+  it('omitido queda undefined; null queda null', () => {
+    expect(campo.parse(undefined)).toBeUndefined()
+    expect(campo.parse(null)).toBeNull()
+  })
+
+  it('"" o solo espacios se guarda como null; con texto, recortado', () => {
+    expect(campo.parse('')).toBeNull()
+    expect(campo.parse('   ')).toBeNull()
+    expect(campo.parse('  hola ')).toBe('hola')
+  })
+
+  it('el máximo se mide después del trim', () => {
+    expect(campo.safeParse('  12345  ').success).toBe(true)
+    expect(mensaje(campo.safeParse('123456'))).toBe('No puede superar los 5 caracteres')
+  })
+
+  it('rechaza lo que no es texto', () => {
+    expect(mensaje(campo.safeParse(12))).toBe('Debe ser un texto')
+  })
+
+  it.each([0, -1, 1.5, Number.NaN])('lanza RangeError con max %s', (max) => {
+    expect(() => textoOpcional(max, 'Motivo')).toThrow(RangeError)
+  })
+})
+
+describe('opcional', () => {
+  const tutorDni = opcional(dni, { description: 'DNI del tutor' })
+
+  it('con contenido valida con la primitiva (y la aplica: el DNI sale solo con dígitos)', () => {
+    expect(tutorDni.parse('20.111.222')).toBe('20111222')
+    expect(tutorDni.safeParse('12').success).toBe(false)
+  })
+
+  it('vacío o null no se validan con la primitiva: salen como null', () => {
+    expect(tutorDni.parse('  ')).toBeNull()
+    expect(tutorDni.parse(null)).toBeNull()
+  })
+})
+
+describe('nombrePersona', () => {
+  it.each(['Lucía', 'María José', 'Pérez Gil', 'Müller', 'Ñandú'])('acepta %o', (valor) => {
+    expect(nombrePersona(100).parse(valor)).toBe(valor)
+  })
+
+  it('recorta y respeta el máximo, como textoRequerido', () => {
+    expect(nombrePersona(5).parse('  Ana  ')).toBe('Ana')
+    expect(nombrePersona(3).safeParse('Lucía').success).toBe(false)
+    expect(mensaje(nombrePersona(10).safeParse('   '))).toBe('Campo obligatorio')
+  })
+
+  it.each([
+    'Juan2',
+    '1234',
+    'Ana_María',
+    'Ana.',
+    'Juan\tPérez',
+    'Ana@',
+    'Pérez-Gil',
+    "O'Connor",
+    'D’Angelo',
+    "- '",
+  ])('rechaza %o', (valor) => {
+    expect(mensaje(nombrePersona(100).safeParse(valor))).toBe('Solo puede tener letras y espacios')
   })
 })
 
@@ -163,5 +237,110 @@ describe('minutosAHora', () => {
     for (let minutos = 0; minutos < 1440; minutos++) {
       expect(horaAMinutos(minutosAHora(minutos))).toBe(minutos)
     }
+  })
+})
+
+describe('partirEnHoras', () => {
+  it('una hora exacta da un solo tramo', () => {
+    expect(partirEnHoras('14:00', '15:00')).toEqual([{ horaInicio: 840, horaFin: 900 }])
+  })
+
+  it('un rango de varias horas da un tramo por cada una', () => {
+    expect(partirEnHoras('14:00', '18:00')).toEqual([
+      { horaInicio: 840, horaFin: 900 },
+      { horaInicio: 900, horaFin: 960 },
+      { horaInicio: 960, horaFin: 1020 },
+      { horaInicio: 1020, horaFin: 1080 },
+    ])
+  })
+
+  it('un rango que empieza a medianoche', () => {
+    expect(partirEnHoras('00:00', '02:00')).toEqual([
+      { horaInicio: 0, horaFin: 60 },
+      { horaInicio: 60, horaFin: 120 },
+    ])
+  })
+
+  it('lanza RangeError con una hora inválida', () => {
+    expect(() => partirEnHoras('25:00', '26:00')).toThrow(RangeError)
+  })
+})
+
+describe('diaSemana', () => {
+  it.each([1, 4, 7])('acepta %i', (dia) => {
+    expect(diaSemana.parse(dia)).toBe(dia)
+  })
+
+  it.each([0, 8, 1.5, '1'])('rechaza %o', (dia) => {
+    expect(diaSemana.safeParse(dia).success).toBe(false)
+  })
+
+  it('da el mensaje en español', () => {
+    expect(mensaje(diaSemana.safeParse(8))).toBe('Debe ser un día de la semana válido (1 a 7)')
+  })
+})
+
+describe('diaSemanaQuery', () => {
+  it('coerciona el texto del query', () => {
+    expect(diaSemanaQuery.parse('3')).toBe(3)
+  })
+
+  it.each(['0', '8', '1.5', 'abc', ''])('rechaza %o', (dia) => {
+    expect(diaSemanaQuery.safeParse(dia).success).toBe(false)
+  })
+
+  it('mismos mensajes que en el body', () => {
+    expect(mensaje(diaSemanaQuery.safeParse('8'))).toBe(
+      'Debe ser un día de la semana válido (1 a 7)',
+    )
+  })
+})
+
+describe('rangoHorasEnPunto', () => {
+  const rango = z
+    .object({ horaInicio: horaHHmm, horaFin: horaHHmm })
+    .superRefine(rangoHorasEnPunto({ finPosterior: true }))
+  const parcial = z
+    .object({ horaInicio: horaHHmm, horaFin: horaHHmm })
+    .partial()
+    .superRefine(rangoHorasEnPunto({ finPosterior: false }))
+
+  // Issues de un safeParse fallido, como `path` + `message`.
+  function issues(resultado: { error?: { issues: { path: PropertyKey[]; message: string }[] } }) {
+    return resultado.error?.issues.map(({ path, message }) => ({ path, message })) ?? []
+  }
+
+  it('acepta un rango de horas en punto con el fin posterior', () => {
+    expect(rango.safeParse({ horaInicio: '14:00', horaFin: '18:00' }).success).toBe(true)
+  })
+
+  it('marca cada hora que no es en punto, en su campo', () => {
+    expect(issues(rango.safeParse({ horaInicio: '14:30', horaFin: '15:30' }))).toEqual([
+      { path: ['horaInicio'], message: 'Debe ser una hora en punto (por ejemplo 14:00)' },
+      { path: ['horaFin'], message: 'Debe ser una hora en punto (por ejemplo 15:00)' },
+    ])
+  })
+
+  it.each([
+    ['igual', '15:00', '15:00'],
+    ['anterior', '15:00', '14:00'],
+  ])('con finPosterior, un fin %s al inicio falla en horaFin', (_caso, horaInicio, horaFin) => {
+    expect(issues(rango.safeParse({ horaInicio, horaFin }))).toEqual([
+      { path: ['horaFin'], message: 'La hora de fin debe ser posterior a la de inicio' },
+    ])
+  })
+
+  it('con una hora de formato inválido, solo reporta el error de formato', () => {
+    expect(issues(rango.safeParse({ horaInicio: '14:00', horaFin: '25:00' }))).toEqual([
+      { path: ['horaFin'], message: 'Hora inválida: debe tener formato HH:mm (00:00 a 23:59)' },
+    ])
+  })
+
+  it('sin finPosterior no compara el orden y acepta horas ausentes', () => {
+    expect(parcial.safeParse({ horaInicio: '15:00', horaFin: '14:00' }).success).toBe(true)
+    expect(parcial.safeParse({ horaFin: '16:00' }).success).toBe(true)
+    expect(issues(parcial.safeParse({ horaInicio: '14:30' }))).toEqual([
+      { path: ['horaInicio'], message: 'Debe ser una hora en punto (por ejemplo 14:00)' },
+    ])
   })
 })

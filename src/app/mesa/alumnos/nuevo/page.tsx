@@ -1,10 +1,6 @@
-import { AlumnoForm } from '@/features/alumnos/components/AlumnoForm'
+import { AlumnosPantalla } from '@/features/alumnos/components/AlumnosPantalla'
 
+// Alta entrando por URL: el listado de fondo; el modal lo pone @modal/nuevo.
 export default function NuevoAlumnoPage() {
-  return (
-    <div className="max-w-lg space-y-6">
-      <h1 className="text-2xl font-semibold">Nuevo alumno</h1>
-      <AlumnoForm />
-    </div>
-  )
+  return <AlumnosPantalla rutaBase="/mesa/alumnos" />
 }

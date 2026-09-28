@@ -5,8 +5,8 @@
 // - Fechas de calendario con @db.Date; horas en minutos desde medianoche (Int); día de la semana ISO 1..7.
 // - Auditoría en cada entidad de negocio: createdById, updatedById, createdAt, updatedAt.
 // - Baja lógica con el enum Estado: nada se borra.
-// - Las restricciones CHECK (bloque_agenda, turno) no las genera Prisma: se agregan a mano
-//   en el migration.sql de la migración inicial.
+// - Las restricciones CHECK (bloque_agenda, turno, profesor, aula) no las genera Prisma: se agregan
+//   a mano en el migration.sql de la migración que crea o modifica esas tablas.
 
 generator client {
   provider = "prisma-client"
@@ -103,8 +103,6 @@ model Usuario {
   bloquesModificados          BloqueAgenda[]      @relation("BloqueAgendaModificador")
   turnosCreados               Turno[]             @relation("TurnoCreador")
   turnosModificados           Turno[]             @relation("TurnoModificador")
-  turnoExcepcionesCreadas     TurnoExcepcion[]    @relation("TurnoExcepcionCreador")
-  turnoExcepcionesModificadas TurnoExcepcion[]    @relation("TurnoExcepcionModificador")
   examenesMateriaCreados      ExamenMateria[]     @relation("ExamenMateriaCreador")
   examenesMateriaModificados  ExamenMateria[]     @relation("ExamenMateriaModificador")
 
@@ -174,11 +172,15 @@ model Verification {
 // ---------- Profesores ----------
 
 // Sin estado ni auditoría propios: los toma de su Usuario (datos personales, busqueda y baja lógica).
+// capacidad: cantidad máxima de alumnos que el profesor atiende a la vez en una franja de una hora
+// (HU-02, decisión T-27). CHECK (a mano en la migración): capacidad >= 1. La capacidad efectiva de
+// una hora (mínimo con la del aula) se calculará al leer, en HU-05/HU-07: no se persiste acá.
 model Profesor {
   id        Int    @id @default(autoincrement())
   usuarioId String @unique @map("usuario_id")
   titulo    String
   matricula String @unique
+  capacidad Int
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
@@ -284,15 +286,30 @@ model AsignacionMateria {
 
 // ---------- Agenda y turnos ----------
 
+// Catálogo que carga el seed (T-14, HU-05): sin ABM en este release, sólo lectura. Sin auditoría,
+// igual que Rol. CHECK (a mano en la migración): capacidad > 0.
+model Aula {
+  id        Int    @id @default(autoincrement())
+  nombre    String @unique
+  capacidad Int
+  estado    Estado @default(ACTIVO)
+
+  bloques BloqueAgenda[]
+
+  @@map("aula")
+}
+
 // CHECK (a mano en la migración): dia_semana 1..7, hora_inicio 0..1439, hora_fin 1..1440,
-// hora_fin > hora_inicio, capacidad > 0.
+// hora_fin > hora_inicio.
+// La capacidad efectiva de la hora es min(profesor.capacidad, aula.capacidad) (T-14, resuelve
+// D-12): no se persiste acá, se calcula al leer, igual que las ocurrencias de un recurrente.
 model BloqueAgenda {
   id         Int    @id @default(autoincrement())
   profesorId Int    @map("profesor_id")
+  aulaId     Int    @map("aula_id")
   diaSemana  Int    @map("dia_semana") // ISO: 1 = lunes … 7 = domingo
   horaInicio Int    @map("hora_inicio") // minutos desde medianoche
   horaFin    Int    @map("hora_fin") // minutos desde medianoche
-  capacidad  Int
   estado     Estado @default(ACTIVO)
 
   createdById String   @map("usuario_creador_id")
@@ -301,20 +318,25 @@ model BloqueAgenda {
   updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
 
   profesor  Profesor @relation(fields: [profesorId], references: [id], onDelete: Restrict)
+  aula      Aula     @relation(fields: [aulaId], references: [id], onDelete: Restrict)
   createdBy Usuario  @relation("BloqueAgendaCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy Usuario  @relation("BloqueAgendaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
   turnos Turno[]
 
   @@index([profesorId, diaSemana])
+  @@index([aulaId])
+  @@index([aulaId, diaSemana])
   @@index([createdById])
   @@index([updatedById])
   @@map("bloque_agenda")
 }
 
-// Un recurrente guarda la regla (fechaInicio y fechaFin opcional); las ocurrencias se expanden
-// al consultar y las excepciones van en TurnoExcepcion. La prioridad no se persiste.
-// En una SESION_UNICA, fechaFin = fechaInicio.
+// Un turno es una hora de un bloque (una fila de bloque_agenda). Un RECURRENTE guarda la regla
+// (fechaInicio y fechaFin opcional; null = sin fin) y sus ocurrencias son las fechas de ese día de
+// la semana dentro del rango, calculadas al consultar. No hay excepciones: un recurrente creado
+// solo en las fechas con lugar se guarda como varios turnos RECURRENTE ("tramos") que saltean las
+// fechas llenas (T-37). En una SESION_UNICA, fechaFin = fechaInicio. La prioridad no se persiste.
 // CHECK (a mano en la migración): fecha_fin >= fecha_inicio; SESION_UNICA => fecha_fin = fecha_inicio.
 model Turno {
   id             Int         @id @default(autoincrement())
@@ -338,40 +360,12 @@ model Turno {
   createdBy    Usuario      @relation("TurnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy    Usuario      @relation("TurnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
-  excepciones TurnoExcepcion[] @relation("TurnoExcepciones")
-  reemplazoDe TurnoExcepcion[] @relation("TurnoReemplazo")
-
   @@index([bloqueAgendaId, fechaInicio])
   @@index([alumnoId])
   @@index([materiaId])
   @@index([createdById])
   @@index([updatedById])
   @@map("turno")
-}
-
-// Una fecha en la que un turno recurrente no aplica; opcionalmente, el turno que lo reemplaza.
-model TurnoExcepcion {
-  id               Int      @id @default(autoincrement())
-  turnoId          Int      @map("turno_id")
-  fecha            DateTime @db.Date
-  turnoReemplazoId Int?     @map("turno_reemplazo_id")
-
-  createdById String   @map("usuario_creador_id")
-  updatedById String   @map("usuario_modificador_id")
-  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
-  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
-
-  turno          Turno   @relation("TurnoExcepciones", fields: [turnoId], references: [id], onDelete: Restrict)
-  turnoReemplazo Turno?  @relation("TurnoReemplazo", fields: [turnoReemplazoId], references: [id], onDelete: Restrict)
-  createdBy      Usuario @relation("TurnoExcepcionCreador", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy      Usuario @relation("TurnoExcepcionModificador", fields: [updatedById], references: [id], onDelete: Restrict)
-
-  // El índice único (turno_id, fecha) cubre también las búsquedas por turno_id.
-  @@unique([turnoId, fecha])
-  @@index([turnoReemplazoId])
-  @@index([createdById])
-  @@index([updatedById])
-  @@map("turno_excepcion")
 }
 
 // Fecha de examen de un alumno en una materia: de ella depende la prioridad del turno.
