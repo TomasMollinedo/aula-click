@@ -55,6 +55,18 @@ src/
 
 Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignadas), `materias`, `bloques` (horario de atención del profesor: día, horario y aula), `aulas` (catálogo de solo lectura: aulas disponibles para un horario) y `turnos` (prioridad, capacidad, solapamientos, agenda). La referencia para copiar el patrón es `alumnos`; una feature nueva se crea con `/nueva-feature-api <dominio>` (Claude Code) o copiando `alumnos` a mano.
 
+Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la completa su tarea dueña):
+
+- `agendas`: agenda diaria del centro, agenda propia del profesor y agenda de un profesor (sale de `turnos` en T-30).
+- `ocurrencias`: detalle de un turno en una fecha puntual (con las acciones permitidas) y los turnos de un alumno.
+- `cancelaciones`: cancelar una o varias ocurrencias de un alumno.
+- `finalizaciones`: finalizar un turno recurrente a partir de una fecha.
+- `reprogramaciones`: mover una ocurrencia a otra fecha, hora o profesor.
+- `pagos`: registrar el pago de una o varias ocurrencias y su comprobante.
+- `cuentas`: deuda y pagos de un alumno, y la vista global de adeudados.
+- `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
+- `tablero`: indicadores agregados para el gerente (opcional).
+
 ### Qué es una feature
 
 Una feature agrupa las reglas de **un concepto del negocio**, no de una tabla ni de un rol. El rol dice qué puede hacer alguien (se declara en la ruta con `requireRole(...)`); la feature dice de qué trata la regla.

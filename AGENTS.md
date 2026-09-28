@@ -14,6 +14,8 @@ Sistema de gestión de un centro de atención académica: alumnos, profesores, m
 
 **Alcance del Sprint 1:** `alumnos`, `profesores` (incluye materias asignadas y bloques de clase), `materias` y `turnos` (prioridad, capacidad, solapamientos y agenda diaria). `pagos` e `indicadores` **no** se crean todavía.
 
+**Alcance del Sprint 2:** cancelación, finalización y reprogramación de turnos; materias con precio; pagos y deuda del alumno; exámenes y prioridad del turno; agenda en calendario semanal; documentos imprimibles; segmento y tablero del gerente. Features de API nuevas: `agendas`, `ocurrencias`, `cancelaciones`, `finalizaciones`, `reprogramaciones`, `pagos`, `cuentas`, `examenes` y `tablero` (detalle en `docs/arquitectura-backend.md`).
+
 Este archivo tiene solo lo que vale para todo el repo. El detalle de cada lado está en `docs/` (ver "Documentación") y se lee antes de tocar esa parte.
 
 ## Next.js 16
