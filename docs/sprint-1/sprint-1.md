@@ -1,12 +1,10 @@
-# Sprint 1 — Tareas (HU-00 a HU-10)
+# Sprint 1 — Tareas (HU-01 a HU-10)
 
 Repositorio: `aula-click` · Sprint: Iteración 1 · Estado inicial de todas las tareas: **Todo**
 
 Estas tareas siguen `AGENTS.md` y `docs/`. Si una tarea y un doc se contradicen, manda el doc y se avisa para corregir la tarea.
 
 T-01 a T-13 salieron del backlog anterior; T-14 en adelante, del **Product Backlog v4**. Cuando el v4 cambió algo que una tarea ya mergeada daba por cerrado, la tarea vieja **no se borra ni se edita**: se agrega una tarea nueva marcada **FIX** (T-14, T-15, T-16 y T-27) que dice qué cambia y por qué, y así queda visible qué se acordó en cada momento.
-
-**Fuera del Sprint 1:** HU-08 (exámenes del alumno y "Mis alumnos" del profesor) y, con ella, la **prioridad** del turno pasan al Sprint 2. HU-11 no entra todavía.
 
 ## Orden y dependencias
 
@@ -32,7 +30,7 @@ Día 1 (en paralelo):
 - Las APIs necesitan T-01, T-02 y T-03. Las pantallas pueden empezar en paralelo con su API, contra el contrato de `docs/contrato-api.md` y el OpenAPI (`/api/v1/docs`), y se conectan cuando la API se mergea.
 - `alumnos` es la feature modelo que copian las demás (`/nueva-feature-api`, `/nueva-feature-ui`). Conviene que T-05 y T-06 abran su PR temprano para que profesores y materias sigan el mismo patrón.
 
-Tareas del backlog v4 (HU-05 a HU-10 y las correcciones), a partir de lo ya mergeado:
+Tareas del backlog v4 (HU-06 a HU-10 y las correcciones), a partir de lo ya mergeado:
 
 ```
 T-14 FIX modelo (aulas, capacidad del profesor, turno por hora) ──┬──> T-15 FIX capacidad API ──> T-16 FIX capacidad UI
@@ -49,7 +47,7 @@ En paralelo, sin depender de T-14:  T-19 Baja/reactivación API ───┴─�
 ```
 
 - **T-14 es bloqueante** para T-15, T-17 y T-21: cambia el schema y lleva migración. Igual que con T-01, nadie genera migraciones en paralelo hasta que esté mergeada.
-- **T-19 y T-20 (HU-06) no dependen de T-14:** usan la consulta de turnos vigentes que ya dejó T-11, así que pueden arrancar apenas se decida quién las toma.
+- **T-19 y T-20 (HU-07) no dependen de T-14:** usan la consulta de turnos vigentes que ya dejó T-11, así que pueden arrancar apenas se decida quién las toma.
 - **T-25 y T-26 (HU-10) son opcionales**, como la HU: se hacen sólo si sobra margen, y después de HU-09.
 - La cadena larga del sprint es T-14 → T-17 → T-21 → T-23: conviene tomarla temprano y en PRs chicos, porque todo lo de turnos y agenda cuelga de ahí.
 
@@ -68,7 +66,7 @@ En paralelo, sin depender de T-14:  T-19 Baja/reactivación API ───┴─�
 
 ## T-01 · [Back] Modelo de datos: esquema Prisma desde el DER, migración inicial y seed
 
-- **HU:** Transversal (habilita HU-00 a HU-11)
+- **HU:** Transversal (habilita HU-01 a HU-10)
 - **Área:** Backend
 - **Rama:** `feat/modelo-datos-inicial`
 - **Prioridad:** Bloqueante, se mergea el día 1
@@ -110,7 +108,7 @@ Traducir el DER aprobado a `prisma/schema.prisma` y generar la migración inicia
 
 ## T-02 · [Back] Construcción de `src/server/shared/`
 
-- **HU:** Transversal (habilita HU-01 a HU-03 y siguientes)
+- **HU:** Transversal (habilita HU-02 a HU-04 y siguientes)
 - **Área:** Backend
 - **Rama:** `feat/server-shared`
 - **Prioridad:** Bloqueante, arranca el día 1 (no depende del schema)
@@ -137,9 +135,9 @@ Construir, en un PR propio, las piezas de `src/server/shared/` marcadas como **A
 
 ---
 
-## T-03 · [Back] HU-00 · Autenticación, sesión y control de acceso por rol
+## T-03 · [Back] HU-01 · Autenticación, sesión y control de acceso por rol
 
-- **HU:** HU-00 Inicio de sesión en el sistema
+- **HU:** HU-01 Inicio de sesión en el sistema
 - **Área:** Backend
 - **Rama:** `feat/auth-api`
 - **Depende de:** T-01, T-02
@@ -170,9 +168,9 @@ Dejar Better Auth cerrado a registro público y resuelta en la API la identifica
 
 ---
 
-## T-04 · [Front] HU-00 · Login, cierre de sesión y layout por rol
+## T-04 · [Front] HU-01 · Login, cierre de sesión y layout por rol
 
-- **HU:** HU-00 Inicio de sesión en el sistema
+- **HU:** HU-01 Inicio de sesión en el sistema
 - **Área:** Frontend
 - **Rama:** `feat/auth-ui`
 - **Depende de:** T-03 (puede empezar en paralelo)
@@ -204,20 +202,20 @@ Implementar el ingreso al sistema y el esqueleto de navegación que usan todas l
 
 ---
 
-## T-05 · [Back] HU-01 · API de alumnos: listado con búsqueda, detalle, alta y edición
+## T-05 · [Back] HU-02 · API de alumnos: listado con búsqueda, detalle, alta y edición
 
-- **HU:** HU-01 Gestión de datos del alumno
+- **HU:** HU-02 Gestión de datos del alumno
 - **Área:** Backend
 - **Rama:** `feat/alumnos-api`
 - **Depende de:** T-01, T-02, T-03
 
 **Descripción**
-Completar la feature `src/server/features/alumnos/`, que hoy es el esqueleto modelo, con los endpoints de mesa de entradas. Todos requieren rol `MESA_ENTRADAS`. Los datos de examen no forman parte de esta tarea: se tratan con HU-08.
+Completar la feature `src/server/features/alumnos/`, que hoy es el esqueleto modelo, con los endpoints de mesa de entradas. Todos requieren rol `MESA_ENTRADAS`.
 
 **Alcance**
 
 1. `GET /api/v1/alumnos`: paginado, orden por apellido (con `id` como desempate), `q` con `contains` sobre `busqueda`. Cada ítem trae id, apellido, nombre y DNI. Sin filtro de estado.
-2. `GET /api/v1/alumnos/{id}`: detalle con datos identificatorios, de contacto, del tutor, escolares, observaciones y auditoría (quién creó y quién modificó por última vez, con fecha y hora). Exámenes (HU-08) y turnos (HU-07) se suman cuando se implementen esas HU.
+2. `GET /api/v1/alumnos/{id}`: detalle con datos identificatorios, de contacto, del tutor, escolares, observaciones y auditoría (quién creó y quién modificó por última vez, con fecha y hora). Los turnos (HU-08) se suman cuando se implemente esa HU.
 3. `POST /api/v1/alumnos` y `PATCH /api/v1/alumnos/{id}`, con las primitivas de `shared/zod`:
    - Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (decisión T-25).
    - Opcionales: nivel de escolaridad, grado o año, colegio, observaciones y datos del tutor.
@@ -236,26 +234,26 @@ Completar la feature `src/server/features/alumnos/`, que hoy es el esqueleto mod
 
 ---
 
-## T-06 · [Front] HU-01 · Pantallas de alumnos: listado, buscador, detalle, alta y edición
+## T-06 · [Front] HU-02 · Pantallas de alumnos: listado, buscador, detalle, alta y edición
 
-- **HU:** HU-01 Gestión de datos del alumno
+- **HU:** HU-02 Gestión de datos del alumno
 - **Área:** Frontend
 - **Rama:** `feat/alumnos-ui`
 - **Depende de:** T-04, T-05 (puede empezar en paralelo)
 
 **Descripción**
-Completar `src/features/alumnos/` (feature modelo del frontend) y sus páginas en `app/mesa/alumnos/`. Los datos de examen quedan para HU-08.
+Completar `src/features/alumnos/` (feature modelo del frontend) y sus páginas en `app/mesa/alumnos/`.
 
 **Alcance**
 
 1. Listado paginado con apellido, nombre y DNI.
 2. Buscador por DNI, nombre o apellido con `use-debounce`. Sin coincidencias: aviso y botón para dar de alta un alumno.
-3. El buscador se arma como componente reutilizable de la feature, expuesto mediante su hook, porque lo usa la pantalla de registrar turno (HU-07).
+3. El buscador se arma como componente reutilizable de la feature, expuesto mediante su hook, porque lo usa la pantalla de registrar turno (HU-08).
 4. Botón "+ Nuevo alumno" y formulario de alta y edición en secciones: identificatorios, contacto, tutor, escolares y observaciones.
    - El schema del frontend valida sólo formato (DNI, email, teléfono, fecha `YYYY-MM-DD`) y marca como obligatorios solo nombre, apellido, DNI, fecha de nacimiento, email y teléfono (decisión T-25). Los del tutor se marcan cuando la API responde 400.
    - Si el alumno es menor y faltan los datos del tutor, la API responde 400 y el formulario marca esos campos. La edad no se calcula en el cliente.
    - Un 409 por DNI repetido se muestra sobre el campo DNI.
-5. Detalle con todos los datos, auditoría formateada en hora local y botón "Editar". Secciones "Exámenes" y "Turnos" visibles como "Próximamente".
+5. Detalle con todos los datos, auditoría formateada en hora local y botón "Editar". Sección "Turnos" visible como "Próximamente".
 6. Fechas siempre como string `YYYY-MM-DD` y formateadas con `date-fns` (nunca `new Date('YYYY-MM-DD')`).
 7. Las mutaciones invalidan las keys de la feature, para que el alumno aparezca en el listado de inmediato.
 
@@ -267,9 +265,9 @@ Completar `src/features/alumnos/` (feature modelo del frontend) y sus páginas e
 
 ---
 
-## T-07 · [Back] HU-02 · API de profesores: listado con filtros, detalle, alta con cuenta, edición y foto
+## T-07 · [Back] HU-03 · API de profesores: listado con filtros, detalle, alta con cuenta, edición y foto
 
-- **HU:** HU-02 Gestión de datos personales del profesor
+- **HU:** HU-03 Gestión de datos personales del profesor
 - **Área:** Backend
 - **Rama:** `feat/profesores-api`
 - **Depende de:** T-01, T-02, T-03
@@ -282,7 +280,7 @@ Crear la feature `src/server/features/profesores/` con `/nueva-feature-api profe
 1. `GET /api/v1/profesores`: paginado, orden por apellido. Filtros `estado` (por defecto `ACTIVO`) y `materiaId`, y búsqueda `q` sobre `busqueda`, combinables. Cada ítem trae id, apellido, nombre, estado y URL prefirmada de la foto (si tiene).
    - La HU pide la opción "Todos", que el contrato hoy no contempla. Se agrega el valor `TODOS` al filtro `estado` y se actualiza `contrato-api.md` en este PR.
    - El filtro por materia considera las asignaciones activas de `AsignacionMateria`. Devuelve resultados una vez que T-11 permite asignar materias.
-2. `GET /api/v1/profesores/{id}`: todos los datos, estado y auditoría (la de su `Usuario`). Materias asignadas (HU-04) y horario de atención (HU-05) se suman al implementar esas HU.
+2. `GET /api/v1/profesores/{id}`: todos los datos, estado y auditoría (la de su `Usuario`). Materias asignadas (HU-05) y horario de atención (HU-06) se suman al implementar esas HU.
 3. `POST /api/v1/profesores`:
    - Obligatorios: nombre, apellido, DNI, teléfono, email, título, matrícula y contraseña inicial, de entre `LARGO_MINIMO_PASSWORD` (8) y `LARGO_MAXIMO_PASSWORD` (128) caracteres: se validan con esas constantes de `src/lib/auth-reglas.ts`, las mismas que usa Better Auth, no con números propios.
    - En una sola transacción del repository crea `Usuario` (rol `PROFESOR`), su cuenta de tipo credencial (`providerId: 'credential'`, `accountId` = id del usuario) con la contraseña hasheada por `hashPassword()` de `src/lib/auth.ts` (T-03) y `Profesor` en estado `ACTIVO`. Si algo falla, no queda nada creado. Nunca `auth.api.signUpEmail` (bloqueado) ni un hash a mano. Referencia: `prisma/seed.ts` y `arquitectura-backend.md` → Cambios frecuentes.
@@ -303,9 +301,9 @@ Crear la feature `src/server/features/profesores/` con `/nueva-feature-api profe
 
 ---
 
-## T-08 · [Front] HU-02 · Pantallas de profesores: listado con filtros, detalle, alta y edición
+## T-08 · [Front] HU-03 · Pantallas de profesores: listado con filtros, detalle, alta y edición
 
-- **HU:** HU-02 Gestión de datos personales del profesor
+- **HU:** HU-03 Gestión de datos personales del profesor
 - **Área:** Frontend
 - **Rama:** `feat/profesores-ui`
 - **Depende de:** T-04, T-07, T-09 (selector de materias) (puede empezar en paralelo)
@@ -320,20 +318,20 @@ Crear `src/features/profesores/` con `/nueva-feature-ui profesores profesor` y s
 3. Botón "+ Nuevo profesor". Formulario de alta con todos los datos, contraseña inicial y su confirmación (ambas enmascaradas). El schema del formulario pide entre 8 y 128 caracteres, el mismo rango que valida la API (T-07); si la API responde 400, se marca el campo. La edición no muestra la contraseña.
 4. Errores 400 por campo y 409 (DNI, matrícula o email repetidos) mostrados sobre el campo correspondiente.
 5. Foto con vista previa, y opciones de reemplazar o quitar desde la edición.
-6. Detalle con todos los datos, estado, auditoría y botón "Editar". Sección "Materias" vacía, que completa T-12, y "Horario de atención" como "Próximamente" (HU-05).
+6. Detalle con todos los datos, estado, auditoría y botón "Editar". Sección "Materias" vacía, que completa T-12, y "Horario de atención" como "Próximamente" (HU-06).
 
 **Criterios de aceptación**
 
 - Recorrido completo: alta con foto y contraseña, cerrar sesión e ingresar como ese profesor, volver como mesa de entradas, editar reemplazando la foto y quitarla.
 - Filtros y búsqueda funcionan combinados.
 
-**Actualización (agenda en la ficha):** a pedido de los PO, la ficha del profesor suma un cuarto tab, "Agenda" (`?tab=agenda`), porque HU-02 pide ver su horario de atención junto con su agenda. Muestra los turnos del profesor por semana (por defecto) o por día con `GET /api/v1/turnos/agenda-profesor` (decisión T-44) y reutiliza la vista de T-26 ("Mi agenda"): la misma tabla, el mismo selector Día/Semana y la misma navegación, con la vista y la fecha en la URL junto con el tab. Un profesor inactivo también muestra su agenda, de sólo lectura.
+**Actualización (agenda en la ficha):** a pedido de los PO, la ficha del profesor suma un cuarto tab, "Agenda" (`?tab=agenda`), porque HU-03 pide ver su horario de atención junto con su agenda. Muestra los turnos del profesor por semana (por defecto) o por día con `GET /api/v1/turnos/agenda-profesor` (decisión T-44) y reutiliza la vista de T-26 ("Mi agenda"): la misma tabla, el mismo selector Día/Semana y la misma navegación, con la vista y la fecha en la URL junto con el tab. Un profesor inactivo también muestra su agenda, de sólo lectura.
 
 ---
 
-## T-09 · [Back] HU-03 · API del catálogo de materias: listado, selector, detalle, alta, edición y baja lógica
+## T-09 · [Back] HU-04 · API del catálogo de materias: listado, selector, detalle, alta, edición y baja lógica
 
-- **HU:** HU-03 Gestión del catálogo de materias
+- **HU:** HU-04 Gestión del catálogo de materias
 - **Área:** Backend
 - **Rama:** `feat/materias-api`
 - **Depende de:** T-01, T-02, T-03
@@ -344,7 +342,7 @@ Crear la feature `src/server/features/materias/` con `/nueva-feature-api materia
 **Alcance**
 
 1. `GET /api/v1/materias`: paginado, orden por nombre, `estado` (por defecto `ACTIVO`; admite `TODOS`, ver T-07) y `q` sobre `busqueda`.
-2. Selector de materias activas sin paginar (un arreglo con id y nombre), para el filtro de profesores y, más adelante, para asignaciones (HU-04) y turnos (HU-07). Se documenta su ruta en `contrato-api.md`.
+2. Selector de materias activas sin paginar (un arreglo con id y nombre), para el filtro de profesores y, más adelante, para asignaciones (HU-05) y turnos (HU-08). Se documenta su ruta en `contrato-api.md`.
 3. `GET /api/v1/materias/{id}`: nombre, descripción, estado, auditoría y profesores que la dictan (id, apellido, nombre y estado), a partir de las asignaciones activas. `AsignacionMateria` pertenece a la feature `profesores`: la lectura se hace importando `profesores.repository` (única dependencia permitida entre features).
 4. `POST /api/v1/materias` y `PATCH /api/v1/materias/{id}`: nombre obligatorio y descripción opcional. `busqueda` se recalcula al guardar. Un nombre repetido (sin distinguir mayúsculas ni tildes) llega como `P2002` y se traduce a 409 `CONFLICTO`.
 5. Baja lógica (`estado = INACTIVO`). Si la materia tiene asignaciones activas, 409 con el código específico `MATERIA_CON_PROFESORES` y los profesores en `details`. El código se agrega a `contrato-api.md`.
@@ -359,9 +357,9 @@ Crear la feature `src/server/features/materias/` con `/nueva-feature-api materia
 
 ---
 
-## T-10 · [Front] HU-03 · Pantallas del catálogo de materias
+## T-10 · [Front] HU-04 · Pantallas del catálogo de materias
 
-- **HU:** HU-03 Gestión del catálogo de materias
+- **HU:** HU-04 Gestión del catálogo de materias
 - **Área:** Frontend
 - **Rama:** `feat/materias-ui`
 - **Depende de:** T-04, T-09 (puede empezar en paralelo)
@@ -384,9 +382,9 @@ Crear `src/features/materias/` con `/nueva-feature-ui materias materia` y sus p�
 
 ---
 
-## T-11 · [Back] HU-04 · API de materias asignadas al profesor: asignar, listar y quitar
+## T-11 · [Back] HU-05 · API de materias asignadas al profesor: asignar, listar y quitar
 
-- **HU:** HU-04 Gestión de materias asignadas al profesor
+- **HU:** HU-05 Gestión de materias asignadas al profesor
 - **Área:** Backend
 - **Rama:** `feat/profesores-materias-api`
 - **Depende de:** T-07, T-09
@@ -407,8 +405,8 @@ Agregar a la feature `profesores` la gestión de sus materias asignadas (`arquit
 4. Turno vigente (`dominio.md` → Turnos; `convenciones-backend.md` → Turno vigente):
    - Crear el esqueleto de `turnos` con `/nueva-feature-api turnos` e implementar en `turnos.repository` **sólo** la consulta de turnos vigentes filtrable por profesor y materia: recurrentes sin fecha de fin o con fin >= hoy, y sesiones únicas con fecha >= hoy.
    - La fecha de hoy la recibe por parámetro: el service la obtiene con `hoy()` y reloj inyectable.
-   - Es la única implementación de esa condición: la reutilizan HU-03 a HU-06 y turnos (HU-07). Avisar a quien tome HU-07 que el esqueleto ya existe.
-5. Exponer en `profesores.repository` las lecturas que consumen otras features: asignaciones activas por materia (detalle y baja de materias, T-09) y profesores activos que dictan una materia (para registrar turnos, HU-07).
+   - Es la única implementación de esa condición: la reutilizan HU-04 a HU-07 y turnos (HU-08). Avisar a quien tome HU-08 que el esqueleto ya existe.
+5. Exponer en `profesores.repository` las lecturas que consumen otras features: asignaciones activas por materia (detalle y baja de materias, T-09) y profesores activos que dictan una materia (para registrar turnos, HU-08).
 6. Auditoría de la asignación completada con el `Actor`.
 7. Actualizar `contrato-api.md` (códigos `PROFESOR_INACTIVO`, `MATERIA_INACTIVA` y `TURNOS_VIGENTES`) y la tabla Estado de `convenciones-backend.md` (consulta de turno vigente construida).
 
@@ -422,9 +420,9 @@ Agregar a la feature `profesores` la gestión de sus materias asignadas (`arquit
 
 ---
 
-## T-12 · [Front] HU-04 · Sección "Materias" en la ficha del profesor
+## T-12 · [Front] HU-05 · Sección "Materias" en la ficha del profesor
 
-- **HU:** HU-04 Gestión de materias asignadas al profesor
+- **HU:** HU-05 Gestión de materias asignadas al profesor
 - **Área:** Frontend
 - **Rama:** `feat/profesores-materias-ui`
 - **Depende de:** T-08, T-10, T-11 (puede empezar en paralelo)
@@ -479,23 +477,23 @@ Resolver la decisión D-08 (ahora T-26 en `decisiones.md`: shadcn/ui sobre Radix
 
 ## T-14 · [Back] FIX · Modelo de datos: aulas, capacidad del profesor y turnos por hora
 
-- **HU:** Transversal (corrige T-01; habilita HU-05, HU-06 y HU-07)
+- **HU:** Transversal (corrige T-01; habilita HU-06, HU-07 y HU-08)
 - **Área:** Backend
 - **Rama:** `fix/modelo-aulas-capacidad`
 - **Depende de:** T-01 (mergeada)
 - **Prioridad:** Bloqueante para T-15, T-17 y T-21; se mergea antes que cualquiera de ellas
 
 **Descripción**
-El Product Backlog v4 cambió tres cosas del modelo que T-01 no contemplaba, y que hoy hacen imposible implementar HU-05 y HU-07 como están escritas. Esta tarea **no reemplaza a T-01**: la corrige, con el mismo criterio (todo el DER de una vez, para que nadie más toque el modelo base durante el sprint).
+El Product Backlog v4 cambió tres cosas del modelo que T-01 no contemplaba, y que hoy hacen imposible implementar HU-06 y HU-08 como están escritas. Esta tarea **no reemplaza a T-01**: la corrige, con el mismo criterio (todo el DER de una vez, para que nadie más toque el modelo base durante el sprint).
 
 Los tres cambios: las aulas no existen como entidad, la capacidad pasó del bloque al profesor, y un turno ahora ocupa **una hora** de un bloque y no el bloque entero.
 
 **Alcance**
 
-1. **`Aula` (entidad nueva):** `id`, `nombre` (único), `capacidad` (entero > 0), `estado` y auditoría. Las aulas se precargan por seed y **no tienen ABM en este release** (HU-05): no se crea feature de escritura, sólo lectura.
-2. **`Profesor.capacidad`:** entero >= 1, obligatorio. Es la cantidad máxima de alumnos que el profesor atiende a la vez en una misma hora (HU-02).
+1. **`Aula` (entidad nueva):** `id`, `nombre` (único), `capacidad` (entero > 0), `estado` y auditoría. Las aulas se precargan por seed y **no tienen ABM en este release** (HU-06): no se crea feature de escritura, sólo lectura.
+2. **`Profesor.capacidad`:** entero >= 1, obligatorio. Es la cantidad máxima de alumnos que el profesor atiende a la vez en una misma hora (HU-03).
 3. **`BloqueAgenda`:** se agrega `aulaId` (FK obligatoria a `Aula`) y **se quita `capacidad`**. La capacidad efectiva de cada hora es `min(profesor.capacidad, aula.capacidad)` y **no se persiste**: se calcula al leer, igual que las ocurrencias de un recurrente. Índice en `aulaId` y en `(aulaId, diaSemana)`.
-4. **`Turno.horaInicio`:** entero, minutos desde medianoche, obligatorio. Un turno ocupa **una hora** del bloque: un bloque de 8:00 a 12:00 tiene cuatro horas y cada una se reserva por separado (HU-07). Índice `(bloqueAgendaId, horaInicio, fechaInicio)`.
+4. **`Turno.horaInicio`:** entero, minutos desde medianoche, obligatorio. Un turno ocupa **una hora** del bloque: un bloque de 8:00 a 12:00 tiene cuatro horas y cada una se reserva por separado (HU-08). Índice `(bloqueAgendaId, horaInicio, fechaInicio)`.
 5. **Restricciones `CHECK`** para el `migration.sql` (Prisma no las genera). Las nuevas y las que cambian:
    - `aula`: `capacidad > 0`.
    - `profesor`: `capacidad >= 1`.
@@ -503,10 +501,10 @@ Los tres cambios: las aulas no existen como entidad, la capacidad pasó del bloq
    - `turno`: `hora_inicio BETWEEN 0 AND 1439` y `hora_inicio % 60 = 0`. Que la hora caiga **dentro** del bloque no se puede expresar con un `CHECK` (es otra tabla): lo valida la API.
 6. **Seed:** aulas de ejemplo con nombre y capacidad distintas entre sí (para que se vea el efecto de `min(...)` al probar), y `capacidad` en el profesor del seed. Sigue siendo idempotente (`upsert` por clave natural).
 7. **Migración sobre base con datos:** las tres columnas nuevas son NOT NULL sobre tablas que ya existen. La migración necesita un default temporal (y quitarlo después) o una base limpia. Coordinarlo con quien lleve el modelo de datos antes de generarla.
-8. **`ExamenMateria` no se toca:** queda en el schema, sin uso en este sprint. Los exámenes y la prioridad pasan al Sprint 2 con HU-08.
+8. **`ExamenMateria` no se toca:** queda en el schema, sin uso en este sprint.
 9. **Documentación (mismo PR, regla 9):**
    - `docs/dominio.md`: sección nueva de **Bloques de clase** (horas en punto, duración mínima, sin superposición, aula asignada, capacidad efectiva) y actualización de **Turnos** (el turno ocupa una hora del bloque) y de **Profesores** (capacidad).
-   - `docs/decisiones.md`: pasan a **Tomadas** la capacidad efectiva derivada (no persistida), el turno por hora, y **D-04**, que el backlog v4 resuelve: al registrar un recurrente con fechas llenas, el sistema ofrece "Asignar igual" y esas fechas se guardan como excepciones (HU-07).
+   - `docs/decisiones.md`: pasan a **Tomadas** la capacidad efectiva derivada (no persistida), el turno por hora, y **D-04**, que el backlog v4 resuelve: al registrar un recurrente con fechas llenas, el sistema ofrece "Asignar igual" y esas fechas se guardan como excepciones (HU-08).
    - `docs/contrato-api.md`: los formatos nuevos que vea el frontend (capacidad, aula, hora del turno).
 10. La migración la genera y la aplica **la persona** con `pnpm db:migrate`, no un agente de IA (`AGENTS.md`, regla 10).
 
@@ -520,9 +518,9 @@ Los tres cambios: las aulas no existen como entidad, la capacidad pasó del bloq
 
 ---
 
-## T-15 · [Back] FIX · HU-02 · Capacidad del profesor en la API de profesores
+## T-15 · [Back] FIX · HU-03 · Capacidad del profesor en la API de profesores
 
-- **HU:** HU-02 Gestión de datos personales del profesor
+- **HU:** HU-03 Gestión de datos personales del profesor
 - **Área:** Backend
 - **Rama:** `fix/profesores-capacidad-api`
 - **Depende de:** T-14, T-07 (mergeada)
@@ -550,9 +548,9 @@ El backlog v4 sumó `capacidad` a los datos obligatorios del profesor, con una r
 
 ---
 
-## T-16 · [Front] FIX · HU-02 · Capacidad del profesor en las pantallas de profesores
+## T-16 · [Front] FIX · HU-03 · Capacidad del profesor en las pantallas de profesores
 
-- **HU:** HU-02 Gestión de datos personales del profesor
+- **HU:** HU-03 Gestión de datos personales del profesor
 - **Área:** Frontend
 - **Rama:** `fix/profesores-capacidad-ui`
 - **Depende de:** T-15, T-08 (puede empezar en paralelo)
@@ -574,9 +572,9 @@ Reflejar en `src/features/profesores/` el campo `capacidad` que agrega T-15.
 
 ---
 
-## T-17 · [Back] HU-05 · API del horario de atención: bloques de clase con aula y capacidad efectiva
+## T-17 · [Back] HU-06 · API del horario de atención: bloques de clase con aula y capacidad efectiva
 
-- **HU:** HU-05 Gestión de horario de atención del profesor (bloques de clase)
+- **HU:** HU-06 Gestión de horario de atención del profesor (bloques de clase)
 - **Área:** Backend
 - **Rama:** `feat/bloques-api`
 - **Depende de:** T-14, T-11
@@ -591,14 +589,14 @@ Crear la feature `bloques` (horario de atención del profesor: día, horario y a
 1. `GET /api/v1/bloques?profesorId=`: las filas activas de ese profesor, ordenadas por día y hora, sin paginar (es un horario semanal). Cada fila trae día, hora de inicio y fin (siempre una hora), aula (id y nombre) y su capacidad efectiva.
    - Capacidad efectiva = `min(profesor.capacidad, aula.capacidad)`, calculada al leer. No trae ocupación: se descartó por la ambigüedad entre "turnos vigentes en general" y "turnos de hoy" en un bloque recurrente: queda para cuando se defina junto con `turnos`.
    - **Actualización (cierre de T-17, decisión T-33):** la ocupación se agregó con otra definición. Con T-30 ya no hay recurrentes, así que cada fila trae `proximaFecha` (la próxima fecha de su día de la semana, hoy incluido) y `ocupacion` (turnos `ACTIVO` de esa fila en esa fecha). En el mismo cierre se agregó `DELETE /api/v1/bloques` (baja de varias horas juntas, todo o nada, mismo profesor).
-2. Feature de API `aulas` con `/nueva-feature-api aulas`, sólo de lectura (las aulas no tienen ABM, HU-05):
+2. Feature de API `aulas` con `/nueva-feature-api aulas`, sólo de lectura (las aulas no tienen ABM, HU-06):
    - `GET /api/v1/aulas/disponibles?diaSemana&horaInicio&horaFin&excluirBloqueId?`: las aulas libres **durante todo** ese horario ese día de la semana. Devuelve un arreglo (es un selector, no se pagina).
    - La ocupación de un aula se calcula sobre `bloque_agenda`, que pertenece a la feature `bloques`: se lee importando `bloques.repository` (única dependencia permitida entre features). `excluirBloqueId` sirve para la edición, para que la fila no se choque consigo misma.
 3. `POST /api/v1/bloques`: `profesorId`, día de la semana, hora de inicio, hora de fin y aula, todos obligatorios. Un rango de varias horas crea varias filas (ver diseño de guardado). Validaciones, en este orden:
    - Horas **en punto**, con la hora de fin posterior a la de inicio (400). Con las dos en punto, la duración ya es múltiplo de una hora: no hace falta un chequeo aparte de duración mínima.
    - El profesor debe existir → 404 `NO_ENCONTRADO`.
    - El profesor debe estar `ACTIVO` → 409 `PROFESOR_INACTIVO`.
-   - El profesor debe tener **al menos una materia asignada** activa (HU-05) → 409 con el código nuevo **`PROFESOR_SIN_MATERIAS`**.
+   - El profesor debe tener **al menos una materia asignada** activa (HU-06) → 409 con el código nuevo **`PROFESOR_SIN_MATERIAS`**.
    - Ninguna de las horas pedidas puede coincidir con otra fila activa del mismo profesor ese día → 409 con el código nuevo **`BLOQUE_SUPERPUESTO`**, con la hora y la fila en conflicto en `details` (puede haber más de una).
    - El aula debe existir (si no, 404) y ninguna de las horas pedidas puede estar ocupada en esa aula ese día (por cualquier profesor) → si alguna lo está, 409 con el código nuevo **`AULA_OCUPADA`**, mensaje exactamente el de la HU: "No hay un aula disponible en ese horario. Por favor, elija otro horario.", con la hora y quién la ocupa en `details`.
    - Respuesta 201: cantidad de filas creadas y el detalle de cada una (día, hora de inicio y fin, aula).
@@ -621,9 +619,9 @@ Crear la feature `bloques` (horario de atención del profesor: día, horario y a
 
 ---
 
-## T-18 · [Front] HU-05 · Sección "Horario" en la ficha del profesor
+## T-18 · [Front] HU-06 · Sección "Horario" en la ficha del profesor
 
-- **HU:** HU-05 Gestión de horario de atención del profesor (bloques de clase)
+- **HU:** HU-06 Gestión de horario de atención del profesor (bloques de clase)
 - **Área:** Frontend
 - **Rama:** `feat/bloques-ui`
 - **Depende de:** T-17, T-08 (puede empezar en paralelo)
@@ -651,9 +649,9 @@ Completar en `src/features/profesores/` la sección "Horario" del detalle del pr
 
 ---
 
-## T-19 · [Back] HU-06 · API de baja y reactivación lógica del profesor
+## T-19 · [Back] HU-07 · API de baja y reactivación lógica del profesor
 
-- **HU:** HU-06 Baja y reactivación lógica del profesor
+- **HU:** HU-07 Baja y reactivación lógica del profesor
 - **Área:** Backend
 - **Rama:** `feat/profesores-baja-api`
 - **Depende de:** T-07, T-11
@@ -682,9 +680,9 @@ Agregar a la feature `profesores` la baja y la reactivación lógicas. La baja d
 
 ---
 
-## T-20 · [Front] HU-06 · Baja y reactivación desde la ficha del profesor
+## T-20 · [Front] HU-07 · Baja y reactivación desde la ficha del profesor
 
-- **HU:** HU-06 Baja y reactivación lógica del profesor
+- **HU:** HU-07 Baja y reactivación lógica del profesor
 - **Área:** Frontend
 - **Rama:** `feat/profesores-baja-ui`
 - **Depende de:** T-19, T-08 (puede empezar en paralelo)
@@ -706,17 +704,15 @@ Agregar a la ficha del profesor los botones de baja y reactivación, con la conf
 
 ---
 
-## T-21 · [Back] HU-07 · API de turnos: búsqueda de disponibilidad y registro por hora
+## T-21 · [Back] HU-08 · API de turnos: búsqueda de disponibilidad y registro por hora
 
-- **HU:** HU-07 Registrar turno
+- **HU:** HU-08 Registrar turno
 - **Área:** Backend
 - **Rama:** `feat/turnos-api`
 - **Depende de:** T-14, T-17, T-05
 
 **Descripción**
 Completar la feature `src/server/features/turnos/`, que hoy sólo tiene la consulta de turnos vigentes (T-11), con la búsqueda de horarios disponibles y el registro de turnos. Un turno vincula un alumno con **una hora** de un bloque de un profesor. Todos los endpoints requieren rol `MESA_ENTRADAS`.
-
-**La prioridad queda fuera de este sprint:** la prioridad y las fechas de examen pasan al Sprint 2 junto con HU-08. No se calcula, no se devuelve y no se agrega al contrato.
 
 **Alcance**
 
@@ -746,7 +742,7 @@ Completar la feature `src/server/features/turnos/`, que hoy sólo tiene la consu
 
 Sacar los turnos recurrentes (T-30) fue un error y esta tarea lo corrige (decisión T-37); `TurnoExcepcion` sigue eliminada. Lo que cambia respecto del alcance de arriba:
 
-- **Tipos:** `RECURRENTE` (fecha de inicio y fin opcional) o `SESION_UNICA` (una fecha), como pide la HU-07. Las fechas caen en el día de las horas elegidas y la de inicio es hoy o posterior.
+- **Tipos:** `RECURRENTE` (fecha de inicio y fin opcional) o `SESION_UNICA` (una fecha), como pide la HU-08. Las fechas caen en el día de las horas elegidas y la de inicio es hoy o posterior.
 - **Fechas sin lugar:** si un recurrente no tiene lugar en algunas fechas, el alta responde 409 `BLOQUE_LLENO` con las fechas llenas por hora (o `completoDesde`). El usuario elige crearlo solo en las fechas con lugar (se reenvía con `asignarDondeHayLugar: true` y se guarda como varios turnos `RECURRENTE`, "tramos") o no crearlo. Sin lugar en ninguna fecha, o una sesión única en una hora llena, se rechaza siempre.
 - **`ALUMNO_SUPERPUESTO`** es rechazo total, también entre profesores distintos.
 - **Disponibilidad:** acepta `fecha` opcional (sin ella, la próxima ocurrencia de cada día, T-33) y agrupa las horas como la UI. Materia inactiva → 409 `MATERIA_INACTIVA` sin `details`.
@@ -757,9 +753,9 @@ Sacar los turnos recurrentes (T-30) fue un error y esta tarea lo corrige (decisi
 
 ---
 
-## T-22 · [Front] HU-07 · Pantalla de registrar turno
+## T-22 · [Front] HU-08 · Pantalla de registrar turno
 
-- **HU:** HU-07 Registrar turno
+- **HU:** HU-08 Registrar turno
 - **Área:** Frontend
 - **Rama:** `feat/turnos-ui`
 - **Depende de:** T-21, T-06, T-10 (puede empezar en paralelo)
@@ -809,8 +805,6 @@ Crear `src/features/turnos/` con `/nueva-feature-ui turnos turno` y la pantalla 
 
 **Descripción**
 Agregar a la feature `turnos` la lectura de la agenda de un día, con todos los profesores. Rol `MESA_ENTRADAS`.
-
-**La prioridad no entra:** HU-09 la pide entre los datos del turno, pero depende de las fechas de examen (HU-08), que pasan al Sprint 2. La agenda no la devuelve ni la muestra en este sprint; se suma en el Sprint 2 junto con HU-08, y hasta entonces queda anotado en el issue, no en los docs.
 
 **Alcance**
 
@@ -914,9 +908,9 @@ Completar la pantalla "Mi agenda" del segmento de profesor, que hoy existe como 
 
 ---
 
-## T-27 · [Back] FIX · HU-01 · DNI del tutor obligatorio para alumnos menores
+## T-27 · [Back] FIX · HU-02 · DNI del tutor obligatorio para alumnos menores
 
-- **HU:** HU-01 Gestión de datos del alumno
+- **HU:** HU-02 Gestión de datos del alumno
 - **Área:** Backend
 - **Rama:** `fix/alumnos-tutor-dni`
 - **Depende de:** T-05 (mergeada)
