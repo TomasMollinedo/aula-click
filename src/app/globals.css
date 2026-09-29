@@ -16,6 +16,11 @@
   --color-urgente: #b5852c;
   --color-pendiente: #2e5069;
 
+  /* Prioridad del turno (HU-18, components/turno/). Rojo y amarillo más vivos que cancelado y
+     urgente, para que la prioridad no se confunda con un estado. Baja no tiene color. */
+  --color-prioridad-alta: #c8352c;
+  --color-prioridad-media: #e4b62b;
+
   /* Tokens semánticos que usan los primitivos de components/ui/ */
   --background: var(--color-blanco);
   --foreground: var(--color-tinta);
@@ -80,6 +85,8 @@
   --color-cancelado: var(--color-cancelado);
   --color-urgente: var(--color-urgente);
   --color-pendiente: var(--color-pendiente);
+  --color-prioridad-alta: var(--color-prioridad-alta);
+  --color-prioridad-media: var(--color-prioridad-media);
 
   --radius-sm: calc(var(--radius) - 0.25rem);
   --radius-md: calc(var(--radius) - 0.125rem);
