@@ -215,6 +215,50 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx`, `profesor-sidebar.tsx` y `gerente-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
 - **Menú de usuario** (avatar, nombre, rol y un menú con "Cerrar sesión"): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` por props, armado en el layout del segmento.
 
+## Documentos imprimibles
+
+Patrón común para los documentos oficiales que se guardan como PDF desde el diálogo de impresión del navegador, en A4 y sin el sidebar ni los botones de la app.
+
+- **Datos y logo del centro: los da la API** (T-64), precargados y sin pantalla para editarlos (HU-11). El front no tiene constantes del centro ni el logo en `public/`.
+  - **`features/centro/`**: `useCentro()` pide `GET /api/v1/centro` (nombre, dirección y teléfono) con `staleTime: Infinity`, porque casi no cambian.
+  - El logo se muestra con `<img src="/api/v1/centro/logo">` (misma sesión, sin fetch propio).
+- **`components/impresion/DocumentoOficial.tsx`**: `DocumentoOficial({ titulo, emitidoPor, centro, onLogoListo, children })`, el encabezado común (logo, datos del centro, título, quién emite y la fecha/hora de emisión del navegador, con `date-fns`) más el contenido propio de cada documento, que llega por `children`. Recibe `centro` por props: `components/` no puede importar de `features/` (ESLint), así que `useCentro()` lo llama quien arma el documento. `onLogoListo` se llama en el `onLoad`/`onError` del logo.
+- **`app/impresion.css`** (importado una sola vez en `app/layout.tsx`): fija `@page { size: A4 }` con márgenes, y en `@media print` oculta todo lo marcado con el atributo `data-no-imprimir` — así en la vista previa de impresión solo queda el documento. `app-shell.tsx` marca su `<aside>` (el Sidebar) con ese atributo.
+- **`hooks/use-imprimir.ts`**: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez, apenas `listo` pasa a `true`. `listo` incluye los datos del documento, los del centro y que el logo haya terminado de cargar, para que no salga un encabezado sin logo.
+- Cada documento concreto (comprobante, turno, agenda) es su propia ruta (`/…/imprimir` o `/…/comprobante`, por ejemplo `/mesa/pagos/[id]/comprobante`), sin el layout del segmento de rol (para que el Sidebar no aparezca ni siquiera antes de imprimir), que arma su Client Component con `useCentro`, `DocumentoOficial` y `useImprimirCuandoEsteListo`:
+
+  ```tsx
+  'use client'
+
+  import { useState } from 'react'
+
+  import { DocumentoOficial } from '@/components/impresion/DocumentoOficial'
+  import { useCentro } from '@/features/centro/hooks/use-centro'
+  import { useImprimirCuandoEsteListo } from '@/hooks/use-imprimir'
+
+  export function ComprobantePage() {
+    const { data } = useComprobante(id) // hook de la feature
+    const { data: centro } = useCentro()
+    const [logoListo, setLogoListo] = useState(false)
+
+    useImprimirCuandoEsteListo(!!data && !!centro && logoListo)
+
+    if (!data || !centro) return null // nada que imprimir todavía
+
+    return (
+      <DocumentoOficial
+        titulo="Comprobante de pago"
+        emitidoPor={data.emitidoPor}
+        centro={centro}
+        onLogoListo={() => setLogoListo(true)}
+      >
+        {/* contenido propio del comprobante */}
+      </DocumentoOficial>
+    )
+  }
+  ```
+
+- No se agrega ninguna dependencia nueva: se usa el diálogo de impresión nativo del navegador (`window.print()`), no una librería de generación de PDF.
 ## Acciones sobre una ocurrencia: slots compuestos desde `app/`
 
 Una **ocurrencia** es un turno en una fecha concreta (`docs/sprint-2/sprint-2.md` → Vocabulario). Varias features muestran algo en las mismas pantallas —el detalle del turno, la ficha del alumno, la agenda—, y una feature no importa componentes de otra. El patrón, ya usado con `renderAgenda`, es un **slot**: la feature dueña de la pantalla recibe una prop de render y `app/` la completa con los componentes de las demás.

@@ -1,0 +1,17 @@
+/*
+ * Estilos de impresión de los documentos oficiales (HU-11, HU-15). Se importa una sola vez en el
+ * layout raíz. `@page` fija A4 con márgenes; en `@media print` se oculta todo lo marcado con
+ * `data-no-imprimir` (el AppShell marca su sidebar) para que en la vista previa de impresión solo
+ * quede el documento.
+ */
+
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
+@media print {
+  [data-no-imprimir] {
+    display: none !important;
+  }
+}
