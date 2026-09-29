@@ -122,7 +122,15 @@ A completar por T-55.
 
 ## Prioridad
 
-A completar por T-31.
+HU-18. La prioridad de un turno es de cada **ocurrencia** (un turno en una fecha) y la calcula la API; no se carga a mano.
+
+- Se toma el **próximo examen `ACTIVO` del mismo alumno y la misma materia** del turno, con fecha igual o posterior a la de la ocurrencia (su fecha efectiva: la reprogramada, si la hay). Los exámenes anteriores a la ocurrencia y los dados de baja no cuentan.
+- Días hasta el examen = fecha del examen − fecha de la ocurrencia, en días de calendario.
+- **Alta** de 0 a 10 días (un examen el mismo día de la ocurrencia es Alta), **Media** de 11 a 20 y **Baja** con más de 20 días o si no hay examen próximo en esa materia.
+- En una serie recurrente cada ocurrencia tiene su propia prioridad: el mismo examen puede dar Baja a una ocurrencia lejana y Alta a una cercana.
+- Junto con la prioridad se informa el examen que la determina (fecha, tipo, materia y días que faltan). Una Baja por lejanía también lo trae; sin examen próximo, no.
+- Las ocurrencias canceladas no tienen prioridad.
+- La prioridad **no se guarda**: se calcula en cada consulta, así que cargar, modificar o dar de baja un examen la cambia en la próxima consulta.
 
 ## Auditoría
 
