@@ -54,6 +54,7 @@ const BODY = {
   bloqueIds: [10],
   tipo: 'SESION_UNICA',
   fechaInicio: LUNES,
+  temas: 'Fracciones',
 }
 
 const paginaVacia = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }
@@ -217,7 +218,12 @@ describe('POST /turnos', () => {
       turnosAlumno: [],
     })
     expect(plan.turnos).toEqual([
-      expect.objectContaining({ observaciones: null, fechaInicio: LUNES, fechaFin: LUNES }),
+      expect.objectContaining({
+        observaciones: null,
+        temas: 'Fracciones',
+        fechaInicio: LUNES,
+        fechaFin: LUNES,
+      }),
     ])
   })
 
@@ -231,6 +237,9 @@ describe('POST /turnos', () => {
       [{ fechaFin: '2099-01-12' }, [['fechaFin']]], // sesión única con otra fecha de fin
       [{ tipo: 'RECURRENTE', fechaFin: '2098-12-29' }, [['fechaFin']]], // fin antes del inicio
       [{ observaciones: 'x'.repeat(501) }, [['observaciones']]],
+      [{ temas: 'x'.repeat(501) }, [['temas']]],
+      [{ temas: undefined }, [['temas']]], // sesión única sin temas
+      [{ temas: '   ' }, [['temas']]], // vacío es null, y sigue faltando en sesión única
       [{ asignarDondeHayLugar: 'si' }, [['asignarDondeHayLugar']]],
       [{ alumnoId: undefined }, [['alumnoId']]],
     ]
@@ -247,6 +256,16 @@ describe('POST /turnos', () => {
       201,
     )
     expect((await pedir('', 'POST', { ...BODY, fechaFin: LUNES })).status).toBe(201)
+  })
+
+  it('temas es opcional en un recurrente, aunque obligatorio en una sesión única', async () => {
+    const res = await pedir('', 'POST', {
+      ...BODY,
+      tipo: 'RECURRENTE',
+      fechaFin: null,
+      temas: undefined,
+    })
+    expect(res.status).toBe(201)
   })
 })
 
