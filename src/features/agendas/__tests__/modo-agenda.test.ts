@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { claveModoAgenda, MODO_POR_DEFECTO, parsearModo } from '../modo-agenda'
-
-describe('claveModoAgenda', () => {
-  it('es distinta para cada usuario', () => {
-    expect(claveModoAgenda('u1')).not.toBe(claveModoAgenda('u2'))
-  })
-})
+import { MODO_POR_DEFECTO, paramsConModo, parsearModo } from '../modo-agenda'
 
 describe('parsearModo', () => {
   it.each(['calendario', 'lista'] as const)('acepta %s', (modo) => {
@@ -19,5 +13,17 @@ describe('parsearModo', () => {
 
   it('el modo por defecto es la lista, como antes del calendario', () => {
     expect(MODO_POR_DEFECTO).toBe('lista')
+  })
+})
+
+describe('paramsConModo', () => {
+  it('escribe el calendario y conserva los demás parámetros', () => {
+    const params = paramsConModo(new URLSearchParams('fecha=2026-09-29&tab=agenda'), 'calendario')
+    expect(params.toString()).toBe('fecha=2026-09-29&tab=agenda&modo=calendario')
+  })
+
+  it('no escribe el modo por defecto y saca el que había', () => {
+    const params = paramsConModo(new URLSearchParams('modo=calendario&fecha=2026-09-29'), 'lista')
+    expect(params.toString()).toBe('fecha=2026-09-29')
   })
 })

@@ -23,7 +23,7 @@ type AgendaConModoProps = {
 
 /**
  * Lo que comparten las tres agendas (diaria, de un profesor y "Mi agenda"): el selector
- * "Calendario / Lista" que recuerda la última elección del usuario (HU-19), el detalle del turno
+ * "Calendario / Lista" cuyo modo va en la URL y por defecto es la lista (HU-19), el detalle del turno
  * abierto desde la URL y el lugar para las acciones del encabezado. La lista y el calendario se
  * montan de a uno, así el que no se ve no pide datos.
  */
