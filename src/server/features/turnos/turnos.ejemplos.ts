@@ -74,7 +74,7 @@ export const ejemploAltaRecurrente = {
   tipo: 'RECURRENTE',
   fechaInicio: '2026-10-05',
   fechaFin: '2026-11-30',
-  motivoConsulta: 'Repaso de funciones',
+  observaciones: 'Repaso de funciones',
   asignarDondeHayLugar: false,
 } satisfies CrearTurno
 
@@ -101,7 +101,7 @@ export const ejemploDetalle = {
   profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
   materia: { id: 3, nombre: 'Matemática' },
   aula: { id: 3, nombre: 'Aula 3' },
-  motivoConsulta: 'Repaso de funciones',
+  observaciones: 'Repaso de funciones',
   createdAt: '2026-09-24T13:45:00.000Z',
   updatedAt: '2026-09-24T13:45:00.000Z',
   createdBy: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },

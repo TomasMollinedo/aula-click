@@ -22,7 +22,18 @@ const ROLES = [
   { id: 'ALUMNO', nombre: 'Alumno', descripcion: 'Accede al portal del alumno' },
 ]
 
-const MATERIAS = ['Matemática', 'Física', 'Química', 'Lengua', 'Inglés', 'Contabilidad']
+// Precio por hora de clase (HU-12, T-29): valores de ejemplo, en pesos.
+const MATERIAS = [
+  { nombre: 'Matemática', precioHora: '8000.00' },
+  { nombre: 'Física', precioHora: '8000.00' },
+  { nombre: 'Química', precioHora: '7500.00' },
+  { nombre: 'Lengua', precioHora: '7000.00' },
+  { nombre: 'Inglés', precioHora: '7500.00' },
+  { nombre: 'Contabilidad', precioHora: '8500.00' },
+]
+
+// Forma de pago del seed (HU-15): único medio en este sprint.
+const FORMAS_PAGO = ['Efectivo']
 
 // Aulas: catálogo cargado por el seed, sin ABM en este release (HU-05, dominio.md → Aulas).
 const AULAS = [
@@ -149,11 +160,11 @@ async function main() {
     telefono: '3874555666',
   })
 
-  for (const nombre of MATERIAS) {
+  for (const { nombre, precioHora } of MATERIAS) {
     const busqueda = normalizarBusqueda(nombre)
     await prisma.materia.upsert({
       where: { busqueda },
-      create: { nombre, busqueda, createdById: gerente.id, updatedById: gerente.id },
+      create: { nombre, busqueda, precioHora, createdById: gerente.id, updatedById: gerente.id },
       update: {},
     })
   }
@@ -166,8 +177,17 @@ async function main() {
     })
   }
 
+  for (const nombre of FORMAS_PAGO) {
+    await prisma.formaPago.upsert({
+      where: { nombre },
+      create: { nombre, createdById: gerente.id, updatedById: gerente.id },
+      update: {},
+    })
+  }
+
   console.log(
-    `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias y ${AULAS.length} aulas.`,
+    `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias, ` +
+      `${AULAS.length} aulas y ${FORMAS_PAGO.length} forma(s) de pago.`,
   )
 }
 

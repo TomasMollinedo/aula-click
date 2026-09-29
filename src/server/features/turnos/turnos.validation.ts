@@ -18,7 +18,7 @@ export const ESTADOS_TURNO = ['ACTIVO', 'CANCELADO'] as const
 export type EstadoTurno = (typeof ESTADOS_TURNO)[number]
 
 const MAX_HORAS_TURNO = 24
-const MAX_MOTIVO = 500
+const MAX_OBSERVACIONES = 500
 
 function idQuery(name: string, description: string, example: number) {
   return z.coerce
@@ -116,7 +116,8 @@ export const disponibilidadSchema = z.array(disponibilidadItemSchema)
 // Alta
 // ---------------------------------------------------------------------------------------------
 
-const motivoConsulta = textoOpcional(MAX_MOTIVO, 'Motivo de consulta', 'Repaso de funciones')
+// T-29 renombró la columna motivo_consulta a observaciones; "temas a trabajar" lo agrega T-41.
+const observaciones = textoOpcional(MAX_OBSERVACIONES, 'Observaciones', 'Repaso de funciones')
 
 /**
  * Body de `POST /turnos`. Formato solamente: que las filas existan, sean del mismo profesor y día,
@@ -163,7 +164,7 @@ export const crearTurnoSchema = z
       })
       .nullable()
       .optional(),
-    motivoConsulta,
+    observaciones,
     asignarDondeHayLugar: z
       .boolean({ error: 'Debe ser verdadero o falso' })
       .default(false)
@@ -231,7 +232,7 @@ export const turnoDetalleSchema = z
     profesor: profesorResumenSchema,
     materia: z.object({ id: z.number().int(), nombre: z.string() }).openapi('TurnoMateria'),
     aula: aulaResumenSchema,
-    motivoConsulta: z.string().nullable(),
+    observaciones: z.string().nullable(),
     ...auditoriaSchema.shape,
   })
   .openapi('TurnoDetalle')
@@ -598,7 +599,7 @@ export type TurnoNuevo = {
   estado: 'ACTIVO'
   fechaInicio: string
   fechaFin: string | null
-  motivoConsulta: string | null
+  observaciones: string | null
 }
 
 /** Lo que decide `planificar`: qué insertar y qué fechas quedaron sin turno. */
