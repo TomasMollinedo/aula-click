@@ -1,6 +1,4 @@
-import { format, parseISO } from 'date-fns'
-import { es } from 'date-fns/locale/es'
-
+import { fechaConDia, fechaCorta } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 
 import type { FechasSinTurno, TipoTurno } from './turnos.types'
@@ -12,16 +10,6 @@ import type { FechasSinTurno, TipoTurno } from './turnos.types'
 /** `'08:00'`, `'12:00'` → `'de 8:00 a 12:00'`. */
 export function textoHorario(horaInicio: string, horaFin: string): string {
   return `de ${rangoHoras(horaInicio, horaFin)}`
-}
-
-/** `'2026-10-12'` → `'12/10'`. */
-export function fechaCorta(fecha: string): string {
-  return format(parseISO(fecha), 'dd/MM')
-}
-
-/** `'2026-10-12'` → `'lunes 12/10'`. */
-export function fechaConDia(fecha: string): string {
-  return format(parseISO(fecha), 'EEEE dd/MM', { locale: es })
 }
 
 /**

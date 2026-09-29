@@ -1,7 +1,8 @@
 import type { Prisma } from '@/generated/prisma/client'
-import { dateAFecha, fechaADate, proximaFechaDelDia } from '@/server/shared/fechas'
+import { proximaFechaDelDia } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
-import { ocupacionMaxima } from './turnos.reglas'
+import { condicionTurnoVigente, leerSeries, type Serie } from './ocurrencias.condiciones'
+import { ocupacionMaxima, primeraFechaLibre } from './turnos.reglas'
 import type {
   OcupacionMaximaPorFila,
   TurnosVigentesPorBloque,
@@ -9,13 +10,20 @@ import type {
   TurnoVigentePorProfesor,
 } from './turnos.validation'
 
-// Condiciones de consulta de turnos y las lecturas que otras features necesitan hacer **dentro de
-// su propia transacción** (decisión T-39). Es la única implementación: `turnos.repository` las usa
-// con el cliente común (`prisma`) y los repositories de `bloques` y `profesores` con su `tx`, para
-// chequear turnos vigentes con el lock ya tomado. No crea el cliente de Prisma (lo recibe): de
-// Prisma solo importa tipos. Sin reglas de negocio: qué hacer con lo leído lo decide el service.
+// Lecturas de turnos vigentes y de ocupación que otras features hacen **dentro de su propia
+// transacción** (decisión T-39). Es la única implementación: `turnos.repository` las usa con el
+// cliente común (`prisma`) y los repositories de `bloques` y `profesores` con su `tx`, para chequear
+// turnos vigentes con el lock ya tomado. No crea el cliente de Prisma (lo recibe): de Prisma solo
+// importa tipos. Sin reglas de negocio: qué hacer con lo leído lo decide el service.
+//
+// Cuentan con el motor de ocurrencias (`ocurrencias.condiciones.ts`, T-30): una ocurrencia
+// cancelada o posterior al fin efectivo de su serie no ocupa lugar ni hace vigente al turno.
 //
 // De otra feature solo se importan `*.repository` y `*.condiciones` (lo hace cumplir ESLint).
+
+// Prefiltros de consulta: viven en el motor y se re-exportan acá, donde los importaban las otras
+// features desde T-39.
+export { condicionTurnoSeCruzaCon, condicionTurnoVigente } from './ocurrencias.condiciones'
 
 // Tipos de lo que devuelven estas lecturas, para que otras features no importen la validation.
 export type {
@@ -29,136 +37,107 @@ export type {
 export type ClienteTurnos = Prisma.TransactionClient
 
 /**
- * Condición de **turno vigente** (docs/dominio.md → Turnos): `fechaFin` nula (recurrente sin fin)
- * o >= hoy, y estado `ACTIVO`. Un turno `CANCELADO` no cuenta: la vigencia se decide por fecha,
- * pero un cancelado no bloquea nada.
- *
- * Es la **única** implementación de la condición (convenciones-backend.md → Turno vigente): se
- * reutiliza desde acá, nunca se reescribe en otra feature. `fechaHoy` la calcula el service con
- * `hoy()` y su reloj inyectable.
+ * **Turno vigente** (docs/dominio.md → Turnos, decisión T-52): serie `ACTIVO` con al menos una
+ * ocurrencia no cancelada entre hoy y su fin efectivo. Una serie sin fin efectivo siempre es
+ * vigente (las cancelaciones son finitas); una finalizada, o con todas sus fechas restantes
+ * canceladas, deja de serlo.
  */
-export function condicionTurnoVigente(fechaHoy: string) {
-  return {
-    estado: 'ACTIVO',
-    OR: [{ fechaFin: null }, { fechaFin: { gte: fechaADate(fechaHoy) } }],
-  } satisfies Prisma.TurnoWhereInput
+function esVigente(serie: Serie, fechaHoy: string): boolean {
+  return primeraFechaLibre(serie, fechaHoy, null) !== null
 }
 
-/**
- * Turno `ACTIVO` con al menos una fecha en `[inicio, fin]` (`fin` `null` = sin fin): `fechaInicio
- * <= fin` y `fechaFin` nula o `>= inicio`. Es la lectura de "los turnos que pueden chocar con un
- * pedido" (reserva) y la base de `condicionTurnoOcupaLugar`. Equivale al predicado puro
- * `seCruzaCon` de `turnos.reglas.ts`. Se combina con el `bloqueAgendaId` o el `alumnoId`.
- *
- * Ojo al combinarla: tiene un `OR` (y puede tener `fechaInicio`) en el primer nivel. Se puede
- * mezclar por spread con otras claves (`bloqueAgendaId`, `alumnoId`, un `OR` anidado en una
- * relación), pero no con otra condición que también tenga `OR` o `fechaInicio` en el primer nivel
- * (como `condicionTurnoVigente`): el spread pisaría uno con otro. En ese caso, `AND: [a, b]`.
- */
-export function condicionTurnoSeCruzaCon(inicio: string, fin: string | null) {
-  return {
-    estado: 'ACTIVO',
-    ...(fin === null ? {} : { fechaInicio: { lte: fechaADate(fin) } }),
-    OR: [{ fechaFin: null }, { fechaFin: { gte: fechaADate(inicio) } }],
-  } satisfies Prisma.TurnoWhereInput
+/** Series vigentes desde `fechaHoy` que cumplen el filtro (una consulta, regla en memoria). */
+async function leerVigentes(
+  db: ClienteTurnos,
+  fechaHoy: string,
+  filtro: { profesorId?: number; materiaIds?: number[]; bloqueAgendaIds?: number[] },
+): Promise<Serie[]> {
+  const series = await leerSeries(db, { ...filtro, desde: fechaHoy, hasta: null })
+  return series.filter((serie) => esVigente(serie, fechaHoy))
 }
 
-/**
- * Condición de **turno que ocupa lugar** en una fila de `bloque_agenda` en `fecha` (una sola para
- * los dos tipos): `ACTIVO`, `fechaInicio <= fecha` y `fechaFin` nula o `>= fecha`. Una sesión
- * única es el caso `fechaInicio = fechaFin`; un recurrente ocupa lugar en cada fecha de su rango
- * (todas caen en el día de su fila). Es la ocupación del horario (T-33) y del control de
- * capacidad (`BLOQUE_LLENO`): se reutiliza desde acá, nunca se reescribe. Equivale al predicado
- * puro `ocupaLugarEn` de `turnos.reglas.ts`. Se combina con el `bloqueAgendaId` de la fila o, en la
- * agenda diaria (T-23) y sus selectores, con el día de la semana del bloque (`bloqueAgenda.diaSemana`).
- */
-export function condicionTurnoOcupaLugar(fecha: string) {
-  return condicionTurnoSeCruzaCon(fecha, fecha)
+/** Cuenta por clave numérica, ordenado por la clave. */
+function contarPor(series: readonly Serie[], clave: (serie: Serie) => number): [number, number][] {
+  const cantidades = new Map<number, number>()
+  for (const serie of series) {
+    cantidades.set(clave(serie), (cantidades.get(clave(serie)) ?? 0) + 1)
+  }
+  return [...cantidades].sort(([a], [b]) => a - b)
 }
 
 /**
  * Cantidad de turnos vigentes por materia, filtrable por profesor (el del bloque) y materias.
- * Solo vienen las materias con al menos un turno vigente.
+ * Solo vienen las materias con al menos un turno vigente, ordenadas por id.
  */
 export async function contarVigentesPorMateria(
   db: ClienteTurnos,
   filtro: { fechaHoy: string; profesorId?: number; materiaIds?: number[] },
 ): Promise<TurnosVigentesPorMateria[]> {
-  const grupos = await db.turno.groupBy({
-    by: ['materiaId'],
-    where: {
-      ...condicionTurnoVigente(filtro.fechaHoy),
-      ...(filtro.profesorId === undefined
-        ? {}
-        : { bloqueAgenda: { profesorId: filtro.profesorId } }),
-      ...(filtro.materiaIds === undefined ? {} : { materiaId: { in: filtro.materiaIds } }),
-    },
-    _count: { _all: true },
-    orderBy: { materiaId: 'asc' },
+  const vigentes = await leerVigentes(db, filtro.fechaHoy, {
+    profesorId: filtro.profesorId,
+    materiaIds: filtro.materiaIds,
   })
-  return grupos.map((grupo) => ({ materiaId: grupo.materiaId, cantidad: grupo._count._all }))
+  return contarPor(vigentes, (serie) => serie.materiaId).map(([materiaId, cantidad]) => ({
+    materiaId,
+    cantidad,
+  }))
 }
 
 /**
  * Cantidad de turnos vigentes de varias filas de `bloque_agenda` en una sola consulta. Solo
- * vienen las filas con al menos un turno vigente.
+ * vienen las filas con al menos un turno vigente, ordenadas por id.
  */
 export async function contarVigentesPorBloques(
   db: ClienteTurnos,
   bloqueAgendaIds: number[],
   fechaHoy: string,
 ): Promise<TurnosVigentesPorBloque[]> {
-  const grupos = await db.turno.groupBy({
-    by: ['bloqueAgendaId'],
-    where: { ...condicionTurnoVigente(fechaHoy), bloqueAgendaId: { in: bloqueAgendaIds } },
-    _count: { _all: true },
-    orderBy: { bloqueAgendaId: 'asc' },
-  })
-  return grupos.map((grupo) => ({
-    bloqueAgendaId: grupo.bloqueAgendaId,
-    cantidad: grupo._count._all,
+  const vigentes = await leerVigentes(db, fechaHoy, { bloqueAgendaIds })
+  return contarPor(vigentes, (serie) => serie.bloqueAgendaId).map(([bloqueAgendaId, cantidad]) => ({
+    bloqueAgendaId,
+    cantidad,
   }))
 }
 
 /**
  * Turnos vigentes del profesor (de cualquiera de sus bloques), con los datos que HU-06 pide
  * mostrar antes de la baja: alumno, materia, tipo, fechas y horario. `fecha` es `fechaInicio` (se
- * conserva por compatibilidad); `fechaFin` es `null` en un recurrente sin fin. Ordenados por fecha
- * y id.
+ * conserva por compatibilidad); `fechaFin` es la guardada (`null` en un recurrente sin fin).
+ * Ordenados por fecha y id.
  */
 export async function listarVigentesPorProfesor(
   db: ClienteTurnos,
   profesorId: number,
   fechaHoy: string,
 ): Promise<TurnoVigentePorProfesor[]> {
-  const filas = await db.turno.findMany({
-    where: { ...condicionTurnoVigente(fechaHoy), bloqueAgenda: { profesorId } },
-    select: {
-      alumno: { select: { id: true, nombre: true, apellido: true } },
-      materia: { select: { id: true, nombre: true } },
-      tipo: true,
-      fechaInicio: true,
-      fechaFin: true,
-      bloqueAgenda: { select: { horaInicio: true, horaFin: true } },
-    },
-    orderBy: [{ fechaInicio: 'asc' }, { id: 'asc' }],
-  })
-  return filas.map((fila) => ({
-    alumno: fila.alumno,
-    materia: fila.materia,
-    tipo: fila.tipo,
-    fecha: dateAFecha(fila.fechaInicio),
-    fechaFin: fila.fechaFin && dateAFecha(fila.fechaFin),
-    horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
-    horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
-  }))
+  const vigentes = await leerVigentes(db, fechaHoy, { profesorId })
+  return [...vigentes]
+    .sort(
+      (a, b) =>
+        (a.fechaInicio < b.fechaInicio ? -1 : a.fechaInicio > b.fechaInicio ? 1 : 0) ||
+        a.turnoId - b.turnoId,
+    )
+    .map((serie) => ({
+      alumno: { id: serie.alumno.id, nombre: serie.alumno.nombre, apellido: serie.alumno.apellido },
+      materia: serie.materia,
+      tipo: serie.tipo,
+      fecha: serie.fechaInicio,
+      fechaFin: serie.fechaFin,
+      horaInicio: minutosAHora(serie.horaInicio),
+      horaFin: minutosAHora(serie.horaFin),
+    }))
 }
 
 /**
  * Ocupación simultánea máxima de cada hora activa del profesor, desde hoy en adelante: la mayor
- * cantidad de turnos que ocupan lugar en esa hora en una misma fecha (`ocupacionMaxima` de
- * `turnos.reglas.ts`, la misma cuenta que `BLOQUE_LLENO`). Solo vienen las horas con algún turno
- * vigente, ordenadas por día y hora. La usa la edición de la capacidad del profesor (T-15).
+ * cantidad de ocurrencias que ocupan lugar en esa hora en una misma fecha (`ocupacionMaxima` de
+ * `turnos.reglas.ts`, la misma cuenta que `BLOQUE_LLENO`: una cancelada o posterior al fin efectivo
+ * libera su lugar). Solo vienen las horas con algún turno vigente, ordenadas por día y hora. La usa
+ * la edición de la capacidad del profesor (T-15).
+ *
+ * Dos consultas fijas: las horas activas del profesor con algún candidato a vigente
+ * (`condicionTurnoVigente`, el prefiltro) y las series de esas horas (`leerSeries`); sin horas, no
+ * lee series.
  */
 export async function ocupacionMaximaPorFila(
   db: ClienteTurnos,
@@ -166,32 +145,26 @@ export async function ocupacionMaximaPorFila(
   fechaHoy: string,
 ): Promise<OcupacionMaximaPorFila[]> {
   const filas = await db.bloqueAgenda.findMany({
-    where: {
-      profesorId,
-      estado: 'ACTIVO',
-      turnos: { some: condicionTurnoVigente(fechaHoy) },
-    },
-    select: {
-      id: true,
-      diaSemana: true,
-      horaInicio: true,
-      horaFin: true,
-      turnos: {
-        where: condicionTurnoVigente(fechaHoy),
-        select: { estado: true, fechaInicio: true, fechaFin: true },
-      },
-    },
+    where: { profesorId, estado: 'ACTIVO', turnos: { some: condicionTurnoVigente(fechaHoy) } },
+    select: { id: true, diaSemana: true, horaInicio: true, horaFin: true },
     orderBy: [{ diaSemana: 'asc' }, { horaInicio: 'asc' }, { id: 'asc' }],
   })
+  if (filas.length === 0) return []
+
+  const series = await leerSeries(db, {
+    bloqueAgendaIds: filas.map((fila) => fila.id),
+    desde: fechaHoy,
+    hasta: null,
+  })
+  const porFila = new Map<number, Serie[]>()
+  for (const serie of series) {
+    porFila.set(serie.bloqueAgendaId, [...(porFila.get(serie.bloqueAgendaId) ?? []), serie])
+  }
   return filas.flatMap((fila) => {
-    const maxima = ocupacionMaxima(
-      fila.turnos.map((turno) => ({
-        estado: turno.estado,
-        fechaInicio: dateAFecha(turno.fechaInicio),
-        fechaFin: turno.fechaFin && dateAFecha(turno.fechaFin),
-      })),
-      proximaFechaDelDia(fila.diaSemana, fechaHoy),
-    )
+    const delaFila = porFila.get(fila.id) ?? []
+    const maxima = delaFila.some((serie) => esVigente(serie, fechaHoy))
+      ? ocupacionMaxima(delaFila, proximaFechaDelDia(fila.diaSemana, fechaHoy))
+      : null
     return maxima
       ? [
           {

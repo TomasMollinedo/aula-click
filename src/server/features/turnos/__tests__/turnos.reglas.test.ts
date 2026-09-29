@@ -2,25 +2,27 @@ import { describe, expect, it, vi } from 'vitest'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import {
   analizarHora,
-  expandirOcurrencias,
-  MENSAJE_RANGO_INVERTIDO,
-  MENSAJE_RANGO_MAXIMO,
+  estadoDeOcurrencia,
+  fechasDeLaSerie,
+  finEfectivo,
+  horizonte,
   ocupacionMaxima,
   ocupaLugarEn,
   planificarReserva,
-  validarRangoAgenda,
+  primeraFechaLibre,
   type PedidoReserva,
 } from '../turnos.reglas'
-import type { SnapshotReserva, TurnoFechas } from '../turnos.validation'
+import type { SerieFechas, SnapshotReserva, TurnoFechas } from '../turnos.validation'
 
 // Reglas puras: sin base, sin reloj. Todas las fechas de 2026-09-28 en adelante con paso de 7 días
 // son lunes (28/09, 05/10, 12/10, 19/10, 26/10, 02/11 … 30/11).
 
+// Una serie sin finalización ni cancelaciones (los datos del Sprint 1): fin efectivo = fechaFin.
 const turno = (
   fechaInicio: string,
   fechaFin: string | null,
   estado: TurnoFechas['estado'] = 'ACTIVO',
-): TurnoFechas => ({ estado, fechaInicio, fechaFin })
+): SerieFechas => ({ estado, fechaInicio, finEfectivo: fechaFin, canceladas: [] })
 const sesion = (fecha: string) => turno(fecha, fecha)
 
 /** Ejecuta `accion`, que debe lanzar, y devuelve el error. */
@@ -92,88 +94,6 @@ describe('ocupacionMaxima', () => {
         '2026-10-05',
       ),
     ).toEqual({ fecha: '2026-10-05', cantidad: 1 })
-  })
-})
-
-describe('validarRangoAgenda', () => {
-  it('acepta un solo día y un rango del máximo de días', () => {
-    expect(() => validarRangoAgenda('2026-09-28', '2026-09-28')).not.toThrow()
-    // 28/09 + 30 días = 28/10: 31 días contando los dos extremos.
-    expect(() => validarRangoAgenda('2026-09-28', '2026-10-28')).not.toThrow()
-  })
-
-  it('`hasta` anterior a `desde`: 400 sobre `hasta`', () => {
-    const error = errorDe(() => validarRangoAgenda('2026-09-28', '2026-09-27'))
-    expect(error).toBeInstanceOf(ValidationError)
-    expect((error as ValidationError).details).toEqual([
-      { path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO },
-    ])
-  })
-
-  it('rango mayor al máximo: 400 sobre `hasta`', () => {
-    const error = errorDe(() => validarRangoAgenda('2026-09-28', '2026-10-29'))
-    expect(error).toBeInstanceOf(ValidationError)
-    expect((error as ValidationError).details).toEqual([
-      { path: ['hasta'], message: MENSAJE_RANGO_MAXIMO },
-    ])
-  })
-})
-
-describe('expandirOcurrencias', () => {
-  // Lunes 28/09 a domingo 04/10 de 2026.
-  const semana = { desde: '2026-09-28', hasta: '2026-10-04' }
-  const conDia = (diaSemana: number, id: number, fechaInicio: string, fechaFin: string | null) => ({
-    ...turno(fechaInicio, fechaFin),
-    id,
-    diaSemana,
-  })
-
-  it('una sesión única aparece solo en su fecha', () => {
-    const sesionMartes = conDia(2, 1, '2026-09-29', '2026-09-29')
-    expect(expandirOcurrencias([sesionMartes], semana.desde, semana.hasta)).toEqual([
-      { fecha: '2026-09-29', turno: sesionMartes },
-    ])
-  })
-
-  it('un recurrente sin fin aparece una vez por semana, en el día de su fila', () => {
-    const lunes = conDia(1, 1, '2026-09-28', null)
-    const enDosSemanas = expandirOcurrencias([lunes], '2026-09-28', '2026-10-11')
-    expect(enDosSemanas.map((o) => o.fecha)).toEqual(['2026-09-28', '2026-10-05'])
-  })
-
-  it('no incluye las fechas fuera del rango del turno ni los cancelados', () => {
-    const terminado = conDia(1, 1, '2026-09-21', '2026-09-21')
-    const cancelado = { ...conDia(1, 2, '2026-09-28', null), estado: 'CANCELADO' as const }
-    expect(expandirOcurrencias([terminado, cancelado], semana.desde, semana.hasta)).toEqual([])
-  })
-
-  it('ordena por fecha y conserva el orden de entrada dentro del día', () => {
-    const nueve = conDia(1, 10, '2026-09-28', null)
-    const diez = conDia(1, 11, '2026-09-28', null)
-    const martes = conDia(2, 12, '2026-09-29', '2026-09-29')
-    expect(
-      expandirOcurrencias([nueve, diez, martes], semana.desde, semana.hasta).map((o) => [
-        o.fecha,
-        o.turno.id,
-      ]),
-    ).toEqual([
-      ['2026-09-28', 10],
-      ['2026-09-28', 11],
-      ['2026-09-29', 12],
-    ])
-  })
-
-  it('dice lo mismo que `ocupaLugarEn` en cada fecha del rango', () => {
-    const turnos = [
-      conDia(1, 1, '2026-09-28', null),
-      conDia(3, 2, '2026-09-30', '2026-09-30'),
-      conDia(5, 3, '2026-10-02', '2026-10-16'),
-    ]
-    const ocurrencias = expandirOcurrencias(turnos, semana.desde, semana.hasta)
-    for (const { fecha, turno: encontrado } of ocurrencias) {
-      expect(ocupaLugarEn(encontrado, fecha)).toBe(true)
-    }
-    expect(ocurrencias.map((o) => o.fecha)).toEqual(['2026-09-28', '2026-09-30', '2026-10-02'])
   })
 })
 
@@ -417,7 +337,7 @@ describe('planificarReserva', () => {
   it('copia observaciones y temas del pedido a cada tramo ("Asignar igual")', () => {
     // Capacidad 1 (aulaCapacidad del snapshot) y un ocupante el 26/10: dos tramos que la saltean.
     const ocupantes: SnapshotReserva['ocupantes'] = [
-      { bloqueAgendaId: 10, estado: 'ACTIVO', fechaInicio: '2026-10-26', fechaFin: '2026-10-26' },
+      { bloqueAgendaId: 10, ...sesion('2026-10-26') },
     ]
     const conDatos: PedidoReserva = {
       ...pedido,
@@ -491,5 +411,269 @@ describe('planificarReserva', () => {
     expect((varias.details as { message: string }[])[0]?.message).toBe(
       'La hora de 9:00 a 10:00 está completa los lunes 12/10 y 26/10, y desde el lunes 23/11',
     )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Series y ocurrencias (T-30): fin efectivo, canceladas, estado y horizonte
+// ---------------------------------------------------------------------------------------------
+
+const conCanceladas = (serie: SerieFechas, ...canceladas: string[]): SerieFechas => ({
+  ...serie,
+  canceladas,
+})
+
+describe('finEfectivo', () => {
+  it('sin finalización: la fechaFin guardada (null = sin fin)', () => {
+    expect(finEfectivo({ fechaFin: '2026-11-30' })).toBe('2026-11-30')
+    expect(finEfectivo({ fechaFin: null }, null)).toBeNull()
+  })
+
+  it('finalización con fechaFin nula: el día anterior a fechaDesde', () => {
+    expect(finEfectivo({ fechaFin: null }, { fechaDesde: '2026-10-19' })).toBe('2026-10-18')
+  })
+
+  it('fechaFin anterior a fechaDesde: manda fechaFin', () => {
+    expect(finEfectivo({ fechaFin: '2026-10-12' }, { fechaDesde: '2026-10-26' })).toBe('2026-10-12')
+  })
+
+  it('finalización antes de fechaFin: la corta', () => {
+    expect(finEfectivo({ fechaFin: '2026-11-30' }, { fechaDesde: '2026-10-19' })).toBe('2026-10-18')
+  })
+})
+
+describe('fechasDeLaSerie', () => {
+  it('cada 7 días desde fechaInicio, dentro del rango y hasta el fin efectivo', () => {
+    expect(
+      fechasDeLaSerie(
+        { fechaInicio: '2026-09-28', finEfectivo: '2026-10-18' },
+        '2026-09-01',
+        '2026-12-31',
+      ),
+    ).toEqual(['2026-09-28', '2026-10-05', '2026-10-12'])
+  })
+
+  it('un rango que empieza en el medio de la serie arranca en su primera fecha alineada', () => {
+    expect(
+      fechasDeLaSerie({ fechaInicio: '2026-09-28', finEfectivo: null }, '2026-10-07', '2026-10-20'),
+    ).toEqual(['2026-10-12', '2026-10-19'])
+  })
+
+  it('una sesión única: sólo su fecha, si cae en el rango', () => {
+    const unica = { fechaInicio: '2026-10-05', finEfectivo: '2026-10-05' }
+    expect(fechasDeLaSerie(unica, '2026-10-01', '2026-10-31')).toEqual(['2026-10-05'])
+    expect(fechasDeLaSerie(unica, '2026-10-06', '2026-10-31')).toEqual([])
+  })
+
+  it('una serie sin fin queda acotada por `hasta`', () => {
+    expect(
+      fechasDeLaSerie({ fechaInicio: '2026-09-28', finEfectivo: null }, '2026-09-28', '2026-10-04'),
+    ).toEqual(['2026-09-28'])
+  })
+})
+
+describe('ocupaLugarEn con fin efectivo y canceladas', () => {
+  it('una fecha cancelada no ocupa lugar; las demás de la serie sí', () => {
+    const serie = conCanceladas(turno('2026-10-05', null), '2026-10-12')
+    expect(ocupaLugarEn(serie, '2026-10-05')).toBe(true)
+    expect(ocupaLugarEn(serie, '2026-10-12')).toBe(false)
+    expect(ocupaLugarEn(serie, '2026-10-19')).toBe(true)
+  })
+
+  it('después del fin efectivo no ocupa lugar', () => {
+    const finalizada = turno(
+      '2026-10-05',
+      finEfectivo({ fechaFin: null }, { fechaDesde: '2026-10-19' }),
+    )
+    expect(ocupaLugarEn(finalizada, '2026-10-12')).toBe(true)
+    expect(ocupaLugarEn(finalizada, '2026-10-19')).toBe(false)
+  })
+})
+
+describe('estadoDeOcurrencia', () => {
+  const hoy = '2026-09-29'
+
+  it('cancelada → CANCELADO, aunque sea pasada', () => {
+    expect(estadoDeOcurrencia('2026-09-28', true, hoy)).toBe('CANCELADO')
+  })
+
+  it('anterior a hoy → SIN_REGISTRAR; hoy o posterior → AGENDADO', () => {
+    expect(estadoDeOcurrencia('2026-09-28', false, hoy)).toBe('SIN_REGISTRAR')
+    expect(estadoDeOcurrencia(hoy, false, hoy)).toBe('AGENDADO')
+    expect(estadoDeOcurrencia('2026-10-05', false, hoy)).toBe('AGENDADO')
+  })
+})
+
+describe('primeraFechaLibre (vigente y superposición)', () => {
+  it('saltea las canceladas', () => {
+    const serie = conCanceladas(turno('2026-10-05', null), '2026-10-05', '2026-10-12')
+    expect(primeraFechaLibre(serie, '2026-10-05', null)).toBe('2026-10-19')
+  })
+
+  it('una serie sin fin siempre tiene una (vigente)', () => {
+    const serie = conCanceladas(turno('2026-09-28', null), '2026-10-05', '2026-10-12', '2026-10-19')
+    expect(primeraFechaLibre(serie, '2026-10-01', null)).toBe('2026-10-26')
+  })
+
+  it('con todas las fechas restantes canceladas o fuera del fin efectivo: null (no vigente)', () => {
+    const todasCanceladas = conCanceladas(
+      turno('2026-10-05', '2026-10-19'),
+      '2026-10-12',
+      '2026-10-19',
+    )
+    expect(primeraFechaLibre(todasCanceladas, '2026-10-06', null)).toBeNull()
+    const finalizada = turno(
+      '2026-09-07',
+      finEfectivo({ fechaFin: null }, { fechaDesde: '2026-10-05' }),
+    )
+    expect(primeraFechaLibre(finalizada, '2026-09-30', null)).toBeNull()
+  })
+
+  it('acotada por `hasta` y por el fin efectivo', () => {
+    const serie = conCanceladas(turno('2026-10-05', null), '2026-10-05')
+    expect(primeraFechaLibre(serie, '2026-10-05', '2026-10-05')).toBeNull()
+    expect(primeraFechaLibre(serie, '2026-10-05', '2026-10-12')).toBe('2026-10-12')
+  })
+
+  it('un turno CANCELADO (anterior al Sprint 2) no tiene ninguna', () => {
+    expect(primeraFechaLibre(turno('2026-10-05', null, 'CANCELADO'), '2026-10-05', null)).toBeNull()
+  })
+
+  it('un fin lejano (año 2100) no se recorre: itera sólo por las canceladas', () => {
+    const serie = conCanceladas(turno('2026-10-05', '2100-12-27'), '2026-10-05')
+    expect(primeraFechaLibre(serie, '2026-10-05', null)).toBe('2026-10-12')
+  })
+})
+
+describe('horizonte', () => {
+  it('la mayor fecha finita entre el inicio, las fechaInicio y los fines efectivos', () => {
+    expect(
+      horizonte([turno('2026-10-12', null), turno('2026-10-05', '2026-11-02')], '2026-10-05'),
+    ).toBe('2026-11-02')
+    expect(horizonte([], '2026-10-05')).toBe('2026-10-05')
+  })
+
+  it('una cancelación posterior a todo lo demás mueve el horizonte', () => {
+    const series = [conCanceladas(turno('2026-10-05', null), '2026-12-28')]
+    expect(horizonte(series, '2026-10-05')).toBe('2026-12-28')
+  })
+})
+
+describe('ocupación con canceladas y fin efectivo (T-30)', () => {
+  it('analizarHora: una ocurrencia cancelada libera su fecha', () => {
+    const a = analizarHora({
+      inicio: '2026-10-05',
+      fin: '2026-10-05',
+      capacidad: 1,
+      existentes: [conCanceladas(turno('2026-09-28', null), '2026-10-05')],
+    })
+    expect(a.sinLugar).toBe(false)
+    expect(a.tramos).toEqual([{ fechaInicio: '2026-10-05', fechaFin: '2026-10-05' }])
+  })
+
+  it('analizarHora: un recurrente finalizado antes de la fecha no la ocupa', () => {
+    const finalizado = turno(
+      '2026-09-28',
+      finEfectivo({ fechaFin: null }, { fechaDesde: '2026-10-05' }),
+    )
+    expect(
+      analizarHora({ inicio: '2026-10-05', fin: null, capacidad: 1, existentes: [finalizado] }),
+    ).toEqual({
+      fechasLlenas: [],
+      completoDesde: null,
+      tramos: [{ fechaInicio: '2026-10-05', fechaFin: null }],
+      sinLugar: false,
+    })
+  })
+
+  it('analizarHora: una cancelación posterior a todo lo demás se evalúa (mueve el horizonte)', () => {
+    // Serie sin fin que llena la hora, con el 26/10 cancelado: esa fecha queda con lugar y la cola
+    // (después del 26/10) sigue llena.
+    const a = analizarHora({
+      inicio: '2026-10-05',
+      fin: null,
+      capacidad: 1,
+      existentes: [conCanceladas(turno('2026-09-28', null), '2026-10-26')],
+    })
+    expect(a.fechasLlenas).toEqual(['2026-10-05', '2026-10-12', '2026-10-19'])
+    expect(a.completoDesde).toBe('2026-11-02')
+    expect(a.tramos).toEqual([{ fechaInicio: '2026-10-26', fechaFin: '2026-10-26' }])
+  })
+
+  it('ocupacionMaxima: una fecha cancelada no suma y la semana siguiente vuelve a contar', () => {
+    const series = [
+      conCanceladas(turno('2026-10-05', null), '2026-10-05'),
+      turno('2026-10-05', '2026-10-05'),
+    ]
+    expect(ocupacionMaxima(series, '2026-10-05')).toEqual({ fecha: '2026-10-05', cantidad: 1 })
+    expect(
+      ocupacionMaxima([conCanceladas(turno('2026-10-05', null), '2026-10-05')], '2026-10-05'),
+    ).toEqual({ fecha: '2026-10-12', cantidad: 1 })
+  })
+
+  it('ocupacionMaxima: una serie finalizada deja de contar desde su fin efectivo', () => {
+    const finalizada = turno(
+      '2026-09-28',
+      finEfectivo({ fechaFin: null }, { fechaDesde: '2026-10-12' }),
+    )
+    expect(ocupacionMaxima([finalizada], '2026-10-12')).toBeNull()
+  })
+})
+
+describe('planificarReserva: superposición del alumno', () => {
+  const pedido: PedidoReserva = {
+    alumnoId: 12,
+    materiaId: 3,
+    profesorId: 4,
+    diaSemana: 1,
+    bloqueIds: [10, 12],
+    tipo: 'SESION_UNICA',
+    fechaInicio: '2026-10-05',
+    fechaFin: '2026-10-05',
+    observaciones: null,
+    temas: 'Fracciones',
+    asignarDondeHayLugar: false,
+  }
+  const fila = (id: number, horaInicio: number) => ({
+    id,
+    estado: 'ACTIVO' as const,
+    profesorId: 4,
+    diaSemana: 1,
+    horaInicio,
+    horaFin: horaInicio + 60,
+    aulaCapacidad: 6,
+  })
+  const base: SnapshotReserva = {
+    filas: [fila(10, 480), fila(12, 600)],
+    profesor: { id: 4, capacidad: 6, estado: 'ACTIVO' },
+    materia: { id: 3, estado: 'ACTIVO' },
+    asignacion: { estado: 'ACTIVO' },
+    ocupantes: [],
+    turnosAlumno: [],
+  }
+  const delAlumno = (horaInicio: number) => ({
+    id: 70,
+    tipo: 'SESION_UNICA' as const,
+    estado: 'ACTIVO' as const,
+    fechaInicio: '2026-10-05',
+    fechaFin: '2026-10-05',
+    diaSemana: 1,
+    horaInicio,
+    horaFin: horaInicio + 60,
+    profesor: { id: 7, nombre: 'Juan', apellido: 'Ruiz' },
+    materia: { id: 3, nombre: 'Matemática' },
+  })
+
+  it('horas pedidas no contiguas (8–9 y 10–11): un turno del alumno de 9–10 no choca', () => {
+    const plan = planificarReserva({ ...base, turnosAlumno: [delAlumno(540)] }, pedido)
+    expect(plan.turnos).toHaveLength(2)
+  })
+
+  it('un turno del alumno en una hora pedida: 409 ALUMNO_SUPERPUESTO', () => {
+    const error = errorDe(() =>
+      planificarReserva({ ...base, turnosAlumno: [delAlumno(600)] }, pedido),
+    )
+    expect(error).toBeInstanceOf(ConflictError)
+    expect((error as ConflictError).code).toBe('ALUMNO_SUPERPUESTO')
   })
 })

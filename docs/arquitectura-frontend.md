@@ -34,7 +34,7 @@ nadie del frontend     → server/, lib/, config/, generated/ (ESLint, con alias
 
 Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx` usa el hook `use-alumnos` de `features/alumnos/hooks/`; no llama a `alumnos.api.ts` ni importa `AlumnosTable`.
 
-Cuando una pantalla de una feature tiene que mostrar un **componente** de otra (no solo sus datos), lo compone `app/`, que puede importar de cualquier feature, y la feature que lo muestra lo recibe por una prop de render. Ejemplo: el tab "Agenda" de la ficha del profesor. `ProfesorDetalle` recibe `renderAgenda: (profesor) => ReactNode`, y `app/mesa/profesores/[profesorId]/page.tsx` (y `editar/page.tsx`, que monta el detalle de fondo) le pasa `<AgendaProfesorListado profesorId={profesor.id} />` de `features/turnos`. No se mueve el componente a `components/ui/` para saltear la regla.
+Cuando una pantalla de una feature tiene que mostrar un **componente** de otra (no solo sus datos), lo compone `app/`, que puede importar de cualquier feature, y la feature que lo muestra lo recibe por una prop de render. Ejemplo: el tab "Agenda" de la ficha del profesor. `ProfesorDetalle` recibe `renderAgenda: (profesor) => ReactNode`, y `app/mesa/profesores/[profesorId]/page.tsx` (y `editar/page.tsx`, que monta el detalle de fondo) le pasa `<AgendaProfesorListado profesorId={profesor.id} renderDetalle={…} />` de `features/agendas`. No se mueve el componente a `components/ui/` para saltear la regla.
 
 ## Estructura
 
@@ -68,14 +68,23 @@ src/
 │   │   │       └── [alumnoId]/page.tsx # null: sin modal del listado al ir al detalle
 │   │   ├── profesores/page.tsx
 │   │   ├── materias/page.tsx
-│   │   ├── turnos/page.tsx
-│   │   └── agenda/page.tsx              # "Agenda diaria" (HU-09, T-24)
+│   │   ├── turnos/page.tsx              # registrar turno; compone el detalle del turno (renderDetalle)
+│   │   ├── agenda/page.tsx              # "Agenda diaria" (HU-09, T-24); compone el detalle y el PDF
+│   │   ├── pagos/page.tsx               # vista global de pagos y deuda (HU-16); compone RegistrarPagoDialog
+│   │   └── _componentes/                # composición de mesa: detalle-turno.tsx (el detalle con sus acciones) y
+│   │                                    # ficha-alumno.tsx (las 4 pestañas de la ficha). Ver "Acciones sobre una ocurrencia"
 │   ├── profesor/                       # rol PROFESOR → /profesor/...
 │   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /profesor/agenda
 │   │   ├── agenda/page.tsx             # "Mi agenda" (HU-10, T-26): ?vista=dia|semana y ?fecha=
-│   │   └── alumnos/page.tsx
-│   ├── gerente/  portal/               # se crean con las HU de cada rol (portal: Sprint 3)
+│   │   ├── alumnos/page.tsx
+│   │   └── _componentes/               # detalle-turno.tsx (sin acciones) y ficha-alumno.tsx (Datos y Exámenes)
+│   ├── gerente/                        # rol GERENTE → /gerente/...
+│   │   ├── layout.tsx                  # <AppShell sidebar={<GerenteSidebar />} userMenu={<UserMenu />}>
+│   │   ├── page.tsx                    # raíz del segmento: lleva a /gerente/tablero
+│   │   ├── tablero/page.tsx            # placeholder (T-62)
+│   │   └── materias/page.tsx           # placeholder (T-40)
+│   ├── portal/                         # se crea con las HU del alumno (Sprint 3)
 │   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
@@ -93,23 +102,38 @@ src/
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
-│   ├── turnos/                         # registrar turno (HU-07), agenda diaria (HU-09, T-24), agenda propia (HU-10, T-26) y agenda de la ficha del profesor (HU-02)
+│   ├── turnos/                         # registrar turno (HU-07) y reprogramar (placeholder AccionReprogramarTurno, T-50)
 │   │   ├── turnos.types.ts, turnos.schema.ts
-│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, agenda-propia.ts
+│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts
 │   │   ├── api/{turnos.api.ts, turnos.keys.ts}
-│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-turno.ts,
-│   │   │   use-agenda.ts, use-agenda-propia.ts, use-agenda-profesor.ts, use-rango-agenda-en-url.ts}
+│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts}
 │   │   └── components/
 │   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
 │   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
-│   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx)
-│   │       ├── TurnoDetalleModal.tsx    # detalle de solo lectura (?detalle=<id>)
+│   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx); la confirmación abre el detalle del turno
+│   │       │   (`?detalle=&fecha=`) que le llega por `renderDetalle`
+│   │       └── AccionReprogramarTurno.tsx # slot del pie del detalle (placeholder, T-50)
+│   ├── agendas/                        # las tres agendas: diaria (HU-09), propia (HU-10) y de la ficha del profesor (HU-02)
+│   │   ├── agendas.types.ts, agenda-propia.ts (rango, agrupado y params de la URL), filtros-agenda.ts, modo-agenda.ts
+│   │   ├── api/{agendas.api.ts, agendas.keys.ts}                # /api/v1/agendas/{diaria,propia,profesor}
+│   │   ├── hooks/{use-agenda.ts, use-agenda-propia.ts, use-agenda-profesor.ts, use-rango-agenda-en-url.ts,
+│   │   │   use-filtros-agenda.ts, use-modo-agenda.ts, use-invalidar-agendas.ts}
+│   │   └── components/
+│   │       ├── AgendaConModo.tsx        # lo común a las tres: selector Calendario/Lista, detalle en la URL, slot de acciones
+│   │       ├── SelectorModoAgenda.tsx, CalendarioSemanal.tsx # el calendario es un placeholder (T-59)
 │   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
-│   │       │   FiltroProfesorAgenda.tsx # agenda diaria (HU-09, T-24); NavegacionFecha la comparten las dos agendas
-│   │       ├── AgendaPorRango.tsx, AgendaPropiaTable.tsx, SelectorVistaAgenda.tsx # vista por día o por
-│   │       │   semana (controlada) que comparten las dos agendas por rango
-│   │       ├── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx # agenda propia del profesor (HU-10, T-26)
-│   │       └── AgendaProfesorListado.tsx # tab "Agenda" de la ficha del profesor (HU-02); lo compone app/
+│   │       │   FiltroProfesorAgenda.tsx # agenda diaria; NavegacionFecha la comparten las dos agendas por rango
+│   │       ├── AgendaPorRango.tsx, AgendaPropiaTable.tsx, SelectorVistaAgenda.tsx # vista por día o por semana
+│   │       ├── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx # "Mi agenda"
+│   │       └── AgendaProfesorListado.tsx # tab "Agenda" de la ficha del profesor; lo compone app/
+│   ├── ocurrencias/                    # el detalle de un turno en una fecha y los turnos de un alumno (T-44)
+│   │   ├── detalle-url.ts, api/ocurrencias.keys.ts, hooks/{use-detalle-en-url.ts, use-invalidar-ocurrencias.ts}
+│   │   └── components/{OcurrenciaDetalle.tsx, TurnosDelAlumno.tsx}   # placeholders (T-44)
+│   ├── cancelaciones/  finalizaciones/ # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
+│   ├── pagos/  cuentas/  examenes/     #   (AccionCancelarTurno, AccionCancelarVarios, AccionFinalizarTurno,
+│   │                                   #   AccionRegistrarPago, RegistrarPagoDialog, PagosDelAlumno, PagosGlobal,
+│   │                                   #   ExamenesDelAlumno): placeholders con las props definitivas (T-46 a T-56)
+│   ├── documentos/                     # AccionPdfTurno y BotonPdfAgenda (placeholders, T-60); sin datos propios: sin keys
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
@@ -121,22 +145,29 @@ src/
 │       └── components/
 │           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
 │           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
-│           ├── AlumnoDetalle.tsx        # página de detalle (tab "Turnos" oculta hasta implementarla; ver "Modales con URL propia")
+│           ├── AlumnoDetalle.tsx        # ficha con pestañas en la URL (datos|turnos|examenes|pagos); las tres últimas llegan por render props
+│           ├── DatosAlumno.tsx          # la pestaña "Datos"
 │           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
 │           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
 ├── components/
 │   ├── ui/                             # primitivos de UI hechos a mano (D-08/T-26)
+│   ├── turno/                          # estado, pago y prioridad de un turno (T-33; ver Componentes compartidos del turno)
+│   │   ├── indicadores-turno.ts        # tipos, mapeos estado → etiqueta/variante y texto del examen (con tests)
+│   │   └── estado-turno-badge.tsx, estado-pago-badge.tsx, prioridad-indicador.tsx
 │   └── layout/
 │       ├── app-shell.tsx               # columna del Sidebar (logo + nav + usuario) + contenido
 │       ├── page-header.tsx             # título, descripción y acción principal de cada pantalla
 │       ├── sidebar-logo.tsx            # isotipo + wordmark, arriba de la columna (no es un link)
 │       ├── sidebar-nav.tsx             # nav genérico (label + links con ícono); lo usan los de abajo
-│       └── {mesa,profesor}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
+│       └── {mesa,profesor,gerente}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
 ├── hooks/{use-debounce.ts, use-toast.ts}   # use-toast: contexto y hook de los toasts
-├── types/index.ts                      # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
-└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, auditoria.ts}
+├── types/
+│   ├── index.ts                        # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
+│   ├── ocurrencia.ts                   # OcurrenciaDetalle, OcurrenciaDeAlumno, acciones y renderDetalle: lo comparten varias features
+│   └── agenda.ts                       # FiltrosAgenda (profesor, estado y prioridad)
+└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts}
 ```
 
 ## Anatomía de una feature de UI
@@ -159,18 +190,18 @@ Nombres: archivos que no son componentes en kebab-case (`use-crear-alumno.ts`); 
 
 Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas cuelgan de ese segmento y comparten su layout.
 
-| Rol              | `role` en la API | Segmento    | Layout y Sidebar                                   | Estado      |
-| ---------------- | ---------------- | ----------- | -------------------------------------------------- | ----------- |
-| Mesa de entradas | `MESA_ENTRADAS`  | `/mesa`     | `app/mesa/layout.tsx` + `mesa-sidebar.tsx`         | Sprint 1    |
-| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Sprint 1    |
-| Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Planificado |
-| Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3    |
+| Rol              | `role` en la API | Segmento    | Layout y Sidebar                                   | Estado   |
+| ---------------- | ---------------- | ----------- | -------------------------------------------------- | -------- |
+| Mesa de entradas | `MESA_ENTRADAS`  | `/mesa`     | `app/mesa/layout.tsx` + `mesa-sidebar.tsx`         | Sprint 1 |
+| Profesor         | `PROFESOR`       | `/profesor` | `app/profesor/layout.tsx` + `profesor-sidebar.tsx` | Sprint 1 |
+| Gerente          | `GERENTE`        | `/gerente`  | `app/gerente/layout.tsx` + `gerente-sidebar.tsx`   | Sprint 2 |
+| Alumno           | `ALUMNO`         | `/portal`   | `app/portal/layout.tsx` + `portal-sidebar.tsx`     | Sprint 3 |
 
 - Cada segmento tiene su `page.tsx` en la raíz, que lleva a la primera pantalla del rol: ahí es donde caen el login y `/`, así que sin esa página serían un 404.
 - La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
 - Por eso los componentes de una feature **no escriben el segmento del rol en sus links**: la página les pasa `rutaBase` (la URL del listado de la entidad en su segmento, por ejemplo `rutaBase="/mesa/alumnos"`) y el componente arma el resto (`${rutaBase}/nuevo`, `${rutaBase}/<id>`, `${rutaBase}/<id>/editar`).
-- El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que manda al usuario al segmento de su propio rol: es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
-- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `GERENTE` y `ALUMNO` no tienen segmento todavía: para ellos la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlos a un 404.
+- El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que, si el rol de la sesión no es el del segmento, muestra "No tiene permiso para acceder a esta sección" con un enlace a la pantalla de inicio del propio rol en lugar del contenido (HU-21): es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
+- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `ALUMNO` no tiene segmento todavía: para él la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlo a un 404.
 - No se usan route groups para separar roles. Si alguna vez se usan para otra cosa (compartir un layout sin cambiar la URL), dos route groups nunca pueden definir la misma ruta: los paréntesis no aparecen en la URL y el build falla.
 
 ## Layout: Sidebar
@@ -181,7 +212,7 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - `components/layout/app-shell.tsx` arma esa columna, de arriba a abajo: `SidebarLogo` (isotipo, fijo), el `sidebar` que recibe por props (nav del rol, con scroll propio si no entra) y el `userMenu` que recibe por props (fijo, abajo, separado por un borde). El contenido va a la derecha.
 - El `layout.tsx` de cada segmento de rol monta `<AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>{children}</AppShell>`.
 - **`sidebar-logo.tsx`:** isotipo + "AulaClick", uno solo para todos los roles. No es un link: no hay una pantalla propia de "/" para un usuario logueado (`/` solo redirige según el rol).
-- **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx` y `profesor-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
+- **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx`, `profesor-sidebar.tsx` y `gerente-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
 - **Menú de usuario** (avatar, nombre, rol y un menú con "Cerrar sesión"): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` por props, armado en el layout del segmento.
 
 ## Documentos imprimibles
@@ -228,6 +259,17 @@ Patrón común para los documentos oficiales que se guardan como PDF desde el di
   ```
 
 - No se agrega ninguna dependencia nueva: se usa el diálogo de impresión nativo del navegador (`window.print()`), no una librería de generación de PDF.
+## Acciones sobre una ocurrencia: slots compuestos desde `app/`
+
+Una **ocurrencia** es un turno en una fecha concreta (`docs/sprint-2/sprint-2.md` → Vocabulario). Varias features muestran algo en las mismas pantallas —el detalle del turno, la ficha del alumno, la agenda—, y una feature no importa componentes de otra. El patrón, ya usado con `renderAgenda`, es un **slot**: la feature dueña de la pantalla recibe una prop de render y `app/` la completa con los componentes de las demás.
+
+- **Detalle del turno.** `OcurrenciaDetalle({ turnoId, fecha, onCerrar, renderAcciones })` (`features/ocurrencias`) muestra el turno y le pasa la ocurrencia a `renderAcciones`. Cada segmento lo compone en `app/<segmento>/_componentes/detalle-turno.tsx`: mesa de entradas con `AccionReprogramarTurno`, `AccionCancelarTurno`, `AccionFinalizarTurno`, `AccionRegistrarPago` y `AccionPdfTurno`; el profesor, sin acciones. Las pantallas que lo abren (agendas, alta de turno) reciben `renderDetalle={(d) => <DetalleTurno {...d} />}` y `app/` lo pasa desde su página (que por eso es un Client Component).
+- **En la URL.** `?detalle=<turnoId>&fecha=<fechaOriginal>` sobre la pantalla que lo muestra (`useDetalleEnUrl`, `features/ocurrencias/hooks/`, con `detalle-url.ts` como único lugar que conoce los parámetros). La fecha es la **original** de la ocurrencia, la que la identifica aunque se reprograme. En las agendas `fecha` es también el día o la semana que se ve, así que abrir el detalle de una ocurrencia reprogramada mueve la vista.
+- **Ficha del alumno.** `AlumnoDetalle` recibe `renderTurnos`, `renderExamenes` y `renderPagos`; `app/mesa/_componentes/ficha-alumno.tsx` los completa con `TurnosDelAlumno` (con `renderAccionesSeleccion` = `AccionCancelarVarios`), `ExamenesDelAlumno` y `PagosDelAlumno` (con `renderRegistrarPago` = `RegistrarPagoDialog`). La ficha del profesor solo trae Exámenes. `/mesa/pagos` compone `PagosGlobal` igual.
+- **Agendas.** Las tres reciben `renderDetalle`; la diaria, además, `renderPdf` (el `BotonPdfAgenda`, de `features/documentos`) y el calendario semanal es `CalendarioSemanal`.
+- **Tipos compartidos.** Lo que cruza features vive en `src/types/` para que ninguna importe los `types` de otra: `ocurrencia.ts` (`OcurrenciaDetalle`, `OcurrenciaDeAlumno`, `SolicitudDetalleOcurrencia`) y `agenda.ts` (`FiltrosAgenda`). Los args de los `render*` son exactamente las props del componente que los completa, así `app/` los pasa con un spread.
+- **Una acción se muestra según `ocurrencia.acciones`**, que calcula la API (`cancelar: { visible, habilitada, motivo? }`, `finalizar`, `reprogramar`, `registrarPago`), y nunca con reglas propias del cliente: si un turno se puede cancelar, cuánto cuesta o qué prioridad tiene lo dice la API. Lo mismo vale para la casilla de selección de la lista de turnos del alumno (`cancelable`).
+- **Placeholders.** Mientras una HU no se completa, su componente existe con sus props definitivas y devuelve `null` o un aviso "Próximamente": cada tarea solo completa su archivo. Los `types/ocurrencia.ts` siguen el contrato de T-43 y los ajusta T-44.
 
 ## Datos: Server y Client Components
 
@@ -253,7 +295,7 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 El **detalle de una entidad sencilla** (una hora del horario, y a futuro materias y otras con pocos datos y sin secciones propias) no es una página: es un **modal de solo lectura** con `DetalleModal` de `components/ui/` (decisión T-34). La feature solo arma sus datos con `Datos` / `Dato` y le pasa la query (`cargando`, `error`, `onReintentar`) y la auditoría: el modal resuelve la carga, el 404, el 403, la sección "Trazabilidad" y el pie con "Cerrar" y las acciones (por ejemplo, un link a la edición). Se abre con un parámetro de la pantalla que queda de fondo, con el mismo criterio que `?editar=<id>` (en el horario del profesor, `?tab=horario&detalle=<id>`), y se cierra también con un clic afuera: no hay nada que perder.
 
-El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs cuando tiene más de una sección: `alumnos` hoy solo muestra "Datos del alumno", sin `Tabs` (una sola pestaña no se envuelve en tabs). Existió ahí una segunda pestaña "Turnos", oculta a propósito hasta que haya un endpoint que devuelva los turnos de un alumno (comentario en `AlumnoDetalle.tsx` con el JSX que se sacó): cuando se implemente, se vuelve a envolver `DatosAlumno` en `Tabs`. El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
+El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs cuando tiene más de una sección: la ficha del alumno tiene `?tab=datos|turnos|examenes|pagos` (sin `tab`, "Datos") y una pestaña aparece solo si `app/` le pasó su render prop (`renderTurnos`, `renderExamenes`, `renderPagos`): mesa de entradas ve las cuatro y el profesor, Datos y Exámenes; con una sola pestaña no se envuelve en `Tabs`. El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
 - Hay dos slots `@modal`, cada uno en el layout de la pantalla que queda de fondo: `app/<segmento>/<entidad>/layout.tsx` (alta, sobre el listado) y `app/<segmento>/<entidad>/[id]/layout.tsx` (edición, sobre el detalle). Los dos renderizan `{children}` y `{modal}` (tipado con `LayoutProps`, que ya trae `modal`).
 - **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
@@ -266,7 +308,8 @@ El **detalle** de una entidad con secciones propias es una **página** (`[id]/pa
   - **Interceptada:** cerrar es `router.back()` (vuelve al listado con su `q` y su `page`, o al detalle); guardar también, tanto el alta como la edición. Tras un alta se vuelve al listado, que ya se invalidó y muestra al alumno nuevo.
   - **Por URL:** puede no haber historial dentro de la app. Cerrar el alta va al listado con `router.push` y crear, con `router.replace` (Atrás no reabre el formulario). Cerrar o guardar la edición vuelve al detalle con `router.replace`.
 - **Tab del detalle y formularios de una sección:** el tab activo del detalle va en la URL (`?tab=materias`, `?tab=horario`, `?tab=agenda`; sin `tab`, el primero), con `router.replace` para que cambiar de tab no sume entradas al historial. Así, un formulario que vive dentro de un tab se abre con un parámetro más, con el mismo criterio que `?editar=<id>` (sin interceptor con parámetro dinámico): el horario del profesor usa `?tab=horario&bloque=nuevo` (alta) y `?tab=horario&bloque=<id>` (edición de esa hora), y `HorarioProfesor` monta el `Panel` modal. Se abre con un `Link` (`push`: Atrás lo cierra); cerrar o guardar es `router.back()` si se abrió desde la sección en esa pestaña, o `router.replace` a `?tab=horario` si se entró por URL. La URL sigue la misma ayuda visual que los botones: si la sección no ofrece ese formulario (profesor inactivo, o alta sin materias asignadas), no lo monta y, una vez que lo sabe, saca el parámetro con `router.replace`. Convive con el slot `@modal` de la edición del profesor, que es otra ruta (`[id]/editar`). El detalle lee la URL con `useSearchParams`, así que su página lo monta dentro de `<Suspense>`. Las confirmaciones (por ejemplo, eliminar un bloque) son un `Dialog` sin URL propia.
-- **Agendas por rango (vista por día o por semana):** "Mi agenda" (`/profesor/agenda`) y el tab "Agenda" de la ficha del profesor comparten `AgendaPorRango` (navegación, selector, tabla, error y pie; controlado, no conoce el endpoint) y el hook `useRangoAgendaEnUrl({ vistaPorDefecto })`, que guarda `vista` y `fecha` en la URL con `router.replace` sobre la ruta actual y conserva los demás parámetros (el `tab`). Los parámetros los arma `paramsDeRango` (`agenda-propia.ts`, con tests): omite la vista por defecto y el rango de hoy, y en la vista semanal guarda el lunes. "Mi agenda" es por día por defecto (`?vista=semana&fecha=…`); la ficha, por semana (`?tab=agenda&vista=dia&fecha=…`). Cada contenedor elige su hook de datos (`useAgendaPropia` o `useAgendaProfesor`) y su texto para el 404. Cambiar de tab descarta `vista` y `fecha`: al volver, se ve la semana actual.
+- **Agendas por rango (vista por día o por semana):** "Mi agenda" (`/profesor/agenda`) y el tab "Agenda" de la ficha del profesor comparten `AgendaPorRango` (navegación, selector, tabla, error y pie; controlado, no conoce el endpoint) y el hook `useRangoAgendaEnUrl({ vistaPorDefecto })`, que guarda `vista` y `fecha` en la URL con `router.replace` sobre la ruta actual y conserva los demás parámetros (el `tab`). Los parámetros los arma `paramsDeRango` (`features/agendas/agenda-propia.ts`, con tests): omite la vista por defecto y el rango de hoy, y en la vista semanal guarda el lunes. "Mi agenda" es por día por defecto (`?vista=semana&fecha=…`); la ficha, por semana (`?tab=agenda&vista=dia&fecha=…`). Cada contenedor elige su hook de datos (`useAgendaPropia` o `useAgendaProfesor`) y su texto para el 404. Cambiar de tab descarta `vista` y `fecha`: al volver, se ve la semana actual.
+- **Las tres agendas comparten `AgendaConModo`** (diaria, de un profesor y "Mi agenda"): el selector **Calendario / Lista** (HU-19), el detalle del turno abierto desde la URL y un lugar para acciones del encabezado (el PDF de la agenda diaria). El modo va en la URL (`?modo=calendario`, `use-modo-agenda.ts`; `modo-agenda.ts` es el único lugar que conoce el parámetro), no se recuerda entre visitas y por defecto es la lista. Lista y calendario se montan de a uno, así el que no se ve no pide datos. Los **filtros** (`profesorId`, `estado` y `prioridad`) viven en la URL (`use-filtros-agenda.ts`, `filtros-agenda.ts` con tests) y valen igual en las dos vistas; cambiar un filtro vuelve a la página 1. `estado` y `prioridad` todavía no tienen controles (T-58).
 - `Panel` conserva `mode="page"` (tarjeta dentro de la página) para pantallas que no sean modales.
 - El modal de un formulario no se cierra con un clic afuera (`dismissOnInteractOutside={false}`), para no perder lo cargado; sí con `Escape`, la X o Cancelar.
 - Esto no son route groups (no separa roles ni cambia la URL): la regla de "Roles y URLs" sigue igual.
@@ -285,7 +328,7 @@ Una pantalla que necesita un alta de otra entidad y volver con lo creado (regist
 - `src/utils/fetch-json.ts` es el **único** lugar que interpreta la respuesta de error de la API (`{ error: { code, message, details? } }`) y la convierte en un `ApiError` con `status`, `code` y `details`.
 - Cada `<entidad>.api.ts` llama a `fetchJson<T>(...)` en lugar de repetir el parseo. No hay `fetch` directo en componentes, hooks ni páginas, ni `fetch` a otros orígenes.
 - Los hooks se tipan con el error: `useQuery<TData, ApiError>(...)` y `useMutation<TData, ApiError, TVariables>(...)`, para tener `error.status` y `error.code` sin cast.
-- Las query keys salen solo de `<entidad>.keys.ts`. Una mutación invalida las keys de su entidad. Si además cambia datos que cachea otra feature, la invalida con un hook que esa feature expone (por ejemplo `useInvalidarAulas` de `features/aulas/hooks/`, que usan las mutaciones de bloques, o `useInvalidarMaterias`, que tienen que usar las de asignar y quitar materias a un profesor: el detalle de la materia lista sus profesores; o `useInvalidarHorarioDe` de `features/profesores/hooks/use-invalidar-horario.ts`, que recibe el profesor al invocarla y usa el alta de turnos porque el horario muestra la ocupación, T-33; las mutaciones de bloques usan `useInvalidarHorario(profesorId)`, que es la misma con el profesor fijo), no importando sus keys: de otra feature solo se usan sus hooks.
+- Las query keys salen solo de `<entidad>.keys.ts`. Una mutación invalida las keys de su entidad. Si además cambia datos que cachea otra feature, la invalida con un hook que esa feature expone (por ejemplo `useInvalidarAulas` de `features/aulas/hooks/`, que usan las mutaciones de bloques, o `useInvalidarMaterias`, que tienen que usar las de asignar y quitar materias a un profesor: el detalle de la materia lista sus profesores; o `useInvalidarHorarioDe` de `features/profesores/hooks/use-invalidar-horario.ts`, que recibe el profesor al invocarla y usa el alta de turnos porque el horario muestra la ocupación, T-33; las mutaciones de bloques usan `useInvalidarHorario(profesorId)`, que es la misma con el profesor fijo), no importando sus keys: de otra feature solo se usan sus hooks. Cada feature de datos tiene el suyo (`useInvalidarAgendas`, `useInvalidarOcurrencias`, `useInvalidarCancelaciones`, `useInvalidarFinalizaciones`, `useInvalidarPagos`, `useInvalidarCuentas`, `useInvalidarExamenes`): una mutación que cambia una ocurrencia invalida, además de lo suyo, las agendas, las ocurrencias y las cuentas que la muestran (el alta de turnos ya invalida agendas y ocurrencias).
 - Una feature mínima que solo expone un selector a otras (`aulas`) tiene `types`, `api/`, `keys` y el hook; no necesita tabla ni formulario (no se crea con `/nueva-feature-ui`). Una feature completa también puede exponer el suyo: `materias` tiene su pantalla y además `useMateriasSelector`, que consume el filtro por materia de profesores. Si el selector depende de lo elegido en el formulario (aulas libres para un día y horario), los parámetros van en la key y la query queda deshabilitada (`enabled`) hasta que estén completos. Si el hook conserva la lista anterior mientras llega la nueva (`keepPreviousData`), el formulario arma las opciones solo con los datos del horario actual (descarta los de `isPlaceholderData`): mientras tanto el selector queda deshabilitado y Guardar también, porque lo elegido puede ya no estar disponible.
 - Los tipos siguen el contrato: los listados son `PaginatedResponse<T>` (`{ data, meta }`) y el recurso individual viene directo.
 
@@ -368,6 +411,7 @@ mutation.mutate(datos, {
 - **Paleta de marca**, definida como tokens de color en `src/app/globals.css` (`@theme`), a partir del Figma:
   - Página: `cobalto` (marca y foco), `blanco`, `tinta` (texto), `piedra` (neutro cálido), `dorado` (acentos), `oscuro` (interfaz), `luminoso` (fondo claro).
   - Acciones: `confirmado`, `cancelado`, `urgente`, `pendiente`.
+  - Prioridad del turno (HU-18): `prioridad-alta` (rojo) y `prioridad-media` (amarillo), más vivos que `cancelado` y `urgente` para que no se confundan con un estado. Los usa solo `components/turno/prioridad-indicador.tsx`.
   - Semánticos (los usan los primitivos): `background`, `foreground`, `card`, `popover`, `primary`, `secondary`, `muted`, `accent`, `destructive`, `border`, `input`, `ring`, todos mapeados a la paleta de marca. Sin variante de modo oscuro: el Figma no define una.
   - De la app, fuera de la paleta de página: `sidebar` (fondo del Sidebar) y `canvas` (fondo del contenido y de las zonas "hundidas" dentro de una tarjeta: encabezado de tabla, avisos, observaciones). Inputs, tarjetas y modales quedan en `background` (blanco).
 - `components/ui/`: primitivos con la API de shadcn/ui, escritos a mano (T-26, antes D-08: no se usa el CLI de shadcn porque su preset actual genera `src/lib/utils.ts`, zona backend, y un `cn` propio que reemplazaría a `utils/cn.ts`). Usan `class-variance-authority` para variantes y, donde hace falta accesibilidad de teclado/foco, un primitivo de `@radix-ui/react-*` (`Dialog`, `Select`, `Avatar`, `DropdownMenu`, `Label`, `Checkbox`, `Tabs`, `Tooltip`, y `Slot` para el `asChild` de `Button`).
@@ -385,7 +429,26 @@ mutation.mutate(datos, {
   - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
 - Íconos: `lucide-react`.
 
+### Componentes compartidos del turno
+
+El estado de un turno en una fecha, su estado de pago y su prioridad se muestran en las agendas, el calendario, el detalle del turno, la ficha del alumno y los pagos. Viven en `components/turno/` (T-33): reciben **props planas** con los valores que manda la API y no importan de `features/`. No calculan nada: el estado, el pago, la prioridad y los días hasta el examen los decide la API (HU-18). Los tipos (`EstadoTurno`, `EstadoPago`, `Prioridad`, `ExamenPrioridad`) y los mapeos están en `indicadores-turno.ts`, con sus tests.
+
+| Componente           | Props                                                                                                         | Qué muestra                                                                                                                                                                                                                    |
+| -------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `EstadoTurnoBadge`   | `estado: 'AGENDADO' \| 'CANCELADO' \| 'SIN_REGISTRAR'`, `className?`                                          | Un `Badge`: "Agendado" (`confirmado`), "Cancelado" (`cancelado`), "Sin registrar" (`secondary`). La HU de estados está "a definir": etiqueta y color salen solo de `ESTADO_TURNO`; si cambian, se cambian ahí.                 |
+| `EstadoPagoBadge`    | `estado: 'PENDIENTE' \| 'PAGADO'`, `className?`                                                               | Un `Badge`: "Pendiente" (`pendiente`), "Pagado" (`confirmado`). Mapeo en `ESTADO_PAGO`.                                                                                                                                        |
+| `PrioridadIndicador` | `prioridad: 'ALTA' \| 'MEDIA' \| 'BAJA'`, `examen?: { materiaNombre, fecha, dias }`, `variante`, `className?` | Punto de color con la palabra ("Alta" en rojo, "Media" en amarillo), un canal distinto del badge de estado. El `examen` de la API (con `id` y `tipo`) se pasa entero. Una ocurrencia cancelada no trae prioridad: no se monta. |
+
+Variantes de `PrioridadIndicador`:
+
+- **`fila`** (tablas de las agendas): franja lateral + punto + palabra. La franja se apoya en el borde izquierdo del ancestro posicionado más cercano, así que va en la **primera celda de la fila, con `relative`** (`<TableCell className="relative">`). **Baja no muestra nada.**
+- **`punto`** (listas compactas, el bloque expandido del calendario): punto + palabra, sin franja. **Baja no muestra nada.**
+- **`detalle`** (detalle del turno): punto + palabra + el examen escrito debajo ("Examen de Matemática el 15/10 (en 5 días)", o "Sin examen próximo en esta materia"). Es la única variante en la que se lee **Baja** (con un punto hueco, sin color).
+
+En `fila` y `punto`, si viene `examen`, la palabra es un botón con el `Tooltip` de `components/ui/` que muestra el examen que determina la prioridad: se abre con el mouse y con el foco del teclado (trae su propio `TooltipProvider`). Texto: `textoExamenPrioridad` (`date-fns`, `dd/MM`); los días se cuentan desde la fecha del turno, así que 0 se lee "el mismo día del turno", no "hoy". En pantallas táctiles el tooltip no se abre al tocar: el examen se lee en el detalle.
+
+Accesibilidad: el color nunca es el único canal (siempre está la palabra, y el lector de pantalla oye "Prioridad Alta"); la franja y el punto son `aria-hidden`.
+
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `agenda-propia.ts`: el rango de la vista por día o por semana y el agrupado por fecha; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: fechas y rangos; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `alumnos/volver-a.ts`: la lista blanca de `volverA`) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.

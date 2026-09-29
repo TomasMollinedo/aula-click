@@ -1,75 +1,43 @@
-import { Prisma } from '@/generated/prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import type { Actor } from '@/server/shared/actor'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
-import { dateAFecha, diaSemanaISO, fechaADate } from '@/server/shared/fechas'
-import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
+import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import {
-  condicionTurnoOcupaLugar,
-  condicionTurnoSeCruzaCon,
-  condicionTurnoVigente,
+  bloquearParaReserva,
+  claveOcupacion,
+  leerSeries,
+  ocupacionesEn,
+  superposicionesDelAlumno,
+} from './ocurrencias.condiciones'
+import {
   contarVigentesPorBloques,
   contarVigentesPorMateria,
   listarVigentesPorProfesor,
   ocupacionMaximaPorFila,
 } from './turnos.condiciones'
-import { ocupaLugarEn } from './turnos.reglas'
 import type {
-  AgendaListado,
-  AulasConTurnoListado,
   EntradaReserva,
   FechasSinTurno,
-  MateriasConTurnoListado,
   OcupacionMaximaPorFila,
   OcupacionPorBloque,
   PlanReserva,
   SnapshotReserva,
-  TurnoDeProfesor,
   TurnoDetalle,
-  TurnoFechas,
   TurnosVigentesPorBloque,
   TurnosVigentesPorMateria,
   TurnoVigentePorProfesor,
 } from './turnos.validation'
 
 // Único lugar de la feature que crea consultas con el cliente de Prisma. Sin reglas de negocio: las
-// decide el service con `turnos.reglas.ts`. Las condiciones de consulta que otras features
-// reutilizan (vigente, ocupa lugar, se cruza con) y las lecturas que hacen dentro de su propia
-// transacción viven en `turnos.condiciones.ts`; acá se usan con el cliente común.
+// decide el service con `turnos.reglas.ts`. Las lecturas que otras features hacen dentro de su
+// propia transacción viven en `turnos.condiciones.ts` (vigentes, ocupación máxima) y en el motor
+// `ocurrencias.condiciones.ts` (ocurrencias, ocupación, superposición, locks); acá se usan con el
+// cliente común o con el `tx` de la reserva.
 
 /** Opciones de la transacción de `reservar` (ver el comentario ahí). */
 const TRANSACCION_RESERVA = { timeout: 10_000 } as const
-
-const SELECT_FECHAS = { estado: true, fechaInicio: true, fechaFin: true } as const
-
-function aFechas(fila: {
-  estado: TurnoFechas['estado']
-  fechaInicio: Date
-  fechaFin: Date | null
-}): TurnoFechas {
-  return {
-    estado: fila.estado,
-    fechaInicio: dateAFecha(fila.fechaInicio),
-    fechaFin: fila.fechaFin && dateAFecha(fila.fechaFin),
-  }
-}
-
-const MS_POR_DIA = 24 * 60 * 60 * 1000
-
-/**
- * Días de la semana (ISO) que toca el rango `[desde, hasta]`, o `undefined` si los toca a todos
- * (rango de una semana o más), para no filtrar de más. Recorre como mucho siete fechas.
- */
-function diasDelRango(desde: string, hasta: string): number[] | undefined {
-  const dias = new Set<number>()
-  let fecha = desde
-  while (fecha <= hasta && dias.size < 7) {
-    dias.add(diaSemanaISO(fecha))
-    fecha = dateAFecha(new Date(fechaADate(fecha).getTime() + MS_POR_DIA))
-  }
-  return dias.size >= 7 ? undefined : [...dias]
-}
 
 const SELECT_DETALLE = {
   id: true,
@@ -136,8 +104,6 @@ async function leerSnapshot(
   entrada: EntradaReserva,
 ): Promise<SnapshotReserva> {
   const { alumnoId, profesorId, materiaId, bloqueIds, fechaInicio, fechaFin } = entrada
-  const cruzaConPedido = condicionTurnoSeCruzaCon(fechaInicio, fechaFin)
-
   const filas = await tx.bloqueAgenda.findMany({
     where: { id: { in: bloqueIds } },
     select: {
@@ -162,40 +128,25 @@ async function leerSnapshot(
     where: { profesorId_materiaId: { profesorId, materiaId } },
     select: { estado: true },
   })
-  const ocupantes = await tx.turno.findMany({
-    where: { ...cruzaConPedido, bloqueAgendaId: { in: bloqueIds } },
-    select: { bloqueAgendaId: true, ...SELECT_FECHAS },
+  // Series de las filas pedidas que se cruzan con el pedido, con su fin efectivo y sus fechas
+  // canceladas: `analizarHora` decide qué fechas ocupan lugar.
+  const ocupantes = await leerSeries(tx, {
+    bloqueAgendaIds: bloqueIds,
+    desde: fechaInicio,
+    hasta: fechaFin,
   })
-  // Mismo día y hora que alguna fila pedida (cada fila es una hora en punto: pisarse es igualdad),
-  // de cualquier profesor.
+  // Turnos del alumno que chocan con el pedido (semanal desde `fechaInicio` hasta `fechaFin`) en
+  // el día de las filas y en el rango de sus horas, de cualquier profesor. `planificarReserva` se
+  // queda con los de alguna hora elegida (pueden no ser contiguas).
   const turnosAlumno =
     filas.length === 0
       ? []
-      : await tx.turno.findMany({
-          where: {
-            ...cruzaConPedido,
-            alumnoId,
-            bloqueAgenda: {
-              OR: filas.map((fila) => ({ diaSemana: fila.diaSemana, horaInicio: fila.horaInicio })),
-            },
-          },
-          select: {
-            id: true,
-            tipo: true,
-            ...SELECT_FECHAS,
-            bloqueAgenda: {
-              select: {
-                diaSemana: true,
-                horaInicio: true,
-                horaFin: true,
-                profesor: {
-                  select: { id: true, usuario: { select: { nombre: true, apellido: true } } },
-                },
-              },
-            },
-            materia: { select: { id: true, nombre: true } },
-          },
-          orderBy: [{ fechaInicio: 'asc' }, { id: 'asc' }],
+      : await superposicionesDelAlumno(tx, {
+          alumnoId,
+          fecha: fechaInicio,
+          hasta: fechaFin,
+          horaInicio: Math.min(...filas.map((fila) => fila.horaInicio)),
+          horaFin: Math.max(...filas.map((fila) => fila.horaFin)),
         })
 
   return {
@@ -207,23 +158,28 @@ async function leerSnapshot(
     },
     materia,
     asignacion,
-    ocupantes: ocupantes.map((turno) => ({
-      bloqueAgendaId: turno.bloqueAgendaId,
-      ...aFechas(turno),
+    ocupantes: ocupantes.map((serie) => ({
+      bloqueAgendaId: serie.bloqueAgendaId,
+      estado: serie.estado,
+      fechaInicio: serie.fechaInicio,
+      finEfectivo: serie.finEfectivo,
+      canceladas: serie.canceladas,
     })),
-    turnosAlumno: turnosAlumno.map((turno) => ({
-      id: turno.id,
-      tipo: turno.tipo,
-      ...aFechas(turno),
-      diaSemana: turno.bloqueAgenda.diaSemana,
-      horaInicio: turno.bloqueAgenda.horaInicio,
-      horaFin: turno.bloqueAgenda.horaFin,
+    turnosAlumno: turnosAlumno.map((ocurrencia) => ({
+      id: ocurrencia.turnoId,
+      tipo: ocurrencia.tipo,
+      estado: 'ACTIVO' as const,
+      fechaInicio: ocurrencia.serie.fechaInicio,
+      fechaFin: ocurrencia.serie.fechaFin,
+      diaSemana: ocurrencia.diaSemana,
+      horaInicio: ocurrencia.horaInicio,
+      horaFin: ocurrencia.horaFin,
       profesor: {
-        id: turno.bloqueAgenda.profesor.id,
-        nombre: turno.bloqueAgenda.profesor.usuario.nombre,
-        apellido: turno.bloqueAgenda.profesor.usuario.apellido,
+        id: ocurrencia.profesor.id,
+        nombre: ocurrencia.profesor.nombre,
+        apellido: ocurrencia.profesor.apellido,
       },
-      materia: turno.materia,
+      materia: ocurrencia.materia,
     })),
   }
 }
@@ -246,9 +202,8 @@ export const turnosRepository = {
    * `TURNOS_VIGENTES` antes de editar o dar de baja una fila.
    */
   async contarVigentesPorBloque(bloqueAgendaId: number, fechaHoy: string): Promise<number> {
-    return prisma.turno.count({
-      where: { ...condicionTurnoVigente(fechaHoy), bloqueAgendaId },
-    })
+    const [grupo] = await contarVigentesPorBloques(prisma, [bloqueAgendaId], fechaHoy)
+    return grupo?.cantidad ?? 0
   },
 
   /**
@@ -288,39 +243,22 @@ export const turnosRepository = {
   },
 
   /**
-   * Turnos que ocupan lugar en cada par fila–fecha pedido, en **una sola consulta** (sin N+1):
-   * trae los turnos `ACTIVO` de esas filas que se cruzan con `[min(fechas), max(fechas)]` y cuenta
-   * en memoria, con `ocupaLugarEn`, cuántos ocupan lugar en cada par (un recurrente cuenta en
-   * todas las fechas de su rango). Solo vienen los pares con al menos un turno.
+   * Ocurrencias que ocupan lugar en cada par fila–fecha pedido, en **una sola consulta** (sin N+1):
+   * delega en `ocupacionesEn` del motor (descuenta las canceladas y respeta el fin efectivo). Solo
+   * vienen los pares con al menos una, sin repetir y en el orden pedido. La usan el horario de
+   * `bloques` y la disponibilidad.
    */
   async contarOcupacionPorBloque(
     pares: { bloqueAgendaId: number; fecha: string }[],
   ): Promise<OcupacionPorBloque[]> {
     if (pares.length === 0) return []
-    const fechas = pares.map((par) => par.fecha).sort()
-    const desde = fechas[0] ?? ''
-    const hasta = fechas.at(-1) ?? desde
-
-    const filas = await prisma.turno.findMany({
-      where: {
-        ...condicionTurnoSeCruzaCon(desde, hasta),
-        bloqueAgendaId: { in: [...new Set(pares.map((par) => par.bloqueAgendaId))] },
-      },
-      select: { bloqueAgendaId: true, ...SELECT_FECHAS },
-    })
-    const porFila = new Map<number, TurnoFechas[]>()
-    for (const fila of filas) {
-      porFila.set(fila.bloqueAgendaId, [...(porFila.get(fila.bloqueAgendaId) ?? []), aFechas(fila)])
-    }
-
+    const ocupacion = await ocupacionesEn(prisma, pares)
     const vistos = new Set<string>()
     return pares.flatMap(({ bloqueAgendaId, fecha }) => {
-      const clave = `${bloqueAgendaId}|${fecha}`
+      const clave = claveOcupacion(bloqueAgendaId, fecha)
       if (vistos.has(clave)) return []
       vistos.add(clave)
-      const cantidad = (porFila.get(bloqueAgendaId) ?? []).filter((turno) =>
-        ocupaLugarEn(turno, fecha),
-      ).length
+      const cantidad = ocupacion.get(clave) ?? 0
       return cantidad > 0 ? [{ bloqueAgendaId, fecha, cantidad }] : []
     })
   },
@@ -336,15 +274,11 @@ export const turnosRepository = {
    * decide `planificar` (un callback puro que pasa el service); acá solo se garantiza que decida
    * sobre datos que nadie puede cambiar hasta el `INSERT`.
    *
-   * 1. Locks, siempre en este orden (el de `bloques`, que bloquea `profesor` y después escribe
-   *    `bloque_agenda`), para no generar deadlocks:
-   *    - `profesor` `FOR SHARE`: dos reservas del mismo profesor no se esperan acá, pero un alta
-   *      o edición de bloques del profesor (que lo toma `FOR UPDATE`) sí;
-   *    - las filas de `bloque_agenda`, ordenadas por id, `FOR UPDATE`: serializan la capacidad
-   *      de cada hora;
-   *    - `alumno` `FOR UPDATE`: serializa `ALUMNO_SUPERPUESTO` entre reservas del mismo alumno
-   *      con profesores distintos.
-   * 2. Relee todo con los locks tomados (`leerSnapshot`).
+   * 1. Locks con `bloquearParaReserva` (el orden compartido por todas las escrituras sobre
+   *    turnos: `profesor` `FOR SHARE`, las filas de `bloque_agenda` por id `FOR UPDATE` y
+   *    `alumno` `FOR UPDATE`), antes de cualquier lectura.
+   * 2. Relee todo con los locks tomados (`leerSnapshot`): las series de las filas con su fin
+   *    efectivo y sus canceladas, y la superposición del alumno.
    * 3. `planificar(snapshot)`: si lanza, no se inserta nada.
    * 4. Inserta los turnos con la auditoría del actor y los devuelve con el select del detalle,
    *    ordenados por hora y fecha de inicio.
@@ -359,11 +293,7 @@ export const turnosRepository = {
     // Timeout más largo que el default de Prisma (5 s): con reservas simultáneas de la misma hora,
     // la espera del lock cuenta dentro de la transacción, y esa espera no tiene que terminar en 500.
     return prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(Prisma.sql`SELECT id FROM profesor WHERE id = ${profesorId} FOR SHARE`)
-      await tx.$queryRaw(
-        Prisma.sql`SELECT id FROM bloque_agenda WHERE id IN (${Prisma.join(bloqueIds)}) ORDER BY id FOR UPDATE`,
-      )
-      await tx.$queryRaw(Prisma.sql`SELECT id FROM alumno WHERE id = ${alumnoId} FOR UPDATE`)
+      await bloquearParaReserva(tx, { profesorId, bloqueAgendaIds: bloqueIds, alumnoId })
 
       const plan = planificar(await leerSnapshot(tx, entrada))
 
@@ -384,221 +314,6 @@ export const turnosRepository = {
       })
       return { turnos: filas.map(aDetalle), fechasSinTurno: plan.fechasSinTurno }
     }, TRANSACCION_RESERVA)
-  },
-
-  /**
-   * Página de la agenda de una fecha: turnos que aplican ese día (`condicionTurnoOcupaLugar`) cuyo
-   * bloque cae en el día de la semana correspondiente, excluyendo los `CANCELADO`. Filtrable por
-   * materia, aula, profesor (vista personal de su agenda, decisión T-42) y `terminos` de búsqueda
-   * (T-36: cada palabra tiene que coincidir en la `busqueda` del alumno, o todas en la del
-   * `Usuario` del profesor, nunca mezcladas entre los dos; con `profesorId`, sólo busca por
-   * alumno, porque el profesor ya está fijo). Ordenada por hora de inicio y, dentro de la hora,
-   * por profesor (apellido y nombre, vía `busqueda` de su `Usuario`), y por `id` del turno si todo
-   * lo anterior coincide.
-   */
-  async listarAgenda(filtro: {
-    fecha: string
-    page: number
-    pageSize: number
-    materiaId?: number
-    aulaId?: number
-    profesorId?: number
-    terminos?: string[]
-  }): Promise<AgendaListado> {
-    const terminos = filtro.terminos ?? []
-    const alumnoCoincide = {
-      alumno: { AND: terminos.map((termino) => ({ busqueda: { contains: termino } })) },
-    } satisfies Prisma.TurnoWhereInput
-    const profesorCoincide = {
-      bloqueAgenda: {
-        profesor: {
-          usuario: { AND: terminos.map((termino) => ({ busqueda: { contains: termino } })) },
-        },
-      },
-    } satisfies Prisma.TurnoWhereInput
-    // Con profesorId ya fijo, buscar también por nombre de profesor no aportaría nada.
-    const busqueda =
-      terminos.length === 0
-        ? []
-        : filtro.profesorId === undefined
-          ? [{ OR: [alumnoCoincide, profesorCoincide] }]
-          : [alumnoCoincide]
-
-    // `condicionTurnoOcupaLugar` ya usa la clave `OR` (fechaFin nula o >= fecha): la búsqueda por
-    // alumno/profesor no puede ir suelta en el mismo objeto (la pisaría). Van como ramas separadas
-    // de un `AND` explícito. Combinada con el día de la semana del bloque, la condición incluye los
-    // recurrentes cuyo rango contiene la fecha.
-    const where = {
-      AND: [
-        condicionTurnoOcupaLugar(filtro.fecha),
-        {
-          bloqueAgenda: {
-            diaSemana: diaSemanaISO(filtro.fecha),
-            ...(filtro.aulaId === undefined ? {} : { aulaId: filtro.aulaId }),
-            ...(filtro.profesorId === undefined ? {} : { profesorId: filtro.profesorId }),
-          },
-          ...(filtro.materiaId === undefined ? {} : { materiaId: filtro.materiaId }),
-        },
-        ...busqueda,
-      ],
-    } satisfies Prisma.TurnoWhereInput
-
-    const [filas, total] = await prisma.$transaction([
-      prisma.turno.findMany({
-        where,
-        select: {
-          id: true,
-          estado: true,
-          alumno: { select: { id: true, apellido: true, nombre: true } },
-          materia: { select: { id: true, nombre: true } },
-          bloqueAgenda: {
-            select: {
-              horaInicio: true,
-              horaFin: true,
-              aula: { select: { id: true, nombre: true } },
-              profesor: {
-                select: { id: true, usuario: { select: { apellido: true, nombre: true } } },
-              },
-            },
-          },
-        },
-        orderBy: [
-          { bloqueAgenda: { horaInicio: 'asc' } },
-          { bloqueAgenda: { profesor: { usuario: { busqueda: 'asc' } } } },
-          { id: 'asc' },
-        ],
-        ...calcularSkipTake(filtro),
-      }),
-      prisma.turno.count({ where }),
-    ])
-
-    return {
-      data: filas.map((fila) => ({
-        id: fila.id,
-        alumno: fila.alumno,
-        profesor: {
-          id: fila.bloqueAgenda.profesor.id,
-          apellido: fila.bloqueAgenda.profesor.usuario.apellido,
-          nombre: fila.bloqueAgenda.profesor.usuario.nombre,
-        },
-        materia: fila.materia,
-        aula: fila.bloqueAgenda.aula,
-        horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
-        horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
-        estado: fila.estado,
-      })),
-      meta: armarMeta(filtro, total),
-    }
-  },
-
-  /**
-   * Turnos de un profesor que se cruzan con `[desde, hasta]` (HU-10), **sin expandir**: el service
-   * los convierte en ocurrencias con `expandirOcurrencias`, la misma condición "ocupa lugar" que
-   * usa la agenda diaria, aplicada fecha por fecha. `condicionTurnoSeCruzaCon` ya excluye los
-   * `CANCELADO`. Si el rango no llega a cubrir la semana, se acota además por los días que toca,
-   * así un pedido de un solo día no lee los bloques de los otros días del profesor.
-   *
-   * Ordenados por hora de inicio y luego `id`: al expandir, las ocurrencias de cada fecha quedan
-   * en ese mismo orden.
-   *
-   * A pesar del nombre, la usan la agenda propia (el profesor de la sesión) y la agenda de un
-   * profesor para mesa de entradas (T-44): recibe el `profesorId` ya resuelto.
-   */
-  async listarAgendaPropia(filtro: {
-    profesorId: number
-    desde: string
-    hasta: string
-  }): Promise<TurnoDeProfesor[]> {
-    const dias = diasDelRango(filtro.desde, filtro.hasta)
-    const filas = await prisma.turno.findMany({
-      where: {
-        ...condicionTurnoSeCruzaCon(filtro.desde, filtro.hasta),
-        bloqueAgenda: {
-          profesorId: filtro.profesorId,
-          ...(dias === undefined ? {} : { diaSemana: { in: dias } }),
-        },
-      },
-      select: {
-        id: true,
-        tipo: true,
-        estado: true,
-        fechaInicio: true,
-        fechaFin: true,
-        alumno: { select: { id: true, apellido: true, nombre: true } },
-        materia: { select: { id: true, nombre: true } },
-        bloqueAgenda: {
-          select: {
-            diaSemana: true,
-            horaInicio: true,
-            horaFin: true,
-            aula: { select: { id: true, nombre: true } },
-          },
-        },
-      },
-      orderBy: [{ bloqueAgenda: { horaInicio: 'asc' } }, { id: 'asc' }],
-    })
-
-    return filas.map((fila) => ({
-      id: fila.id,
-      tipo: fila.tipo,
-      ...aFechas(fila),
-      diaSemana: fila.bloqueAgenda.diaSemana,
-      horaInicio: minutosAHora(fila.bloqueAgenda.horaInicio),
-      horaFin: minutosAHora(fila.bloqueAgenda.horaFin),
-      alumno: fila.alumno,
-      materia: fila.materia,
-      aula: fila.bloqueAgenda.aula,
-    }))
-  },
-
-  /**
-   * Materias con al menos un turno que aplica esa fecha (`condicionTurnoOcupaLugar`, excluyendo los
-   * `CANCELADO`), para el selector de materias de la agenda en el frontend. Ordenadas por nombre
-   * (`busqueda`, sin tildes ni mayúsculas) y luego `id`. Sin paginar: es un selector de catálogo.
-   *
-   * A propósito **no filtra por `Materia.estado`**: importa si esa materia se dictó ese día, no si
-   * hoy sigue activa. Con una fecha pasada, una materia dada de baja después sigue apareciendo si
-   * tuvo un turno `ACTIVO` ese día (a diferencia de `materiasRepository.listarActivas()`, el
-   * selector del catálogo vigente, que sí filtra por `estado`).
-   */
-  async listarMateriasConTurno(fecha: string): Promise<MateriasConTurnoListado> {
-    return prisma.materia.findMany({
-      where: {
-        turnos: {
-          some: {
-            ...condicionTurnoOcupaLugar(fecha),
-            bloqueAgenda: { diaSemana: diaSemanaISO(fecha) },
-          },
-        },
-      },
-      select: { id: true, nombre: true },
-      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
-    })
-  },
-
-  /**
-   * Aulas con al menos un bloque que ese día de la semana tiene un turno que aplica esa fecha
-   * (`condicionTurnoOcupaLugar`, excluyendo los `CANCELADO`), para el selector de aula de la agenda
-   * en el frontend. Ordenadas por nombre y luego `id`, como `aulasRepository.listar()`. Sin
-   * paginar: es un selector de catálogo.
-   *
-   * A propósito **no filtra por `Aula.estado`**: importa si se usó ese día, no si hoy sigue
-   * activa. Con una fecha pasada, un aula dada de baja después sigue apareciendo si tuvo un turno
-   * `ACTIVO` ese día.
-   */
-  async listarAulasConTurno(fecha: string): Promise<AulasConTurnoListado> {
-    return prisma.aula.findMany({
-      where: {
-        bloques: {
-          some: {
-            diaSemana: diaSemanaISO(fecha),
-            turnos: { some: condicionTurnoOcupaLugar(fecha) },
-          },
-        },
-      },
-      select: { id: true, nombre: true },
-      orderBy: [{ nombre: 'asc' }, { id: 'asc' }],
-    })
   },
 }
 
