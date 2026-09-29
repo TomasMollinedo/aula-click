@@ -11,7 +11,7 @@ import {
   parsearVista,
   rangoDeVista,
 } from '../agenda-propia'
-import type { AgendaPropiaItem } from '../turnos.types'
+import type { AgendaPropiaItem } from '../agendas.types'
 
 // Vista por día o por semana de la agenda propia (HU-10). Lunes 28/09/2026 a domingo 04/10/2026;
 // el 30/09 es miércoles. Ninguna función usa "hoy" del sistema: se le pasa.

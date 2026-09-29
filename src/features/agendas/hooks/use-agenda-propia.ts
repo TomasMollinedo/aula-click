@@ -2,9 +2,9 @@ import { keepPreviousData, useQuery } from '@tanstack/react-query'
 
 import type { ApiError } from '@/utils/fetch-json'
 
-import type { AgendaPropiaItem, AgendaPropiaParams } from '../turnos.types'
-import { listarAgendaPropia } from '../api/turnos.api'
-import { turnosKeys } from '../api/turnos.keys'
+import type { AgendaPropiaItem, AgendaPropiaParams } from '../agendas.types'
+import { listarAgendaPropia } from '../api/agendas.api'
+import { agendasKeys } from '../api/agendas.keys'
 
 /**
  * Agenda del profesor de la sesión para un rango de fechas (HU-10). El profesor sale de la sesión:
@@ -15,7 +15,7 @@ import { turnosKeys } from '../api/turnos.keys'
  */
 export function useAgendaPropia(params: AgendaPropiaParams) {
   return useQuery<AgendaPropiaItem[], ApiError>({
-    queryKey: turnosKeys.agendaPropia(params),
+    queryKey: agendasKeys.propia(params),
     queryFn: () => listarAgendaPropia(params),
     placeholderData: keepPreviousData,
     // Un 4xx (rango inválido, sin permiso, sin ficha de profesor) no cambia reintentando: se

@@ -28,8 +28,8 @@ type ConfirmacionTurnoProps = {
   alta: TurnosAlta
   /** El pedido que se aceptó (tipo y rango pedidos). */
   pedido: TurnoCrear
-  /** URL que abre el detalle de un turno como modal sobre esta pantalla. */
-  hrefDetalle: (turnoId: number) => string
+  /** URL que abre el detalle de un turno (su primera fecha) como modal sobre esta pantalla. */
+  hrefDetalle: (turnoId: number, fecha: string) => string
   /** Se llama al abrir un detalle con el link en esta pestaña (para cerrarlo con Atrás). */
   onVerDetalle: () => void
   onRegistrarOtro: () => void
@@ -115,7 +115,7 @@ export function ConfirmacionTurno({
                   >
                     <span className="text-muted-foreground">{textoRangoTurno(tramo)}</span>
                     <Link
-                      href={hrefDetalle(tramo.id)}
+                      href={hrefDetalle(tramo.id, tramo.fechaInicio)}
                       scroll={false}
                       onClick={(e) => {
                         if (!e.metaKey && !e.ctrlKey && !e.shiftKey) onVerDetalle()

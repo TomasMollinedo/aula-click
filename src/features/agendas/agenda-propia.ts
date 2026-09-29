@@ -2,11 +2,11 @@ import { addDays, format, getISODay, isValid, parseISO, startOfISOWeek } from 'd
 
 import { nombreDiaSemana } from '@/utils/dias-semana'
 
-import { fechaCorta } from './formato-turnos'
-import type { AgendaPropiaItem } from './turnos.types'
+import { fechaCorta } from '@/utils/formato-fechas'
+import type { AgendaPropiaItem } from './agendas.types'
 
 // Vista por día o por semana de la agenda propia del profesor (HU-10). Solo presentación: qué
-// turnos caen en cada fecha lo decide la API (`GET /turnos/agenda-propia` devuelve una entrada por
+// turnos caen en cada fecha lo decide la API (`GET /agendas/propia` devuelve una entrada por
 // ocurrencia, con su `fecha`). Las fechas son `YYYY-MM-DD` y se leen con `parseISO` (hora local),
 // nunca con `new Date('YYYY-MM-DD')`. Ninguna función usa `new Date()`: "hoy" se recibe.
 

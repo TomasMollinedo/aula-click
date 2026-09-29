@@ -15,7 +15,7 @@ import {
   moverRango,
   type VistaAgenda,
 } from '../agenda-propia'
-import type { AgendaPropiaItem } from '../turnos.types'
+import type { AgendaPropiaItem } from '../agendas.types'
 import { AgendaPropiaTable, type TextosVacioAgenda } from './AgendaPropiaTable'
 import { NavegacionFecha } from './NavegacionFecha'
 import { SelectorVistaAgenda } from './SelectorVistaAgenda'

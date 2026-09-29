@@ -17,7 +17,7 @@ import {
 import { cn } from '@/utils/cn'
 
 import type { DiaDeAgenda, VistaAgenda } from '../agenda-propia'
-import { fechaConDia } from '../formato-turnos'
+import { fechaConDia } from '@/utils/formato-fechas'
 
 const COLUMNAS = 5
 

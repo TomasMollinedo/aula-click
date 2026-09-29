@@ -2,8 +2,9 @@
 
 import { Suspense, use } from 'react'
 
+import { DetalleTurno } from '@/app/mesa/_componentes/detalle-turno'
+import { AgendaProfesorListado } from '@/features/agendas/components/AgendaProfesorListado'
 import { ProfesorDetalle } from '@/features/profesores/components/ProfesorDetalle'
-import { AgendaProfesorListado } from '@/features/turnos/components/AgendaProfesorListado'
 
 // Edición entrando por URL: el detalle de fondo; el modal lo pone [profesorId]/@modal/editar.
 export default function EditarProfesorPage({
@@ -16,7 +17,12 @@ export default function EditarProfesorPage({
       <ProfesorDetalle
         profesorId={profesorId}
         rutaBase="/mesa/profesores"
-        renderAgenda={(profesor) => <AgendaProfesorListado profesorId={profesor.id} />}
+        renderAgenda={(profesor) => (
+          <AgendaProfesorListado
+            profesorId={profesor.id}
+            renderDetalle={(detalle) => <DetalleTurno {...detalle} />}
+          />
+        )}
       />
     </Suspense>
   )

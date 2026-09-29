@@ -46,7 +46,7 @@ type ProfesorDetalleProps = {
   /** URL del listado de profesores en el segmento del rol (por ejemplo `/mesa/profesores`). */
   rutaBase: string
   /**
-   * Contenido del tab "Agenda": lo compone `app/` con la agenda de `features/turnos`, porque una
+   * Contenido del tab "Agenda": lo compone `app/` con la agenda de `features/agendas`, porque una
    * feature no importa componentes de otra (docs/arquitectura-frontend.md → Quién importa a quién).
    */
   renderAgenda: (profesor: ProfesorDetalleType) => ReactNode

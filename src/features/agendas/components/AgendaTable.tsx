@@ -15,7 +15,7 @@ import {
 } from '@/components/ui/table'
 import { cn } from '@/utils/cn'
 
-import type { AgendaItem } from '../turnos.types'
+import type { AgendaItem } from '../agendas.types'
 
 type AgendaTableProps = {
   data?: AgendaItem[]
