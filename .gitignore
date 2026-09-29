@@ -51,3 +51,11 @@ next-env.d.ts
 .claude/settings.local.json
 # Claude Code: servidores del panel de preview (config local de cada uno)
 .claude/launch.json
+# Skills instalados localmente para herramientas de IA (no es código del proyecto)
+.claude/skills/
+.agents/
+.windsurf/
+skills-lock.json
+
+# Override local de puertos de Docker (por si chocan con otro proyecto en esta máquina)
+docker-compose.override.yml

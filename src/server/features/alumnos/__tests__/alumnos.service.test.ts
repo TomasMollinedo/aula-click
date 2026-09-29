@@ -213,6 +213,36 @@ describe('crear', () => {
     expect(details).toEqual(faltaTutor('tutorApellido', 'tutorTelefono', 'tutorEmail'))
   })
 
+  it('mayor sin email → ValidationError en email (T-45, corrige T-25)', async () => {
+    const details = await detallesDe(service.crear({ ...adulto, email: null }, actor))
+
+    expect(details).toEqual([{ path: ['email'], message: 'Obligatorio para mayores de edad' }])
+    expect(repository.crear).not.toHaveBeenCalled()
+  })
+
+  it('mayor sin email ni teléfono → un solo ValidationError con los 2 campos', async () => {
+    const details = await detallesDe(
+      service.crear({ ...adulto, email: null, telefono: null }, actor),
+    )
+    expect(details).toEqual([
+      { path: ['email'], message: 'Obligatorio para mayores de edad' },
+      { path: ['telefono'], message: 'Obligatorio para mayores de edad' },
+    ])
+  })
+
+  it('menor sin email ni teléfono propios, con tutor completo → ok', async () => {
+    const datos = { ...menor, ...tutor, email: null, telefono: null }
+    repository.crear.mockResolvedValue(guardado(datos))
+
+    const alumno = await service.crear(datos, actor)
+
+    expect(repository.crear).toHaveBeenCalledWith(
+      { ...datos, busqueda: 'gonzalez lucia 52345678' },
+      actor,
+    )
+    expect(alumno.menorDeEdad).toBe(true)
+  })
+
   it('menor con los obligatorios y los 4 del tutor, sin datos escolares → ok', async () => {
     repository.crear.mockResolvedValue(guardado({ ...menor, ...tutor }))
 
@@ -291,11 +321,12 @@ describe('editar', () => {
     expect(repository.actualizar).not.toHaveBeenCalled()
   })
 
-  it('DNI duplicado: propaga el ConflictError del repository', async () => {
-    repository.buscarPorId.mockResolvedValue(guardado())
-    repository.actualizar.mockRejectedValue(new ConflictError('Ya existe un alumno con ese DNI'))
+  it('con dni → ValidationError "El DNI no se puede modificar", sin tocar el repository', async () => {
+    const details = await detallesDe(service.editar(1, { dni: '40111222' }, actor))
 
-    await expect(service.editar(1, { dni: '40111222' }, actor)).rejects.toThrow(ConflictError)
+    expect(details).toEqual([{ path: ['dni'], message: 'El DNI no se puede modificar' }])
+    expect(repository.buscarPorId).not.toHaveBeenCalled()
+    expect(repository.actualizar).not.toHaveBeenCalled()
   })
 
   it('cambiar la fecha de nacimiento a la de un menor sin tutor cargado → ValidationError', async () => {
@@ -315,6 +346,17 @@ describe('editar', () => {
     const details = await detallesDe(service.editar(1, { tutorEmail: null }, actor))
 
     expect(details).toEqual(faltaTutor('tutorEmail'))
+  })
+
+  it('un menor sin email propio que pasa a mayor → ValidationError en email (T-45)', async () => {
+    repository.buscarPorId.mockResolvedValue(guardado({ ...menor, ...tutor, email: null }))
+
+    const details = await detallesDe(
+      service.editar(1, { fechaNacimiento: adulto.fechaNacimiento }, actor),
+    )
+
+    expect(details).toEqual([{ path: ['email'], message: 'Obligatorio para mayores de edad' }])
+    expect(repository.actualizar).not.toHaveBeenCalled()
   })
 
   it('fecha de nacimiento futura → ValidationError', async () => {

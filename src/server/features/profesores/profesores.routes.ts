@@ -115,7 +115,7 @@ export const editarProfesorRoute = createRoute({
   tags,
   summary: 'Editar un profesor',
   description:
-    'Edición parcial: lo omitido no cambia. La contraseña no se edita. Como el email es el de la cuenta, cambiarlo cambia el email de ingreso.',
+    'Edición parcial: lo omitido no cambia. La contraseña no se edita. Como el email es el de la cuenta, cambiarlo cambia el email de ingreso. El DNI no se puede modificar: un `dni` en el body responde 400.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: {
     params: profesorIdParamsSchema,

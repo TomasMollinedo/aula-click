@@ -19,17 +19,28 @@ import { esMenorDeEdad } from './edad'
 
 const MENSAJE_INVALIDO = 'Datos de entrada inválidos'
 const MENSAJE_TUTOR = 'Obligatorio para menores de edad'
+const MENSAJE_CONTACTO_MAYOR = 'Obligatorio para mayores de edad'
+const MENSAJE_DNI_NO_EDITABLE = 'El DNI no se puede modificar'
 // tutorDni no es obligatorio (HU-01).
 const TUTOR_OBLIGATORIO = ['tutorNombre', 'tutorApellido', 'tutorTelefono', 'tutorEmail'] as const
+// Un menor puede no tener contacto propio (T-45, corrige T-25): en su lugar responden el tutor.
+const CONTACTO_OBLIGATORIO = ['email', 'telefono'] as const
 
-type DatosReglas = Pick<CrearAlumno, 'fechaNacimiento' | (typeof TUTOR_OBLIGATORIO)[number]>
+type DatosReglas = Pick<
+  CrearAlumno,
+  'fechaNacimiento' | (typeof TUTOR_OBLIGATORIO)[number] | (typeof CONTACTO_OBLIGATORIO)[number]
+>
 
 // Mismo formato que el seed usa para los usuarios: apellido, nombre y DNI.
 function calcularBusqueda(alumno: { apellido: string; nombre: string; dni: string }): string {
   return normalizarBusqueda(`${alumno.apellido} ${alumno.nombre} ${alumno.dni}`)
 }
 
-/** Fecha de nacimiento no futura y, si es menor, los datos del tutor (un solo 400 con todos). */
+/**
+ * Fecha de nacimiento no futura y, según la edad, un solo grupo de campos obligatorios: los datos
+ * del tutor si es menor, o el email y el teléfono propios si es mayor (T-45, corrige T-25). Un
+ * solo 400 con todos los campos que falten del grupo que corresponda.
+ */
 function validarReglas(datos: DatosReglas, fechaHoy: string): void {
   if (datos.fechaNacimiento > fechaHoy) {
     throw new ValidationError(MENSAJE_INVALIDO, {
@@ -41,13 +52,16 @@ function validarReglas(datos: DatosReglas, fechaHoy: string): void {
       ],
     })
   }
-  if (!esMenorDeEdad(datos.fechaNacimiento, fechaHoy)) return
+
+  const esMenor = esMenorDeEdad(datos.fechaNacimiento, fechaHoy)
+  const obligatorios = esMenor ? TUTOR_OBLIGATORIO : CONTACTO_OBLIGATORIO
+  const mensaje = esMenor ? MENSAJE_TUTOR : MENSAJE_CONTACTO_MAYOR
 
   // Mismo formato que las issues de Zod: el frontend marca los campos igual que en un 400 de Zod.
-  const faltantes = TUTOR_OBLIGATORIO.filter((campo) => !datos[campo])
+  const faltantes = obligatorios.filter((campo) => !datos[campo])
   if (faltantes.length > 0) {
     throw new ValidationError(MENSAJE_INVALIDO, {
-      details: faltantes.map((campo) => ({ path: [campo], message: MENSAJE_TUTOR })),
+      details: faltantes.map((campo) => ({ path: [campo], message: mensaje })),
     })
   }
 }
@@ -121,8 +135,17 @@ export function crearAlumnosService({
       return conEdad(alumno, fechaHoy)
     },
 
-    /** Las reglas se aplican sobre el estado resultante (actual + cambios). */
+    /**
+     * Las reglas se aplican sobre el estado resultante (actual + cambios). El DNI no se puede
+     * modificar (T-45): un `dni` en el body se rechaza, nunca se ignora en silencio.
+     */
     async editar(id: number, cambios: EditarAlumno, actor: Actor): Promise<AlumnoDetalle> {
+      if (cambios.dni !== undefined) {
+        throw new ValidationError(MENSAJE_INVALIDO, {
+          details: [{ path: ['dni'], message: MENSAJE_DNI_NO_EDITABLE }],
+        })
+      }
+
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError('Alumno no encontrado')
 

@@ -39,11 +39,6 @@ const telefonoFormatoSchema = z
   .refine((v) => v.length >= 8, { message: 'El teléfono debe tener al menos 8 dígitos' })
   .refine((v) => v.length <= 20, { message: 'El teléfono no puede superar los 20 dígitos' })
 
-const telefonoSchema = z
-  .string({ message: 'Campo obligatorio' })
-  .min(1, { message: 'Campo obligatorio' })
-  .pipe(telefonoFormatoSchema)
-
 const telefonoOpcionalSchema = z
   .string()
   .optional()
@@ -79,8 +74,9 @@ const nombreOpcionalSchema = z
   .refine((v) => v === '' || tieneAlgunaLetra(v), { message: MENSAJE_NOMBRE_SIN_LETRAS })
   .optional()
 
-// Los datos del tutor de un menor no se validan acá: es una regla de negocio que valida la API
-// (T-28). edad.ts solo decide el aviso y los asteriscos del formulario.
+// Los datos del tutor de un menor, y el email/teléfono propios de un mayor (T-45, corrige T-25),
+// no se validan como obligatorios acá: es una regla de negocio que valida la API. edad.ts solo
+// decide el aviso y los asteriscos del formulario.
 export const alumnoFormSchema = z.object({
   nombre: nombreSchema,
   apellido: nombreSchema,
@@ -90,12 +86,8 @@ export const alumnoFormSchema = z.object({
     .min(1, { message: 'Campo obligatorio' })
     .regex(FECHA_FORMATO, { message: 'Fecha inválida: debe tener formato AAAA-MM-DD' })
     .refine((v) => isValid(parseISO(v)), { message: 'La fecha no es válida' }),
-  email: z
-    .string({ message: 'Campo obligatorio' })
-    .trim()
-    .min(1, { message: 'Campo obligatorio' })
-    .pipe(emailFormatoSchema),
-  telefono: telefonoSchema,
+  email: emailOpcionalSchema,
+  telefono: telefonoOpcionalSchema,
   nivelEscolaridad: z.string().optional().or(z.literal('')),
   grado: z
     .string()
@@ -155,8 +147,8 @@ export function detalleAValoresForm(detalle: AlumnoDetalle): AlumnoFormValues {
     apellido: detalle.apellido,
     dni: detalle.dni,
     fechaNacimiento: detalle.fechaNacimiento,
-    email: detalle.email,
-    telefono: detalle.telefono,
+    email: detalle.email ?? '',
+    telefono: detalle.telefono ?? '',
     nivelEscolaridad: detalle.nivelEscolaridad ?? '',
     grado: detalle.grado ?? '',
     institucionEducativa: detalle.institucionEducativa ?? '',
@@ -176,8 +168,8 @@ export function valoresFormACrear(valores: AlumnoFormValues): AlumnoCrear {
     apellido: valores.apellido,
     dni: valores.dni,
     fechaNacimiento: valores.fechaNacimiento,
-    email: valores.email,
-    telefono: valores.telefono,
+    email: textoANullable(valores.email),
+    telefono: textoANullable(valores.telefono),
     nivelEscolaridad: textoANullable(valores.nivelEscolaridad) as AlumnoCrear['nivelEscolaridad'],
     grado: textoANullable(valores.grado),
     institucionEducativa: textoANullable(valores.institucionEducativa),
@@ -212,9 +204,7 @@ export function valoresFormAEditar(
       key === 'nombre' ||
       key === 'apellido' ||
       key === 'dni' ||
-      key === 'fechaNacimiento' ||
-      key === 'email' ||
-      key === 'telefono'
+      key === 'fechaNacimiento'
     ) {
       ;(cambios as Record<string, unknown>)[key] = valor
     } else {
