@@ -74,6 +74,17 @@ export function proximaFechaDelDia(diaSemana: number, desde: string): string {
   if (!Number.isInteger(diaSemana) || diaSemana < 1 || diaSemana > 7) {
     throw new RangeError(`Día de la semana inválido: ${diaSemana} (se espera un entero de 1 a 7)`)
   }
-  const dias = (diaSemana - diaSemanaISO(desde) + 7) % 7
-  return dateAFecha(new Date(fechaADate(desde).getTime() + dias * MS_POR_DIA))
+  return sumarDias(desde, (diaSemana - diaSemanaISO(desde) + 7) % 7)
+}
+
+/**
+ * `fecha` + `dias` días de calendario (negativo resta), como `YYYY-MM-DD`. Se calcula en UTC, así
+ * que no le afectan los cambios de horario. Lanza `RangeError` si la fecha es inválida o `dias` no
+ * es un entero.
+ */
+export function sumarDias(fecha: string, dias: number): string {
+  if (!Number.isInteger(dias)) {
+    throw new RangeError(`Cantidad de días inválida: ${dias} (se espera un entero)`)
+  }
+  return dateAFecha(new Date(fechaADate(fecha).getTime() + dias * MS_POR_DIA))
 }

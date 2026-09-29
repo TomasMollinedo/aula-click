@@ -16,6 +16,10 @@ const NOMBRE_ALGUNA_LETRA = /\p{L}/u
 // HH:mm de 00:00 a 23:59.
 const HORA_FORMATO = /^([01]\d|2[0-3]):([0-5]\d)$/
 const MINUTOS_POR_DIA = 1440
+// Se valida sobre `String(valor)`, la representación más corta que vuelve al mismo número
+// (`1.13` → `"1.13"`): multiplicar por 100 falla con floats (`1.13 * 100 = 112.99999999999999`).
+// `1.005` o `1e-7` no pasan: tienen más de dos decimales.
+const IMPORTE_FORMATO = /^\d+(\.\d{1,2})?$/
 
 const MENSAJE_TEXTO = 'Debe ser un texto'
 const MENSAJE_OBLIGATORIO = 'Campo obligatorio'
@@ -253,4 +257,23 @@ export function rangoHorasEnPunto({ finPosterior }: { finPosterior: boolean }) {
       })
     }
   }
+}
+
+/** Tope de `Decimal(10,2)`: 8 dígitos enteros y 2 decimales. Uno mayor desbordaría la columna. */
+export const IMPORTE_MAX = 99_999_999.99
+
+/**
+ * Importe en pesos (convenciones-backend.md → Importes). Entrada y salida: número JSON mayor a 0,
+ * con hasta dos decimales y hasta `IMPORTE_MAX` (`8000`, `8000.5`, `8000.25`). `etiqueta` es el
+ * sujeto de los mensajes (`"El monto recibido"` → "El monto recibido debe ser mayor a 0"). Sin
+ * `.openapi()`: lo agrega cada campo con su descripción. Acepta `.nullable()` / `.optional()`.
+ */
+export function importe(etiqueta: string) {
+  return z
+    .number({ error: 'Debe ser un número' })
+    .positive({ error: `${etiqueta} debe ser mayor a 0` })
+    .max(IMPORTE_MAX, { error: `${etiqueta} no puede superar ${IMPORTE_MAX}` })
+    .refine((valor) => IMPORTE_FORMATO.test(String(valor)), {
+      error: `${etiqueta} puede tener hasta dos decimales`,
+    })
 }

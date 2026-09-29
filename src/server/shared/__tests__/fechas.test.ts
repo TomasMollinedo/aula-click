@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { dateAFecha, diaSemanaISO, fechaADate, hoy, proximaFechaDelDia } from '../fechas'
+import { dateAFecha, diaSemanaISO, fechaADate, hoy, proximaFechaDelDia, sumarDias } from '../fechas'
 
 describe('hoy', () => {
   afterEach(() => {
@@ -89,5 +89,23 @@ describe('proximaFechaDelDia', () => {
 
   it('lanza RangeError con una fecha inválida', () => {
     expect(() => proximaFechaDelDia(1, '2026-02-30')).toThrow(RangeError)
+  })
+})
+
+describe('sumarDias', () => {
+  it('suma días de calendario, cruzando meses y años', () => {
+    expect(sumarDias('2026-10-05', 56)).toBe('2026-11-30')
+    expect(sumarDias('2026-12-30', 3)).toBe('2027-01-02')
+    expect(sumarDias('2028-02-28', 1)).toBe('2028-02-29')
+  })
+
+  it('con 0 devuelve la misma fecha y con un negativo resta', () => {
+    expect(sumarDias('2026-10-05', 0)).toBe('2026-10-05')
+    expect(sumarDias('2026-10-01', -1)).toBe('2026-09-30')
+  })
+
+  it('lanza RangeError con una fecha inválida o días no enteros', () => {
+    expect(() => sumarDias('2026-02-30', 1)).toThrow(RangeError)
+    expect(() => sumarDias('2026-10-05', 1.5)).toThrow(RangeError)
   })
 })

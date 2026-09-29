@@ -568,7 +568,8 @@ export async function materiasDelProfesorConAlumno(
  *    (`bloques` y `profesores` lo toman `FOR UPDATE`);
  * 2. las filas de `bloque_agenda`, ordenadas por id, `FOR UPDATE`: serializan la capacidad de cada
  *    hora (el orden evita deadlocks entre escrituras de varias horas);
- * 3. `alumno` `FOR UPDATE`: serializa la superposición del alumno entre profesores distintos.
+ * 3. `alumno` `FOR UPDATE` (`bloquearAlumno`): serializa la superposición del alumno entre
+ *    profesores distintos y el estado de sus ocurrencias (cancelada, pagada).
  *
  * **Se llama antes de cualquier lectura o escritura de la transacción**: lo que se lea después ya
  * no puede cambiar hasta el commit. Los ids viajan como parámetros del tagged template (nunca
@@ -585,5 +586,19 @@ export async function bloquearParaReserva(
   const ids = [...new Set(bloqueAgendaIds)].sort((a, b) => a - b)
   await tx.$queryRaw`SELECT id FROM profesor WHERE id = ${profesorId} FOR SHARE`
   await tx.$queryRaw`SELECT id FROM bloque_agenda WHERE id = ANY(${ids}::int[]) ORDER BY id FOR UPDATE`
+  await bloquearAlumno(tx, alumnoId)
+}
+
+/**
+ * `alumno` `FOR UPDATE`: el paso 3 (el último) del orden de `bloquearParaReserva`, que lo usa. Es
+ * para las escrituras que dependen del **estado de las ocurrencias de un alumno** pero no de la
+ * ocupación ni de la superposición: el pago (T-51) y, por la misma razón, puede usarlo la
+ * cancelación (T-45). Cancelar, reprogramar, finalizar y pagar toman este lock, así que se
+ * serializan entre sí; como es un sufijo del orden compartido, no hay deadlock posible con quien
+ * toma el orden completo.
+ *
+ * **Se llama antes de cualquier lectura de la transacción.** El id viaja como parámetro.
+ */
+export async function bloquearAlumno(tx: ClienteOcurrencias, alumnoId: number): Promise<void> {
   await tx.$queryRaw`SELECT id FROM alumno WHERE id = ${alumnoId} FOR UPDATE`
 }

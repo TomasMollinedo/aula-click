@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  bloquearAlumno,
   bloquearParaReserva,
   claveOcupacion,
   leerOcurrencias,
@@ -505,6 +506,17 @@ describe('bloquearParaReserva', () => {
       valores: [[10, 11]],
     })
     expect(alumno).toEqual({ sql: 'SELECT id FROM alumno WHERE id = ? FOR UPDATE', valores: [12] })
+  })
+})
+
+describe('bloquearAlumno', () => {
+  it('toma sólo el lock del alumno (FOR UPDATE), con el id como parámetro', async () => {
+    await bloquearAlumno(cliente(), 12)
+
+    expect(queryRaw).toHaveBeenCalledTimes(1)
+    const [partes, ...valores] = queryRaw.mock.calls[0] as [string[], ...unknown[]]
+    expect(partes.join('?')).toBe('SELECT id FROM alumno WHERE id = ? FOR UPDATE')
+    expect(valores).toEqual([12])
   })
 })
 
