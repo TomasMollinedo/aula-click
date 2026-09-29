@@ -355,7 +355,6 @@ async function limpiar() {
   await prisma.pago.deleteMany({ where: { id: { in: pagoIds } } })
   await prisma.cancelacionTurno.deleteMany({ where: { turnoId: { in: turnoIds } } })
   await prisma.finalizacionRecurrencia.deleteMany({ where: { turnoId: { in: turnoIds } } })
-  await prisma.reprogramacionTurno.deleteMany({ where: { turnoId: { in: turnoIds } } })
   await prisma.turno.deleteMany({ where: { id: { in: turnoIds } } })
   await prisma.asignacionMateria.deleteMany({ where: { profesorId: { in: profesorIds } } })
   await prisma.bloqueAgenda.deleteMany({ where: { profesorId: { in: profesorIds } } })
@@ -766,6 +765,8 @@ async function crear(azar: Azar) {
       tipo: true,
       fechaInicio: true,
       fechaFin: true,
+      observaciones: true,
+      temas: true,
       estado: true,
     },
   })
@@ -822,20 +823,146 @@ async function crear(azar: Azar) {
     })
   }
 
-  // 2. Reprogramación de otra ocurrencia futura, a otro bloque (otro profesor, otro horario).
-  const paraReprogramar = futuros.find((t) => t.id !== paraCancelar?.id)
-  const bloqueDestino = bloques.find((b) => b.id !== paraReprogramar?.bloqueAgendaId)
-  if (paraReprogramar && bloqueDestino) {
-    await prisma.reprogramacionTurno.create({
-      data: {
-        turnoId: paraReprogramar.id,
-        fechaOrigen: paraReprogramar.fechaInicio,
-        bloqueAgendaOrigenId: paraReprogramar.bloqueAgendaId,
-        fechaDestino: fechaADate(sumarDias(fechaStr(paraReprogramar.fechaInicio), 7)),
-        bloqueAgendaDestinoId: bloqueDestino.id,
-        createdById: actorId,
-      },
-    })
+  // 2. Reprogramaciones (HU-20), aplicando a mano lo que hará la API (T-49): se edita el turno,
+  //    sin tabla propia, y quién lo movió queda en su auditoría de modificación. Las hace otro
+  //    usuario de mesa de entradas, para que se vea distinto del creador.
+  const modificador = await prisma.usuario.create({
+    data: {
+      id: randomUUID(),
+      nombre: 'Sofía',
+      apellido: 'Demo',
+      dni: '31999001',
+      busqueda: busquedaDe('Sofía', 'Demo', '31999001'),
+      telefono: telefono(azar),
+      email: `mesa.demo@${DOMINIO}`,
+      emailVerified: true,
+      role: 'MESA_ENTRADAS',
+    },
+  })
+  await prisma.account.create({
+    data: {
+      id: randomUUID(),
+      providerId: 'credential',
+      accountId: modificador.id,
+      userId: modificador.id,
+      password: hash,
+    },
+  })
+  const auditoriaModificador = { createdById: modificador.id, updatedById: modificador.id }
+  // Los turnos de la cancelación y de los ejemplos de prioridad no se mueven: siguen como están.
+  const reservados = new Set(futuros.slice(0, OFFSETS_PRIORIDAD.length).map((t) => t.id))
+
+  /** Una hora y una fecha libres (> `despuesDe`) de otro bloque para mover una ocurrencia. */
+  const buscarDestino = (turno: (typeof futuros)[number], despuesDe: string) => {
+    for (const bloque of bloques) {
+      if (bloque.id === turno.bloqueAgendaId) continue
+      if (!(materiasPorProfesor.get(bloque.profesorId) ?? []).includes(turno.materiaId)) continue
+      const fecha = primeraFechaDelDia(bloque.diaSemana, sumarDias(despuesDe, 1))
+      if (fecha > hasta) continue
+      const capacidad = Math.min(
+        capacidadProfesor.get(bloque.profesorId) ?? 1,
+        capacidadAula.get(bloque.aulaId) ?? 1,
+      )
+      const claveAlumno = `${turno.alumnoId}|${bloque.diaSemana}|${bloque.horaInicio}|${fecha}`
+      if ((ocupacion.get(`${bloque.id}|${fecha}`) ?? 0) >= capacidad) continue
+      if (alumnoOcupado.has(claveAlumno)) continue
+      return { bloque, fecha }
+    }
+    return null
+  }
+  /** Mueve la ocupación de una fecha de un bloque a otra (lo que ya no ocupa y lo que pasa a ocupar). */
+  const moverOcupacion = (
+    turno: (typeof futuros)[number],
+    origen: string,
+    destino: { bloque: (typeof bloques)[number]; fecha: string },
+  ) => {
+    const bloqueOrigen = bloques.find((b) => b.id === turno.bloqueAgendaId)
+    const claveOrigen = `${turno.bloqueAgendaId}|${origen}`
+    ocupacion.set(claveOrigen, Math.max(0, (ocupacion.get(claveOrigen) ?? 0) - 1))
+    if (bloqueOrigen) {
+      alumnoOcupado.delete(
+        `${turno.alumnoId}|${bloqueOrigen.diaSemana}|${bloqueOrigen.horaInicio}|${origen}`,
+      )
+    }
+    const claveDestino = `${destino.bloque.id}|${destino.fecha}`
+    ocupacion.set(claveDestino, (ocupacion.get(claveDestino) ?? 0) + 1)
+    alumnoOcupado.add(
+      `${turno.alumnoId}|${destino.bloque.diaSemana}|${destino.bloque.horaInicio}|${destino.fecha}`,
+    )
+  }
+
+  // 2a. Sesión única reprogramada: el mismo turno pasa a otra fecha y otro bloque.
+  let sesionReprogramada = false
+  const sesion = futuros.find((t) => t.tipo === 'SESION_UNICA' && !reservados.has(t.id))
+  if (sesion) {
+    const origen = fechaStr(sesion.fechaInicio)
+    const destino = buscarDestino(sesion, origen)
+    if (destino) {
+      await prisma.turno.update({
+        where: { id: sesion.id },
+        data: {
+          bloqueAgendaId: destino.bloque.id,
+          fechaInicio: fechaADate(destino.fecha),
+          fechaFin: fechaADate(destino.fecha),
+          updatedById: modificador.id,
+        },
+      })
+      moverOcupacion(sesion, origen, destino)
+      sesionReprogramada = true
+    }
+  }
+
+  // 2b. Recurrente reprogramado en una fecha: la serie se parte en tramos. El original termina en
+  //     la ocurrencia anterior, un tramo nuevo sigue desde la siguiente y la fecha movida pasa a
+  //     ser una SESION_UNICA en el destino. No hay cancelaciones ni pagos que volver a apuntar:
+  //     se elige un turno futuro sin ninguno.
+  let recurrenteReprogramado = false
+  const recurrente = futuros.find(
+    (t) =>
+      t.tipo === 'RECURRENTE' &&
+      !reservados.has(t.id) &&
+      (t.fechaFin === null || fechaStr(t.fechaFin) >= sumarDias(fechaStr(t.fechaInicio), 21)),
+  )
+  if (recurrente) {
+    // Se mueve la tercera ocurrencia: el original conserva dos y el tramo nuevo, el resto.
+    const movida = sumarDias(fechaStr(recurrente.fechaInicio), 14)
+    const destino = movida <= hasta ? buscarDestino(recurrente, movida) : null
+    if (destino) {
+      const copia = {
+        alumnoId: recurrente.alumnoId,
+        materiaId: recurrente.materiaId,
+        observaciones: recurrente.observaciones,
+        temas: recurrente.temas,
+      }
+      await prisma.turno.update({
+        where: { id: recurrente.id },
+        data: { fechaFin: fechaADate(sumarDias(movida, -7)), updatedById: modificador.id },
+      })
+      await prisma.turno.create({
+        data: {
+          ...copia,
+          bloqueAgendaId: recurrente.bloqueAgendaId,
+          tipo: 'RECURRENTE',
+          fechaInicio: fechaADate(sumarDias(movida, 7)),
+          fechaFin: recurrente.fechaFin,
+          ...auditoriaModificador,
+        },
+      })
+      await prisma.turno.create({
+        data: {
+          ...copia,
+          bloqueAgendaId: destino.bloque.id,
+          tipo: 'SESION_UNICA',
+          fechaInicio: fechaADate(destino.fecha),
+          fechaFin: fechaADate(destino.fecha),
+          // "Temas a trabajar" es obligatorio en una sesión única (HU-08).
+          temas: copia.temas ?? azar.de(TEMAS),
+          ...auditoriaModificador,
+        },
+      })
+      moverOcupacion(recurrente, movida, destino)
+      recurrenteReprogramado = true
+    }
   }
 
   // 3. Pago con dos ocurrencias pasadas de un mismo alumno (HU-15); el resto de los turnos
@@ -862,7 +989,8 @@ async function crear(azar: Azar) {
         formaPagoId,
         importeTotal: total,
         fechaPago: fechaADate(fechaHoy),
-        montoRecibido: total,
+        // Paga con un monto redondo mayor al total, para ver el vuelto (se calcula, no se guarda).
+        montoRecibido: (Math.ceil((Number(total) + 1) / 5000) * 5000).toFixed(2),
         observaciones: 'Pago de demo con dos ocurrencias (T-29).',
         ...auditoria,
       },
@@ -871,7 +999,7 @@ async function crear(azar: Azar) {
       data: elegidos.map((t, i) => ({
         pagoId: pago.id,
         turnoId: t.id,
-        fecha: t.fechaInicio,
+        fechaOcurrencia: t.fechaInicio,
         importeAplicado: importes[i] ?? '0',
       })),
     })
@@ -890,13 +1018,15 @@ async function crear(azar: Azar) {
   console.log(`  ${examenes.size} fechas de examen`)
   console.log(
     `  escenarios T-29: ${paraCancelar ? '1' : '0'} cancelación, ` +
-      `${paraReprogramar && bloqueDestino ? '1' : '0'} reprogramación, ` +
+      `${sesionReprogramada ? '1' : '0'} sesión única reprogramada, ` +
+      `${recurrenteReprogramado ? '1' : '0'} recurrente reprogramado en tramos, ` +
       `${conDeuda ? '1' : '0'} pago con dos ocurrencias, ${segundoTramoAgregado ? '1' : '0'} tramo extra`,
   )
   console.log('')
   console.log(`Los profesores entran con su email @${DOMINIO} y la contraseña "${PASSWORD_DEMO}".`)
   const ejemplo = usuariosData[0]
   if (ejemplo) console.log(`  por ejemplo: ${ejemplo.email}`)
+  console.log(`  mesa de entradas de demo (hizo las reprogramaciones): ${modificador.email}`)
   const conHorario = bloques[0]
   if (conHorario) {
     console.log(
