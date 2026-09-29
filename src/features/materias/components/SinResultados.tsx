@@ -12,9 +12,11 @@ type SinResultadosProps = {
   hayFiltros: boolean
   /** URL del listado de materias en el segmento del rol (por ejemplo `/mesa/materias`). */
   rutaBase: string
+  /** Ofrece el alta (solo el gerente administra el catálogo). */
+  puedeEscribir: boolean
 }
 
-export function SinResultados({ q, hayFiltros, rutaBase }: SinResultadosProps) {
+export function SinResultados({ q, hayFiltros, rutaBase, puedeEscribir }: SinResultadosProps) {
   const hayBusqueda = q.length > 0 || hayFiltros
 
   return (
@@ -28,16 +30,20 @@ export function SinResultados({ q, hayFiltros, rutaBase }: SinResultadosProps) {
       description={
         hayBusqueda
           ? 'Probá con otro nombre, o cambiá el filtro de estado.'
-          : 'Dá de alta la primera.'
+          : puedeEscribir
+            ? 'Dá de alta la primera.'
+            : 'El catálogo de materias lo carga el gerente.'
       }
       className="py-20"
     >
-      <Button size="lg" asChild>
-        <Link href={`${rutaBase}/nueva`}>
-          <Plus />
-          Dar de alta una nueva materia
-        </Link>
-      </Button>
+      {puedeEscribir && (
+        <Button size="lg" asChild>
+          <Link href={`${rutaBase}/nueva`}>
+            <Plus />
+            Dar de alta una nueva materia
+          </Link>
+        </Button>
+      )}
     </EmptyState>
   )
 }

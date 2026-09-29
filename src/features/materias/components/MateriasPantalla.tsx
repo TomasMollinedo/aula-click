@@ -12,11 +12,21 @@ import { TotalMaterias } from './TotalMaterias'
 export function MateriasPantalla({
   rutaBase,
   rutaProfesores,
+  puedeEscribir = false,
 }: {
   /** URL del listado de materias en el segmento del rol (por ejemplo `/mesa/materias`). */
   rutaBase: string
-  /** URL del listado de profesores en el segmento del rol, para enlazar a sus fichas. */
-  rutaProfesores: string
+  /**
+   * URL del listado de profesores en el segmento del rol, para enlazar a sus fichas. Sin ella (el
+   * menú del gerente no tiene "Profesores") se listan sin enlace.
+   */
+  rutaProfesores?: string
+  /**
+   * Ofrece "+ Nueva materia", "Editar", "Dar de baja" y "Reactivar". Lo pasa la página según el
+   * segmento: solo el del gerente (HU-12). Por defecto, solo lectura. Es ayuda visual: la
+   * seguridad la da la API con su 403.
+   */
+  puedeEscribir?: boolean
 }) {
   return (
     <div className="space-y-8">
@@ -27,10 +37,14 @@ export function MateriasPantalla({
             Nexo Académico · <TotalMaterias />
           </>
         }
-        actions={<BotonNuevaMateria rutaBase={rutaBase} />}
+        actions={puedeEscribir ? <BotonNuevaMateria rutaBase={rutaBase} /> : undefined}
       />
       <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
-        <MateriasListado rutaBase={rutaBase} rutaProfesores={rutaProfesores} />
+        <MateriasListado
+          rutaBase={rutaBase}
+          rutaProfesores={rutaProfesores}
+          puedeEscribir={puedeEscribir}
+        />
       </Suspense>
     </div>
   )
