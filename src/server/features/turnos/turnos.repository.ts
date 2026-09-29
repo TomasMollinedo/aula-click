@@ -77,7 +77,7 @@ const SELECT_DETALLE = {
   estado: true,
   fechaInicio: true,
   fechaFin: true,
-  motivoConsulta: true,
+  observaciones: true,
   bloqueAgendaId: true,
   bloqueAgenda: {
     select: {
@@ -120,7 +120,7 @@ function aDetalle(fila: FilaDetalle): TurnoDetalle {
     },
     materia: fila.materia,
     aula: bloqueAgenda.aula,
-    motivoConsulta: fila.motivoConsulta,
+    observaciones: fila.observaciones,
     ...armarAuditoria(fila),
   }
 }

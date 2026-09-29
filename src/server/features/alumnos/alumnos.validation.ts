@@ -183,8 +183,10 @@ export const alumnoDetalleSchema = z
     apellido: z.string(),
     dni: z.string(),
     fechaNacimiento: fechaISO,
-    email: z.string(),
-    telefono: z.string(),
+    // Nullable (T-29): son opcionales para un alumno menor con tutor. La obligatoriedad según la
+    // edad la valida el alta/edición (T-37); acá solo se refleja lo que puede venir de la base.
+    email: z.string().nullable(),
+    telefono: z.string().nullable(),
     nivelEscolaridad: nivelEscolaridadSchema.nullable(),
     grado: textoNullable,
     institucionEducativa: textoNullable,

@@ -216,7 +216,7 @@ async function crear() {
     fechaInicio: string
     fechaFin?: string
     estado?: 'ACTIVO' | 'CANCELADO'
-    motivoConsulta?: string
+    observaciones?: string
   }
   async function crearTurno(datos: DatosTurno) {
     return prisma.turno.create({
@@ -229,7 +229,7 @@ async function crear() {
         fechaInicio: fechaADate(datos.fechaInicio),
         fechaFin: fechaADate(datos.fechaFin ?? datos.fechaInicio),
         estado: datos.estado ?? 'ACTIVO',
-        motivoConsulta: datos.motivoConsulta ?? null,
+        observaciones: datos.observaciones ?? null,
         createdById: actor,
         updatedById: actor,
       },
@@ -251,7 +251,7 @@ async function crear() {
     materiaId: cruz.materiaId,
     fechaInicio: hoyStr,
     estado: 'CANCELADO',
-    motivoConsulta: 'Cancelado a propósito: no debe aparecer en la agenda.',
+    observaciones: 'Cancelado a propósito: no debe aparecer en la agenda.',
   })
 
   // 3. Hoy, 09:00 (misma hora que el 1, otro profesor) — prueba el orden "por hora y, dentro de
@@ -290,7 +290,7 @@ async function crear() {
     materiaId: ramirez.materiaId,
     fechaInicio: hoyStr,
     fechaFin: en3Semanas,
-    motivoConsulta:
+    observaciones:
       'Turno de prueba con rango (no lo crea ninguna API todavía): ejercita la lectura genérica ' +
       'de condicionTurnoEnFecha. Aparece hoy y cada 7 días hasta ' +
       en3Semanas +
