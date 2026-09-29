@@ -1,12 +1,12 @@
 import type { Role } from '@/types'
 
 // Única correspondencia rol → segmento de URL (docs/arquitectura-frontend.md → Roles y URLs).
-// GERENTE y ALUMNO quedan en null porque /gerente y /portal no se crean en este sprint: mandarlos
-// ahí sería un 404. "/" los deja con un aviso en lugar de redirigirlos.
+// ALUMNO queda en null porque /portal no se crea en este sprint: mandarlo ahí sería un 404.
+// "/" lo deja con un aviso en lugar de redirigirlo.
 const SEGMENTO_POR_ROL: Record<Role, string | null> = {
   MESA_ENTRADAS: '/mesa',
   PROFESOR: '/profesor',
-  GERENTE: null,
+  GERENTE: '/gerente',
   ALUMNO: null,
 }
 
