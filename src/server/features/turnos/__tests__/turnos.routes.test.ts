@@ -183,8 +183,8 @@ describe('POST /turnos', () => {
     expect(await res.json()).toEqual({ cantidad: 1, turnos: [ejemploDetalle], fechasSinTurno: [] })
   })
 
-  it('normaliza el body: bandera en false por defecto y motivo vacío como null', async () => {
-    await pedir('', 'POST', { ...BODY, motivoConsulta: '   ' })
+  it('normaliza el body: bandera en false por defecto y observaciones vacías como null', async () => {
+    await pedir('', 'POST', { ...BODY, observaciones: '   ' })
 
     const [entrada, planificar] = repository.reservar.mock.calls[0] as [
       unknown,
@@ -217,7 +217,7 @@ describe('POST /turnos', () => {
       turnosAlumno: [],
     })
     expect(plan.turnos).toEqual([
-      expect.objectContaining({ motivoConsulta: null, fechaInicio: LUNES, fechaFin: LUNES }),
+      expect.objectContaining({ observaciones: null, fechaInicio: LUNES, fechaFin: LUNES }),
     ])
   })
 
@@ -230,7 +230,7 @@ describe('POST /turnos', () => {
       [{ fechaInicio: '05/01/2099' }, [['fechaInicio']]],
       [{ fechaFin: '2099-01-12' }, [['fechaFin']]], // sesión única con otra fecha de fin
       [{ tipo: 'RECURRENTE', fechaFin: '2098-12-29' }, [['fechaFin']]], // fin antes del inicio
-      [{ motivoConsulta: 'x'.repeat(501) }, [['motivoConsulta']]],
+      [{ observaciones: 'x'.repeat(501) }, [['observaciones']]],
       [{ asignarDondeHayLugar: 'si' }, [['asignarDondeHayLugar']]],
       [{ alumnoId: undefined }, [['alumnoId']]],
     ]

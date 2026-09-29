@@ -372,7 +372,7 @@ describe('planificarReserva', () => {
     tipo: 'RECURRENTE',
     fechaInicio: '2026-10-05',
     fechaFin: '2026-11-30',
-    motivoConsulta: null,
+    observaciones: null,
     asignarDondeHayLugar: false,
   }
   const snapshot: SnapshotReserva = {
@@ -405,7 +405,7 @@ describe('planificarReserva', () => {
           estado: 'ACTIVO',
           fechaInicio: '2026-10-05',
           fechaFin: '2026-11-30',
-          motivoConsulta: null,
+          observaciones: null,
         },
       ],
       fechasSinTurno: [],
