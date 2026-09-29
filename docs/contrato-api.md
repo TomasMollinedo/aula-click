@@ -34,6 +34,8 @@ Todo es mismo origen: la sesión viaja en una cookie y no hay tokens que manejar
 
 La zona horaria del negocio es `America/Argentina/Salta`. Qué fecha es "hoy" para las reglas (vigencia, prioridad) lo decide la API.
 
+El DNI de un alumno o de un profesor no se puede modificar después del alta : un `dni` en el `PATCH` responde 400 `VALIDACION` (`"El DNI no se puede modificar"`), en vez de ignorarse. El email y el teléfono del alumno son `nullable` (pueden llegar `null`) y obligatorios solo si es mayor de edad; si es menor, valen en cambio los datos del tutor (ver `dominio.md` → Alumnos).
+
 ## Listados paginados
 
 Query: `page` (entero >= 1, default 1) y `pageSize` (entero de 1 a 100, default 20).

@@ -201,8 +201,8 @@ model Alumno {
   dni                  String            @unique
   busqueda             String
   fechaNacimiento      DateTime          @map("fecha_nacimiento") @db.Date
-  telefono             String
-  email                String
+  telefono             String?
+  email                String?
   tutorNombre          String?           @map("tutor_nombre")
   tutorApellido        String?           @map("tutor_apellido")
   tutorDni             String?           @map("tutor_dni")

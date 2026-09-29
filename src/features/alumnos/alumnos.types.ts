@@ -23,8 +23,8 @@ export type AlumnoDetalle = {
   apellido: string
   dni: string
   fechaNacimiento: string
-  email: string
-  telefono: string
+  email: string | null
+  telefono: string | null
   nivelEscolaridad: NivelEscolaridad | null
   grado: string | null
   institucionEducativa: string | null
@@ -43,8 +43,8 @@ export type AlumnoCrear = {
   apellido: string
   dni: string
   fechaNacimiento: string
-  email: string
-  telefono: string
+  email?: string | null
+  telefono?: string | null
   nivelEscolaridad?: NivelEscolaridad | null
   grado?: string | null
   institucionEducativa?: string | null

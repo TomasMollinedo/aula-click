@@ -324,6 +324,17 @@ describe('PATCH /alumnos/{id}', () => {
     expect((await pedir('/1', 'PATCH', { telefono: null })).status).toBe(400)
   })
 
+  it('con dni → 400 "El DNI no se puede modificar", sin llamar a actualizar', async () => {
+    const res = await pedir('/1', 'PATCH', { dni: '40111222' })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.details[0]).toEqual({
+      path: ['dni'],
+      message: 'El DNI no se puede modificar',
+    })
+    expect(repository.actualizar).not.toHaveBeenCalled()
+  })
+
   it('un opcional en null → 200 y se envía null para borrarlo', async () => {
     const res = await pedir('/1', 'PATCH', { nivelEscolaridad: null })
 
@@ -351,14 +362,7 @@ describe('OpenAPI', () => {
     ])
     expect(status('/api/v1/alumnos/{id}', 'get')).toEqual(['200', '400', '401', '403', '404'])
     expect(status('/api/v1/alumnos', 'post')).toEqual(['201', '400', '401', '403', '409'])
-    expect(status('/api/v1/alumnos/{id}', 'patch')).toEqual([
-      '200',
-      '400',
-      '401',
-      '403',
-      '404',
-      '409',
-    ])
+    expect(status('/api/v1/alumnos/{id}', 'patch')).toEqual(['200', '400', '401', '403', '404'])
   })
 
   it('registra los componentes de alumnos', () => {

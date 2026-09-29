@@ -372,6 +372,17 @@ describe('PATCH /profesores/{id}', () => {
     expect(res.status).toBe(404)
   })
 
+  it('con dni → 400 "El DNI no se puede modificar", sin llamar a actualizar', async () => {
+    const res = await pedir('/3', 'PATCH', { dni: '40111222' })
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.details[0]).toEqual({
+      path: ['dni'],
+      message: 'El DNI no se puede modificar',
+    })
+    expect(repository.actualizar).not.toHaveBeenCalled()
+  })
+
   it('DNI, email o matrícula repetidos → 409', async () => {
     repository.actualizar.mockRejectedValue(
       new ConflictError('Ya existe un profesor con esa matrícula'),

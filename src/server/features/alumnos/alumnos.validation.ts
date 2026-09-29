@@ -112,18 +112,26 @@ export const alumnosDeProfesorListadoSchema = paginatedSchema(alumnoDeProfesorIt
 
 export type AlumnosDeProfesorListado = z.infer<typeof alumnosDeProfesorListadoSchema>
 
-// Campos del body. Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono (T-25).
+// Campos del body. Obligatorios siempre: nombre, apellido, DNI y fecha de nacimiento. Email y
+// teléfono del alumno pasan a ser opcionales acá (T-45, corrige T-25): el service los exige solo
+// si el alumno es mayor de edad (si es menor, exige en cambio los del tutor).
 // busqueda, estado y la auditoría no están: z.object descarta las claves desconocidas.
 const camposObligatorios = {
   nombre: nombrePersona(100),
   apellido: nombrePersona(100),
   dni,
   fechaNacimiento: fechaISO,
-  email,
-  telefono,
 }
 
 const camposOpcionales = {
+  email: opcional(email, {
+    description: 'Email del alumno. Obligatorio si es mayor de edad',
+    example: 'juan.gonzalez@mail.com',
+  }),
+  telefono: opcional(telefono, {
+    description: 'Teléfono del alumno. Obligatorio si es mayor de edad',
+    example: '387154123456',
+  }),
   nivelEscolaridad: opcional(nivelEscolaridadSchema, {
     description: 'Nivel de escolaridad',
     enum: [...NIVELES_ESCOLARIDAD],
@@ -183,8 +191,8 @@ export const alumnoDetalleSchema = z
     apellido: z.string(),
     dni: z.string(),
     fechaNacimiento: fechaISO,
-    email: z.string(),
-    telefono: z.string(),
+    email: textoNullable,
+    telefono: textoNullable,
     nivelEscolaridad: nivelEscolaridadSchema.nullable(),
     grado: textoNullable,
     institucionEducativa: textoNullable,

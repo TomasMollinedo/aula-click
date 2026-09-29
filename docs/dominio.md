@@ -18,16 +18,16 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 
 ## Alumnos
 
-- El DNI es único entre alumnos.
-- Datos obligatorios del alta: nombre, apellido, DNI, fecha de nacimiento, email y teléfono. Si es menor de edad (menos de 18 años a la fecha de hoy), además nombre, apellido, teléfono y email del tutor (el DNI del tutor es opcional). El resto (datos escolares, colegio, observaciones) se completa después (T-25).
+- El DNI es único entre alumnos. **No se puede modificar después del alta**: un `dni` en la edición se rechaza (T-45).
+- Datos obligatorios del alta: nombre, apellido, DNI y fecha de nacimiento. Si es mayor de edad (18 años o más a la fecha de hoy), además su email y su teléfono. Si es menor, en cambio, nombre, apellido, teléfono y email del tutor (el DNI del tutor es opcional); el email y el teléfono propios del alumno son opcionales. El resto (datos escolares, colegio, observaciones) se completa después (T-45, corrige T-25).
 - Cumple 18 el día de su cumpleaños: ese día ya es mayor. Quien nació un 29 de febrero cumple 18 el 1 de marzo.
 - La fecha de nacimiento no puede ser posterior a hoy.
-- La regla del tutor vale también al editar, sobre el alumno resultante: no se puede borrar un dato obligatorio del tutor de un menor. Los datos del tutor de un mayor se conservan.
+- La regla de contacto vale también al editar, sobre el alumno resultante: no se puede borrar un dato obligatorio del tutor de un menor, ni el email o el teléfono propios de un mayor. Si una edición hace que un menor pase a ser mayor y no tiene email o teléfono cargados, se rechaza. Los datos del tutor de un mayor se conservan.
 - Los alumnos tienen baja lógica (estado activo / inactivo, `ACTIVO` por defecto), pero la baja no se implementa en este release.
 
 ## Profesores y materias
 
-- DNI y matrícula son únicos entre profesores (activos e inactivos).
+- DNI y matrícula son únicos entre profesores (activos e inactivos). El DNI **no se puede modificar** después del alta: un `dni` en la edición se rechaza (T-45).
 - Profesores y materias tienen baja lógica (estado activo / inactivo); nada se borra.
 - La baja del profesor es la de su usuario: un profesor inactivo es un `Usuario` inactivo, que además no puede iniciar sesión.
 - Un profesor inactivo no recibe materias, bloques ni turnos nuevos.

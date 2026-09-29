@@ -1,4 +1,4 @@
-import { ConflictError, NotFoundError } from '@/server/errors'
+import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import type { MateriasRepository } from '@/server/features/materias/materias.repository'
 import type { TurnosRepository } from '@/server/features/turnos/turnos.repository'
 import type {
@@ -29,6 +29,8 @@ import type {
 const MENSAJE_NO_ENCONTRADO = 'Profesor no encontrado'
 const MENSAJE_CAPACIDAD_INSUFICIENTE =
   'La capacidad no puede ser menor que la cantidad de turnos que el profesor ya tiene a la vez en una hora'
+const MENSAJE_INVALIDO = 'Datos de entrada inválidos'
+const MENSAJE_DNI_NO_EDITABLE = 'El DNI no se puede modificar'
 
 /** `YYYY-MM-DD` → `DD/MM`. */
 function diaMes(fecha: string): string {
@@ -159,13 +161,21 @@ export function crearProfesoresService({
     },
 
     /**
-     * Edición parcial. `busqueda` se recalcula sobre el estado resultante (actual + cambios).
+     * Edición parcial. `busqueda` se recalcula sobre el estado resultante (actual + cambios). El
+     * DNI no se puede modificar (T-45): se rechaza antes de tocar el repository.
      *
      * Si cambia la capacidad, no puede quedar menor que la ocupación simultánea máxima de alguna
      * hora del profesor desde hoy (409 `CAPACIDAD_INSUFICIENTE`, T-15, decisión T-40). Se chequea
      * antes y el repository lo repite con el lock del profesor tomado.
      */
     async editar(id: number, cambios: EditarProfesor, actor: Actor): Promise<ProfesorDetalle> {
+      // El DNI no se puede modificar (T-45): un `dni` en el body se rechaza, no se ignora.
+      if (cambios.dni !== undefined) {
+        throw new ValidationError(MENSAJE_INVALIDO, {
+          details: [{ path: ['dni'], message: MENSAJE_DNI_NO_EDITABLE }],
+        })
+      }
+
       const actual = await repository.buscarPorId(id)
       if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
 

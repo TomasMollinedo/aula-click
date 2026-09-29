@@ -322,10 +322,11 @@ function ProfesorFormEditar({
             {...register('apellido')}
           />
           <CampoTexto
-            label="DNI"
+            label="DNI (no se puede modificar)"
             obligatorio
             placeholder="Sin puntos"
             inputMode="numeric"
+            disabled
             error={errors.dni?.message}
             caracteres="dni"
             {...register('dni')}

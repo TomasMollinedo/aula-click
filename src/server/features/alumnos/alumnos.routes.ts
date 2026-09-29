@@ -45,7 +45,7 @@ const errores = {
 const noEncontrado = respuestaError('El alumno no existe (NO_ENCONTRADO)')
 const dniDuplicado = respuestaError('Ya existe un alumno con ese DNI (CONFLICTO)', ejemploErrorDni)
 const validacionConTutor = respuestaError(
-  'Datos de entrada inválidos (VALIDACION): formato, fecha de nacimiento futura o datos del tutor faltantes en un menor',
+  'Datos de entrada inválidos (VALIDACION): formato, fecha de nacimiento futura, datos del tutor faltantes en un menor, email/teléfono faltantes en un mayor, o un `dni` en la edición (no se puede modificar)',
   ejemploErrorTutor,
 )
 
@@ -122,7 +122,7 @@ export const crearAlumnoRoute = createRoute({
   tags,
   summary: 'Dar de alta un alumno',
   description:
-    'Obligatorios: nombre, apellido, DNI, fecha de nacimiento, email y teléfono. Si es menor de edad, también nombre, apellido, teléfono y email del tutor.',
+    'Obligatorios: nombre, apellido, DNI y fecha de nacimiento. Si es mayor de edad, también su email y su teléfono. Si es menor, en cambio, nombre, apellido, teléfono y email del tutor (el email y el teléfono propios del alumno son opcionales).',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: {
     body: {
@@ -152,7 +152,7 @@ export const editarAlumnoRoute = createRoute({
   tags,
   summary: 'Editar un alumno',
   description:
-    'Edición parcial: lo omitido no cambia y `null` borra un dato opcional. Las reglas del tutor se evalúan sobre el alumno resultante.',
+    'Edición parcial: lo omitido no cambia y `null` borra un dato opcional. Las reglas de contacto (tutor si es menor, email y teléfono propios si es mayor) se evalúan sobre el alumno resultante. El DNI no se puede modificar: un `dni` en el body responde 400.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: {
     params: alumnoIdParamsSchema,
@@ -166,7 +166,6 @@ export const editarAlumnoRoute = createRoute({
     ...errores,
     400: validacionConTutor,
     404: noEncontrado,
-    409: dniDuplicado,
   },
 })
 

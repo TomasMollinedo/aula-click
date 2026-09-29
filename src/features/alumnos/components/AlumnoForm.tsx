@@ -158,10 +158,11 @@ export function AlumnoForm({
             {...register('apellido')}
           />
           <CampoTexto
-            label="DNI"
+            label={modo === 'editar' ? 'DNI (no se puede modificar)' : 'DNI'}
             obligatorio
             placeholder="Sin puntos"
             inputMode="numeric"
+            disabled={modo === 'editar'}
             error={errors.dni?.message}
             caracteres="dni"
             {...register('dni')}
@@ -176,7 +177,8 @@ export function AlumnoForm({
           />
           <CampoTexto
             label="Teléfono"
-            obligatorio
+            obligatorio={!esMenor}
+            opcional={esMenor}
             inputMode="numeric"
             placeholder="Código de área y número, sin guiones"
             error={errors.telefono?.message}
@@ -185,7 +187,8 @@ export function AlumnoForm({
           />
           <CampoTexto
             label="Email"
-            obligatorio
+            obligatorio={!esMenor}
+            opcional={esMenor}
             type="email"
             placeholder="nombre@correo.com"
             error={errors.email?.message}
