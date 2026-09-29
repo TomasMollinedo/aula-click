@@ -195,6 +195,42 @@ Todos los endpoints son de `MESA_ENTRADAS` (incluido `GET /api/v1/turnos/agenda-
 - Un profesor **inactivo** también se puede consultar: sus turnos históricos siguen existiendo.
 - Errores: 400 `VALIDACION` por los mismos motivos que la agenda propia y además si `profesorId` falta o no es un entero positivo; 404 `NO_ENCONTRADO` si el profesor no existe (se decide antes que el rango); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
+## Agendas
+
+A completar por T-30 / T-57.
+
+## Ocurrencias
+
+A completar por T-43.
+
+## Cancelaciones
+
+A completar por T-45.
+
+## Finalizaciones
+
+A completar por T-47.
+
+## Reprogramaciones
+
+A completar por T-49.
+
+## Pagos
+
+A completar por T-51.
+
+## Cuentas
+
+A completar por T-53.
+
+## Exámenes
+
+A completar por T-55.
+
+## Tablero
+
+A completar por T-61 (opcional).
+
 ## Filtros
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):

@@ -76,6 +76,34 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
 - Un turno está `ACTIVO` o `CANCELADO`; la UI muestra `ACTIVO` como **"Agendado"** (no es otro valor). Que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no es vigente ni ocupa lugar: no impide ninguna baja.
 
+## Cancelación
+
+A completar por T-45.
+
+## Finalización
+
+A completar por T-47.
+
+## Reprogramación
+
+A completar por T-49.
+
+## Pagos
+
+A completar por T-51.
+
+## Deuda
+
+A completar por T-53.
+
+## Exámenes
+
+A completar por T-55.
+
+## Prioridad
+
+A completar por T-31.
+
 ## Auditoría
 
 Todas las entidades registran quién las creó y quién las modificó por última vez, y cuándo (`createdById`, `updatedById`, `createdAt`, `updatedAt`).
