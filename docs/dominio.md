@@ -64,8 +64,8 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
   - `RECURRENTE`: una fecha de inicio y una de fin opcional (sin fin = sigue indefinidamente). Sus **ocurrencias** son todas las fechas de ese día de la semana dentro del rango.
   - La fecha de inicio y la de fin (si hay) tienen que caer en el día de la semana del bloque.
 - **La fecha de inicio es hoy o posterior**: no se registran turnos con fecha pasada (hoy se permite aunque la hora ya haya pasado).
-- **Turno vigente:** está `ACTIVO` y no tiene fecha de fin, o su fecha de fin es >= hoy.
-- **Turno que ocupa lugar** en una hora en una fecha `d`: está `ACTIVO`, su fecha de inicio es <= `d` y no tiene fin o su fin es >= `d`. Es una sola condición para los dos tipos (una sesión única es el caso inicio = fin).
+- **Turno vigente:** está `ACTIVO` y no tiene fecha de fin, o su fecha de fin es >= hoy. Desde el Sprint 2 se usa el **fin efectivo** (ver "Turno que ocupa lugar"): un recurrente finalizado deja de ser vigente desde `FinalizacionRecurrencia.fechaDesde`, aunque su `fechaFin` no cambie.
+- **Turno que ocupa lugar** en una hora en una fecha `d`: está `ACTIVO`, su fecha de inicio es <= `d` y no tiene fin o su fin es >= `d`. Es una sola condición para los dos tipos (una sesión única es el caso inicio = fin). Desde el Sprint 2 el fin es el **fin efectivo**: finalizar la serie (HU-14) no modifica `fechaFin`, así que es el menor entre `fechaFin` y el día anterior a `FinalizacionRecurrencia.fechaDesde` (T-48).
 - **Capacidad:** se controla por hora y por fecha contra la capacidad efectiva de esa hora (T-27: `min(profesor.capacidad, aula.capacidad)`, calculada al leer). Una fecha está llena si los turnos que ocupan lugar en ella son >= la capacidad efectiva.
 - **Fechas sin lugar en un recurrente:** si algunas fechas del pedido están llenas, se rechaza con `BLOQUE_LLENO` informando, por hora, qué fechas están llenas (o desde qué fecha lo están todas). El usuario decide:
   - crearlo **solo en las fechas con lugar**: se guarda como varios turnos `RECURRENTE` ("tramos"), uno por cada racha de fechas consecutivas con lugar, que saltean las llenas. Ejemplo: lunes 9:00 del 05/10 al 30/11 con el 26/10 lleno → del 05/10 al 19/10 y del 02/11 al 30/11. El alta informa las fechas que quedaron sin turno;
@@ -75,19 +75,20 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - **Superposición del alumno:** un alumno no puede tener dos turnos que se pisen (mismo día y hora, con rangos de fechas que se cruzan), aunque sean de profesores distintos. Es un **rechazo total** (`ALUMNO_SUPERPUESTO`): no hay opción de crearlo en las fechas libres.
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
 - Un turno está `ACTIVO` o `CANCELADO`; la UI muestra `ACTIVO` como **"Agendado"** (no es otro valor). Que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no es vigente ni ocupa lugar: no impide ninguna baja.
-- **Ocurrencia (Sprint 2, T-45):** un turno en una fecha concreta es lo que se cancela, se paga, se reprograma y tiene prioridad. Se identifica por el par **`(turnoId, fecha original de la serie)`**, aunque después se reprograme a otra fecha, hora o profesor: así una cancelación, un pago o una reprogramación siguen apuntando a la misma ocurrencia sin importar cuántas veces se mueva (HU-20).
-- **Cancelación de una ocurrencia (HU-13):** a partir del Sprint 2, cancelar registra siempre una fila en `CancelacionTurno` (`turnoId` + fecha original), también para una sesión única; el resto de la serie sigue agendado. El valor `CANCELADO` de `Turno.estado` queda sólo para los turnos cancelados antes de este sprint (no se deshace una cancelación). El detalle de las reglas de HU-13 lo fija su propia tarea.
+- **Ocurrencia (Sprint 2, T-46):** un turno en una fecha concreta es lo que se cancela, se paga, se reprograma y tiene prioridad. Se identifica por el par **`(turnoId, fecha)`**: no tiene una "fecha original" distinta de su fecha.
+- **Cancelación de una ocurrencia (HU-13):** a partir del Sprint 2, cancelar registra siempre una fila en `CancelacionTurno` (`turnoId` + fecha de la ocurrencia), también para una sesión única; el resto de la serie sigue agendado. El valor `CANCELADO` de `Turno.estado` queda sólo para los turnos cancelados antes de este sprint (no se deshace una cancelación). El detalle de las reglas de HU-13 lo fija su propia tarea.
 - **Finalización de una recurrencia (HU-14):** pone fin a una serie `RECURRENTE` desde una fecha (`FinalizacionRecurrencia`, a lo sumo una por turno); los turnos anteriores a esa fecha no cambian. El detalle de las reglas de HU-14 lo fija su propia tarea.
-- **Reprogramación de una ocurrencia (HU-20):** mueve una ocurrencia a otra fecha, hora o profesor sin perder su identidad ni su pago (`ReprogramacionTurno.fechaOrigen` es siempre la fecha original de la ocurrencia). Si se reprograma más de una vez, hay varias filas con el mismo `fechaOrigen`: vale la última (por `createdAt`, `id` como desempate); las anteriores quedan como historial. El detalle de las reglas de HU-20 lo fija su propia tarea.
+- **Reprogramación de una ocurrencia (HU-20, T-47):** edita el turno, sin tabla propia: una sesión única cambia su bloque y su fecha; en un recurrente la serie se parte en tramos (el original termina en la ocurrencia anterior, un tramo nuevo sigue desde la siguiente y la fecha movida pasa a ser una `SESION_UNICA` en el destino), y sus cancelaciones y pagos pasan al turno nuevo. El detalle lo fija T-49.
 
 ## Pagos
 
 Modelo de datos (T-29); las reglas completas de cobro las fija HU-15 (registrar un pago) y HU-16 (deuda del alumno), cada una en su propia tarea.
 
-- Un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha original de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
+- Un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
+- El monto recibido (`Pago.montoRecibido`) es opcional; si se informa, tiene que ser >= el importe total. El vuelto lo calcula y lo devuelve la API: no se guarda (T-49).
 - La forma de pago (`FormaPago`) es un catálogo con baja lógica; el seed carga **"Efectivo"**, único medio disponible en este sprint (el ABM completo es HU-23, fuera de alcance).
 - El importe de cada ocurrencia pagada (`PagoTurno.importeAplicado`) es el precio por hora **vigente** de la materia del turno (`Materia.precioHora`) al momento de registrar el pago: cambiar el precio de la materia después no modifica los pagos ya registrados.
-- Un pago puede anularse (`Pago.estado = ANULADO`): libera sus ocurrencias, que vuelven a tener pago "Pendiente".
+- Una ocurrencia se paga **una sola vez** (lo garantiza la base, T-49). La anulación de pagos queda para el próximo sprint: en este, todo pago nace `VIGENTE` y un turno pagado no se puede cancelar.
 
 ## Exámenes
 
@@ -124,7 +125,7 @@ A completar por T-55.
 
 HU-18. La prioridad de un turno es de cada **ocurrencia** (un turno en una fecha) y la calcula la API; no se carga a mano.
 
-- Se toma el **próximo examen `ACTIVO` del mismo alumno y la misma materia** del turno, con fecha igual o posterior a la de la ocurrencia (su fecha efectiva: la reprogramada, si la hay). Los exámenes anteriores a la ocurrencia y los dados de baja no cuentan.
+- Se toma el **próximo examen `ACTIVO` del mismo alumno y la misma materia** del turno, con fecha igual o posterior a la de la ocurrencia. Los exámenes anteriores a la ocurrencia y los dados de baja no cuentan.
 - Días hasta el examen = fecha del examen − fecha de la ocurrencia, en días de calendario.
 - **Alta** de 0 a 10 días (un examen el mismo día de la ocurrencia es Alta), **Media** de 11 a 20 y **Baja** con más de 20 días o si no hay examen próximo en esa materia.
 - En una serie recurrente cada ocurrencia tiene su propia prioridad: el mismo examen puede dar Baja a una ocurrencia lejana y Alta a una cercana.
