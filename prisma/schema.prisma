@@ -5,8 +5,9 @@
 // - Fechas de calendario con @db.Date; horas en minutos desde medianoche (Int); día de la semana ISO 1..7.
 // - Auditoría en cada entidad de negocio: createdById, updatedById, createdAt, updatedAt.
 // - Baja lógica con el enum Estado: nada se borra.
-// - Las restricciones CHECK (bloque_agenda, turno, profesor, aula) no las genera Prisma: se agregan
-//   a mano en el migration.sql de la migración que crea o modifica esas tablas.
+// - Las migraciones las genera sólo Prisma, sin SQL a mano (decisión T-50): las restricciones que
+//   Prisma no expresa (CHECK de profesor, aula, bloque_agenda, turno, materia y pago; índices
+//   parciales) las valida por ahora la API, y pasarlas a la base queda pendiente.
 
 generator client {
   provider = "prisma-client"
@@ -128,7 +129,6 @@ model Usuario {
   examenesModificados              Examen[]                  @relation("ExamenModificador")
   cancelacionesTurnoCreadas        CancelacionTurno[]        @relation("CancelacionTurnoCreador")
   finalizacionesRecurrenciaCreadas FinalizacionRecurrencia[] @relation("FinalizacionRecurrenciaCreador")
-  reprogramacionesTurnoCreadas     ReprogramacionTurno[]     @relation("ReprogramacionTurnoCreador")
   formasPagoCreadas                FormaPago[]               @relation("FormaPagoCreador")
   formasPagoModificadas            FormaPago[]               @relation("FormaPagoModificador")
   pagosCreados                     Pago[]                    @relation("PagoCreador")
@@ -201,8 +201,9 @@ model Verification {
 
 // Sin estado ni auditoría propios: los toma de su Usuario (datos personales, busqueda y baja lógica).
 // capacidad: cantidad máxima de alumnos que el profesor atiende a la vez en una franja de una hora
-// (HU-02, decisión T-27). CHECK (a mano en la migración): capacidad >= 1. La capacidad efectiva de
-// una hora (mínimo con la del aula) se calculará al leer, en HU-05/HU-07: no se persiste acá.
+// (HU-02, decisión T-27). capacidad >= 1: lo valida la API (el CHECK en la base queda pendiente,
+// decisión T-50). La capacidad efectiva de una hora (mínimo con la del aula) se calculará al leer,
+// en HU-05/HU-07: no se persiste acá.
 model Profesor {
   id        Int    @id @default(autoincrement())
   usuarioId String @unique @map("usuario_id")
@@ -271,9 +272,10 @@ model Materia {
   // Nombre normalizado con normalizarBusqueda(): "Matemática" y "matematica" chocan.
   busqueda    String   @unique
   descripcion String?
-  // Precio por hora de clase (HU-12), nullable: null = "Sin precio". CHECK a mano en la migración:
-  // precio_hora > 0 cuando no es nulo. Al migrar, las materias sin precio quedan en INACTIVO
-  // (T-29): no se ofrecen para asignar a profesores ni para registrar turnos hasta que el gerente les cargue un precio y las reactive.
+  // Precio por hora de clase (HU-12), nullable: null = "Sin precio". precio_hora > 0 cuando no es
+  // nulo: lo valida la API (el CHECK en la base queda pendiente, decisión T-50). Las materias sin
+  // precio quedan en INACTIVO (lo hace prisma/seed.ts, no la migración): no se ofrecen para asignar
+  // a profesores ni para registrar turnos hasta que el gerente les cargue un precio y las reactive.
   precioHora  Decimal? @map("precio_hora") @db.Decimal(10, 2)
   estado      Estado   @default(ACTIVO)
 
@@ -322,7 +324,8 @@ model AsignacionMateria {
 // ---------- Agenda y turnos ----------
 
 // Catálogo que carga el seed (T-14, HU-05): sin ABM en este release, sólo lectura. Sin auditoría,
-// igual que Rol. CHECK (a mano en la migración): capacidad > 0.
+// igual que Rol. capacidad > 0: lo valida la API (el CHECK en la base queda pendiente, decisión
+// T-50).
 model Aula {
   id        Int    @id @default(autoincrement())
   nombre    String @unique
@@ -334,8 +337,8 @@ model Aula {
   @@map("aula")
 }
 
-// CHECK (a mano en la migración): dia_semana 1..7, hora_inicio 0..1439, hora_fin 1..1440,
-// hora_fin > hora_inicio.
+// Lo valida la API (el CHECK en la base queda pendiente, decisión T-50): dia_semana 1..7,
+// hora_inicio 0..1439, hora_fin 1..1440, hora_fin > hora_inicio.
 // La capacidad efectiva de la hora es min(profesor.capacidad, aula.capacidad) (T-14, resuelve
 // D-12): no se persiste acá, se calcula al leer, igual que las ocurrencias de un recurrente.
 model BloqueAgenda {
@@ -357,9 +360,7 @@ model BloqueAgenda {
   createdBy Usuario  @relation("BloqueAgendaCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy Usuario  @relation("BloqueAgendaModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
-  turnos                  Turno[]
-  reprogramacionesOrigen  ReprogramacionTurno[] @relation("ReprogramacionOrigen")
-  reprogramacionesDestino ReprogramacionTurno[] @relation("ReprogramacionDestino")
+  turnos Turno[]
 
   @@index([profesorId, diaSemana])
   @@index([aulaId])
@@ -373,8 +374,28 @@ model BloqueAgenda {
 // (fechaInicio y fechaFin opcional; null = sin fin) y sus ocurrencias son las fechas de ese día de
 // la semana dentro del rango, calculadas al consultar. No hay excepciones: un recurrente creado
 // solo en las fechas con lugar se guarda como varios turnos RECURRENTE ("tramos") que saltean las
-// fechas llenas (T-37). En una SESION_UNICA, fechaFin = fechaInicio. La prioridad no se persiste.
-// CHECK (a mano en la migración): fecha_fin >= fecha_inicio; SESION_UNICA => fecha_fin = fecha_inicio.
+// fechas llenas (T-37). En una SESION_UNICA, fechaFin = fechaInicio. La prioridad no se persiste:
+// la calcula la API por ocurrencia (HU-18). Lo valida la API (el CHECK en la base queda pendiente,
+// decisión T-50): fecha_fin >= fecha_inicio; SESION_UNICA => fecha_fin = fecha_inicio.
+//
+// Ocurrencia: el turno en una fecha concreta, identificada por (turnoId, fecha). Es lo que se
+// cancela (CancelacionTurno), se paga (PagoTurno) y tiene prioridad; no tiene una "fecha original"
+// distinta de su fecha.
+//
+// Fin efectivo: finalizar una serie (HU-14, FinalizacionRecurrencia) no modifica fechaFin. El fin
+// efectivo es el menor entre fechaFin y el día anterior a FinalizacionRecurrencia.fechaDesde.
+//
+// Reprogramar (HU-20) edita el turno que ya existe, sin tabla propia (la regla la implementa la
+// API, T-49):
+// - SESION_UNICA: se cambian bloqueAgendaId, fechaInicio y fechaFin.
+// - RECURRENTE: sólo se mueve esa fecha y la serie se parte en tramos. El turno original termina
+//   en la ocurrencia anterior; un tramo nuevo sigue desde la ocurrencia siguiente, y la fecha
+//   movida pasa a ser una SESION_UNICA nueva en el destino, que copia alumno, materia,
+//   observaciones y temas. Las CancelacionTurno y los PagoTurno de las fechas que cambian de
+//   turno se vuelven a apuntar al turno nuevo, en la misma transacción.
+// No se guarda desde qué fecha se reprogramó: quién lo modificó y cuándo sale de la auditoría del
+// turno (updatedById, updatedAt).
+//
 // A partir del Sprint 2 (T-29), una cancelación se registra siempre en CancelacionTurno (también
 // la de una sesión única): el valor CANCELADO de EstadoTurno queda sólo para los turnos
 // cancelados antes de este sprint.
@@ -386,8 +407,8 @@ model Turno {
   tipo           TipoTurno
   fechaInicio    DateTime    @map("fecha_inicio") @db.Date
   fechaFin       DateTime?   @map("fecha_fin") @db.Date
-  // "Observaciones" (T-29; antes "motivo de consulta"): texto libre, opcional. En la migración se
-  // renombra la columna motivo_consulta, no se dropea/crea, para no perder datos.
+  // "Observaciones" (T-29; antes "motivo de consulta"): texto libre, opcional. La migración de T-29
+  // dropeó motivo_consulta y creó esta columna, sin copiar los datos (decisión T-51).
   observaciones  String?
   // "Temas a trabajar" (HU-08): opcional en RECURRENTE, obligatorio en SESION_UNICA (lo valida la API).
   temas          String?
@@ -404,10 +425,9 @@ model Turno {
   createdBy    Usuario      @relation("TurnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy    Usuario      @relation("TurnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
-  cancelaciones    CancelacionTurno[]
-  finalizacion     FinalizacionRecurrencia?
-  reprogramaciones ReprogramacionTurno[]
-  pagoTurnos       PagoTurno[]
+  cancelaciones CancelacionTurno[]
+  finalizacion  FinalizacionRecurrencia?
+  pagoTurnos    PagoTurno[]
 
   @@index([bloqueAgendaId, fechaInicio])
   @@index([alumnoId])
@@ -417,8 +437,8 @@ model Turno {
   @@map("turno")
 }
 
-// Examen de un alumno en una materia (T-29, reemplaza a ExamenMateria: si esa tabla tenía datos,
-// la migración los copia acá). De él depende la prioridad del turno (HU-18). Baja lógica
+// Examen de un alumno en una materia (T-29, reemplaza a ExamenMateria: la migración de T-29 dropeó
+// esa tabla sin copiar sus datos, decisión T-51). De él depende la prioridad del turno (HU-18). Baja lógica
 // ("eliminar" de HU-17): nada se borra.
 model Examen {
   id            Int        @id @default(autoincrement())
@@ -448,10 +468,10 @@ model Examen {
   @@map("examen")
 }
 
-// ---------- Cancelaciones, finalizaciones y reprogramaciones de turnos ----------
+// ---------- Cancelaciones y finalizaciones de turnos ----------
 
-// Cancelación de UNA ocurrencia de un turno (HU-13), identificada por su fecha original
-// (fechaOcurrencia): un recurrente sigue agendado en sus demás fechas. A partir de este sprint
+// Cancelación de UNA ocurrencia de un turno (HU-13), identificada por (turnoId, fechaOcurrencia),
+// que es simplemente la fecha de la ocurrencia: un recurrente sigue agendado en sus demás fechas. A partir de este sprint
 // toda cancelación pasa por acá, también la de una sesión única (ver comentario en Turno). En
 // este incremento no se deshace una cancelación.
 model CancelacionTurno {
@@ -472,7 +492,10 @@ model CancelacionTurno {
   @@map("cancelacion_turno")
 }
 
-// Fin anticipado de una serie recurrente desde una fecha (HU-14): a lo sumo una por turno.
+// Fin anticipado de una serie recurrente desde una fecha (HU-14): a lo sumo una por turno. No
+// modifica Turno.fechaFin: el fin efectivo es el menor entre fechaFin y el día anterior a
+// fechaDesde. Con tramos, se finaliza el tramo desde cuyo detalle se opera (la API avisa si hay
+// tramos posteriores; nada en el modelo vincula los tramos).
 model FinalizacionRecurrencia {
   id         Int               @id @default(autoincrement())
   turnoId    Int               @unique @map("turno_id")
@@ -488,32 +511,6 @@ model FinalizacionRecurrencia {
 
   @@index([createdById])
   @@map("finalizacion_recurrencia")
-}
-
-// Reprogramación de una ocurrencia (HU-20): fechaOrigen es siempre la fecha original de la
-// ocurrencia (su identidad), aunque se reprograme más de una vez. Si hay varias filas con el
-// mismo fechaOrigen, vale la última (por createdAt, id como desempate); las anteriores quedan
-// como historial.
-model ReprogramacionTurno {
-  id                    Int      @id @default(autoincrement())
-  turnoId               Int      @map("turno_id")
-  fechaOrigen           DateTime @map("fecha_origen") @db.Date
-  bloqueAgendaOrigenId  Int      @map("bloque_agenda_origen_id")
-  fechaDestino          DateTime @map("fecha_destino") @db.Date
-  bloqueAgendaDestinoId Int      @map("bloque_agenda_destino_id")
-
-  createdById String   @map("usuario_creador_id")
-  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
-
-  turno               Turno        @relation(fields: [turnoId], references: [id], onDelete: Restrict)
-  bloqueAgendaOrigen  BloqueAgenda @relation("ReprogramacionOrigen", fields: [bloqueAgendaOrigenId], references: [id], onDelete: Restrict)
-  bloqueAgendaDestino BloqueAgenda @relation("ReprogramacionDestino", fields: [bloqueAgendaDestinoId], references: [id], onDelete: Restrict)
-  createdBy           Usuario      @relation("ReprogramacionTurnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
-
-  @@index([turnoId, fechaOrigen])
-  @@index([bloqueAgendaDestinoId, fechaDestino])
-  @@index([createdById])
-  @@map("reprogramacion_turno")
 }
 
 // ---------- Pagos ----------
@@ -542,6 +539,9 @@ model FormaPago {
 
 // Un pago de un alumno, que puede incluir una o varias de sus ocurrencias (PagoTurno) y genera
 // un único comprobante. numeroComprobante es correlativo y no se repite (HU-15).
+// montoRecibido es opcional y, si viene, es >= importeTotal: lo valida la API (el CHECK en la base
+// queda pendiente, decisión T-50). El vuelto lo calcula y lo devuelve la API: no se guarda.
+// estado queda sin uso en este sprint: todo pago nace VIGENTE; la anulación llega en el próximo.
 model Pago {
   id                Int        @id @default(autoincrement())
   alumnoId          Int        @map("alumno_id")
@@ -572,20 +572,21 @@ model Pago {
   @@map("pago")
 }
 
-// Ocurrencias incluidas en un pago, identificadas igual que una cancelación: (turnoId, fecha
-// original de la ocurrencia). Que una ocurrencia no se pague dos veces lo garantiza la API con
-// lock (T-51): un pago ANULADO libera la ocurrencia.
+// Ocurrencias incluidas en un pago, identificadas igual que una cancelación: (turnoId, fecha de la
+// ocurrencia), sin "fecha original". Una ocurrencia se paga una sola vez y lo garantiza el único
+// (turnoId, fechaOcurrencia); vale mientras no exista la anulación de pagos, que lo va a tener que
+// reemplazar (decisión T-49).
 model PagoTurno {
   id              Int      @id @default(autoincrement())
   pagoId          Int      @map("pago_id")
   turnoId         Int      @map("turno_id")
-  fecha           DateTime @db.Date
+  fechaOcurrencia DateTime @map("fecha_ocurrencia") @db.Date
   importeAplicado Decimal  @map("importe_aplicado") @db.Decimal(10, 2)
 
   pago  Pago  @relation(fields: [pagoId], references: [id], onDelete: Restrict)
   turno Turno @relation(fields: [turnoId], references: [id], onDelete: Restrict)
 
+  @@unique([turnoId, fechaOcurrencia])
   @@index([pagoId])
-  @@index([turnoId, fecha])
   @@map("pago_turno")
 }
