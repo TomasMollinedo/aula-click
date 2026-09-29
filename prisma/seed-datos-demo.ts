@@ -153,22 +153,41 @@ const TITULOS = [
 
 /**
  * Materias que suma este script a las del seed de desarrollo. Las dos últimas quedan INACTIVAS
- * (sin profesores asignados: una materia con profesores no se puede dar de baja).
+ * (sin profesores asignados: una materia con profesores no se puede dar de baja). Todas llevan
+ * precioHora (HU-12, T-29) salvo que se agreguen sin precio a propósito.
  */
 const MATERIAS_DEMO = [
-  { nombre: 'Biología', descripcion: 'Apoyo para secundario y CBC' },
-  { nombre: 'Historia', descripcion: 'Historia argentina y americana' },
-  { nombre: 'Geografía', descripcion: 'Geografía física y humana' },
-  { nombre: 'Álgebra', descripcion: 'Álgebra para primer año de facultad' },
-  { nombre: 'Análisis Matemático', descripcion: 'Límites, derivadas e integrales' },
-  { nombre: 'Economía', descripcion: 'Introducción a la economía' },
-  { nombre: 'Programación', descripcion: 'Lógica y primeros lenguajes' },
-  { nombre: 'Estadística', descripcion: 'Probabilidad y estadística descriptiva' },
-  { nombre: 'Latín', descripcion: 'Materia sin demanda: queda inactiva' },
-  { nombre: 'Filosofía', descripcion: 'Materia sin demanda: queda inactiva' },
+  { nombre: 'Biología', descripcion: 'Apoyo para secundario y CBC', precioHora: '7500.00' },
+  { nombre: 'Historia', descripcion: 'Historia argentina y americana', precioHora: '7000.00' },
+  { nombre: 'Geografía', descripcion: 'Geografía física y humana', precioHora: '7000.00' },
+  {
+    nombre: 'Álgebra',
+    descripcion: 'Álgebra para primer año de facultad',
+    precioHora: '9000.00',
+  },
+  {
+    nombre: 'Análisis Matemático',
+    descripcion: 'Límites, derivadas e integrales',
+    precioHora: '9000.00',
+  },
+  { nombre: 'Economía', descripcion: 'Introducción a la economía', precioHora: '8000.00' },
+  { nombre: 'Programación', descripcion: 'Lógica y primeros lenguajes', precioHora: '9500.00' },
+  {
+    nombre: 'Estadística',
+    descripcion: 'Probabilidad y estadística descriptiva',
+    precioHora: '8500.00',
+  },
+  { nombre: 'Latín', descripcion: 'Materia sin demanda: queda inactiva', precioHora: '6000.00' },
+  {
+    nombre: 'Filosofía',
+    descripcion: 'Materia sin demanda: queda inactiva',
+    precioHora: '6000.00',
+  },
 ]
 
 const MATERIAS_INACTIVAS = ['Latín', 'Filosofía']
+
+const TIPOS_EXAMEN = ['PARCIAL', 'FINAL', 'RECUPERATORIO', 'TRABAJO_PRACTICO', 'OTRO'] as const
 
 const COLEGIOS = [
   'Colegio Nacional Dr. Manuel Belgrano',
@@ -193,6 +212,16 @@ const MOTIVOS = [
   'Repaso general antes del trimestral',
   null,
   null,
+]
+
+/** "Temas a trabajar" (HU-08): obligatorio en sesión única. */
+const TEMAS = [
+  'Ecuaciones de segundo grado',
+  'Repaso general de la unidad',
+  'Resolución de problemas de aplicación',
+  'Dudas puntuales de la última clase',
+  'Preparación del próximo examen',
+  'Trabajo práctico pendiente',
 ]
 
 const NIVELES = ['SECUNDARIO', 'SECUNDARIO', 'SECUNDARIO', 'TERCIARIO', 'UNIVERSITARIO'] as const
@@ -304,14 +333,30 @@ async function limpiar() {
     select: { id: true },
   })
   const alumnoIds = alumnos.map((a) => a.id)
-
-  // Orden que respeta las FK (todas son onDelete: Restrict): primero lo que cuelga.
-  await prisma.examenMateria.deleteMany({ where: { alumnoId: { in: alumnoIds } } })
-  await prisma.turno.deleteMany({
+  const turnos = await prisma.turno.findMany({
     where: {
       OR: [{ bloqueAgenda: { profesorId: { in: profesorIds } } }, { alumnoId: { in: alumnoIds } }],
     },
+    select: { id: true },
   })
+  const turnoIds = turnos.map((t) => t.id)
+  const pagos = await prisma.pago.findMany({
+    where: { alumnoId: { in: alumnoIds } },
+    select: { id: true },
+  })
+  const pagoIds = pagos.map((p) => p.id)
+
+  // Orden que respeta las FK (todas son onDelete: Restrict): primero lo que cuelga de un turno o
+  // de un pago, después el turno y el pago, y recién ahí profesores/bloques/alumnos.
+  await prisma.examen.deleteMany({ where: { alumnoId: { in: alumnoIds } } })
+  await prisma.pagoTurno.deleteMany({
+    where: { OR: [{ turnoId: { in: turnoIds } }, { pagoId: { in: pagoIds } }] },
+  })
+  await prisma.pago.deleteMany({ where: { id: { in: pagoIds } } })
+  await prisma.cancelacionTurno.deleteMany({ where: { turnoId: { in: turnoIds } } })
+  await prisma.finalizacionRecurrencia.deleteMany({ where: { turnoId: { in: turnoIds } } })
+  await prisma.reprogramacionTurno.deleteMany({ where: { turnoId: { in: turnoIds } } })
+  await prisma.turno.deleteMany({ where: { id: { in: turnoIds } } })
   await prisma.asignacionMateria.deleteMany({ where: { profesorId: { in: profesorIds } } })
   await prisma.bloqueAgenda.deleteMany({ where: { profesorId: { in: profesorIds } } })
   await prisma.profesor.deleteMany({ where: { id: { in: profesorIds } } })
@@ -341,7 +386,7 @@ async function limpiar() {
 // Creación
 // ---------------------------------------------------------------------------------------------
 
-/** Lo que tiene que existir de antes (`pnpm db:seed`): el actor de la auditoría y las aulas. */
+/** Lo que tiene que existir de antes (`pnpm db:seed`): actor, aulas y forma de pago. */
 async function requisitos() {
   const actor =
     (await prisma.usuario.findFirst({ where: { role: 'MESA_ENTRADAS' } })) ??
@@ -352,18 +397,19 @@ async function requisitos() {
     orderBy: { id: 'asc' },
   })
   const rolProfesor = await prisma.rol.findUnique({ where: { id: 'PROFESOR' } })
+  const formaPago = await prisma.formaPago.findUnique({ where: { nombre: 'Efectivo' } })
 
-  if (!actor || !rolProfesor || aulas.length === 0) {
+  if (!actor || !rolProfesor || aulas.length === 0 || !formaPago) {
     throw new Error(
-      'Faltan datos del seed de desarrollo (roles, usuario de mesa de entradas o aulas). ' +
-        'Corré primero `pnpm db:seed` y volvé a intentar.',
+      'Faltan datos del seed de desarrollo (roles, usuario de mesa de entradas, aulas o forma ' +
+        'de pago "Efectivo"). Corré primero `pnpm db:seed` y volvé a intentar.',
     )
   }
-  return { actorId: actor.id, aulas }
+  return { actorId: actor.id, aulas, formaPagoId: formaPago.id }
 }
 
 async function crear(azar: Azar) {
-  const { actorId, aulas } = await requisitos()
+  const { actorId, aulas, formaPagoId } = await requisitos()
   const fechaHoy = hoy()
   const desde = sumarDias(fechaHoy, -DIAS_ATRAS)
   const hasta = sumarDias(fechaHoy, DIAS_ADELANTE)
@@ -378,6 +424,7 @@ async function crear(azar: Azar) {
         nombre: materia.nombre,
         busqueda,
         descripcion: materia.descripcion,
+        precioHora: materia.precioHora,
         estado: MATERIAS_INACTIVAS.includes(materia.nombre) ? 'INACTIVO' : 'ACTIVO',
         ...auditoria,
       },
@@ -386,7 +433,7 @@ async function crear(azar: Azar) {
   }
   const materiasActivas = await prisma.materia.findMany({
     where: { estado: 'ACTIVO' },
-    select: { id: true, nombre: true },
+    select: { id: true, nombre: true, precioHora: true },
     orderBy: { id: 'asc' },
   })
 
@@ -574,7 +621,8 @@ async function crear(azar: Azar) {
     tipo: 'RECURRENTE' | 'SESION_UNICA'
     fechaInicio: Date
     fechaFin: Date | null
-    motivoConsulta: string | null
+    observaciones: string | null
+    temas: string | null
     estado: 'ACTIVO' | 'CANCELADO'
   }
   const turnosData: TurnoNuevo[] = []
@@ -651,15 +699,87 @@ async function crear(azar: Azar) {
             ? fechaADate(inicio)
             : // Un recurrente sin fecha de fin sigue indefinidamente: `fechaFin` queda en null.
               (fin && fechaADate(fin)) || null,
-        motivoConsulta: azar.de(MOTIVOS),
+        observaciones: azar.de(MOTIVOS),
+        // "Temas a trabajar" (HU-08): obligatorio en sesión única, opcional en recurrente.
+        temas: tipo === 'SESION_UNICA' ? azar.de(TEMAS) : azar.chance(0.4) ? azar.de(TEMAS) : null,
         estado: cancelado ? 'CANCELADO' : 'ACTIVO',
       })
     }
   }
-  await prisma.turno.createMany({ data: turnosData.map((t) => ({ ...t, ...auditoria })) })
+  // Un recurrente guardado en "tramos" (T-37/T-29): un segundo Turno RECURRENTE del mismo
+  // alumno y bloque, dos semanas después de que termina el primero, como si "Asignar igual"
+  // hubiera saltado un tramo de fechas llenas en el medio (HU-08).
+  const primerTramo = turnosData.find(
+    (t) => t.tipo === 'RECURRENTE' && t.fechaFin !== null && t.estado === 'ACTIVO',
+  )
+  let segundoTramoAgregado = false
+  if (primerTramo) {
+    const bloqueDelTramo = bloques.find((b) => b.id === primerTramo.bloqueAgendaId)
+    if (bloqueDelTramo) {
+      const capacidad = Math.min(
+        capacidadProfesor.get(bloqueDelTramo.profesorId) ?? 1,
+        capacidadAula.get(bloqueDelTramo.aulaId) ?? 1,
+      )
+      const desdeSegundoTramo = sumarDias(dateAFecha(primerTramo.fechaFin as Date), 14)
+      const ocurrenciasSegundoTramo: string[] = []
+      for (let fecha = desdeSegundoTramo; fecha <= hasta; fecha = sumarDias(fecha, 7)) {
+        ocurrenciasSegundoTramo.push(fecha)
+      }
+      const claveOcupacion = (fecha: string) => `${bloqueDelTramo.id}|${fecha}`
+      const claveAlumno = (fecha: string) =>
+        `${primerTramo.alumnoId}|${bloqueDelTramo.diaSemana}|${bloqueDelTramo.horaInicio}|${fecha}`
+      const libre =
+        ocurrenciasSegundoTramo.length > 0 &&
+        ocurrenciasSegundoTramo.every(
+          (fecha) =>
+            (ocupacion.get(claveOcupacion(fecha)) ?? 0) < capacidad &&
+            !alumnoOcupado.has(claveAlumno(fecha)),
+        )
+      if (libre) {
+        for (const fecha of ocurrenciasSegundoTramo) {
+          ocupacion.set(claveOcupacion(fecha), (ocupacion.get(claveOcupacion(fecha)) ?? 0) + 1)
+          alumnoOcupado.add(claveAlumno(fecha))
+        }
+        turnosData.push({
+          bloqueAgendaId: bloqueDelTramo.id,
+          alumnoId: primerTramo.alumnoId,
+          materiaId: primerTramo.materiaId,
+          tipo: 'RECURRENTE',
+          fechaInicio: fechaADate(desdeSegundoTramo),
+          fechaFin: null,
+          observaciones: 'Segundo tramo del mismo recurrente (dato de demo, T-29).',
+          temas: azar.chance(0.4) ? azar.de(TEMAS) : null,
+          estado: 'ACTIVO',
+        })
+        segundoTramoAgregado = true
+      }
+    }
+  }
 
-  // --- Fechas de examen (de ellas depende la prioridad del turno, que llega en el Sprint 2) ---
-  const examenes = new Map<string, { alumnoId: number; materiaId: number; fecha: Date }>()
+  const turnosCreados = await prisma.turno.createManyAndReturn({
+    data: turnosData.map((t) => ({ ...t, ...auditoria })),
+    select: {
+      id: true,
+      alumnoId: true,
+      materiaId: true,
+      bloqueAgendaId: true,
+      tipo: true,
+      fechaInicio: true,
+      fechaFin: true,
+      estado: true,
+    },
+  })
+  const activosOrdenados = turnosCreados
+    .filter((t) => t.estado === 'ACTIVO')
+    .sort((a, b) => a.id - b.id)
+  const fechaStr = (d: Date) => dateAFecha(d)
+  const futuros = activosOrdenados.filter((t) => fechaStr(t.fechaInicio) >= fechaHoy)
+
+  // --- Fechas de examen (de ellas depende la prioridad del turno, HU-18) ---
+  const examenes = new Map<
+    string,
+    { alumnoId: number; materiaId: number; fecha: Date; tipo: (typeof TIPOS_EXAMEN)[number] }
+  >()
   while (examenes.size < CANTIDAD_EXAMENES) {
     const alumnoId = (azar.de(alumnos) as (typeof alumnos)[number]).id
     const materiaId = (azar.de(materiasActivas) as (typeof materiasActivas)[number]).id
@@ -668,11 +788,94 @@ async function crear(azar: Azar) {
       alumnoId,
       materiaId,
       fecha: fechaADate(fecha),
+      tipo: azar.de(TIPOS_EXAMEN),
     })
   }
-  await prisma.examenMateria.createMany({
-    data: [...examenes.values()].map((e) => ({ ...e, ...auditoria })),
+  // Tres ejemplos deterministas sobre turnos futuros ya creados, uno por franja de prioridad
+  // (HU-18): Alta (0 a 10 días), Media (11 a 20) y Baja (más de 20), para verlas sin buscarlas.
+  const OFFSETS_PRIORIDAD = [5, 15, 30] as const
+  futuros.slice(0, OFFSETS_PRIORIDAD.length).forEach((turno, i) => {
+    const fecha = sumarDias(fechaStr(turno.fechaInicio), OFFSETS_PRIORIDAD[i] as number)
+    examenes.set(`${turno.alumnoId}|${turno.materiaId}|${fecha}`, {
+      alumnoId: turno.alumnoId,
+      materiaId: turno.materiaId,
+      fecha: fechaADate(fecha),
+      tipo: 'PARCIAL',
+    })
   })
+  await prisma.examen.createMany({
+    data: [...examenes.values()].map((e) => ({ ...e, estado: 'ACTIVO' as const, ...auditoria })),
+  })
+
+  // --- Escenarios fijos para recorrer a mano lo nuevo del Sprint 2 (T-29) ---
+  // 1. Cancelación de una ocurrencia futura (la serie sigue agendada en sus demás fechas).
+  const paraCancelar = futuros[0]
+  if (paraCancelar) {
+    await prisma.cancelacionTurno.create({
+      data: {
+        turnoId: paraCancelar.id,
+        fechaOcurrencia: paraCancelar.fechaInicio,
+        motivo: 'CANCELACION_ALUMNO',
+        detalle: 'Cancelado a pedido del alumno (dato de demo, T-29).',
+        createdById: actorId,
+      },
+    })
+  }
+
+  // 2. Reprogramación de otra ocurrencia futura, a otro bloque (otro profesor, otro horario).
+  const paraReprogramar = futuros.find((t) => t.id !== paraCancelar?.id)
+  const bloqueDestino = bloques.find((b) => b.id !== paraReprogramar?.bloqueAgendaId)
+  if (paraReprogramar && bloqueDestino) {
+    await prisma.reprogramacionTurno.create({
+      data: {
+        turnoId: paraReprogramar.id,
+        fechaOrigen: paraReprogramar.fechaInicio,
+        bloqueAgendaOrigenId: paraReprogramar.bloqueAgendaId,
+        fechaDestino: fechaADate(sumarDias(fechaStr(paraReprogramar.fechaInicio), 7)),
+        bloqueAgendaDestinoId: bloqueDestino.id,
+        createdById: actorId,
+      },
+    })
+  }
+
+  // 3. Pago con dos ocurrencias pasadas de un mismo alumno (HU-15); el resto de los turnos
+  //    pasados quedan impagos a propósito, para probar la deuda (HU-16).
+  const pasadosPorAlumno = new Map<number, typeof activosOrdenados>()
+  for (const turno of activosOrdenados) {
+    if (fechaStr(turno.fechaInicio) >= fechaHoy) continue
+    const lista = pasadosPorAlumno.get(turno.alumnoId) ?? []
+    lista.push(turno)
+    pasadosPorAlumno.set(turno.alumnoId, lista)
+  }
+  const conDeuda = [...pasadosPorAlumno.entries()].find(([, lista]) => lista.length >= 2)
+  if (conDeuda) {
+    const [alumnoId, turnosDelAlumno] = conDeuda
+    const materiaPorId = new Map(materiasActivas.map((m) => [m.id, m]))
+    const elegidos = turnosDelAlumno.slice(0, 2)
+    const importes = elegidos.map(
+      (t) => materiaPorId.get(t.materiaId)?.precioHora?.toString() ?? '0',
+    )
+    const total = importes.reduce((acc, importe) => acc + Number(importe), 0).toFixed(2)
+    const pago = await prisma.pago.create({
+      data: {
+        alumnoId,
+        formaPagoId,
+        importeTotal: total,
+        fechaPago: fechaADate(fechaHoy),
+        montoRecibido: total,
+        observaciones: 'Pago de demo con dos ocurrencias (T-29).',
+        ...auditoria,
+      },
+    })
+    await prisma.pagoTurno.createMany({
+      data: elegidos.map((t, i) => ({
+        pagoId: pago.id,
+        turnoId: t.id,
+        fecha: t.fechaInicio,
+        importeAplicado: importes[i] ?? '0',
+      })),
+    })
+  }
 
   // --- Resumen ---
   const activos = turnosData.filter((t) => t.estado === 'ACTIVO').length
@@ -685,6 +888,11 @@ async function crear(azar: Azar) {
   console.log(`  ${bloques.length} horas de horario en ${franjas} franjas`)
   console.log(`  ${turnosData.length} turnos (${activos} activos) del ${desde} al ${hasta}`)
   console.log(`  ${examenes.size} fechas de examen`)
+  console.log(
+    `  escenarios T-29: ${paraCancelar ? '1' : '0'} cancelación, ` +
+      `${paraReprogramar && bloqueDestino ? '1' : '0'} reprogramación, ` +
+      `${conDeuda ? '1' : '0'} pago con dos ocurrencias, ${segundoTramoAgregado ? '1' : '0'} tramo extra`,
+  )
   console.log('')
   console.log(`Los profesores entran con su email @${DOMINIO} y la contraseña "${PASSWORD_DEMO}".`)
   const ejemplo = usuariosData[0]

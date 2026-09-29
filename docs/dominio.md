@@ -75,6 +75,26 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - **Superposición del alumno:** un alumno no puede tener dos turnos que se pisen (mismo día y hora, con rangos de fechas que se cruzan), aunque sean de profesores distintos. Es un **rechazo total** (`ALUMNO_SUPERPUESTO`): no hay opción de crearlo en las fechas libres.
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
 - Un turno está `ACTIVO` o `CANCELADO`; la UI muestra `ACTIVO` como **"Agendado"** (no es otro valor). Que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no es vigente ni ocupa lugar: no impide ninguna baja.
+- **Ocurrencia (Sprint 2, T-45):** un turno en una fecha concreta es lo que se cancela, se paga, se reprograma y tiene prioridad. Se identifica por el par **`(turnoId, fecha original de la serie)`**, aunque después se reprograme a otra fecha, hora o profesor: así una cancelación, un pago o una reprogramación siguen apuntando a la misma ocurrencia sin importar cuántas veces se mueva (HU-20).
+- **Cancelación de una ocurrencia (HU-13):** a partir del Sprint 2, cancelar registra siempre una fila en `CancelacionTurno` (`turnoId` + fecha original), también para una sesión única; el resto de la serie sigue agendado. El valor `CANCELADO` de `Turno.estado` queda sólo para los turnos cancelados antes de este sprint (no se deshace una cancelación). El detalle de las reglas de HU-13 lo fija su propia tarea.
+- **Finalización de una recurrencia (HU-14):** pone fin a una serie `RECURRENTE` desde una fecha (`FinalizacionRecurrencia`, a lo sumo una por turno); los turnos anteriores a esa fecha no cambian. El detalle de las reglas de HU-14 lo fija su propia tarea.
+- **Reprogramación de una ocurrencia (HU-20):** mueve una ocurrencia a otra fecha, hora o profesor sin perder su identidad ni su pago (`ReprogramacionTurno.fechaOrigen` es siempre la fecha original de la ocurrencia). Si se reprograma más de una vez, hay varias filas con el mismo `fechaOrigen`: vale la última (por `createdAt`, `id` como desempate); las anteriores quedan como historial. El detalle de las reglas de HU-20 lo fija su propia tarea.
+
+## Pagos
+
+Modelo de datos (T-29); las reglas completas de cobro las fija HU-15 (registrar un pago) y HU-16 (deuda del alumno), cada una en su propia tarea.
+
+- Un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha original de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
+- La forma de pago (`FormaPago`) es un catálogo con baja lógica; el seed carga **"Efectivo"**, único medio disponible en este sprint (el ABM completo es HU-23, fuera de alcance).
+- El importe de cada ocurrencia pagada (`PagoTurno.importeAplicado`) es el precio por hora **vigente** de la materia del turno (`Materia.precioHora`) al momento de registrar el pago: cambiar el precio de la materia después no modifica los pagos ya registrados.
+- Un pago puede anularse (`Pago.estado = ANULADO`): libera sus ocurrencias, que vuelven a tener pago "Pendiente".
+
+## Exámenes
+
+Modelo de datos (T-29); las reglas completas de alta, edición y baja las fija HU-17, en su propia tarea.
+
+- Un examen (`Examen`) es de un alumno en una materia, con `tipo` (`PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`) y baja lógica (`estado`): "eliminar" un examen (HU-17) es darlo de baja, nunca borrarlo.
+- De él depende la prioridad del turno (HU-18): Alta de 0 a 10 días hasta el examen, Media de 11 a 20, Baja en otro caso o si no hay examen próximo en esa materia.
 
 ## Auditoría
 
