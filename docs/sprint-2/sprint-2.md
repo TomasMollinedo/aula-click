@@ -4,19 +4,22 @@ Repositorio: `aula-click` · Sprint: Iteración 2 · Estado inicial de todas las
 
 Estas tareas siguen `AGENTS.md` y `docs/`, y parten del estado de `testing` al cerrar el Sprint 1. Si una tarea y un doc se contradicen, manda el doc y se avisa para corregir la tarea. Las HU salen de `docs/sprint-2/backlog-sprint2.md`; el modelo de datos, del DER tentativo del Sprint 2.
 
-Numeración: continúa la del Sprint 1 (**T-29 en adelante**). HU-21 (tablero del gerente) es **opcional**, igual que lo fue HU-10: sus tareas se marcan como tales, salvo el acceso del gerente, que lo necesita HU-12.
+Numeración: continúa la del Sprint 1 (**T-29 en adelante**): 36 tareas, de T-29 a T-64. HU-21 (tablero del gerente) es **opcional**, igual que lo fue HU-10: sus tareas se marcan como tales, salvo el acceso del gerente, que lo necesita HU-12.
+
+Las definiciones de las PO del 29/09 (ver "Definiciones de las PO (29/09)" al final) cambiaron varias tareas. Las que ya estaban cerradas no se editan: se corrigen con una tarea FIX (T-63). Las abiertas se editaron en su sección.
 
 ## Regla del sprint: tareas aisladas
 
 En el Sprint 1 varias tareas terminaron editando los mismos archivos (por ejemplo, la API de turnos y la de la agenda tocaban las dos `turnos.*`). En este sprint **cada archivo tiene una sola tarea dueña** mientras dura su trabajo, para que todo se pueda hacer en paralelo. Para lograrlo:
 
 1. **Tareas de reuso primero (bloqueantes, días 1 y 2).** Lo que más de una tarea necesita se construye una sola vez, en su propio PR, y el resto lo consume sin reimplementarlo:
-   - T-29 modelo de datos (el único que toca `schema.prisma`, migraciones y seeds).
+   - T-29 modelo de datos (el único que toca `schema.prisma`, migraciones y seeds) y su corrección T-63 (FIX, dueña de esos archivos después de T-29).
    - T-30 ocurrencias y reserva en `turnos` (el único que toca `turnos.condiciones` y mueve las agendas a su feature).
    - T-31 prioridad (`examenes.condiciones.ts`).
-   - T-32 andamiaje del backend (el único que toca `src/server/app.ts` y `eslint.config.mjs`).
+   - T-32 andamiaje del backend (el único que toca `src/server/app.ts` y `eslint.config.mjs`). **Única excepción:** T-64 agrega la línea de `centro` en `app.ts`, porque la feature surgió después de mergear T-32.
    - T-33 indicadores de turno, T-34 documento imprimible, T-35 andamiaje del frontend y T-36 segmento del gerente.
-2. **Una feature por concepto nuevo**, con su carpeta propia en el back (`src/server/features/<f>/`) y en el front (`src/features/<f>/`): `agendas`, `ocurrencias`, `cancelaciones`, `finalizaciones`, `reprogramaciones`, `pagos`, `cuentas`, `examenes`, `documentos`, `tablero`. Ninguna tarea agrega endpoints a una feature que es de otra tarea.
+   - T-64 datos del centro (lo consume T-34).
+2. **Una feature por concepto nuevo**, con su carpeta propia en el back (`src/server/features/<f>/`) y en el front (`src/features/<f>/`): `agendas`, `ocurrencias`, `cancelaciones`, `finalizaciones`, `reprogramaciones`, `pagos`, `cuentas`, `examenes`, `documentos`, `tablero`, `centro`. Ninguna tarea agrega endpoints a una feature que es de otra tarea.
 3. **Slots con contrato fijo.** Donde varias HU muestran algo en la misma pantalla (acciones del detalle del turno, pestañas de la ficha del alumno, calendario dentro de la agenda, botón PDF), el andamiaje (T-35) deja un componente _placeholder_ por HU, **con sus props definitivas**, en la carpeta de la feature dueña, y lo compone desde `app/`. Cada tarea después sólo rellena su propio archivo.
 4. **Documentación.** Es la única excepción aceptada: cada tarea escribe **sólo en la sección de su feature** de `contrato-api.md` y `dominio.md` (T-32 deja creadas las secciones) y agrega sus filas al final de `decisiones.md` con el próximo ID libre. Si hay conflicto, es de una línea y se resuelve en el merge.
 5. Si durante una tarea aparece la necesidad de tocar un archivo que es de otra, **no se toca**: se avisa en el issue de la dueña (o se abre una tarea de reuso) y se acuerda quién lo hace.
@@ -25,13 +28,13 @@ En el Sprint 1 varias tareas terminaron editando los mismos archivos (por ejempl
 
 ```
 Día 1 (en paralelo, sin dependencias):
-  T-29 Modelo de datos + migración + seed ─────────┬──> T-30 Ocurrencias y reserva (turnos.condiciones) + feature agendas
-  T-32 Andamiaje back (routers vacíos, app.ts) ────┘            │
-  T-33 Indicadores de turno (UI)                                ├──> T-31 Prioridad (examenes.condiciones)   [sólo necesita T-29]
-  T-34 Documento imprimible (UI)                                │
-  T-35 Andamiaje front (agendas, slots, pestañas) ──────────────┤  (se conecta con las URLs nuevas de T-30)
-  T-36 Segmento del gerente y menús (UI)                        │
-                                                                ▼
+  T-29 Modelo de datos + migración + seed ──> T-63 FIX modelo (sin ReprogramacionTurno) ─┬──> T-30 Ocurrencias y reserva (turnos.condiciones) + feature agendas
+  T-32 Andamiaje back (routers vacíos, app.ts) ──────────────────────────────────────────┘            │
+  T-33 Indicadores de turno (UI)                                                                      ├──> T-31 Prioridad (examenes.condiciones)   [sólo necesita T-29]
+  T-64 Datos del centro API ──> T-34 Documento imprimible (UI; empieza contra el contrato)            │
+  T-35 Andamiaje front (agendas, slots, pestañas) ────────────────────────────────────────────────────┤  (se conecta con las URLs nuevas de T-30)
+  T-36 Segmento del gerente y menús (UI)                                                              │
+                                                                                                      ▼
 Con T-29 mergeada:           T-37 FIX alumnos/profesores API ──> T-38 FIX formularios
                              T-39 Materias con precio API ─────> T-40 Materias UI (+ T-36)
                              T-55 Exámenes API (+ T-30) ───────> T-56 Exámenes UI
@@ -39,8 +42,8 @@ Con T-30 mergeada:           T-41 Registrar turno API ────────�
                              T-43 Ocurrencias API (+ T-31) ────> T-44 Detalle del turno y turnos del alumno UI
                              T-45 Cancelar API ────────────────> T-46 Cancelar UI
                              T-47 Finalizar API ───────────────> T-48 Finalizar UI
-                             T-49 Reprogramar API ─────────────> T-50 Reprogramar UI
-                             T-51 Pagos API ───────────────────> T-52 Registrar pago y comprobante UI (+ T-34)
+                             T-49 Reprogramar API (+ T-63) ────> T-50 Reprogramar UI
+                             T-51 Pagos API (+ T-63) ──────────> T-52 Registrar pago y comprobante UI (+ T-34)
                              T-53 Cuentas API ─────────────────> T-54 Pagos del alumno y vista global UI
                              T-57 Agendas v2 API (+ T-31) ─────┬> T-58 Prioridad y filtros en las agendas UI
                                                                └> T-59 Calendario semanal UI
@@ -48,7 +51,7 @@ Con T-30 mergeada:           T-41 Registrar turno API ────────�
 Opcional:                    T-61 Tablero API (+ T-53) ────────> T-62 Tablero UI (+ T-36)
 ```
 
-- **T-29 y T-32 se mergean el día 1.** Nadie genera migraciones propias en todo el sprint: si a una tarea le falta un campo, se pide en T-29 (o en un FIX de T-29), no se agrega en su PR.
+- **T-29 y T-32 se mergean el día 1; T-63 lo antes posible** (bloquea T-30, T-49 y T-51). Nadie genera migraciones propias en todo el sprint: si a una tarea le falta un campo, se pide en T-63 (o en otro FIX de T-29), no se agrega en su PR.
 - **T-30 es la cadena crítica:** casi todo el backend de turnos cuelga de ella. Conviene tomarla temprano, con PR chico y revisión rápida. Mientras tanto, las tareas que la consumen pueden empezar contra las firmas que fija su alcance, con el repository mockeado en los tests (así se testean los services igual).
 - Las pantallas pueden empezar en paralelo con su API contra el contrato escrito en cada tarea, igual que en el Sprint 1, y se conectan cuando la API se mergea.
 - Los placeholders de T-35 no muestran nada (devuelven `null` o un texto "Próximamente"): la app sigue funcionando mientras las HU se completan.
@@ -57,8 +60,9 @@ Opcional:                    T-61 Tablero API (+ T-53) ────────>
 
 | Zona                                                                                                                                                                                                                                                                                                                                                         | Tarea dueña                                                                      |
 | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------- |
-| `prisma/schema.prisma`, `prisma/migrations/`, `prisma/seed*.ts`, `.env.example` (si hiciera falta)                                                                                                                                                                                                                                                           | T-29                                                                             |
-| `src/server/app.ts`, `eslint.config.mjs`, `src/server/features/*/…routes.ts` vacíos iniciales                                                                                                                                                                                                                                                                | T-32                                                                             |
+| `prisma/schema.prisma`, `prisma/migrations/`, `prisma/seed*.ts`, `.env.example` (si hiciera falta)                                                                                                                                                                                                                                                           | T-29 (mergeada); ahora T-63                                                      |
+| `src/server/app.ts`, `eslint.config.mjs`, `src/server/features/*/…routes.ts` vacíos iniciales                                                                                                                                                                                                                                                                | T-32 (salvo la línea de `centro` en `app.ts`, que agrega T-64)                   |
+| `src/server/features/centro/**` (constantes y logo)                                                                                                                                                                                                                                                                                                          | T-64                                                                             |
 | `src/server/features/turnos/**` (incluye `*.condiciones.ts`) y `src/server/features/agendas/**`                                                                                                                                                                                                                                                              | T-30; después `turnos/*` (salvo condiciones) pasa a T-41 y `agendas/*` a T-57    |
 | `src/server/features/examenes/examenes.condiciones.ts` (+ su test)                                                                                                                                                                                                                                                                                           | T-31                                                                             |
 | `src/server/features/examenes/**` (salvo condiciones)                                                                                                                                                                                                                                                                                                        | T-55                                                                             |
@@ -68,7 +72,7 @@ Opcional:                    T-61 Tablero API (+ T-53) ────────>
 | `cancelaciones/**`, `finalizaciones/**`, `reprogramaciones/**` (back)                                                                                                                                                                                                                                                                                        | T-45, T-47, T-49                                                                 |
 | `pagos/**` (back) · `cuentas/**` (back) · `tablero/**` (back)                                                                                                                                                                                                                                                                                                | T-51 · T-53 · T-61                                                               |
 | `src/components/turno/**`, tokens de color nuevos en `globals.css`                                                                                                                                                                                                                                                                                           | T-33                                                                             |
-| `src/components/impresion/**`, `src/app/impresion.css`, `src/app/layout.tsx` (import), `src/hooks/use-imprimir.ts`, `app-shell.tsx`, `public/` (logo)                                                                                                                                                                                                        | T-34                                                                             |
+| `src/components/impresion/**`, `src/features/centro/**` (front), `src/app/impresion.css`, `src/app/layout.tsx` (import), `src/hooks/use-imprimir.ts`, `app-shell.tsx`                                                                                                                                                                                        | T-34                                                                             |
 | `src/features/agendas/**` (estructura), placeholders de todas las features nuevas, `app/mesa/_componentes/**`, `app/profesor/_componentes/**`, `AlumnoDetalle.tsx`, páginas de `app/mesa/agenda`, `app/profesor/agenda`, `app/mesa/alumnos/[alumnoId]`, `app/profesor/alumnos/[alumnoId]`, `app/mesa/pagos`, `features/turnos/components/RegistrarTurno.tsx` | T-35 (después, cada placeholder pasa a su tarea)                                 |
 | `app/gerente/**`, `components/layout/*-sidebar.tsx`, `features/auth/roles.ts`, `SegmentoDeRol.tsx`                                                                                                                                                                                                                                                           | T-36 (después `app/gerente/materias` pasa a T-40 y `app/gerente/tablero` a T-62) |
 | `features/alumnos` (form, edición, schema, `DatosAlumno.tsx`), `features/profesores` (form, edición, schema)                                                                                                                                                                                                                                                 | T-38                                                                             |
@@ -86,16 +90,17 @@ Opcional:                    T-61 Tablero API (+ T-53) ────────>
 - `pnpm check` pasa localmente y en el CI. `/revisar-arquitectura` no reporta violaciones.
 - Backend: cada endpoint declarado con `createRoute()`, con todos sus status codes, errores con `ErrorResponseSchema`, y `requireAuth()` + `requireRole(...)`. Un test por service con el repository mockeado: camino feliz y un caso por cada error que lanza (`it.todo` no cuenta). Fechas con `hoy()` y reloj inyectable.
 - Frontend: cada componente con datos maneja carga, vacío y error (401/403/404); llamadas sólo por `fetchJson` desde `features/<entidad>/api/`; **ninguna regla de negocio calculada en el cliente** (si una acción está permitida, cuánto cuesta un turno o qué prioridad tiene, lo dice la API).
-- Nada se borra físicamente: las bajas son lógicas (`estado`); las cancelaciones, finalizaciones y reprogramaciones se registran en su tabla.
+- Nada se borra físicamente: las bajas son lógicas (`estado`); las cancelaciones y finalizaciones se registran en su tabla. Una reprogramación edita el turno (o lo parte en tramos) y queda en su auditoría (`updatedById`, `updatedAt`).
 - Si el cambio toca el contrato de la API, una regla o la estructura, se actualiza la sección de la feature en el doc correspondiente en el mismo PR (`AGENTS.md`, regla 9).
 - Al menos un integrante que no sea el autor revisa la PR.
 
 ## Vocabulario del sprint
 
 - **Turno (serie):** una fila de `Turno`. Es la regla: alumno, materia, una hora de un bloque, tipo (`RECURRENTE` o `SESION_UNICA`) y rango de fechas. HU-08 sigue con el enfoque del Sprint 1 (decisiones T-37 y T-41): las fechas sin lugar **no se guardan**; se avisan al registrar y un recurrente con fechas llenas se guarda en **tramos** (varios `Turno` `RECURRENTE`). No hay tabla de excepciones.
-- **Ocurrencia:** un turno en una fecha concreta. Es lo que se cancela, se paga, se reprograma y tiene prioridad. **Se identifica por `(turnoId, fecha original de la serie)`**, aunque después se reprograme a otra fecha u hora: así el pago y la cancelación siguen apuntando a la misma ocurrencia (HU-20: "el turno conserva su identidad y su pago").
-- **Estado de una ocurrencia** (lo calcula la API): `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (agendado de una fecha anterior a hoy; mientras no exista la HU de asistencia, todo turno pasado no cancelado es "Sin registrar"). La UI lo muestra como "Agendado", "Cancelado" y "Sin registrar".
-- **Estado de pago:** `PENDIENTE` o `PAGADO` (hay un `PagoTurno` de un `Pago` `VIGENTE` para esa ocurrencia).
+- **Ocurrencia:** un turno en una fecha concreta. Es lo que se cancela, se paga, se reprograma y tiene prioridad. **Se identifica por `(turnoId, fecha)`**. No hay "fecha original" distinta de su fecha: reprogramar edita el turno (sesión única) o parte la serie y la fecha movida pasa a ser un turno nuevo, y en la misma transacción se re-apuntan su cancelación y su pago (definición A). `CancelacionTurno.fechaOcurrencia` y `PagoTurno.fechaOcurrencia` son la fecha de la ocurrencia.
+- **Tramo:** cada `Turno` `RECURRENTE` en que quedó partida una serie (por fechas sin lugar al registrar, HU-08, o por una reprogramación, HU-20). Los tramos no están vinculados entre sí.
+- **Estado de una ocurrencia** (lo calcula la API): sólo `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (agendado de una fecha anterior a hoy; la asistencia, HU-22, es del próximo sprint, así que todo turno pasado no cancelado es "Sin registrar"). La UI lo muestra como "Agendado", "Cancelado" y "Sin registrar".
+- **Estado de pago:** `PENDIENTE` o `PAGADO` (hay un `PagoTurno` para esa ocurrencia). En este sprint no se anulan pagos: todo `Pago` nace `VIGENTE` y `Pago.estado` queda sin uso.
 
 ---
 
@@ -147,31 +152,31 @@ Traducir el DER tentativo del Sprint 2 a `prisma/schema.prisma` en **una sola mi
 - **HU:** Transversal (la usan HU-08, HU-13, HU-14, HU-15, HU-16, HU-18, HU-19, HU-20)
 - **Área:** Backend
 - **Rama:** `feat/turnos-ocurrencias`
-- **Depende de:** T-29, T-32
+- **Depende de:** T-29, T-32, T-63
 - **Prioridad:** Bloqueante (cadena crítica)
 
 **Descripción**
-Seis features nuevas necesitan lo mismo: expandir un turno en sus ocurrencias, saber si una ocurrencia está cancelada, reprogramada o pagada, calcular la ocupación de una hora en una fecha, controlar que el alumno no se superponga y tomar los locks de la reserva. Hoy eso vive en `turnos.reglas.ts` y `turnos.service.ts`, que **otra feature no puede importar** (sólo repository o condiciones). Esta tarea lo publica **una sola vez** en las condiciones de `turnos`, para que nadie lo reimplemente. Además saca las agendas de `turnos` a su propia feature, para que las tareas de agenda (T-57) y de registrar turno (T-41) no editen los mismos archivos.
+Seis features nuevas necesitan lo mismo: expandir un turno en sus ocurrencias, saber si una ocurrencia está cancelada, finalizada o pagada, calcular la ocupación de una hora en una fecha, controlar que el alumno no se superponga y tomar los locks de la reserva. Hoy eso vive en `turnos.reglas.ts` y `turnos.service.ts`, que **otra feature no puede importar** (sólo repository o condiciones). Esta tarea lo publica **una sola vez** en las condiciones de `turnos`, para que nadie lo reimplemente. Además saca las agendas de `turnos` a su propia feature, para que las tareas de agenda (T-57) y de registrar turno (T-41) no editen los mismos archivos.
 
 **Alcance**
 
 1. Nuevo `src/server/features/turnos/ocurrencias.condiciones.ts` (reciben el cliente, `prisma` o `tx`, y de Prisma sólo importan tipos, decisión T-39):
    - `leerOcurrencias(client, filtro)`: `filtro = { desde, hasta, alumnoId?, profesorId?, materiaId?, aulaId?, turnoIds?, bloqueAgendaIds? }` (rango obligatorio). Devuelve `Ocurrencia[]`:
-     `{ turnoId, fechaOriginal, fecha, bloqueAgendaId, diaSemana, horaInicio, horaFin, profesorId, aulaId, alumnoId, materiaId, tipo, estado: 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR', pago: { estado: 'PENDIENTE' | 'PAGADO', pagoId?, importeAplicado? }, reprogramadaDesde?: { fecha, bloqueAgendaId }, cancelacion?: { motivo, detalle, createdById, createdAt } }`.
-     Reglas, en este orden: las fechas del rango del turno que caen en el día del bloque (respetando `fechaFin`, que HU-14 acorta; cada tramo es un turno propio, como hoy); cada reprogramación vigente mueve la ocurrencia a su destino (fecha y bloque); `CANCELADO` si hay `CancelacionTurno` para su fecha original; `SIN_REGISTRAR` si no está cancelada y su fecha efectiva es anterior a `hoy()`; `PAGADO` si hay un `PagoTurno` de un `Pago` `VIGENTE` con su fecha original. El filtro de rango, profesor, aula y bloque se aplica sobre la fecha y el bloque **efectivos** (una ocurrencia reprogramada aparece donde quedó, no donde estaba).
-   - `ocupacionEn(client, { bloqueAgendaId, fecha, excluir?: { turnoId, fechaOriginal } })`: cuántas ocurrencias **ocupan lugar** (no canceladas) en esa hora y esa fecha, contando las que llegaron por reprogramación y sin contar las que se fueron.
-   - `superposicionesDelAlumno(client, { alumnoId, fecha, horaInicio, horaFin, excluir? })`: ocurrencias no canceladas del alumno que se pisan en ese horario.
+     `{ turnoId, fecha, bloqueAgendaId, diaSemana, horaInicio, horaFin, profesorId, aulaId, alumnoId, materiaId, tipo, estado: 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR', pago: { estado: 'PENDIENTE' | 'PAGADO', pagoId?, importeAplicado? }, cancelacion?: { motivo, detalle, createdById, createdAt } }`.
+     Reglas, en este orden: las fechas del rango del turno que caen en el día del bloque, hasta el **fin efectivo** de la serie: el menor entre `fechaFin` y el día anterior a `FinalizacionRecurrencia.fechaDesde` (HU-14 no modifica `fechaFin`, definición C); cada tramo es un turno propio, como hoy. `CANCELADO` si hay `CancelacionTurno` para `(turnoId, fecha)`; `SIN_REGISTRAR` si no está cancelada y su fecha es anterior a `hoy()`; `PAGADO` si hay un `PagoTurno` para `(turnoId, fechaOcurrencia)` (no hay pagos anulados en este sprint, definición D). No hay reprogramaciones que aplicar: un turno reprogramado ya está en su fecha y su bloque nuevos (definición A).
+   - `ocupacionEn(client, { bloqueAgendaId, fecha, excluir?: { turnoId, fecha } })`: cuántas ocurrencias **ocupan lugar** (no canceladas) en esa hora y esa fecha. Un turno reprogramado es un turno más: no hay nada especial que sumar ni restar.
+   - `superposicionesDelAlumno(client, { alumnoId, fecha, horaInicio, horaFin, excluir?: { turnoId, fecha } })`: ocurrencias no canceladas del alumno que se pisan en ese horario.
    - `bloquearParaReserva(tx, { profesorId, bloqueAgendaIds, alumnoId })`: los locks en el orden de T-38 (`profesor` `FOR SHARE`, filas de `bloque_agenda` por id `FOR UPDATE`, `alumno` `FOR UPDATE`). Lo usan el alta (T-41), la reprogramación (T-49), la cancelación (T-45), la finalización (T-47) y el pago (T-51), así no hay deadlocks entre ellas.
    - `materiasDelProfesorConAlumno(client, { profesorId, alumnoId })`: materias de los turnos del alumno con ese profesor (la usa T-55 para el profesor en exámenes).
    - Los tipos que devuelven se re-exportan desde el archivo (nadie importa la validation de `turnos`).
-2. Las condiciones existentes de `turnos.condiciones.ts` (vigentes por materia, por bloques, por profesor y ocupación máxima por fila) pasan a contar con el mismo motor: una hora con una ocurrencia cancelada o reprogramada tiene ese lugar libre. **Sus firmas no cambian**, así `profesores`, `bloques`, `materias` y `alumnos` no se tocan.
+2. Las condiciones existentes de `turnos.condiciones.ts` (vigentes por materia, por bloques, por profesor y ocupación máxima por fila) pasan a contar con el mismo motor: una hora con una ocurrencia cancelada o fuera del fin efectivo de su serie tiene ese lugar libre. **Sus firmas no cambian**, así `profesores`, `bloques`, `materias` y `alumnos` no se tocan.
 3. `turnos.service`/`repository` (disponibilidad y alta) usan `ocupacionEn`, `superposicionesDelAlumno` y `bloquearParaReserva`. `expandirOcurrencias` y la lógica duplicada de `turnos.reglas.ts` se eliminan o se reducen a los predicados puros que usan las condiciones. El comportamiento con los datos del Sprint 1 no cambia: los tests actuales siguen pasando.
 4. Mover a la feature **`agendas`** (router creado por T-32) los endpoints de agenda, sin cambiar su contrato salvo la URL:
    - `GET /turnos/agenda` → `GET /agendas/diaria`; `/turnos/agenda-propia` → `/agendas/propia`; `/turnos/agenda-profesor` → `/agendas/profesor`; `/turnos/materias` → `/agendas/materias`; `/turnos/aulas` → `/agendas/aulas`.
    - Sus services leen con `leerOcurrencias`. Por ahora siguen excluyendo las canceladas (mostrarlas es T-57).
    - Se mueven sus tests.
 5. Quedan en `turnos`: disponibilidad, alta y detalle (`GET /turnos/{id}`).
-6. Tests: del motor (excepcional, a nivel repository, como el de T-23) con un caso por regla del punto 1 (recurrente en tramos, cancelación, reprogramación dentro y fuera del rango, pago vigente y anulado, finalización, `SIN_REGISTRAR` con reloj fijo); de `ocupacionEn` con una reprogramación que entra y otra que sale.
+6. Tests: del motor (excepcional, a nivel repository, como el de T-23) con un caso por regla del punto 1 (recurrente en tramos, cancelación, pago, finalización con `fechaFin` nula y con `fechaFin` anterior a `fechaDesde`, `SIN_REGISTRAR` con reloj fijo); de `ocupacionEn` con una cancelación y con `excluir`.
 7. Documentación: `convenciones-backend.md` (ocurrencias, "ocupa lugar" con las tablas nuevas, orden de locks compartido), `arquitectura-backend.md` (feature `agendas`, lista de features), `contrato-api.md` (URLs nuevas de las agendas; avisar al front: T-35 las conecta).
 
 **Fuera de alcance**
@@ -179,8 +184,8 @@ Mostrar canceladas, prioridad y estado de pago en las agendas (T-57); `observaci
 
 **Criterios de aceptación**
 
-- Una ocurrencia cancelada o reprogramada libera su lugar: `ocupacionEn` y la disponibilidad lo reflejan.
-- Una ocurrencia reprogramada ocupa lugar en su destino y el alumno no puede superponerse con ella.
+- Una ocurrencia cancelada, o posterior al fin efectivo de una serie finalizada, libera su lugar: `ocupacionEn` y la disponibilidad lo reflejan.
+- El motor no tiene ninguna regla de reprogramación: un turno reprogramado se lee como cualquier otro.
 - Las agendas responden en `/api/v1/agendas/*` igual que antes en `/turnos/*`.
 - Ningún archivo fuera de `turnos/`, `agendas/` y los docs cambió.
 
@@ -272,23 +277,25 @@ El estado de un turno, su estado de pago y su prioridad se muestran en las agend
 - **HU:** HU-11 PDF de turno y agenda; HU-15 (comprobante)
 - **Área:** Frontend
 - **Rama:** `feat/ui-documento-imprimible`
-- **Prioridad:** Día 1, sin dependencias
+- **Depende de:** T-64 para conectarse (puede empezar contra su contrato: `GET /api/v1/centro` y `GET /api/v1/centro/logo`)
+- **Prioridad:** Día 1
 
 **Descripción**
-HU-11 y HU-15 piden documentos oficiales con el mismo encabezado, que se guardan como PDF desde el diálogo de impresión del navegador, en A4 y sin el menú ni los botones. Se construye una vez y lo usan T-52 (comprobante) y T-60 (turno y agenda).
+HU-11 y HU-15 piden documentos oficiales con el mismo encabezado, que se guardan como PDF desde el diálogo de impresión del navegador, en A4 y sin el menú ni los botones. Se construye una vez y lo usan T-52 (comprobante) y T-60 (turno y agenda). Los datos del centro y el logo **los da la API** (T-64, definición G): el front no tiene constantes del centro ni el logo en `public/`.
 
 **Alcance**
 
-1. `src/components/impresion/datos-centro.ts`: nombre, dirección y teléfono del centro como constantes, y el logo en `public/` (HU-11: vienen precargados, sin pantalla para editarlos). **Pedir los datos reales a las PO**; mientras tanto, valores de ejemplo marcados.
-2. `DocumentoOficial({ titulo, emitidoPor, children })`: encabezado con logo, nombre, dirección, teléfono y fecha y hora de emisión (del navegador, formateada con `date-fns`), y el contenido.
+1. Feature de UI **`src/features/centro/`**: `api/centro.api.ts` (`fetchJson` a `GET /api/v1/centro`), `api/centro.keys.ts`, `types` y el hook **`useCentro()`** (datos que casi no cambian: `staleTime` largo). El logo se muestra con `<img src="/api/v1/centro/logo">` (misma sesión, sin `fetch` propio).
+2. `src/components/impresion/DocumentoOficial({ titulo, emitidoPor, centro, children })`: encabezado con logo, nombre, dirección, teléfono y fecha y hora de emisión (del navegador, formateada con `date-fns`), y el contenido. **Recibe `centro` por props**: `components/` no puede importar `features/` (ESLint), así que el hook lo llama quien arma el documento (la página de `app/` o la feature `documentos`/`pagos`, que pueden usar hooks de otra feature).
 3. `src/app/impresion.css` (importado en el layout raíz): `@page { size: A4 }`, márgenes, y en `@media print` se ocultan el sidebar, el header y todo lo marcado con `data-no-imprimir`. `app-shell.tsx` marca sus partes.
-4. `src/hooks/use-imprimir.ts`: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez cuando los datos cargaron.
+4. `src/hooks/use-imprimir.ts`: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez cuando los datos cargaron. `listo` incluye los datos del centro y que el logo haya terminado de cargar (`onLoad`/`onError` del `<img>`), para que no salga un encabezado sin logo.
 5. Página de prueba sólo en desarrollo o un ejemplo en el doc, para verificar el A4.
-6. `docs/arquitectura-frontend.md` → Documentos imprimibles: el patrón (ruta propia `/…/imprimir` o `/…/comprobante` que usa `DocumentoOficial` y `useImprimirCuandoEsteListo`).
+6. `docs/arquitectura-frontend.md` → Documentos imprimibles: el patrón (ruta propia `/…/imprimir` o `/…/comprobante` que usa `useCentro`, `DocumentoOficial` y `useImprimirCuandoEsteListo`).
 
 **Criterios de aceptación**
 
-- En la vista previa de impresión sólo se ve el documento, en A4, con el encabezado completo.
+- En la vista previa de impresión sólo se ve el documento, en A4, con el encabezado completo (logo incluido).
+- Los datos del centro salen de la API: no hay nombre, dirección, teléfono ni logo del centro en el código del front.
 - No se agrega ninguna dependencia (se usa el diálogo del navegador).
 
 ---
@@ -323,11 +330,11 @@ Varias HU muestran algo en las mismas pantallas: el detalle del turno tiene las 
    - El tipo de `ocurrencia` que reciben las acciones es `OcurrenciaDetalle` del contrato de T-43; se declara en `src/types/ocurrencia.ts` (tipo compartido, para que ninguna feature importe los types de otra). Incluye `acciones: { cancelar, finalizar, reprogramar, registrarPago }`, que calcula la API: cada acción decide si se muestra con ese dato, nunca con reglas propias.
 
 3. **Detalle del turno compuesto:** `src/app/mesa/_componentes/detalle-turno.tsx` arma `OcurrenciaDetalle` con `renderAcciones` = Reprogramar, Cancelar, Finalizar, Registrar pago y PDF. `src/app/profesor/_componentes/detalle-turno.tsx`, sin acciones (el profesor no cancela ni reprograma en este incremento).
-   - Se abre con `?detalle=<turnoId>&fecha=<fechaOriginal>` sobre la pantalla que lo muestra.
+   - Se abre con `?detalle=<turnoId>&fecha=<fecha>` sobre la pantalla que lo muestra (la ocurrencia es `(turnoId, fecha)`, definición B).
    - Las pantallas de agenda (`features/agendas`) reciben `renderDetalle` desde su página de `app/`.
    - `RegistrarTurno` (confirmación del alta) abre el mismo detalle con la primera fecha del turno. Se elimina `TurnoDetalleModal`.
 4. **Agendas (las tres: diaria, de un profesor y "Mi agenda"):**
-   - Selector **"Calendario / Lista"** (HU-19), que recuerda la última vista **por usuario** en `localStorage` (clave con el id del usuario, con `try/catch`). La vista Calendario renderiza el placeholder `CalendarioSemanal`.
+   - Selector **"Calendario / Lista"** (HU-19). **No recuerda la última vista** ni usa `localStorage` (definición I): la vista puede ir en la URL, como los filtros, y por defecto es Lista. La vista Calendario renderiza el placeholder `CalendarioSemanal`.
    - Hook `use-filtros-agenda.ts` con el estado de los filtros en la URL, **incluidos `estado` y `prioridad`** aunque todavía no haya controles: lo consumen la lista (T-58) y el calendario (T-59).
    - En la agenda diaria, el slot `BotonPdfAgenda` en el encabezado.
 5. **Ficha del alumno:** `AlumnoDetalle` pasa a tener pestañas en la URL (`?tab=datos|turnos|examenes|pagos`, como la del profesor) con `renderTurnos`, `renderExamenes` y `renderPagos`. Se extrae `DatosAlumno` a su propio archivo (lo toca T-38). Composición:
@@ -484,7 +491,7 @@ El alta de turnos existe (T-21) y el manejo de fechas sin lugar **se mantiene co
 
 1. `POST /turnos`: `motivoConsulta` pasa a **`observaciones`** (opcional) y se agrega **`temas`**: opcional si es `RECURRENTE`, **obligatorio si es `SESION_UNICA`** (400 `VALIDACION` en `temas`). Con "Asignar igual", todos los tramos de una hora llevan las mismas observaciones y temas.
 2. `GET /turnos/{id}` (detalle del turno o tramo): `observaciones` y `temas` en lugar de `motivoConsulta`.
-3. Sin cambios en disponibilidad, `BLOQUE_LLENO`, `fechasSinTurno`, tramos ni `asignarDondeHayLugar` (la ocupación ya descuenta cancelaciones y reprogramaciones por T-30).
+3. Sin cambios en disponibilidad, `BLOQUE_LLENO`, `fechasSinTurno`, tramos ni `asignarDondeHayLugar` (la ocupación ya descuenta cancelaciones y finalizaciones por T-30; un turno reprogramado es un turno más).
 4. Tests del service: sesión única sin temas → 400; recurrente sin temas → 201; los tramos de "Asignar igual" copian observaciones y temas; ejemplos del OpenAPI actualizados.
 5. Documentación: `contrato-api.md` → Turnos (campos renombrados y nuevos), `dominio.md` → Turnos. Anotar en `decisiones.md` que HU-08 del Sprint 2 ("excepciones" y "fechas exceptuadas en el detalle") se resuelve con el enfoque del Sprint 1: aviso al registrar y tramos, sin guardar excepciones.
 
@@ -528,25 +535,25 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 
 **Alcance**
 
-1. `GET /ocurrencias/{turnoId}/{fecha}` (`fecha` = fecha original). Roles: `MESA_ENTRADAS`; `PROFESOR` sólo si el turno es suyo (403 si no), con todas las acciones en `false`. Devuelve:
-   - alumno (id, nombre, apellido, DNI), materia, profesor, aula, fecha y horario **efectivos**, tipo;
-   - serie: período (`fechaInicio`, `fechaFin`), fechas reprogramadas (la fecha original de cada ocurrencia que se movió, HU-20), finalización ("Finalizada el …", motivo, detalle, quién y cuándo);
-   - `estado` (`AGENDADO` / `CANCELADO` / `SIN_REGISTRAR`), `observaciones`, `temas`;
+1. `GET /ocurrencias/{turnoId}/{fecha}` (la ocurrencia es `(turnoId, fecha)`, definición B). Roles: `MESA_ENTRADAS`; `PROFESOR` sólo si el turno es suyo (403 si no), con todas las acciones en `false`. Devuelve:
+   - alumno (id, nombre, apellido, DNI), materia, profesor, aula, fecha y horario, tipo;
+   - serie: período del turno o tramo (`fechaInicio`, `fechaFin`) y finalización ("Finalizada el …", motivo, detalle, quién y cuándo; el fin efectivo sale de `FinalizacionRecurrencia.fechaDesde`, definición C);
+   - `estado`: sólo `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (definición F); `observaciones`, `temas`;
    - `pago`: `PENDIENTE` o `PAGADO` con importe, forma de pago, fecha, número de comprobante, `pagoId` y quién lo registró; si está pendiente, el **importe vigente** (precio de la materia);
    - `cancelacion`: motivo, detalle, quién y cuándo;
-   - `reprogramacion`: desde qué fecha, hora y profesor se movió, quién y cuándo;
    - `prioridad` y el examen que la determina (T-31), salvo cancelada;
-   - auditoría (quién creó el turno y quién lo modificó por última vez);
-   - `acciones`: `{ cancelar: { visible, habilitada, motivo? }, finalizar: { visible }, reprogramar: { visible }, registrarPago: { visible } }` con las reglas de HU-13 (agendado, pendiente, hoy o posterior; si está pagada, visible pero deshabilitada con "El turno está pagado. Para cancelarlo, primero hay que anular el pago"), HU-14 (recurrente vigente, no finalizado), HU-20 (agendado, hoy o posterior) y HU-15 (no cancelado, pendiente).
+   - auditoría: quién creó el turno y quién lo modificó por última vez, con fecha y hora (`updatedById`, `updatedAt`). Si el turno se reprogramó, **quien lo modificó es quien lo reprogramó**; no se muestra desde qué fecha y hora se movió (definición A);
+   - `acciones`: `{ cancelar: { visible, habilitada, motivo? }, finalizar: { visible }, reprogramar: { visible }, registrarPago: { visible } }` con las reglas de HU-13 (agendado, pendiente, hoy o posterior; si está pagada, visible pero deshabilitada con **"El turno está pagado: no se puede cancelar"**, definición D), HU-14 (recurrente vigente, no finalizado), HU-20 (agendado, hoy o posterior) y HU-15 (no cancelado, pendiente).
    - 404 si el turno no existe o esa fecha no es una ocurrencia suya.
 2. `GET /ocurrencias?alumnoId&desde?&hasta?` (`MESA_ENTRADAS`): las ocurrencias del alumno, por defecto desde 30 días atrás hasta 8 semanas adelante (rango máximo acotado, como las agendas), ordenadas por fecha y hora, cada una con estado, estado de pago, prioridad, profesor, materia y `cancelable` (mismas reglas que `acciones.cancelar`).
 3. Todo con `leerOcurrencias` (T-30) y `leerPrioridades` (T-31): la feature no reimplementa expansiones ni prioridades.
-4. Tests del service con reloj fijo: cada combinación de `acciones` (pasada, cancelada, pagada, sesión única vs recurrente, finalizada), profesor ajeno → 403, fecha que no es ocurrencia → 404.
+4. Tests del service con reloj fijo: cada combinación de `acciones` (pasada, cancelada, pagada con su motivo, sesión única vs recurrente, finalizada), profesor ajeno → 403, fecha que no es ocurrencia (incluida una posterior al fin efectivo de una serie finalizada) → 404.
 5. `contrato-api.md` → Ocurrencias (y el tipo que comparte el front, `src/types/ocurrencia.ts`).
 
 **Criterios de aceptación**
 
-- El detalle de una ocurrencia reprogramada muestra su fecha nueva y desde dónde se movió.
+- El detalle de un turno reprogramado muestra su fecha y hora nuevas, y en la auditoría quién lo modificó y cuándo.
+- Una ocurrencia pagada muestra "Cancelar" deshabilitado con "El turno está pagado: no se puede cancelar".
 - Las acciones permitidas salen siempre de la API.
 
 ---
@@ -561,9 +568,10 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 **Alcance**
 
 1. `features/ocurrencias`: `api`, hooks `useOcurrencia`, `useOcurrenciasDelAlumno`. Si el contrato final de T-43 difiere del tipo que dejó T-35, esta tarea ajusta `src/types/ocurrencia.ts` (pasa a ser suya) y avisa a T-46, T-48, T-50, T-52 y T-60.
-2. `OcurrenciaDetalle`: todos los datos de T-43 con `EstadoTurnoBadge`, `EstadoPagoBadge` y `PrioridadIndicador variante="detalle"`; secciones de pago, cancelación, reprogramación, serie (período del tramo, fechas reprogramadas, finalización) y trazabilidad; `renderAcciones(ocurrencia)` al pie.
-3. `TurnosDelAlumno`: lista (fecha, horario, materia, profesor, estado, pago, prioridad), clic abre el detalle; casilla de selección sólo en las `cancelable`; "Seleccionar todos" / "Quitar selección"; `renderAccionesSeleccion(seleccionadas)`.
-4. Estados de carga, vacío ("Sin turnos") y error.
+2. `OcurrenciaDetalle`: todos los datos de T-43 con `EstadoTurnoBadge`, `EstadoPagoBadge` y `PrioridadIndicador variante="detalle"`; secciones de pago, cancelación, serie (período del tramo, finalización) y trazabilidad (creado y modificado por última vez, que en un turno reprogramado es quien lo reprogramó); `renderAcciones(ocurrencia)` al pie. **Sin sección de reprogramación** (definición A: no se muestra desde qué fecha se movió).
+3. "Cancelar" deshabilitado muestra el `motivo` que manda la API ("El turno está pagado: no se puede cancelar"); la pantalla no arma el texto.
+4. `TurnosDelAlumno`: lista (fecha, horario, materia, profesor, estado, pago, prioridad), clic abre el detalle; casilla de selección sólo en las `cancelable`; "Seleccionar todos" / "Quitar selección"; `renderAccionesSeleccion(seleccionadas)`.
+5. Estados de carga, vacío ("Sin turnos") y error.
 
 **Criterios de aceptación**
 
@@ -584,8 +592,8 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 1. `POST /cancelaciones` (`MESA_ENTRADAS`), body `{ ocurrencias: [{ turnoId, fecha }], motivo, detalle? }`:
    - `motivo` del enum `MotivoCancelacion`; `detalle` hasta 500 caracteres, **obligatorio si `motivo = OTRO`** (400).
    - Todas las ocurrencias del **mismo alumno** (400 si no).
-   - **Todo o nada**, en una transacción con `bloquearParaReserva` y relectura con `leerOcurrencias`: cada una tiene que estar `AGENDADO`, con pago `PENDIENTE` y fecha efectiva hoy o posterior. Si alguna no cumple → 409 `TURNOS_NO_CANCELABLES` con `details` por ocurrencia y el motivo (`PAGADO`, `PASADO`, `YA_CANCELADO`, `NO_EXISTE`), y no se cancela ninguna.
-   - Inserta una `CancelacionTurno` por ocurrencia (fecha original), también para una sesión única. Responde `{ cantidad }`.
+   - **Todo o nada**, en una transacción con `bloquearParaReserva` y relectura con `leerOcurrencias`: cada una tiene que estar `AGENDADO`, con pago `PENDIENTE` y fecha hoy o posterior. Si alguna no cumple → 409 `TURNOS_NO_CANCELABLES` con `details` por ocurrencia y el motivo (`PAGADO`, `PASADO`, `YA_CANCELADO`, `NO_EXISTE`), y no se cancela ninguna. El mensaje de `PAGADO` es **"El turno está pagado: no se puede cancelar"** (definición D: en este sprint no se anulan pagos, así que un turno pagado no se cancela).
+   - Inserta una `CancelacionTurno` por ocurrencia (`fechaOcurrencia` = la fecha de la ocurrencia), también para una sesión única. Responde `{ cantidad }`.
 2. Una cancelación sólo afecta a esa fecha: el resto de la serie sigue igual (lo garantiza el motor).
 3. Tests del service: una y varias; una pagada entre varias → 409 sin cancelar nada; `OTRO` sin detalle → 400; pasada → 409; carrera con un pago simultáneo (el lock serializa).
 4. Documentación: `contrato-api.md` → Cancelaciones (código nuevo `TURNOS_NO_CANCELABLES`), `dominio.md` → Cancelación.
@@ -606,9 +614,9 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 
 **Alcance**
 
-1. `AccionCancelarTurno`: botón "Cancelar turno" según `ocurrencia.acciones.cancelar`; deshabilitado con la aclaración de pago cuando corresponde.
+1. `AccionCancelarTurno`: botón "Cancelar turno" según `ocurrencia.acciones.cancelar`; si está pagado, deshabilitado con el `motivo` de la API: "El turno está pagado: no se puede cancelar". Sin ninguna mención a anular el pago (definición D).
 2. `AccionCancelarVarios` y un diálogo común: motivo (lista), detalle (obligatorio con "Otro", contador de 500), confirmación con el resumen ("¿Cancelar el turno de Matemática de Ana Pérez del lunes 12/10 de 9:00 a 10:00?" o la lista completa con la cantidad).
-3. Mensajes: "Turno cancelado. El lugar quedó disponible." / "Se cancelaron N turnos. Los lugares quedaron disponibles." El 409 muestra cuáles no se pudieron cancelar.
+3. Mensajes: "Turno cancelado. El lugar quedó disponible." / "Se cancelaron N turnos. Los lugares quedaron disponibles." El 409 muestra cuáles no se pudieron cancelar y por qué (un pagado, con "El turno está pagado: no se puede cancelar").
 4. Después de cancelar, invalida `ocurrencias`, `agendas` y `cuentas` con sus hooks `use-invalidar-*`.
 
 **Criterios de aceptación**
@@ -627,21 +635,22 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 
 **Alcance**
 
-1. `GET /finalizaciones/previa?turnoId&fechaDesde` (`MESA_ENTRADAS`): `{ cantidad, desde, hasta | null, pagadas: [{ fecha, horaInicio, horaFin, importe }] }` para el mensaje "Se liberan 7 turnos, del 19/10 al 30/11" o "Se liberan todos los turnos desde el 19/10".
+1. `GET /finalizaciones/previa?turnoId&fechaDesde` (`MESA_ENTRADAS`): `{ cantidad, desde, hasta | null, pagadas: [{ fecha, horaInicio, horaFin, importe }], otrosTramos: [{ turnoId, fechaInicio, fechaFin }] }` para el mensaje "Se liberan 7 turnos, del 19/10 al 30/11" o "Se liberan todos los turnos desde el 19/10".
 2. `POST /finalizaciones` `{ turnoId, fechaDesde, motivo, detalle? }`:
    - El turno es `RECURRENTE`, vigente y sin finalización previa (409 si no).
    - `fechaDesde`: hoy o posterior, en el día de la serie y posterior a `fechaInicio` (400).
-   - Si alguna ocurrencia desde `fechaDesde` está pagada → 409 `TURNOS_PAGADOS` con fecha, horario e importe de cada una.
-   - En una transacción con lock: `FinalizacionRecurrencia` + `Turno.fechaFin` = última ocurrencia anterior a `fechaDesde` (así deja de ser vigente al día siguiente y libera bajas de profesor, de materia y de bloques). Las ocurrencias anteriores no cambian. Una ocurrencia de la serie reprogramada a una fecha posterior también se libera (es de la serie); dejarlo en `decisiones.md`.
+   - **Turnos pagados (definición D):** si alguna ocurrencia desde `fechaDesde` está pagada → 409 `TURNOS_PAGADOS` con fecha, horario e importe de cada una, y no se finaliza. El mensaje indica **elegir una fecha posterior al último turno pagado** (en `details` va esa última fecha). En este sprint no se anulan pagos.
+   - En una transacción con lock: se inserta `FinalizacionRecurrencia`. **No se modifica `Turno.fechaFin`** (definición C): el fin efectivo es el menor entre `fechaFin` y el día anterior a `fechaDesde`, y lo aplica el motor (T-30) en la vigencia, la ocupación y las agendas, así que también libera bajas de profesor, de materia y de bloques. Las ocurrencias anteriores no cambian.
+   - Una fecha de la serie que ya se reprogramó es un turno `SESION_UNICA` aparte (definición A): **finalizar la serie no la libera**.
    - Motivo y detalle con las reglas de HU-13.
-   - **Tramos:** como los tramos no están vinculados entre sí (Sprint 1), se finaliza **el turno (tramo) desde cuyo detalle se opera**. La previa informa si el alumno tiene otros tramos posteriores de la misma hora y materia (`otrosTramos: [{ turnoId, fechaInicio, fechaFin }]`), para que el usuario los finalice también. Confirmar con las PO.
-3. Tests del service: previa con y sin fin; previa con tramos posteriores; con pagadas → 409; fecha que no cae en el día → 400; sesión única → 409; ya finalizada → 409.
+   - **Tramos:** como los tramos no están vinculados entre sí, se finaliza **el turno (tramo) desde cuyo detalle se opera**. La previa informa si el alumno tiene otros tramos posteriores de la misma hora y materia (`otrosTramos`), para que el usuario los finalice también (definición C).
+3. Tests del service: previa con y sin fin; previa con tramos posteriores; con pagadas → 409 con la lista y la última fecha pagada; `fechaFin` del turno sin cambios después de finalizar; fecha que no cae en el día → 400; sesión única → 409; ya finalizada → 409.
 4. `contrato-api.md` → Finalizaciones; `dominio.md` → Finalización.
 
 **Criterios de aceptación**
 
-- Después de finalizar, la serie no aparece en las agendas desde la fecha indicada y su lugar queda libre.
-- No se puede finalizar si hay turnos pagados a liberar.
+- Después de finalizar, la serie no aparece en las agendas desde la fecha indicada y su lugar queda libre; `Turno.fechaFin` no cambió.
+- No se puede finalizar si hay turnos pagados desde la fecha elegida: se muestran y hay que elegir una fecha posterior al último pagado.
 
 ---
 
@@ -655,12 +664,14 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 **Alcance**
 
 1. `AccionFinalizarTurno`: botón "Finalizar turno" según `ocurrencia.acciones.finalizar`.
-2. Diálogo: fecha desde (con `CalendarioFecha`; que caiga en el día lo valida la API), motivo y detalle; al elegir la fecha pide la previa y muestra cuántos se liberan; si hay pagados, los lista (fecha, horario, importe) y no deja confirmar.
-3. Éxito: toast y el detalle muestra "Finalizada el [fecha]" (lo trae la API). Invalida `ocurrencias`, `agendas` y `cuentas`.
+2. Diálogo: fecha desde (con `CalendarioFecha`; que caiga en el día lo valida la API), motivo y detalle; al elegir la fecha pide la previa y muestra cuántos se liberan; si hay pagados, los lista (fecha, horario, importe), no deja confirmar e indica **"Elegí una fecha posterior al último turno pagado (…)"**. Sin ninguna mención a anular pagos (definición D).
+3. Si la previa trae `otrosTramos`, avisa que el alumno tiene tramos posteriores de la misma hora y materia, que se finalizan desde su propio detalle (definición C).
+4. Éxito: toast y el detalle muestra "Finalizada el [fecha]" (lo trae la API). Invalida `ocurrencias`, `agendas` y `cuentas`.
 
 **Criterios de aceptación**
 
 - Recorrido completo desde el detalle de un recurrente, con y sin fecha de fin.
+- Con turnos pagados desde la fecha elegida, no se puede confirmar hasta elegir una fecha posterior al último pagado.
 
 ---
 
@@ -669,22 +680,35 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 - **HU:** HU-20 Reprogramar un turno
 - **Área:** Backend
 - **Rama:** `feat/reprogramaciones-api`
-- **Depende de:** T-30
+- **Depende de:** T-30, T-63
+
+**Descripción**
+Reprogramar **edita el turno que ya existe**; no hay tabla de reprogramaciones (definición A, decisión T-47). En un recurrente sólo se mueve una fecha, así que la serie se parte en tramos. No se guarda desde qué fecha y hora se reprogramó: quién lo modificó y cuándo sale de la auditoría del turno.
 
 **Alcance**
 
-1. `POST /reprogramaciones` (`MESA_ENTRADAS`) `{ turnoId, fecha (original), bloqueAgendaDestinoId, fechaDestino }`:
-   - La ocurrencia está `AGENDADO` con fecha efectiva hoy o posterior (409 si no). **Pagada se puede** (el pago no se toca).
-   - Validaciones de HU-08 sobre el destino: profesor activo con la materia asignada (409 `PROFESOR_INACTIVO` / `MATERIA_NO_ASIGNADA`), `fechaDestino` hoy o posterior y en el día del bloque (400), lugar con `ocupacionEn` (409 `BLOQUE_LLENO`) y sin superposición del alumno con `superposicionesDelAlumno`, **excluyendo la propia ocurrencia** (409 `ALUMNO_SUPERPUESTO`).
-   - Transacción con `bloquearParaReserva` (bloques de origen y destino ordenados por id). Inserta `ReprogramacionTurno` (origen = posición efectiva actual) y actualiza la auditoría de modificación del `Turno`.
-   - Responde el cambio para el mensaje: "Del lunes 12/10 9:00–10:00 con Prof. Gómez al jueves 15/10 17:00–18:00 con Prof. Ruiz".
+1. `POST /reprogramaciones` (`MESA_ENTRADAS`), body `{ turnoId, fecha, bloqueAgendaDestinoId, fechaDestino }` (`fecha` = la de la ocurrencia, definición B):
+   - La ocurrencia existe, está `AGENDADO` y es de hoy o posterior (404 / 409 si no). **Pagada se puede**: el pago acompaña a la ocurrencia.
+   - Validaciones de HU-08 sobre el destino: profesor activo con la materia asignada (409 `PROFESOR_INACTIVO` / `MATERIA_NO_ASIGNADA`), `fechaDestino` hoy o posterior y en el día del bloque (400), lugar con `ocupacionEn` (409 `BLOQUE_LLENO`) y sin superposición del alumno con `superposicionesDelAlumno`, **excluyendo la propia ocurrencia** (`excluir: { turnoId, fecha }`) de la ocupación y de la superposición (409 `ALUMNO_SUPERPUESTO`).
+   - Todo en **una transacción** con `bloquearParaReserva` (bloques de origen y destino ordenados por id) y relectura:
+     - **Sesión única:** se actualizan `bloqueAgendaId`, `fechaInicio` y `fechaFin` (= `fechaDestino`) del mismo turno. Su cancelación no aplica (está `AGENDADO`) y su `PagoTurno`, si lo tiene, cambia `fechaOcurrencia` a `fechaDestino`.
+     - **Recurrente:** la serie se parte en hasta tres turnos:
+       1. el **original** termina en la ocurrencia anterior a `fecha` (`fechaFin`);
+       2. un **tramo nuevo** `RECURRENTE` en el mismo bloque, desde la ocurrencia siguiente hasta la `fechaFin` original (o sin fin), con el mismo alumno, materia, observaciones y temas;
+       3. la fecha movida pasa a ser un **`SESION_UNICA` nuevo** en el destino, que copia alumno, materia, observaciones y temas.
+     - No se crean turnos vacíos: si `fecha` es la **primera** de la serie, el original no termina antes sino que corre su `fechaInicio` a la ocurrencia siguiente (y no se crea tramo nuevo: sus cancelaciones y pagos no se mueven); si es la **última** (o la última antes del fin efectivo), no se crea el tramo nuevo; si era su **única** fecha, el original no queda con ninguna ocurrencia: se edita como una sesión única en el destino (`tipo`, `bloqueAgendaId`, `fechaInicio` y `fechaFin`) en lugar de crear uno nuevo.
+     - Las `CancelacionTurno` y los `PagoTurno` de las fechas que cambian de turno (las del tramo nuevo, y el pago de la fecha movida) se **re-apuntan** al turno nuevo (`turnoId` y, para la movida, `fechaOcurrencia = fechaDestino`).
+     - Si el turno tiene `FinalizacionRecurrencia` y se crea el tramo nuevo, la finalización **pasa al tramo nuevo** (`turnoId` es único): es ese tramo el que termina en `fechaDesde`. Si el tramo nuevo no se crea, queda en el original.
+     - Auditoría: los turnos creados llevan como creador al usuario que reprograma; el original queda con `updatedById` / `updatedAt` de ese usuario.
+   - Responde **`{ turnoId, cambio }`**: `turnoId` es el turno resultante de la fecha movida (el mismo si era sesión única, el nuevo `SESION_UNICA` si era recurrente) y `cambio` el texto para el mensaje: "Del lunes 12/10 9:00–10:00 con Prof. Gómez al jueves 15/10 17:00–18:00 con Prof. Ruiz".
 2. La búsqueda de horarios reutiliza `GET /turnos/disponibilidad` con `fecha` (no hay endpoint nuevo).
-3. Tests del service: mismo profesor y otro profesor; hora llena → 409; superposición consigo misma no cuenta; pasada → 409; reprogramar dos veces conserva la fecha original como identidad.
+3. Tests del service: sesión única (mismo turno, bloque y fechas cambiados); recurrente en el medio de la serie (tres turnos resultantes con las fechas correctas); primera y última fecha de la serie (sin tramo vacío); recurrente con pago en la fecha movida (el pago pasa al `SESION_UNICA` con la fecha nueva) y con cancelaciones y pagos en otras fechas posteriores (pasan al tramo nuevo); con finalización (pasa al tramo nuevo); otro profesor; hora llena → 409; la superposición consigo misma no cuenta; pasada o cancelada → 409.
 4. `contrato-api.md` → Reprogramaciones; `dominio.md` → Reprogramación.
 
 **Criterios de aceptación**
 
-- La ocurrencia reprogramada conserva su pago y su identidad; la fecha original queda libre y el detalle muestra desde dónde se reprogramó.
+- Un turno reprogramado conserva su pago (y, en un recurrente, las cancelaciones y pagos de las fechas que pasan al tramo nuevo), la fecha de origen queda libre y el detalle muestra quién lo modificó y cuándo.
+- Reprogramar una fecha de un recurrente deja el resto de la serie igual en las agendas.
 
 ---
 
@@ -700,7 +724,7 @@ La reprogramación usa la misma búsqueda de horarios que registrar turno, por e
 
 **Alcance**
 
-1. `AccionReprogramarTurno` (placeholder de T-35) y `ReprogramarTurnoDialog` (archivo nuevo): búsqueda con alumno y materia fijos, profesor y día opcionales, una sola hora, fecha nueva; confirmación con el texto del cambio; éxito "Turno reprogramado".
+1. `AccionReprogramarTurno` (placeholder de T-35) y `ReprogramarTurnoDialog` (archivo nuevo): búsqueda con alumno y materia fijos, profesor y día opcionales, una sola hora, fecha nueva; confirmación con el texto del cambio; éxito "Turno reprogramado". Después del éxito, el detalle se abre con **el `turnoId` que devuelve la API** y la fecha nueva (`?detalle=<turnoId>&fecha=<fechaDestino>`): en un recurrente, la fecha movida es un turno nuevo (definición A).
 2. `FiltrosDisponibilidad`, `ResultadosDisponibilidad` y `HorasDelBloque` suman las props que hagan falta (materia fija, selección de una sola hora) **sin cambiar** el comportamiento de registrar turno. Son de esta tarea (T-42 no los toca).
 3. API y types en archivos nuevos (`api/reprogramaciones.api.ts`, `reprogramacion.types.ts`), para no chocar con `turnos.api.ts`.
 4. Invalida `ocurrencias`, `agendas` y la disponibilidad.
@@ -717,21 +741,24 @@ La reprogramación usa la misma búsqueda de horarios que registrar turno, por e
 - **HU:** HU-15 Registrar el pago de un turno
 - **Área:** Backend
 - **Rama:** `feat/pagos-api`
-- **Depende de:** T-30
+- **Depende de:** T-30, T-63
 
 **Alcance**
 
-1. `POST /pagos` (`MESA_ENTRADAS`) `{ alumnoId, ocurrencias: [{ turnoId, fecha }], fechaPago, observaciones? }`:
+1. `POST /pagos` (`MESA_ENTRADAS`) `{ alumnoId, ocurrencias: [{ turnoId, fecha }], fechaPago, montoRecibido?, observaciones? }`:
    - Forma de pago: "Efectivo" (única en este sprint; se toma del catálogo, no viene en el body).
    - `fechaPago` obligatoria, no futura (400); observaciones hasta 500.
-   - Todas las ocurrencias son del alumno (400), no canceladas, con pago `PENDIENTE`; pasadas o futuras, y las futuras de una serie dentro de las **próximas 8 semanas**.
-   - **Todo o nada** en una transacción con `bloquearParaReserva` y relectura: si alguna dejó de poder cobrarse (otro usuario la cobró o la canceló) → 409 `TURNOS_NO_COBRABLES` con cuáles y por qué, y no se registra nada.
-   - Importe de cada una = `precioHora` **vigente** de su materia al momento del pago (no viene del front). `Pago` con `importeTotal`, `numeroComprobante` correlativo, estado `VIGENTE`; un `PagoTurno` por ocurrencia con su `importeAplicado`.
-   - Responde `{ pagoId, numeroComprobante, cantidad, total }` para "Pago registrado: 4 turnos por $ 32.000".
-2. `GET /pagos/{id}`: datos del comprobante: número, fecha de pago, alumno (nombre, apellido, DNI), cada turno (fecha, horario, materia, profesor, importe), total, forma de pago, observaciones y usuario que lo registró.
-3. Anular un pago **no está en los criterios de HU-15** (sólo se lo menciona desde HU-13, HU-14 y HU-16): queda fuera del sprint y se consulta a las PO. `Pago.estado` ya contempla `ANULADO` y el motor sólo cuenta pagos `VIGENTE`, así que agregarlo después no cambia nada de lo anterior.
-4. Tests del service: uno y varios turnos; turno cancelado o ya pagado → 409 sin registrar nada; fecha futura → 400; turno de otro alumno → 400; el importe sale del precio vigente; dos pagos simultáneos de la misma ocurrencia → sólo uno.
-5. `contrato-api.md` → Pagos; `dominio.md` → Pagos.
+   - **`montoRecibido` opcional** (definición E): si viene, número con hasta dos decimales y **`>= importeTotal`** (400 `VALIDACION` en `montoRecibido` si es menor). Se guarda en `Pago.montoRecibido`; **el vuelto** (`montoRecibido - importeTotal`) lo calcula la API y lo devuelve, **no se guarda**.
+   - Todas las ocurrencias son del alumno (400), con estado **`AGENDADO` o `SIN_REGISTRAR`** (definición F; las canceladas no) y pago `PENDIENTE`; pasadas o futuras, y las futuras de una serie dentro de las **próximas 8 semanas**.
+   - **Todo o nada** en una transacción con `bloquearParaReserva` y relectura: si alguna dejó de poder cobrarse (otro usuario la cobró o la canceló) → 409 `TURNOS_NO_COBRABLES` con cuáles y por qué, y no se registra nada. El `@@unique([turnoId, fechaOcurrencia])` de `PagoTurno` (T-63) es la última red contra el pago doble: una P2002 se traduce al mismo 409.
+   - Importe de cada una = `precioHora` **vigente** de su materia al momento del pago (no viene del front). `Pago` con `importeTotal`, `numeroComprobante` correlativo, estado `VIGENTE` (todo pago nace así: `Pago.estado` queda sin uso, definición D); un `PagoTurno` por ocurrencia con `fechaOcurrencia` = la fecha de la ocurrencia y su `importeAplicado`.
+   - Responde `{ pagoId, numeroComprobante, cantidad, total, montoRecibido | null, vuelto | null }` para "Pago registrado: 4 turnos por $ 32.000" (y "Vuelto: $ 3.000" si hubo monto recibido).
+2. `GET /pagos/{id}`: datos del comprobante: número, fecha de pago, alumno (nombre, apellido, DNI), cada turno (fecha, horario, materia, profesor, importe), total, monto recibido y vuelto (si hubo monto recibido; el vuelto se recalcula, no se lee de la base), forma de pago, observaciones y usuario que lo registró.
+3. Tests del service: uno y varios turnos; turno cancelado o ya pagado → 409 sin registrar nada; fecha futura → 400; turno de otro alumno → 400; `montoRecibido` menor al total → 400; con `montoRecibido` responde el vuelto; sin él, `vuelto: null`; el importe sale del precio vigente; dos pagos simultáneos de la misma ocurrencia → sólo uno.
+4. `contrato-api.md` → Pagos; `dominio.md` → Pagos.
+
+**Fuera de alcance**
+Anular un pago (definición D): pasa al próximo sprint.
 
 **Criterios de aceptación**
 
@@ -749,9 +776,9 @@ La reprogramación usa la misma búsqueda de horarios que registrar turno, por e
 
 **Alcance**
 
-1. `AccionRegistrarPago` (desde el detalle, con esa ocurrencia) y `RegistrarPagoDialog` (una o varias, lo abren el detalle y `cuentas`): resumen de cada turno (fecha, horario, materia, profesor, importe) con los importes que manda la API, total, forma de pago "Efectivo", fecha de pago (hoy por defecto) y observaciones.
-2. Confirmación: "¿Registrar el pago de 4 turnos por $ 32.000 en efectivo?". Éxito: "Pago registrado: 4 turnos por $ 32.000" con **"Imprimir comprobante"**. El 409 muestra qué turnos ya no se pueden cobrar.
-3. Comprobante: ruta `app/mesa/pagos/[pagoId]/comprobante/page.tsx` con `DocumentoOficial` (T-34) y `useImprimirCuandoEsteListo`.
+1. `AccionRegistrarPago` (desde el detalle, con esa ocurrencia) y `RegistrarPagoDialog` (una o varias, lo abren el detalle y `cuentas`): resumen de cada turno (fecha, horario, materia, profesor, importe) con los importes que manda la API, total, forma de pago "Efectivo", fecha de pago (hoy por defecto), **"Monto recibido" (opcional)** y observaciones. Un monto menor al total se marca con el 400 de la API en el campo.
+2. Confirmación: "¿Registrar el pago de 4 turnos por $ 32.000 en efectivo?". Éxito: "Pago registrado: 4 turnos por $ 32.000" y, si se cargó monto recibido, **el vuelto que devuelve la API** ("Vuelto: $ 3.000"; el cliente no lo calcula), con **"Imprimir comprobante"**. El 409 muestra qué turnos ya no se pueden cobrar.
+3. Comprobante: ruta `app/mesa/pagos/[pagoId]/comprobante/page.tsx` con `DocumentoOficial` (T-34), cuyo encabezado usa los datos del centro de la API (`useCentro`, T-34/T-64), y `useImprimirCuandoEsteListo`. Muestra monto recibido y vuelto si los hay.
 4. Invalida `ocurrencias`, `cuentas` y `agendas`.
 
 **Criterios de aceptación**
@@ -773,7 +800,7 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 
 **Alcance**
 
-1. `cuentas.condiciones.ts`: `leerAdeudados(client, { alumnoId?, hoy })` y `totalAdeudado(client, { alumnoId?, hoy })`. Adeudado = ocurrencia con pago `PENDIENTE`, fecha anterior a hoy y estado `SIN_REGISTRAR` (o "Realizado"/"Ausente" cuando exista la asistencia); los cancelados no. Importe = precio vigente de la materia. Los usa T-61.
+1. `cuentas.condiciones.ts`: `leerAdeudados(client, { alumnoId?, hoy })` y `totalAdeudado(client, { alumnoId?, hoy })`. Adeudado = ocurrencia con pago `PENDIENTE`, fecha anterior a hoy y estado `SIN_REGISTRAR` (el único estado posible de un turno pasado no cancelado mientras no exista la asistencia, definición F); los cancelados no. Importe = precio vigente de la materia. Los usa T-61.
 2. `GET /cuentas/alumnos/{alumnoId}` (`MESA_ENTRADAS`): `{ totalAdeudado, pagadoDelMes, adeudados[], proximos[], pagos[] }`:
    - `adeudados`: fecha, horario, materia, profesor, estado ("Sin registrar"), importe; del más antiguo al más reciente.
    - `proximos`: ocurrencias `AGENDADO` impagas de hoy en adelante, incluidas las de series de las **próximas 8 semanas**; no suman a la deuda.
@@ -782,6 +809,9 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 4. El rango "desde" de la deuda es la fecha de inicio más antigua de los turnos impagos (no un rango fijo); si hace falta acotarlo por rendimiento, se deja escrito en `decisiones.md`.
 5. Tests del service con reloj fijo: pasado impago → adeuda; cancelado → no; pagado → no; futuro → en próximos; cambio de precio → importe nuevo en los impagos.
 6. `contrato-api.md` → Cuentas; `dominio.md` → Deuda.
+
+**Fuera de alcance**
+Anular pagos y que sus turnos vuelvan a la deuda (definición D): pasa al próximo sprint.
 
 **Criterios de aceptación**
 
@@ -799,9 +829,10 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 
 **Alcance**
 
-1. `PagosDelAlumno`: total adeudado y pagado del mes arriba; "Turnos adeudados" y debajo "Próximos turnos", con casillas, "Seleccionar todos los adeudados" y "Quitar selección", resumen "4 turnos seleccionados · $ 32.000", botón "Registrar pago" (deshabilitado sin selección) y acción por fila; historial de pagos con enlace al comprobante. Vacíos: "Sin pagos registrados"; sin deuda pero con pagos, total en $ 0 y el historial.
+1. `PagosDelAlumno`: total adeudado y pagado del mes arriba; "Turnos adeudados" (con estado, que en este sprint es siempre "Sin registrar") y debajo "Próximos turnos", con casillas, "Seleccionar todos los adeudados" y "Quitar selección", resumen "4 turnos seleccionados · $ 32.000", botón "Registrar pago" (deshabilitado sin selección) y acción por fila; historial de pagos con enlace al comprobante. Vacíos: "Sin pagos registrados"; sin deuda pero con pagos, total en $ 0 y el historial.
 2. `PagosGlobal` (`/mesa/pagos`): total adeudado de todos, listado paginado, filtro por alumno con el buscador de `features/alumnos` (su hook); con alumno filtrado se habilitan las casillas para cobrar varios; sin filtro, cobro de a uno; enlace a la ficha de cada alumno.
 3. El registro del pago se abre con `renderRegistrarPago` (compuesto en `app/` por T-35); al terminar se refresca con `use-invalidar-cuentas`.
+4. Sin acciones de anular pagos en el historial (definición D).
 
 **Criterios de aceptación**
 
@@ -867,7 +898,7 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 
 **Alcance**
 
-1. Cada ítem de `/agendas/diaria`, `/agendas/propia` y `/agendas/profesor` pasa a ser una ocurrencia con: `turnoId`, `fechaOriginal`, `fecha`, `bloqueAgendaId`, `estado` (`AGENDADO` / `CANCELADO` / `SIN_REGISTRAR`), `estadoPago`, `prioridad` + examen (no en canceladas, con `leerPrioridades`), `reprogramada` (bool). **Los cancelados ahora se incluyen** (HU-13: se siguen viendo con su estado).
+1. Cada ítem de `/agendas/diaria`, `/agendas/propia` y `/agendas/profesor` pasa a ser una ocurrencia con: `turnoId`, `fecha`, `bloqueAgendaId`, `estado` (`AGENDADO` / `CANCELADO` / `SIN_REGISTRAR`), `estadoPago`, `prioridad` + examen (no en canceladas, con `leerPrioridades`). Sin `fechaOriginal` ni `reprogramada`: un turno reprogramado es un turno más (definiciones A y B). **Los cancelados ahora se incluyen** (HU-13: se siguen viendo con su estado).
 2. Filtros nuevos, combinables con los existentes: `estado` y `prioridad` en las tres agendas.
 3. Nuevo **`GET /agendas/centro?desde&hasta&profesorId?&materiaId?&aulaId?&estado?&prioridad?`** (`MESA_ENTRADAS`): arreglo sin paginar de ocurrencias de todos los profesores, rango máximo de 31 días (como T-43/T-44 de decisiones), para el calendario semanal de la agenda del centro. Agrupar por clase (fecha + bloque) es presentación: lo hace el front.
 4. Los selectores de materias y aulas de la agenda siguen igual (no filtran por estado de la entidad).
@@ -920,7 +951,7 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 **Criterios de aceptación**
 
 - Una hora con tres alumnos es un solo bloque que se expande y muestra los tres con su estado y prioridad.
-- El selector Calendario/Lista recuerda la última vista del usuario (T-35) y los filtros valen en las dos.
+- Los filtros valen en las dos vistas (Calendario y Lista). El selector no recuerda la última vista (definición I).
 
 ---
 
@@ -929,14 +960,15 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 - **HU:** HU-11 PDF de turno y agenda
 - **Área:** Frontend
 - **Rama:** `feat/documentos-pdf-ui`
-- **Depende de:** T-34, T-35, T-44 (hook `useOcurrencia`), T-58 (filtros de la agenda)
+- **Depende de:** T-34 (y T-64, a través de T-34), T-35, T-44 (hook `useOcurrencia`), T-58 (filtros de la agenda)
 
 **Alcance**
 
 1. `AccionPdfTurno`: botón "Generar PDF" que abre `app/mesa/turnos/[turnoId]/imprimir/page.tsx?fecha=`: resumen con `DocumentoOficial`: alumno (nombre, apellido, DNI), materia, profesor, aula, día y horario, tipo con sus fechas (si es recurrente, el período completo de la serie), temas a trabajar, fecha de emisión y usuario que lo emitió (de la sesión).
 2. `BotonPdfAgenda`: abre `app/mesa/agenda/imprimir/page.tsx` con la fecha y los filtros de la URL; encabezado con la fecha y los filtros aplicados, lista con horario, alumno, profesor, materia, aula y estado, **todas las filas del día** (no sólo la página visible).
-3. Usa sólo hooks de otras features (`useOcurrencia`, el de la agenda); los componentes y rutas son de `features/documentos` y de las páginas `imprimir`.
-4. Se imprime al cargar (`useImprimirCuandoEsteListo`) y se guarda como PDF desde el diálogo del navegador.
+3. Usa sólo hooks de otras features (`useOcurrencia`, el de la agenda y **`useCentro`**, T-34); los componentes y rutas son de `features/documentos` y de las páginas `imprimir`.
+4. El encabezado de los dos documentos lleva los datos del centro y el logo que da la API (T-64), pasados a `DocumentoOficial` (T-34).
+5. Se imprime al cargar (`useImprimirCuandoEsteListo`, que también espera al logo) y se guarda como PDF desde el diálogo del navegador.
 
 **Criterios de aceptación**
 
@@ -955,17 +987,19 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 **Alcance**
 
 1. `GET /tablero?desde&hasta` (`GERENTE`; el front traduce "Hoy", "Esta semana", "Este mes" o un rango): sólo agregados, sin datos de un alumno, un pago o una agenda puntual.
-   - Turnos del período por estado, con cantidad y porcentaje: cancelados, sin registrar, agendados (si el período incluye fechas futuras). "Asistió" y "No asistió" dependen de la HU de asistencia (HU-22, no está en el sprint): se devuelven en 0 con una marca `disponible: false` — **confirmar con las PO**.
+   - Turnos del período por estado, con cantidad y porcentaje: cancelados, sin registrar, agendados (si el período incluye fechas futuras). Los estados son sólo los de la definición F.
+   - **Indicadores que dependen de la asistencia (HU-22, próximo sprint; definición F):** "Asistió", "No asistió", "alumnos atendidos" y "profesores con más actividad" se devuelven **como no disponibles** (`{ disponible: false }`, sin valor), salvo que las PO redefinan HU-21.
    - Ocupación: ocurrencias no canceladas / capacidad efectiva total de las horas con clase del período.
-   - Alumnos nuevos del período (alta en el período). "Atendidos" depende de la asistencia: mismo criterio que arriba.
-   - Top 5 materias por turnos; top 5 profesores por turnos "Asistió" (depende de asistencia; mientras tanto, por turnos no cancelados pasados, **a confirmar**).
+   - Alumnos nuevos del período (alta en el período).
+   - Top 5 materias por turnos.
    - Pagos: total cobrado en el período (pagos `VIGENTE` por `fechaPago`) y total adeudado a la fecha con `totalAdeudado` de `cuentas.condiciones` (no se recalcula acá).
 2. Todo con `leerOcurrencias`; nada se persiste.
-3. Tests del service con datos falsos por cada indicador.
+3. Tests del service con datos falsos por cada indicador, y que los cuatro que dependen de la asistencia vuelvan con `disponible: false`.
 
 **Criterios de aceptación**
 
 - Un usuario que no es gerente recibe 403.
+- Ningún indicador de asistencia se calcula con un sustituto: vuelven como no disponibles.
 - El total adeudado coincide con el de la vista global de pagos.
 
 ---
@@ -980,8 +1014,8 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 
 **Alcance**
 
-1. `app/gerente/tablero/page.tsx` + `features/tablero`: selector de período (Esta semana por defecto), tarjetas por indicador con el período al que corresponden, porcentajes y los dos top 5.
-2. Los indicadores con `disponible: false` se muestran como "Disponible cuando se registre la asistencia".
+1. `app/gerente/tablero/page.tsx` + `features/tablero`: selector de período (Esta semana por defecto), tarjetas por indicador con el período al que corresponden, porcentajes, el top 5 de materias y la tarjeta de profesores con más actividad.
+2. Los indicadores con `disponible: false` ("Asistió", "No asistió", alumnos atendidos y profesores con más actividad; definición F) se muestran como "Disponible cuando se registre la asistencia", sin número.
 3. Sólo lectura: sin enlaces a fichas ni agendas.
 
 **Criterios de aceptación**
@@ -990,10 +1024,82 @@ La deuda se consulta en la ficha del alumno, en la vista global "Pagos" y en el 
 
 ---
 
-## Puntos a confirmar con las PO (no bloquean el inicio)
+## T-63 · [Back] FIX · Modelo de datos del Sprint 2: sin ReprogramacionTurno, PagoTurno único y reglas sin SQL a mano
 
-1. **HU-08 "excepciones":** se sigue con el enfoque del Sprint 1 (aviso al registrar y tramos, sin guardar excepciones). Conviene ajustar la redacción de la HU para que no pida "fechas exceptuadas en el detalle".
-2. **Anulación de pago:** HU-13, HU-14 y HU-16 la nombran "desde el detalle del pago (HU-15)", pero HU-15 no la tiene entre sus criterios. Queda fuera del sprint; el modelo ya la soporta (`Pago.estado`).
-3. **"HU Estados (a definir)" y asistencia (HU-22):** sin ellas, un turno pasado no cancelado es "Sin registrar" y los indicadores de asistencia del tablero no se pueden calcular.
-4. **Datos del centro** para el encabezado oficial (nombre, dirección, teléfono y logo).
-5. **Finalizar un recurrente guardado en tramos** (HU-14): se finaliza el tramo del detalle y se avisan los tramos posteriores (T-47).
+- **HU:** Transversal (HU-13, HU-14, HU-15, HU-20)
+- **Área:** Backend
+- **Rama:** `fix/modelo-datos-sprint2`
+- **Depende de:** T-29
+- **Bloquea:** T-30, T-49 y T-51
+- **Prioridad:** Bloqueante, se mergea lo antes posible
+
+**Descripción**
+T-29 ya está mergeada (PR #111) y su texto no se edita. Las definiciones de las PO del 29/09 (A, B, C, D, E y J) cambian el modelo: no hay tabla de reprogramaciones (reprogramar edita el turno), la ocurrencia es `(turnoId, fecha)`, una ocurrencia se paga una sola vez y las migraciones son sólo las que genera Prisma. Esta tarea es la dueña de `schema.prisma`, `prisma/migrations/` y los seeds después de T-29. **Corrige lo que T-29 decía sobre SQL a mano** (CHECK, `UPDATE` y `RENAME` en el `migration.sql`).
+
+**Alcance**
+
+1. Sacar el modelo `ReprogramacionTurno` y sus relaciones (en `Turno`, `BloqueAgenda` y `Usuario`). **No** se agregan `reprogramadoDesdeFecha` ni `reprogramadoDesdeBloqueAgendaId` (definición A: quién y cuándo sale de la auditoría del turno).
+2. `PagoTurno.fecha` → **`fechaOcurrencia`** (`@db.Date`, la fecha de la ocurrencia) con **`@@unique([turnoId, fechaOcurrencia])`** en lugar del índice simple (definición B y D).
+3. Comentarios del schema: ocurrencia `(turnoId, fecha)`; finalización que no modifica `fechaFin` (definición C); cómo reprograma la API (definición A); `montoRecibido` opcional `>= importeTotal` y vuelto no guardado (definición E); `Pago.estado` sin uso en este sprint (definición D); los CHECK que antes iban a mano pasan a "lo valida la API" (definición J).
+4. El paso a `INACTIVO` de las materias sin precio va en **`seed.ts`**, no en la migración (definición J).
+5. Seeds de demo sin reprogramación: una sesión única reprogramada (turno editado, con `updatedById` de mesa de entradas) y un recurrente partido en tramos por una reprogramación (original acortado, tramo nuevo y `SESION_UNICA` en el destino), aplicando a mano la regla de T-49. El seed sigue siendo idempotente.
+6. Migración: la genera **Prisma** y la aplica la persona con `pnpm db:migrate` (`AGENTS.md`, regla 10), sin editar el SQL. Borra `reprogramacion_turno` y cambia `pago_turno` (Prisma genera drop/add de la columna: se acepta porque las bases del equipo tienen sólo datos de seed, como en la decisión T-51).
+7. Documentación:
+   - `decisiones.md`: identidad de la ocurrencia `(turnoId, fecha)`; reprogramación sin tabla; finalización sin tocar `fechaFin`; `PagoTurno` único y `montoRecibido`; migraciones sólo de Prisma con los CHECK e índices parciales como pendiente; la migración de T-29 sin copia de datos. Se renumera la decisión del modelo de T-29, que repetía el ID T-45.
+   - `dominio.md` (Turnos, Pagos) y `arquitectura-backend.md` (dónde se pasan a `INACTIVO` las materias sin precio).
+
+**Criterios de aceptación**
+
+- `prisma/schema.prisma` no tiene `ReprogramacionTurno` y `PagoTurno` tiene el único `(turnoId, fechaOcurrencia)`.
+- La migración nueva la generó Prisma, sin SQL a mano; migración + seed desde una base vacía dejan los datos de demo (incluidos los dos casos de reprogramación).
+- Con el seed aplicado, las materias sin precio quedan `INACTIVO`.
+- `pnpm db:generate` y `pnpm check` pasan.
+
+---
+
+## T-64 · [Back] Datos del centro para los documentos (HU-11, HU-15)
+
+- **HU:** HU-11 PDF de turno y agenda; HU-15 (comprobante)
+- **Área:** Backend
+- **Rama:** `feat/centro-api`
+- **Bloquea:** T-34 para conectarse (T-34 puede empezar contra este contrato)
+
+**Descripción**
+Los documentos oficiales (turno, agenda y comprobante) llevan un encabezado con el logo, el nombre, la dirección y el teléfono del centro. Vienen precargados, sin pantalla para editarlos (HU-11), y son **constantes del backend** con el logo en una carpeta del backend, sin tabla (definición G). El frontend los pide a la API.
+
+**Alcance**
+
+1. Feature **`src/server/features/centro/`**: las constantes (nombre, dirección y teléfono) en un archivo de la feature (por ejemplo `centro.datos.ts`) y el logo en una carpeta de la feature (por ejemplo `centro/assets/logo.png`). No van en `src/config`: ahí sólo está `env.ts` y las features no dependen de la configuración (`arquitectura-backend.md` → Configuración). **Los valores reales los pasan las PO**; mientras tanto, valores de ejemplo marcados como tales.
+2. `GET /api/v1/centro` → `{ nombre, direccion, telefono }`.
+3. `GET /api/v1/centro/logo` → la imagen (`Content-Type` de la imagen y `Cache-Control` largo). Se lee del archivo de la feature; verificar que funcione con `pnpm build && pnpm start`, no sólo en `pnpm dev`.
+4. Roles de los dos endpoints: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`, declarados con `createRoute()`, `requireAuth()` y `requireRole(...)`, con 401 y 403 en el OpenAPI.
+5. Registrar el router en `src/server/app.ts` con una línea (`app.route('/centro', centroRoutes)`). **Es la única tarea que agrega una línea a `app.ts` después de T-32** (la feature surgió con las definiciones del 29/09); se avisa en el PR.
+6. Tests del service: devuelve los datos; el logo existe y tiene el tipo correcto.
+7. Documentación: `contrato-api.md` → Centro; `arquitectura-backend.md` → lista de features del Sprint 2 (`centro`).
+
+**Criterios de aceptación**
+
+- Un usuario de cualquiera de los tres roles obtiene los datos y el logo; sin sesión, 401.
+- No hay tabla ni pantalla para editar los datos del centro.
+
+---
+
+## Definiciones de las PO (29/09)
+
+Reemplazan a los "Puntos a confirmar" del inicio del sprint. Las tareas abiertas se editaron con estas definiciones; T-29 (mergeada) se corrige con T-63.
+
+- **A. Sin `ReprogramacionTurno`.** Reprogramar edita el turno que ya existe.
+  - Sesión única: se cambian `bloqueAgendaId`, `fechaInicio` y `fechaFin`.
+  - Recurrente: sólo se mueve esa fecha. La serie se parte en tramos: el turno original termina en la ocurrencia anterior, se crea un tramo nuevo desde la siguiente, y la fecha movida pasa a ser un `SESION_UNICA` nuevo en el destino, que copia alumno, materia, observaciones y temas. Las cancelaciones (`CancelacionTurno`) y los pagos (`PagoTurno`) de las fechas que cambian de turno se vuelven a apuntar al turno nuevo, en la misma transacción (T-49; también la `FinalizacionRecurrencia`, si la hay).
+  - No se guarda ni se muestra "desde qué fecha y hora se reprogramó". Quién lo modificó y cuándo sale de la auditoría (`updatedById` y `updatedAt`) del turno.
+- **B. Ocurrencia = `(turnoId, fecha)`.** No tiene "fecha original" distinta de su fecha. `CancelacionTurno.fechaOcurrencia` y `PagoTurno.fechaOcurrencia` son la fecha de la ocurrencia. `PagoTurno` es `@@unique([turnoId, fechaOcurrencia])`.
+- **C. Finalizar (HU-14) no modifica `Turno.fechaFin`:** el fin efectivo sale de `FinalizacionRecurrencia.fechaDesde`. Con tramos, se finaliza el tramo desde cuyo detalle se opera, y la previa avisa si hay tramos posteriores del mismo alumno, hora y materia.
+- **D. Sin anulación de pagos en este sprint.** `Pago.estado` queda sin uso (todo pago nace `VIGENTE`).
+  - Un turno pagado no se cancela: "El turno está pagado: no se puede cancelar".
+  - Al finalizar, si hay turnos pagados desde la fecha elegida, se rechaza y se muestran esos turnos. Hay que elegir una fecha posterior al último turno pagado.
+- **E. `montoRecibido` es opcional.** Si viene, tiene que ser `>= importeTotal`; la API calcula el vuelto y lo devuelve, pero no lo guarda.
+- **F. Asistencia (HU-22) en el próximo sprint.** Los estados de una ocurrencia son sólo `AGENDADO`, `CANCELADO` y `SIN_REGISTRAR`. En el tablero (HU-21, opcional), los indicadores que dependen de la asistencia se devuelven como no disponibles.
+- **G. Datos del centro y logo.** Nombre, dirección y teléfono son constantes del backend y el logo va en una carpeta del backend, sin tabla. El frontend los pide a la API (T-64).
+- **H. HU-08.** Las fechas sin lugar sólo se avisan al registrar y el recurrente se guarda en tramos, como en el Sprint 1. No se guardan excepciones (T-41, T-42).
+- **I. HU-19.** No se recuerda la última vista (calendario o lista): las PO sacan el criterio.
+- **J. Migraciones sólo generadas por Prisma, sin SQL a mano.** Los CHECK, los índices parciales y el `UPDATE` de materias sin precio no van en la migración. El `UPDATE` va en `seed.ts`; lo demás lo valida la API y queda como pendiente en `decisiones.md`. Corrige lo que T-29 decía sobre SQL a mano.

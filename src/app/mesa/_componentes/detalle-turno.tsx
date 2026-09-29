@@ -1,0 +1,34 @@
+'use client'
+
+import { AccionCancelarTurno } from '@/features/cancelaciones/components/AccionCancelarTurno'
+import { AccionPdfTurno } from '@/features/documentos/components/AccionPdfTurno'
+import { AccionFinalizarTurno } from '@/features/finalizaciones/components/AccionFinalizarTurno'
+import { OcurrenciaDetalle } from '@/features/ocurrencias/components/OcurrenciaDetalle'
+import { AccionRegistrarPago } from '@/features/pagos/components/AccionRegistrarPago'
+import { AccionReprogramarTurno } from '@/features/turnos/components/AccionReprogramarTurno'
+import type { SolicitudDetalleOcurrencia } from '@/types/ocurrencia'
+
+// El detalle de un turno para mesa de entradas (`?detalle=<turnoId>&fecha=<fechaOriginal>`), con las
+// acciones que cada feature aporta. Se compone acá porque una feature no importa componentes de
+// otra: cada pantalla que lo muestra (agendas, ficha del alumno, alta de turno) recibe
+// `renderDetalle={(d) => <DetalleTurno {...d} />}`. Cada acción decide si se muestra con
+// `ocurrencia.acciones`, que calcula la API (docs/arquitectura-frontend.md → Acciones sobre una
+// ocurrencia).
+export function DetalleTurno({ turnoId, fecha, onCerrar }: SolicitudDetalleOcurrencia) {
+  return (
+    <OcurrenciaDetalle
+      turnoId={turnoId}
+      fecha={fecha}
+      onCerrar={onCerrar}
+      renderAcciones={(ocurrencia) => (
+        <>
+          <AccionReprogramarTurno ocurrencia={ocurrencia} />
+          <AccionCancelarTurno ocurrencia={ocurrencia} />
+          <AccionFinalizarTurno ocurrencia={ocurrencia} />
+          <AccionRegistrarPago ocurrencia={ocurrencia} />
+          <AccionPdfTurno ocurrencia={ocurrencia} />
+        </>
+      )}
+    />
+  )
+}

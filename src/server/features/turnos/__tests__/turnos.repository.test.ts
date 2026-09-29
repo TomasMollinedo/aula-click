@@ -1,52 +1,36 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConflictError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
-import {
-  condicionTurnoOcupaLugar,
-  condicionTurnoSeCruzaCon,
-  condicionTurnoVigente,
-} from '../turnos.condiciones'
+import { condicionTurnoSeCruzaCon, condicionTurnoVigente } from '../turnos.condiciones'
 import { turnosRepository } from '../turnos.repository'
-import { ocupaLugarEn, seCruzaCon } from '../turnos.reglas'
+import { seCruzaCon } from '../turnos.reglas'
 import type { EntradaReserva, PlanReserva, TurnoFechas } from '../turnos.validation'
+import {
+  crearTurnosEnMemoria,
+  d,
+  type BloqueDePrueba,
+  type TurnoDePrueba,
+} from './turnos-en-memoria'
 
-// Condiciones de consulta que otras features reutilizan (vigente, ocupa lugar, se cruza con) y la
-// atomicidad de la reserva. Sin base: Prisma se reemplaza por un mock y se verifica lo que recibe.
-// Que Postgres evalúe bien las condiciones lo garantizan `gte`/`lte` sobre columnas @db.Date.
+// Condiciones de consulta que otras features reutilizan (vigente, se cruza con), las lecturas de
+// vigentes y de ocupación (que cuentan con el motor de ocurrencias, T-30) y la atomicidad de la
+// reserva. Sin base: Prisma se reemplaza por un mock. `turno.findMany` consulta una tabla en
+// memoria que aplica el `where` (`turnos-en-memoria.ts`), así se prueban el prefiltro y la regla.
 
-const {
-  log,
-  groupBy,
-  count,
-  findMany,
-  findUnique,
-  materiaFindMany,
-  bloqueFindMany,
-  aulaFindMany,
-  tx,
-  transaction,
-} = vi.hoisted(() => {
+const { findMany, findUnique, bloqueFindMany, tx, transaction, log } = vi.hoisted(() => {
   const log: string[] = []
-  const registrar =
-    <T>(nombre: string, valor: () => T) =>
-    (...args: unknown[]) => {
-      log.push(nombre)
-      void args
-      return Promise.resolve(valor())
-    }
   return {
     log,
-    registrar,
-    groupBy: vi.fn(),
-    count: vi.fn(),
     findMany: vi.fn(),
-    findUnique: vi.fn(),
-    materiaFindMany: vi.fn(),
     bloqueFindMany: vi.fn(),
-    aulaFindMany: vi.fn(),
+    findUnique: vi.fn(),
     transaction: vi.fn(),
     tx: {
-      $queryRaw: vi.fn(registrar('queryRaw', () => [])),
+      $queryRaw: vi.fn((...args: unknown[]) => {
+        void args
+        log.push('queryRaw')
+        return Promise.resolve([])
+      }),
       bloqueAgenda: { findMany: vi.fn() },
       profesor: { findUnique: vi.fn() },
       materia: { findUnique: vi.fn() },
@@ -57,57 +41,86 @@ const {
 })
 vi.mock('@/lib/prisma', () => ({
   prisma: {
-    turno: { groupBy, count, findMany, findUnique },
-    materia: { findMany: materiaFindMany },
+    turno: { findMany, findUnique },
     bloqueAgenda: { findMany: bloqueFindMany },
-    aula: { findMany: aulaFindMany },
-    // Las dos formas de $transaction: la interactiva (reservar) corre el callback con `tx`; la de
-    // arreglo (listados paginados) resuelve las consultas ya lanzadas por los mocks.
-    $transaction: (
-      arg: ((cliente: typeof tx) => Promise<unknown>) | Promise<unknown>[],
-      opciones?: unknown,
-    ) => {
-      if (Array.isArray(arg)) return Promise.all(arg)
+    // La interactiva (reservar) corre el callback con `tx`.
+    $transaction: (arg: (cliente: typeof tx) => Promise<unknown>, opciones?: unknown) => {
       transaction(opciones)
       return arg(tx)
     },
   },
 }))
 
+// HOY es martes 22/09/2026. Los lunes siguientes: 28/09, 05/10, 12/10, 19/10…
 const HOY = '2026-09-22'
 const MEDIANOCHE_HOY = new Date('2026-09-22T00:00:00.000Z')
-const d = (fecha: string) => new Date(`${fecha}T00:00:00.000Z`)
+
+const BLOQUES: BloqueDePrueba[] = [
+  { id: 10, profesorId: 3, aulaId: 1, diaSemana: 1, horaInicio: 540 }, // lunes 9–10
+  { id: 11, profesorId: 3, aulaId: 1, diaSemana: 1, horaInicio: 600 }, // lunes 10–11
+  { id: 12, profesorId: 3, aulaId: 1, diaSemana: 2, horaInicio: 540, estado: 'INACTIVO' },
+  { id: 20, profesorId: 7, aulaId: 2, diaSemana: 1, horaInicio: 540 }, // otro profesor
+]
+
+/**
+ * Carga la tabla de turnos que consulta `prisma.turno.findMany`. `bloqueAgenda.findMany` (las
+ * horas de `ocupacionMaximaPorFila`) devuelve las filas activas del profesor que tienen turnos.
+ */
+function sembrar(turnos: TurnoDePrueba[]) {
+  const base = crearTurnosEnMemoria(BLOQUES, turnos)
+  findMany.mockImplementation(base.findMany)
+  bloqueFindMany.mockImplementation(async ({ where }: { where: { profesorId: number } }) =>
+    BLOQUES.filter(
+      (b) =>
+        b.profesorId === where.profesorId &&
+        (b.estado ?? 'ACTIVO') === 'ACTIVO' &&
+        turnos.some((t) => t.bloqueAgendaId === b.id),
+    )
+      .sort((a, b) => a.diaSemana - b.diaSemana || a.horaInicio - b.horaInicio || a.id - b.id)
+      .map((b) => ({
+        id: b.id,
+        diaSemana: b.diaSemana,
+        horaInicio: b.horaInicio,
+        horaFin: b.horaFin ?? b.horaInicio + 60,
+      })),
+  )
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
   log.length = 0
-  groupBy.mockResolvedValue([])
-  count.mockResolvedValue(0)
-  findMany.mockResolvedValue([])
-  materiaFindMany.mockResolvedValue([])
-  aulaFindMany.mockResolvedValue([])
+  sembrar([])
 })
 
-describe('condicionTurnoVigente', () => {
-  it('solo turnos ACTIVO (un cancelado no cuenta)', () => {
-    expect(condicionTurnoVigente(HOY).estado).toBe('ACTIVO')
+// ---------------------------------------------------------------------------------------------
+// Condiciones (prefiltros)
+// ---------------------------------------------------------------------------------------------
+
+describe('condicionTurnoVigente (prefiltro)', () => {
+  it('ACTIVO, fechaFin nula o >= hoy, y sin finalización o finalizado después de hoy', () => {
+    expect(condicionTurnoVigente(HOY)).toEqual({
+      estado: 'ACTIVO',
+      AND: [
+        { OR: [{ fechaFin: null }, { fechaFin: { gte: MEDIANOCHE_HOY } }] },
+        {
+          OR: [
+            { finalizacion: { is: null } },
+            { finalizacion: { is: { fechaDesde: { gt: MEDIANOCHE_HOY } } } },
+          ],
+        },
+      ],
+    })
   })
 
-  it('recurrente sin fecha de fin, o con fin >= hoy (incluye el que termina exactamente hoy)', () => {
-    expect(condicionTurnoVigente(HOY).OR).toEqual([
-      { fechaFin: null },
-      { fechaFin: { gte: MEDIANOCHE_HOY } },
-    ])
-  })
-
-  it('una sesión única (fechaFin = fechaInicio) de hoy cumple fin >= hoy; la de ayer no', () => {
-    const { gte } = condicionTurnoVigente(HOY).OR[1].fechaFin as { gte: Date }
-    expect(new Date('2026-09-22T00:00:00.000Z') >= gte).toBe(true)
-    expect(new Date('2026-09-21T00:00:00.000Z') >= gte).toBe(false)
+  it('se sigue pudiendo mezclar por spread con bloqueAgenda y materiaId (como alumnos.listarDeProfesor)', () => {
+    const condicionDelProfesor = { ...condicionTurnoVigente(HOY), bloqueAgenda: { profesorId: 3 } }
+    const where = { ...condicionDelProfesor, materiaId: 2 }
+    expect(Object.keys(where).sort()).toEqual(['AND', 'bloqueAgenda', 'estado', 'materiaId'])
+    expect(where.AND).toEqual(condicionTurnoVigente(HOY).AND)
   })
 })
 
-describe('condicionTurnoSeCruzaCon y condicionTurnoOcupaLugar', () => {
+describe('condicionTurnoSeCruzaCon', () => {
   it('se cruza con [inicio, fin]: ACTIVO, fechaInicio <= fin y fechaFin nula o >= inicio', () => {
     expect(condicionTurnoSeCruzaCon('2026-10-05', '2026-11-30')).toEqual({
       estado: 'ACTIVO',
@@ -123,17 +136,9 @@ describe('condicionTurnoSeCruzaCon y condicionTurnoOcupaLugar', () => {
     })
   })
 
-  it('ocupa lugar en una fecha: la misma condición con inicio = fin = esa fecha (sirve para recurrentes)', () => {
-    expect(condicionTurnoOcupaLugar(HOY)).toEqual({
-      estado: 'ACTIVO',
-      fechaInicio: { lte: MEDIANOCHE_HOY },
-      OR: [{ fechaFin: null }, { fechaFin: { gte: MEDIANOCHE_HOY } }],
-    })
-  })
-
   /**
-   * Evalúa en memoria el `where` que arman las condiciones (solo las claves que usan), para fijar
-   * que dicen lo mismo que los predicados puros de `turnos.reglas.ts`.
+   * Evalúa en memoria el `where` que arma la condición (solo las claves que usa), para fijar que
+   * dice lo mismo que el predicado puro de `turnos.reglas.ts`.
    */
   function cumple(where: ReturnType<typeof condicionTurnoSeCruzaCon>, turno: TurnoFechas) {
     const inicio = d(turno.fechaInicio)
@@ -157,17 +162,6 @@ describe('condicionTurnoSeCruzaCon y condicionTurnoOcupaLugar', () => {
   ]
   const fechas = ['2026-09-28', '2026-10-05', '2026-10-12', '2026-10-19', '2026-10-26']
 
-  it('condicionTurnoOcupaLugar equivale a ocupaLugarEn en los bordes', () => {
-    for (const turno of turnos) {
-      for (const fecha of fechas) {
-        expect(
-          cumple(condicionTurnoOcupaLugar(fecha), turno),
-          `${turno.fechaInicio} ${fecha}`,
-        ).toBe(ocupaLugarEn(turno, fecha))
-      }
-    }
-  })
-
   it('condicionTurnoSeCruzaCon equivale a seCruzaCon (con y sin fin)', () => {
     for (const turno of turnos) {
       for (const inicio of fechas) {
@@ -181,11 +175,24 @@ describe('condicionTurnoSeCruzaCon y condicionTurnoOcupaLugar', () => {
   })
 })
 
+// ---------------------------------------------------------------------------------------------
+// Vigentes (regla completa: alguna ocurrencia no cancelada entre hoy y el fin efectivo)
+// ---------------------------------------------------------------------------------------------
+
 describe('contarVigentesPorMateria', () => {
   it('filtra por profesor (el del bloque) y materias, agrupa por materia y devuelve la cantidad', async () => {
-    groupBy.mockResolvedValue([
-      { materiaId: 2, _count: { _all: 3 } },
-      { materiaId: 7, _count: { _all: 1 } },
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, materiaId: 2, fechaInicio: '2026-09-28', fechaFin: null },
+      { id: 2, bloqueAgendaId: 11, materiaId: 2, fechaInicio: '2026-09-28', fechaFin: null },
+      {
+        id: 3,
+        bloqueAgendaId: 10,
+        materiaId: 7,
+        fechaInicio: '2026-10-05',
+        fechaFin: '2026-10-05',
+      },
+      { id: 4, bloqueAgendaId: 20, materiaId: 2, fechaInicio: '2026-09-28', fechaFin: null },
+      { id: 5, bloqueAgendaId: 10, materiaId: 9, fechaInicio: '2026-09-28', fechaFin: null },
     ])
 
     const resultado = await turnosRepository.contarVigentesPorMateria({
@@ -195,163 +202,146 @@ describe('contarVigentesPorMateria', () => {
     })
 
     expect(resultado).toEqual([
-      { materiaId: 2, cantidad: 3 },
+      { materiaId: 2, cantidad: 2 },
       { materiaId: 7, cantidad: 1 },
     ])
-    expect(groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        by: ['materiaId'],
-        where: {
-          ...condicionTurnoVigente(HOY),
-          bloqueAgenda: { profesorId: 3 },
-          materiaId: { in: [2, 7] },
-        },
-      }),
-    )
+    expect(findMany).toHaveBeenCalledTimes(1)
   })
 
   it('sin filtros opcionales, cuenta todos los vigentes', async () => {
-    await turnosRepository.contarVigentesPorMateria({ fechaHoy: HOY })
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, materiaId: 2, fechaInicio: '2026-09-28', fechaFin: null },
+      { id: 4, bloqueAgendaId: 20, materiaId: 2, fechaInicio: '2026-09-28', fechaFin: null },
+    ])
+    expect(await turnosRepository.contarVigentesPorMateria({ fechaHoy: HOY })).toEqual([
+      { materiaId: 2, cantidad: 2 },
+    ])
+  })
+})
 
-    expect(groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({ where: condicionTurnoVigente(HOY) }),
-    )
+describe('vigente con el motor de ocurrencias (T-30)', () => {
+  it('una serie finalizada o con todo lo restante cancelado no es vigente; una sin fin sí', async () => {
+    sembrar([
+      // Finalizada desde el lunes 28/09: su fin efectivo (27/09) ya pasó.
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-07',
+        fechaFin: null,
+        finalizadaDesde: '2026-09-28',
+      },
+      // Sus dos fechas restantes (28/09 y 05/10) están canceladas.
+      {
+        id: 2,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-14',
+        fechaFin: '2026-10-05',
+        cancelaciones: [{ fecha: '2026-09-28' }, { fecha: '2026-10-05' }],
+      },
+      // Sin fin, con cancelaciones: siempre vigente.
+      {
+        id: 3,
+        bloqueAgendaId: 11,
+        fechaInicio: '2026-09-28',
+        fechaFin: null,
+        cancelaciones: [{ fecha: '2026-09-28' }, { fecha: '2026-10-05' }],
+      },
+    ])
+
+    expect(await turnosRepository.contarVigentesPorBloque(10, HOY)).toBe(0)
+    expect(await turnosRepository.contarVigentesPorBloques([10, 11], HOY)).toEqual([
+      { bloqueAgendaId: 11, cantidad: 1 },
+    ])
+    expect((await turnosRepository.listarVigentesPorProfesor(3, HOY)).length).toBe(1)
+    expect(await turnosRepository.contarVigentesPorMateria({ fechaHoy: HOY })).toEqual([
+      { materiaId: 3, cantidad: 1 },
+    ])
+  })
+
+  it('con los datos del Sprint 1 (sin cancelaciones ni finalizaciones) cuenta lo mismo que la condición de fechas', async () => {
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, fechaInicio: '2026-09-21', fechaFin: '2026-09-21' }, // ayer: no
+      { id: 2, bloqueAgendaId: 10, fechaInicio: '2026-09-22', fechaFin: '2026-09-22' }, // hoy: sí
+      { id: 3, bloqueAgendaId: 10, fechaInicio: '2026-09-07', fechaFin: '2026-09-28' }, // sí
+      { id: 4, bloqueAgendaId: 10, estado: 'CANCELADO', fechaInicio: '2026-09-28', fechaFin: null },
+    ])
+    expect(await turnosRepository.contarVigentesPorBloque(10, HOY)).toBe(2)
   })
 })
 
 describe('contarVigentesPorBloque', () => {
   it('cuenta los turnos vigentes de ese bloque puntual', async () => {
-    count.mockResolvedValue(2)
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, fechaInicio: '2026-09-28', fechaFin: null },
+      { id: 2, bloqueAgendaId: 10, fechaInicio: '2026-10-05', fechaFin: '2026-10-05' },
+      { id: 3, bloqueAgendaId: 11, fechaInicio: '2026-10-05', fechaFin: '2026-10-05' },
+    ])
 
-    const resultado = await turnosRepository.contarVigentesPorBloque(10, HOY)
-
-    expect(resultado).toBe(2)
-    expect(count).toHaveBeenCalledWith({
-      where: { ...condicionTurnoVigente(HOY), bloqueAgendaId: 10 },
-    })
+    expect(await turnosRepository.contarVigentesPorBloque(10, HOY)).toBe(2)
   })
 })
 
 describe('contarVigentesPorBloques', () => {
-  it('una sola consulta para todas las filas, con la condición de vigente, agrupada por fila', async () => {
-    groupBy.mockResolvedValue([{ bloqueAgendaId: 11, _count: { _all: 2 } }])
+  it('una sola consulta para todas las filas, agrupada por fila', async () => {
+    sembrar([{ id: 1, bloqueAgendaId: 11, fechaInicio: '2026-09-28', fechaFin: null }])
 
     const resultado = await turnosRepository.contarVigentesPorBloques([10, 11], HOY)
 
-    expect(resultado).toEqual([{ bloqueAgendaId: 11, cantidad: 2 }])
-    expect(groupBy).toHaveBeenCalledTimes(1)
-    expect(groupBy).toHaveBeenCalledWith(
-      expect.objectContaining({
-        by: ['bloqueAgendaId'],
-        where: { ...condicionTurnoVigente(HOY), bloqueAgendaId: { in: [10, 11] } },
-      }),
-    )
-  })
-})
-
-describe('contarOcupacionPorBloque', () => {
-  it('una sola consulta: turnos de esas filas que se cruzan con [min, max] de las fechas', async () => {
-    await turnosRepository.contarOcupacionPorBloque([
-      { bloqueAgendaId: 10, fecha: '2026-10-12' },
-      { bloqueAgendaId: 11, fecha: '2026-09-29' },
-      { bloqueAgendaId: 10, fecha: '2026-10-12' },
-    ])
-
+    expect(resultado).toEqual([{ bloqueAgendaId: 11, cantidad: 1 }])
     expect(findMany).toHaveBeenCalledTimes(1)
     expect(findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: {
-          ...condicionTurnoSeCruzaCon('2026-09-29', '2026-10-12'),
-          bloqueAgendaId: { in: [10, 11] },
-        },
+        where: expect.objectContaining({ bloqueAgendaId: { in: [10, 11] } }),
       }),
     )
-  })
-
-  it('cuenta recurrentes en cada fecha de su rango y sesiones únicas solo en la suya', async () => {
-    findMany.mockResolvedValue([
-      { bloqueAgendaId: 10, estado: 'ACTIVO', fechaInicio: d('2026-09-28'), fechaFin: null },
-      {
-        bloqueAgendaId: 10,
-        estado: 'ACTIVO',
-        fechaInicio: d('2026-10-05'),
-        fechaFin: d('2026-10-05'),
-      },
-      {
-        bloqueAgendaId: 11,
-        estado: 'ACTIVO',
-        fechaInicio: d('2026-09-01'),
-        fechaFin: d('2026-09-29'),
-      },
-    ])
-
-    const resultado = await turnosRepository.contarOcupacionPorBloque([
-      { bloqueAgendaId: 10, fecha: '2026-10-05' },
-      { bloqueAgendaId: 10, fecha: '2026-10-12' },
-      { bloqueAgendaId: 11, fecha: '2026-10-06' },
-    ])
-
-    // La fila 11 no tiene ningún turno que ocupe lugar el 06/10: no viene.
-    expect(resultado).toEqual([
-      { bloqueAgendaId: 10, fecha: '2026-10-05', cantidad: 2 },
-      { bloqueAgendaId: 10, fecha: '2026-10-12', cantidad: 1 },
-    ])
-  })
-
-  it('sin filas no consulta la base', async () => {
-    expect(await turnosRepository.contarOcupacionPorBloque([])).toEqual([])
-    expect(findMany).not.toHaveBeenCalled()
   })
 })
 
 describe('listarVigentesPorProfesor', () => {
-  it('trae alumno, materia, tipo, fechas y horario de cada turno vigente del profesor', async () => {
-    findMany.mockResolvedValue([
+  it('trae alumno, materia, tipo, fechas y horario de cada turno vigente del profesor, por fecha e id', async () => {
+    sembrar([
       {
-        alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
-        materia: { id: 2, nombre: 'Matemática' },
-        tipo: 'RECURRENTE',
-        fechaInicio: d('2026-09-28'),
+        id: 2,
+        bloqueAgendaId: 10,
+        alumnoId: 12,
+        materiaId: 2,
+        fechaInicio: '2026-09-28',
         fechaFin: null,
-        bloqueAgenda: { horaInicio: 540, horaFin: 600 },
       },
       {
-        alumno: { id: 13, nombre: 'Tomás', apellido: 'Ruiz' },
-        materia: { id: 2, nombre: 'Matemática' },
+        id: 1,
+        bloqueAgendaId: 11,
+        alumnoId: 13,
+        materiaId: 2,
+        fechaInicio: '2026-09-22',
+        fechaFin: '2026-09-22',
         tipo: 'SESION_UNICA',
-        fechaInicio: d('2026-09-25'),
-        fechaFin: d('2026-09-25'),
-        bloqueAgenda: { horaInicio: 600, horaFin: 660 },
       },
+      { id: 3, bloqueAgendaId: 20, fechaInicio: '2026-09-28', fechaFin: null }, // otro profesor
     ])
 
     const resultado = await turnosRepository.listarVigentesPorProfesor(3, HOY)
 
     expect(resultado).toEqual([
       {
-        alumno: { id: 12, nombre: 'Lucía', apellido: 'González' },
-        materia: { id: 2, nombre: 'Matemática' },
+        alumno: { id: 13, nombre: 'Alumno13', apellido: 'Apellido13' },
+        materia: { id: 2, nombre: 'Materia2' },
+        tipo: 'SESION_UNICA',
+        fecha: '2026-09-22',
+        fechaFin: '2026-09-22',
+        horaInicio: '10:00',
+        horaFin: '11:00',
+      },
+      {
+        alumno: { id: 12, nombre: 'Alumno12', apellido: 'Apellido12' },
+        materia: { id: 2, nombre: 'Materia2' },
         tipo: 'RECURRENTE',
         fecha: '2026-09-28',
         fechaFin: null,
         horaInicio: '09:00',
         horaFin: '10:00',
       },
-      {
-        alumno: { id: 13, nombre: 'Tomás', apellido: 'Ruiz' },
-        materia: { id: 2, nombre: 'Matemática' },
-        tipo: 'SESION_UNICA',
-        fecha: '2026-09-25',
-        fechaFin: '2026-09-25',
-        horaInicio: '10:00',
-        horaFin: '11:00',
-      },
     ])
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { ...condicionTurnoVigente(HOY), bloqueAgenda: { profesorId: 3 } },
-      }),
-    )
   })
 
   it('sin turnos vigentes, devuelve un arreglo vacío', async () => {
@@ -361,17 +351,10 @@ describe('listarVigentesPorProfesor', () => {
 
 describe('ocupacionMaximaPorFila', () => {
   it('lee las horas activas del profesor con turnos vigentes y devuelve la ocupación máxima de cada una', async () => {
-    bloqueFindMany.mockResolvedValue([
-      {
-        id: 10,
-        diaSemana: 1,
-        horaInicio: 540,
-        horaFin: 600,
-        turnos: [
-          { estado: 'ACTIVO', fechaInicio: d('2026-09-28'), fechaFin: null },
-          { estado: 'ACTIVO', fechaInicio: d('2026-10-12'), fechaFin: d('2026-10-12') },
-        ],
-      },
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, fechaInicio: '2026-09-28', fechaFin: null },
+      { id: 2, bloqueAgendaId: 10, fechaInicio: '2026-10-12', fechaFin: '2026-10-12' },
+      { id: 3, bloqueAgendaId: 12, fechaInicio: '2026-09-29', fechaFin: null }, // fila inactiva
     ])
 
     const resultado = await turnosRepository.ocupacionMaximaPorFila(3, HOY)
@@ -396,8 +379,131 @@ describe('ocupacionMaximaPorFila', () => {
         },
       }),
     )
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({ bloqueAgendaId: { in: [10] } }),
+      }),
+    )
+  })
+
+  it('sin horas con candidatos a vigente, no lee series', async () => {
+    expect(await turnosRepository.ocupacionMaximaPorFila(3, HOY)).toEqual([])
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  it('una hora cuyas series no son vigentes (todo lo restante cancelado) no viene', async () => {
+    sembrar([
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-28',
+        fechaFin: '2026-10-05',
+        cancelaciones: [{ fecha: '2026-09-28' }, { fecha: '2026-10-05' }],
+      },
+    ])
+    expect(await turnosRepository.ocupacionMaximaPorFila(3, HOY)).toEqual([])
+  })
+
+  it('una ocurrencia cancelada libera su lugar en la cuenta del máximo', async () => {
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, fechaInicio: '2026-09-28', fechaFin: null },
+      {
+        id: 2,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-10-12',
+        fechaFin: '2026-10-12',
+        cancelaciones: [{ fecha: '2026-10-12' }],
+      },
+    ])
+
+    expect(await turnosRepository.ocupacionMaximaPorFila(3, HOY)).toEqual([
+      expect.objectContaining({ bloqueId: 10, fecha: '2026-09-28', cantidad: 1 }),
+    ])
   })
 })
+
+// ---------------------------------------------------------------------------------------------
+// Ocupación por par fila–fecha (horario de bloques y disponibilidad)
+// ---------------------------------------------------------------------------------------------
+
+describe('contarOcupacionPorBloque', () => {
+  it('una sola consulta: turnos de esas filas que se cruzan con [min, max] de las fechas', async () => {
+    await turnosRepository.contarOcupacionPorBloque([
+      { bloqueAgendaId: 10, fecha: '2026-10-12' },
+      { bloqueAgendaId: 11, fecha: '2026-09-29' },
+      { bloqueAgendaId: 10, fecha: '2026-10-12' },
+    ])
+
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          ...condicionTurnoSeCruzaCon('2026-09-29', '2026-10-12'),
+          bloqueAgendaId: { in: [10, 11] },
+          bloqueAgenda: {},
+        },
+      }),
+    )
+  })
+
+  it('cuenta recurrentes en cada fecha de su rango y sesiones únicas solo en la suya', async () => {
+    sembrar([
+      { id: 1, bloqueAgendaId: 10, fechaInicio: '2026-09-28', fechaFin: null },
+      { id: 2, bloqueAgendaId: 10, fechaInicio: '2026-10-05', fechaFin: '2026-10-05' },
+      { id: 3, bloqueAgendaId: 11, fechaInicio: '2026-09-07', fechaFin: '2026-09-28' },
+    ])
+
+    const resultado = await turnosRepository.contarOcupacionPorBloque([
+      { bloqueAgendaId: 10, fecha: '2026-10-05' },
+      { bloqueAgendaId: 10, fecha: '2026-10-12' },
+      { bloqueAgendaId: 11, fecha: '2026-10-05' },
+    ])
+
+    // La fila 11 no tiene ningún turno que ocupe lugar el 05/10: no viene.
+    expect(resultado).toEqual([
+      { bloqueAgendaId: 10, fecha: '2026-10-05', cantidad: 2 },
+      { bloqueAgendaId: 10, fecha: '2026-10-12', cantidad: 1 },
+    ])
+  })
+
+  it('una cancelación y una finalización liberan su lugar (T-30)', async () => {
+    sembrar([
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-28',
+        fechaFin: null,
+        cancelaciones: [{ fecha: '2026-10-05' }],
+      },
+      {
+        id: 2,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-28',
+        fechaFin: null,
+        finalizadaDesde: '2026-10-12',
+      },
+    ])
+
+    expect(
+      await turnosRepository.contarOcupacionPorBloque([
+        { bloqueAgendaId: 10, fecha: '2026-10-05' },
+        { bloqueAgendaId: 10, fecha: '2026-10-12' },
+      ]),
+    ).toEqual([
+      { bloqueAgendaId: 10, fecha: '2026-10-05', cantidad: 1 },
+      { bloqueAgendaId: 10, fecha: '2026-10-12', cantidad: 1 },
+    ])
+  })
+
+  it('sin filas no consulta la base', async () => {
+    expect(await turnosRepository.contarOcupacionPorBloque([])).toEqual([])
+    expect(findMany).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Reserva
+// ---------------------------------------------------------------------------------------------
 
 describe('reservar', () => {
   const actor: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
@@ -449,6 +555,22 @@ describe('reservar', () => {
       return Promise.resolve(valor)
     }
 
+  /** Turnos que lee la transacción (ocupantes y superposición). */
+  function sembrarTx(turnos: TurnoDePrueba[]) {
+    const base = crearTurnosEnMemoria(
+      [
+        { id: 10, profesorId: 4, aulaId: 1, diaSemana: 1, horaInicio: 540 },
+        { id: 11, profesorId: 4, aulaId: 1, diaSemana: 1, horaInicio: 600 },
+        { id: 20, profesorId: 7, aulaId: 2, diaSemana: 1, horaInicio: 540 },
+      ],
+      turnos,
+    )
+    tx.turno.findMany.mockImplementation(async (args: Parameters<typeof base.findMany>[0]) => {
+      log.push('turno.findMany')
+      return 'select' in args && 'cancelaciones' in (args.select ?? {}) ? base.findMany(args) : []
+    })
+  }
+
   beforeEach(() => {
     tx.bloqueAgenda.findMany.mockImplementation(
       conLog('bloqueAgenda.findMany', [
@@ -472,41 +594,53 @@ describe('reservar', () => {
     tx.asignacionMateria.findUnique.mockImplementation(
       conLog('asignacion.findUnique', { estado: 'ACTIVO' }),
     )
-    tx.turno.findMany.mockImplementation(conLog('turno.findMany', []))
+    sembrarTx([])
     tx.turno.createManyAndReturn.mockImplementation(
       conLog('turno.createManyAndReturn', [{ id: 55 }, { id: 56 }]),
     )
   })
 
-  it('toma los tres locks en orden (profesor, filas por id, alumno) antes de leer o insertar', async () => {
+  it('toma los tres locks con bloquearParaReserva (profesor, filas por id ordenadas, alumno) antes de leer o insertar', async () => {
     await turnosRepository.reservar(entrada, () => plan, actor)
 
     expect(log.slice(0, 3)).toEqual(['queryRaw', 'queryRaw', 'queryRaw'])
     expect(log.slice(3)).not.toContain('queryRaw')
-    const [profesor, filas, alumno] = tx.$queryRaw.mock.calls.map(
-      ([sql]) => sql as { text: string; values: unknown[] },
-    )
-    expect(profesor?.text).toMatch(/FROM profesor WHERE id = \$1 FOR SHARE/)
-    expect(profesor?.values).toEqual([4])
-    expect(filas?.text).toMatch(/FROM bloque_agenda WHERE id IN \(\$1,\$2\) ORDER BY id FOR UPDATE/)
-    expect(filas?.values).toEqual([11, 10])
-    expect(alumno?.text).toMatch(/FROM alumno WHERE id = \$1 FOR UPDATE/)
-    expect(alumno?.values).toEqual([12])
+    const [profesor, filas, alumno] = tx.$queryRaw.mock.calls.map(([partes, ...valores]) => ({
+      sql: (partes as string[]).join('?'),
+      valores,
+    }))
+    expect(profesor).toEqual({
+      sql: 'SELECT id FROM profesor WHERE id = ? FOR SHARE',
+      valores: [4],
+    })
+    expect(filas).toEqual({
+      sql: 'SELECT id FROM bloque_agenda WHERE id = ANY(?::int[]) ORDER BY id FOR UPDATE',
+      valores: [[10, 11]],
+    })
+    expect(alumno).toEqual({ sql: 'SELECT id FROM alumno WHERE id = ? FOR UPDATE', valores: [12] })
   })
 
-  it('lee el snapshot con los locks tomados, incluidas materia y asignación, y se lo pasa a planificar', async () => {
-    tx.turno.findMany
-      .mockImplementationOnce(
-        conLog('turno.findMany', [
-          {
-            bloqueAgendaId: 10,
-            estado: 'ACTIVO',
-            fechaInicio: d('2026-10-26'),
-            fechaFin: d('2026-10-26'),
-          },
-        ]),
-      )
-      .mockImplementationOnce(conLog('turno.findMany', []))
+  it('lee el snapshot con los locks tomados (series con fin efectivo y canceladas, superposición) y se lo pasa a planificar', async () => {
+    sembrarTx([
+      {
+        id: 70,
+        bloqueAgendaId: 10,
+        alumnoId: 99,
+        fechaInicio: '2026-10-05',
+        fechaFin: null,
+        finalizadaDesde: '2026-11-02',
+        cancelaciones: [{ fecha: '2026-10-12' }],
+      },
+      // Del alumno, con otro profesor en la misma hora: choca el 12/10 (el 05/10 está cancelado).
+      {
+        id: 71,
+        bloqueAgendaId: 20,
+        alumnoId: 12,
+        fechaInicio: '2026-10-05',
+        fechaFin: '2026-10-19',
+        cancelaciones: [{ fecha: '2026-10-05' }],
+      },
+    ])
     const planificar = vi.fn(() => plan)
 
     await turnosRepository.reservar(entrada, planificar, actor)
@@ -527,30 +661,29 @@ describe('reservar', () => {
       materia: { id: 3, estado: 'ACTIVO' },
       asignacion: { estado: 'ACTIVO' },
       ocupantes: [
-        { bloqueAgendaId: 10, estado: 'ACTIVO', fechaInicio: '2026-10-26', fechaFin: '2026-10-26' },
+        {
+          bloqueAgendaId: 10,
+          estado: 'ACTIVO',
+          fechaInicio: '2026-10-05',
+          finEfectivo: '2026-11-01',
+          canceladas: ['2026-10-12'],
+        },
       ],
-      turnosAlumno: [],
+      turnosAlumno: [
+        {
+          id: 71,
+          tipo: 'RECURRENTE',
+          estado: 'ACTIVO',
+          fechaInicio: '2026-10-05',
+          fechaFin: '2026-10-19',
+          diaSemana: 1,
+          horaInicio: 540,
+          horaFin: 600,
+          profesor: { id: 7, nombre: 'Profe7', apellido: 'Apellido7' },
+          materia: { id: 3, nombre: 'Materia3' },
+        },
+      ],
     })
-    // Ocupantes de las filas pedidas y turnos del alumno en el mismo día y hora, cruzados con el rango.
-    expect(tx.turno.findMany).toHaveBeenNthCalledWith(
-      1,
-      expect.objectContaining({
-        where: {
-          ...condicionTurnoSeCruzaCon('2026-10-05', null),
-          bloqueAgendaId: { in: [11, 10] },
-        },
-      }),
-    )
-    expect(tx.turno.findMany).toHaveBeenNthCalledWith(
-      2,
-      expect.objectContaining({
-        where: {
-          ...condicionTurnoSeCruzaCon('2026-10-05', null),
-          alumnoId: 12,
-          bloqueAgenda: { OR: [{ diaSemana: 1, horaInicio: 540 }] },
-        },
-      }),
-    )
     expect(tx.asignacionMateria.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { profesorId_materiaId: { profesorId: 4, materiaId: 3 } } }),
     )
@@ -577,11 +710,6 @@ describe('reservar', () => {
   })
 
   it('inserta lo planificado con la auditoría del actor y devuelve el detalle y las fechas sin turno', async () => {
-    tx.turno.findMany
-      .mockImplementationOnce(conLog('turno.findMany', []))
-      .mockImplementationOnce(conLog('turno.findMany', []))
-      .mockImplementationOnce(conLog('turno.findMany', []))
-
     const resultado = await turnosRepository.reservar(entrada, () => plan, actor)
 
     expect(tx.turno.createManyAndReturn).toHaveBeenCalledWith({
@@ -661,260 +789,5 @@ describe('buscarDetalle', () => {
       createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
       updatedBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
     })
-  })
-})
-
-describe('listarAgenda', () => {
-  function filaAgenda() {
-    return {
-      id: 15,
-      estado: 'ACTIVO' as const,
-      alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
-      materia: { id: 2, nombre: 'Matemática' },
-      bloqueAgenda: {
-        horaInicio: 540,
-        horaFin: 600,
-        aula: { id: 1, nombre: 'Aula 1' },
-        profesor: { id: 3, usuario: { apellido: 'Pérez', nombre: 'Ana' } },
-      },
-    }
-  }
-
-  it('arma el item con profesor, materia, aula y horario en HH:mm', async () => {
-    findMany.mockResolvedValue([filaAgenda()])
-    count.mockResolvedValue(1)
-
-    const resultado = await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
-
-    expect(resultado).toEqual({
-      data: [
-        {
-          id: 15,
-          alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
-          profesor: { id: 3, apellido: 'Pérez', nombre: 'Ana' },
-          materia: { id: 2, nombre: 'Matemática' },
-          aula: { id: 1, nombre: 'Aula 1' },
-          horaInicio: '09:00',
-          horaFin: '10:00',
-          estado: 'ACTIVO',
-        },
-      ],
-      meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
-    })
-  })
-
-  it('filtra por el día de la semana de la fecha, sin filtros opcionales ni búsqueda', async () => {
-    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
-
-    // 2026-09-22 es martes: diaSemanaISO = 2.
-    const whereEsperado = {
-      AND: [condicionTurnoOcupaLugar(HOY), { bloqueAgenda: { diaSemana: 2 } }],
-    }
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: whereEsperado }))
-    expect(count).toHaveBeenCalledWith({ where: whereEsperado })
-  })
-
-  it('combina los filtros de materia y aula en la segunda rama del AND', async () => {
-    await turnosRepository.listarAgenda({
-      fecha: HOY,
-      page: 1,
-      pageSize: 20,
-      materiaId: 2,
-      aulaId: 1,
-    })
-
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          AND: [
-            condicionTurnoOcupaLugar(HOY),
-            { bloqueAgenda: { diaSemana: 2, aulaId: 1 }, materiaId: 2 },
-          ],
-        },
-      }),
-    )
-  })
-
-  it('sin `terminos`, el AND tiene solo dos ramas: no agrega ninguna de búsqueda', async () => {
-    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20, terminos: [] })
-
-    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
-    expect(where.AND).toHaveLength(2)
-  })
-
-  it('con `terminos`, agrega una tercera rama: todas las palabras en el alumno, o todas en el profesor', async () => {
-    await turnosRepository.listarAgenda({
-      fecha: HOY,
-      page: 1,
-      pageSize: 20,
-      terminos: ['juan', 'gonz'],
-    })
-
-    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
-    expect(where.AND).toHaveLength(3)
-    expect(where.AND[2]).toEqual({
-      OR: [
-        {
-          alumno: {
-            AND: [{ busqueda: { contains: 'juan' } }, { busqueda: { contains: 'gonz' } }],
-          },
-        },
-        {
-          bloqueAgenda: {
-            profesor: {
-              usuario: {
-                AND: [{ busqueda: { contains: 'juan' } }, { busqueda: { contains: 'gonz' } }],
-              },
-            },
-          },
-        },
-      ],
-    })
-  })
-
-  it('la condición de vigencia por fecha (fechaFin nula o >= fecha) se mantiene con `terminos`', async () => {
-    await turnosRepository.listarAgenda({
-      fecha: HOY,
-      page: 1,
-      pageSize: 20,
-      terminos: ['juan'],
-    })
-
-    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
-    expect(where.AND[0]).toEqual(condicionTurnoOcupaLugar(HOY))
-  })
-
-  it('filtra por profesorId (vista personal): va en la misma rama que aula y día de semana', async () => {
-    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20, profesorId: 3 })
-
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          AND: [condicionTurnoOcupaLugar(HOY), { bloqueAgenda: { diaSemana: 2, profesorId: 3 } }],
-        },
-      }),
-    )
-  })
-
-  it('con profesorId y `terminos`, la búsqueda es solo por alumno (sin OR por profesor)', async () => {
-    await turnosRepository.listarAgenda({
-      fecha: HOY,
-      page: 1,
-      pageSize: 20,
-      profesorId: 3,
-      terminos: ['juan'],
-    })
-
-    const { where } = findMany.mock.calls[0][0] as { where: { AND: unknown[] } }
-    expect(where.AND).toHaveLength(3)
-    expect(where.AND[2]).toEqual({ alumno: { AND: [{ busqueda: { contains: 'juan' } }] } })
-  })
-
-  it('ordena por hora, dentro de la hora por profesor, y por id como desempate final', async () => {
-    await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
-
-    expect(findMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        orderBy: [
-          { bloqueAgenda: { horaInicio: 'asc' } },
-          { bloqueAgenda: { profesor: { usuario: { busqueda: 'asc' } } } },
-          { id: 'asc' },
-        ],
-      }),
-    )
-  })
-
-  it('pagina con calcularSkipTake y arma meta con armarMeta', async () => {
-    count.mockResolvedValue(45)
-
-    const resultado = await turnosRepository.listarAgenda({ fecha: HOY, page: 2, pageSize: 20 })
-
-    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ skip: 20, take: 20 }))
-    expect(resultado.meta).toEqual({ page: 2, pageSize: 20, total: 45, totalPages: 3 })
-  })
-
-  it('sin turnos ese día, devuelve una página vacía', async () => {
-    const resultado = await turnosRepository.listarAgenda({ fecha: HOY, page: 1, pageSize: 20 })
-
-    expect(resultado).toEqual({
-      data: [],
-      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
-    })
-  })
-})
-
-describe('listarMateriasConTurno', () => {
-  it('devuelve las materias que trae Prisma, tal cual', async () => {
-    materiaFindMany.mockResolvedValue([
-      { id: 2, nombre: 'Matemática' },
-      { id: 7, nombre: 'Física' },
-    ])
-
-    await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([
-      { id: 2, nombre: 'Matemática' },
-      { id: 7, nombre: 'Física' },
-    ])
-  })
-
-  it('filtra materias con algún turno que aplica esa fecha, en el día de semana del bloque', async () => {
-    await turnosRepository.listarMateriasConTurno(HOY)
-
-    // 2026-09-22 es martes: diaSemanaISO = 2.
-    expect(materiaFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          turnos: { some: { ...condicionTurnoOcupaLugar(HOY), bloqueAgenda: { diaSemana: 2 } } },
-        },
-      }),
-    )
-  })
-
-  it('no filtra por el estado de la materia: importa si se dictó esa fecha, no si sigue activa', async () => {
-    await turnosRepository.listarMateriasConTurno(HOY)
-
-    const { where } = materiaFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
-    expect(where).not.toHaveProperty('estado')
-  })
-
-  it('sin materias con turno ese día, devuelve un arreglo vacío', async () => {
-    await expect(turnosRepository.listarMateriasConTurno(HOY)).resolves.toEqual([])
-  })
-})
-
-describe('listarAulasConTurno', () => {
-  it('devuelve las aulas que trae Prisma, tal cual', async () => {
-    aulaFindMany.mockResolvedValue([
-      { id: 1, nombre: 'Aula 1' },
-      { id: 2, nombre: 'Aula 2' },
-    ])
-
-    await expect(turnosRepository.listarAulasConTurno(HOY)).resolves.toEqual([
-      { id: 1, nombre: 'Aula 1' },
-      { id: 2, nombre: 'Aula 2' },
-    ])
-  })
-
-  it('filtra aulas con algún bloque en el día de semana con un turno que aplica esa fecha', async () => {
-    await turnosRepository.listarAulasConTurno(HOY)
-
-    // 2026-09-22 es martes: diaSemanaISO = 2.
-    expect(aulaFindMany).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: {
-          bloques: { some: { diaSemana: 2, turnos: { some: condicionTurnoOcupaLugar(HOY) } } },
-        },
-      }),
-    )
-  })
-
-  it('no filtra por el estado del aula: importa si se usó esa fecha, no si sigue activa', async () => {
-    await turnosRepository.listarAulasConTurno(HOY)
-
-    const { where } = aulaFindMany.mock.calls[0][0] as { where: Record<string, unknown> }
-    expect(where).not.toHaveProperty('estado')
-  })
-
-  it('sin aulas con turno ese día, devuelve un arreglo vacío', async () => {
-    await expect(turnosRepository.listarAulasConTurno(HOY)).resolves.toEqual([])
   })
 })

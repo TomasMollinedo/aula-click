@@ -1,4 +1,4 @@
-import type { Auditoria, PaginatedResponse } from '@/types'
+import type { Auditoria } from '@/types'
 
 // Tipos de la API de turnos (docs/contrato-api.md → Turnos y Errores), escritos a mano (D-07).
 // Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`. Día de la semana: entero ISO (1 = lunes).
@@ -145,64 +145,3 @@ export type DetalleAlumnoSuperpuesto = {
 
 /** El alumno elegido en la pantalla (sale del buscador o de `?alumnoId=`, vía hooks de alumnos). */
 export type AlumnoElegido = { id: number; nombre: string; apellido: string; dni: string }
-
-// ---------------------------------------------------------------------------------------------
-// Agenda diaria (`GET /turnos/agenda`)
-// ---------------------------------------------------------------------------------------------
-
-/** Ítem de `GET /api/v1/turnos/agenda` (docs/contrato-api.md → Turnos). */
-export type AgendaItem = {
-  id: number
-  alumno: { id: number; apellido: string; nombre: string }
-  profesor: { id: number; apellido: string; nombre: string }
-  materia: { id: number; nombre: string }
-  aula: { id: number; nombre: string }
-  horaInicio: string
-  horaFin: string
-  estado: EstadoTurno
-}
-
-export type AgendaListadoParams = {
-  /** `YYYY-MM-DD`. Sin ella, la API usa la fecha de hoy (zona del negocio). */
-  fecha?: string
-  page?: number
-  pageSize?: number
-  /** Vista personal de la agenda de ese profesor ese día (decisión T-42). */
-  profesorId?: number
-}
-
-export type AgendaListadoResponse = PaginatedResponse<AgendaItem>
-
-// ---------------------------------------------------------------------------------------------
-// Agenda propia del profesor (`GET /turnos/agenda-propia`)
-// ---------------------------------------------------------------------------------------------
-
-/**
- * Una **ocurrencia** de un turno propio en una fecha (docs/contrato-api.md → Agenda propia del
- * profesor): en un recurrente, `turnoId` se repite entre fechas, así que la clave de la fila es
- * `turnoId` + `fecha`. Sin profesor: son todos del profesor de la sesión.
- */
-export type AgendaPropiaItem = {
-  turnoId: number
-  fecha: string
-  diaSemana: number
-  horaInicio: string
-  horaFin: string
-  alumno: { id: number; apellido: string; nombre: string }
-  materia: Referencia
-  aula: Referencia
-  tipo: TipoTurno
-  estado: EstadoTurno
-}
-
-/** Rango pedido, extremos incluidos. Sin `desde`, la API usa hoy; sin `hasta`, el mismo `desde`. */
-export type AgendaPropiaParams = {
-  desde?: string
-  hasta?: string
-}
-
-/**
- * Agenda de un profesor para mesa de entradas (ficha del profesor, HU-02): mismo rango, con el
- * profesor fijo. La respuesta tiene la forma de la agenda propia (`AgendaPropiaItem[]`).
- */
-export type AgendaProfesorParams = AgendaPropiaParams & { profesorId: number }

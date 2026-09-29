@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -9,7 +9,9 @@ import { DoorOpen, Pencil } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAlumno } from '@/features/alumnos/hooks/use-alumno'
+import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import { useToast } from '@/hooks/use-toast'
+import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 import { nombreDiaSemana } from '@/utils/dias-semana'
 
 import { type ErrorAltaTurno, interpretarErrorAlta } from '../errores-turnos'
@@ -37,17 +39,18 @@ import { AlertaRechazo, DialogoFechasLlenas } from './RechazoAlta'
 import { ResultadosDisponibilidad } from './ResultadosDisponibilidad'
 import { SeccionPaso } from './SeccionPaso'
 import { ResumenAlumno, SeleccionAlumno } from './SeleccionAlumno'
-import { TurnoDetalleModal } from './TurnoDetalleModal'
 import { TurnoForm } from './TurnoForm'
 
 type RegistrarTurnoProps = {
+  /** Compone `app/` el detalle de un turno (`?detalle=&fecha=`): lo abre la confirmación del alta. */
+  renderDetalle: RenderDetalleOcurrencia
   /** URL de esta pantalla en el segmento del rol (por ejemplo `/mesa/turnos`). */
   rutaBase: string
   /** URL del alta de alumno que vuelve acá con `?alumnoId=` (la arma la página). */
   hrefAltaAlumno: string
 }
 
-/** Id de la URL (`?alumnoId=`, `?detalle=`) como número, o `null` si no es un entero positivo. */
+/** Id de la URL (`?alumnoId=`) como número, o `null` si no es un entero positivo. */
 function parsearId(valor: string | null): number | null {
   const id = Number(valor)
   return valor !== null && Number.isInteger(id) && id > 0 ? id : null
@@ -83,7 +86,7 @@ function ResumenBloque({ bloque }: { bloque: BloqueDisponible }) {
  * depende de eso. No calcula reglas: la ocupación, `lleno`, las fechas y los rechazos vienen de la
  * API; los errores se interpretan en `errores-turnos.ts`.
  */
-export function RegistrarTurno({ rutaBase, hrefAltaAlumno }: RegistrarTurnoProps) {
+export function RegistrarTurno({ rutaBase, hrefAltaAlumno, renderDetalle }: RegistrarTurnoProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
@@ -196,28 +199,8 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno }: RegistrarTurnoProps
   const [ultimoPedido, setUltimoPedido] = useState<TurnoCrear | null>(null)
   const [resultado, setResultado] = useState<{ alta: TurnosAlta; pedido: TurnoCrear } | null>(null)
 
-  // --- Detalle de un turno: modal con `?detalle=<id>` (T-34), sin ruta propia.
-  const detalleId = parsearId(searchParams.get('detalle'))
-  const detalleAbiertoConLink = useRef(false)
-  const hrefDetalle = useCallback(
-    (turnoId: number) => {
-      const params = new URLSearchParams(searchParams.toString())
-      params.set('detalle', String(turnoId))
-      return `${rutaBase}?${params}`
-    },
-    [searchParams, rutaBase],
-  )
-  const cerrarDetalle = () => {
-    if (detalleAbiertoConLink.current) {
-      detalleAbiertoConLink.current = false
-      router.back()
-      return
-    }
-    const params = new URLSearchParams(searchParams.toString())
-    params.delete('detalle')
-    const qs = params.toString()
-    router.replace(qs ? `${rutaBase}?${qs}` : rutaBase, { scroll: false })
-  }
+  // --- Detalle de un turno: modal con `?detalle=<id>&fecha=<fecha original>`, sin ruta propia.
+  const { detalle: detalleUrl, hrefDetalle, marcarAbiertoConLink, cerrar } = useDetalleEnUrl()
 
   // --- Limpiezas en cascada.
   const limpiarHoras = () => {
@@ -339,9 +322,7 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno }: RegistrarTurnoProps
     )
   }
 
-  const detalle = detalleId !== null && (
-    <TurnoDetalleModal turnoId={detalleId} onCerrar={cerrarDetalle} />
-  )
+  const detalle = detalleUrl !== null && renderDetalle({ ...detalleUrl, onCerrar: cerrar })
 
   if (resultado) {
     return (
@@ -350,9 +331,7 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno }: RegistrarTurnoProps
           alta={resultado.alta}
           pedido={resultado.pedido}
           hrefDetalle={hrefDetalle}
-          onVerDetalle={() => {
-            detalleAbiertoConLink.current = true
-          }}
+          onVerDetalle={marcarAbiertoConLink}
           onRegistrarOtro={() => reiniciar(false)}
           onRegistrarOtroMismoAlumno={() => reiniciar(true)}
         />

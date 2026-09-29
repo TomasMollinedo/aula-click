@@ -80,7 +80,7 @@ Next.js (App Router) + API con Hono/OpenAPI + Prisma (PostgreSQL) + Better Auth 
 
 - App: http://localhost:3000
 - API: http://localhost:3000/api/v1 — documentación Swagger en http://localhost:3000/api/v1/docs
-- Consola MinIO: http://localhost:9001 (usuario `minioadmin`, clave `minioadmin123`)
+- Consola MinIO: http://localhost:9011 (usuario `minioadmin`, clave `minioadmin123`)
 
 > Las credenciales de MinIO y de Postgres que aparecen en este README y en `.env.example` son **solo para desarrollo local**. Nunca usarlas en un entorno compartido o de producción.
 
@@ -139,4 +139,4 @@ La fuente de las reglas (capas, errores, autenticación, tests, reglas de domini
 
 - No commitear el `.env`.
 - Si pnpm muestra `ERR_PNPM_IGNORED_BUILDS`, ejecutar `pnpm approve-builds`.
-- Postgres y MinIO se publican solo en `127.0.0.1`. Postgres usa el puerto **5434** del host (no el 5432) para no chocar con un Postgres instalado localmente; el `DATABASE_URL` de `.env.example` ya apunta ahí. Si también está ocupado, cambiar el mapeo en `docker-compose.yml` y el puerto en el `DATABASE_URL`.
+- Postgres y MinIO se publican solo en `127.0.0.1`. Postgres usa el puerto **5440** del host y MinIO los **9010** (API S3) y **9011** (consola), no los por defecto (5432, 9000, 9001), para no chocar con otros Postgres o MinIO locales; el `DATABASE_URL` y el `S3_ENDPOINT` de `.env.example` ya apuntan ahí. Si alguno también está ocupado, cambiar el mapeo en `docker-compose.yml` y el puerto en el `DATABASE_URL` (o en el `S3_ENDPOINT`).
