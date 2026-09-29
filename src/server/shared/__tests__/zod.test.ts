@@ -8,6 +8,8 @@ import {
   fechaISO,
   horaAMinutos,
   horaHHmm,
+  IMPORTE_MAX,
+  importe,
   minutosAHora,
   nombrePersona,
   opcional,
@@ -342,5 +344,30 @@ describe('rangoHorasEnPunto', () => {
     expect(issues(parcial.safeParse({ horaInicio: '14:30' }))).toEqual([
       { path: ['horaInicio'], message: 'Debe ser una hora en punto (por ejemplo 14:00)' },
     ])
+  })
+})
+
+describe('importe', () => {
+  const monto = importe('El monto')
+
+  it.each([8000, 8000.5, 8000.25, 1.13, 0.01, IMPORTE_MAX])('acepta %s tal cual', (valor) => {
+    expect(monto.parse(valor)).toBe(valor)
+  })
+
+  it.each([
+    [0, 'El monto debe ser mayor a 0'],
+    [-5, 'El monto debe ser mayor a 0'],
+    [100.005, 'El monto puede tener hasta dos decimales'],
+    [1e-7, 'El monto puede tener hasta dos decimales'],
+    [100_000_000, `El monto no puede superar ${IMPORTE_MAX}`],
+    ['8000', 'Debe ser un número'],
+  ])('rechaza %s con el mensaje en español', (valor, esperado) => {
+    expect(mensaje(monto.safeParse(valor))).toBe(esperado)
+  })
+
+  it('se puede hacer opcional y nullable', () => {
+    const opcionalNulo = monto.nullable().optional()
+    expect(opcionalNulo.parse(null)).toBeNull()
+    expect(opcionalNulo.parse(undefined)).toBeUndefined()
   })
 })

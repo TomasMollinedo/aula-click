@@ -125,7 +125,16 @@ A completar por T-49.
 
 ## Pagos
 
-A completar por T-51.
+HU-15 (T-51). El modelo (un pago de un alumno con una o varias ocurrencias, comprobante correlativo, forma de pago "Efectivo", precio vigente) está en [Pagos](#pagos) más arriba; acá van las reglas del cobro.
+
+- **Qué se puede cobrar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), con estado `AGENDADO` o `SIN_REGISTRAR` (las canceladas no) y pago `PENDIENTE`. Pasadas o futuras.
+- **Tope de 8 semanas:** una ocurrencia futura, de una serie o una sesión única, se cobra sólo hasta hoy + 56 días. Las pasadas no tienen tope (T-60).
+- **Precio vigente:** el importe de cada ocurrencia es el precio por hora de su materia al registrar el pago (no lo manda el cliente). Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
+- **Todo o nada:** si alguna ocurrencia no se puede cobrar, no se registra ninguna y la API informa cuáles y por qué (no existe, cancelada, ya pagada, fuera de las 8 semanas o sin precio). Dos pagos simultáneos de la misma ocurrencia: sólo uno se registra.
+- **Fecha de pago:** obligatoria, hoy o anterior.
+- **Monto recibido y vuelto:** el monto recibido es opcional; si se informa, tiene que ser >= el total. El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**.
+- **Comprobante:** muestra los datos **actuales** de cada turno (si una ocurrencia pagada se reprograma, reimprimirlo muestra la fecha, la hora y el profesor nuevos) y el importe que se cobró, que no cambia (T-63). La numeración es correlativa pero puede tener huecos (T-62).
+- Los importes, el total y el vuelto los calcula siempre la API; la UI sólo los muestra.
 
 ## Deuda
 
