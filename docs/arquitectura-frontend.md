@@ -184,6 +184,39 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx` y `profesor-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
 - **Menú de usuario** (avatar, nombre, rol y un menú con "Cerrar sesión"): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` por props, armado en el layout del segmento.
 
+## Documentos imprimibles
+
+Patrón común para los documentos oficiales que se guardan como PDF desde el diálogo de impresión del navegador, en A4 y sin el sidebar ni los botones de la app.
+
+- **`components/impresion/datos-centro.ts`**: nombre, dirección, teléfono y logo (`public/logo-centro.svg`) del centro, como constantes — vienen precargados, sin pantalla para editarlos (HU-11). Hoy son valores de ejemplo: pedir los datos reales a las PO antes de producción.
+- **`components/impresion/DocumentoOficial.tsx`**: el encabezado común (logo, datos del centro, título, quién emite y la fecha/hora de emisión del navegador, con `date-fns`) más el contenido propio de cada documento, que llega por `children`.
+- **`app/impresion.css`** (importado una sola vez en `app/layout.tsx`): fija `@page { size: A4 }` con márgenes, y en `@media print` oculta todo lo marcado con el atributo `data-no-imprimir` — así en la vista previa de impresión solo queda el documento. `app-shell.tsx` marca su `<aside>` (el Sidebar) con ese atributo.
+- **`hooks/use-imprimir.ts`**: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez, apenas `listo` pasa a `true` (cuando los datos del documento ya cargaron desde la API).
+- Cada documento concreto (comprobante, turno, agenda) es su propia ruta (por ejemplo `/mesa/pagos/[id]/comprobante`), sin el layout del segmento de rol (para que el Sidebar no aparezca ni siquiera antes de imprimir), que arma su Client Component con estos tres elementos:
+
+  ```tsx
+  'use client'
+
+  import { DocumentoOficial } from '@/components/impresion/DocumentoOficial'
+  import { useImprimirCuandoEsteListo } from '@/hooks/use-imprimir'
+
+  export function ComprobantePage() {
+    const { data, isLoading } = useComprobante(id) // hook de la feature
+
+    useImprimirCuandoEsteListo(!isLoading && !!data)
+
+    if (isLoading || !data) return null // nada que imprimir todavía
+
+    return (
+      <DocumentoOficial titulo="Comprobante de pago" emitidoPor={data.emitidoPor}>
+        {/* contenido propio del comprobante */}
+      </DocumentoOficial>
+    )
+  }
+  ```
+
+- No se agrega ninguna dependencia nueva: se usa el diálogo de impresión nativo del navegador (`window.print()`), no una librería de generación de PDF.
+
 ## Datos: Server y Client Components
 
 - Las páginas de `app/` pueden ser Server Components, pero **solo componen**: renderizan componentes de `features/` y `components/`.
