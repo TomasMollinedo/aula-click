@@ -86,7 +86,8 @@ function raizDelPath(d: unknown): unknown {
 function campoDelPath(raiz: unknown, tipo: TipoTurno): CampoErrorTurno | null {
   switch (raiz) {
     case 'bloqueIds':
-    case 'motivoConsulta':
+    case 'observaciones':
+    case 'temas':
       return raiz
     case 'fechaInicio':
     case 'fechaFin':

@@ -9,7 +9,8 @@ import type { HoraDisponible, TurnoCrear } from './turnos.types'
 // el campo. `alumnoId`, `materiaId` y `bloqueIds` no son campos: salen de la selección.
 
 const FECHA_FORMATO = /^\d{4}-\d{2}-\d{2}$/
-const MAX_MOTIVO = 500
+export const MAX_OBSERVACIONES = 500
+export const MAX_TEMAS = 500
 
 /** Fecha `YYYY-MM-DD` válida (mismo criterio que `fechaNacimiento` de alumnos). */
 const fechaFormatoSchema = z
@@ -36,37 +37,57 @@ const fechaOpcionalSchema = z
   .optional()
   .pipe(z.union([z.literal(''), fechaFormatoSchema]).optional())
 
-const motivoConsultaSchema = z
-  .string()
-  .max(MAX_MOTIVO, { message: `No puede superar los ${MAX_MOTIVO} caracteres` })
-  .optional()
-  .or(z.literal(''))
+const textoOpcionalSchema = (max: number) =>
+  z
+    .string()
+    .max(max, { message: `No puede superar los ${max} caracteres` })
+    .optional()
+    .or(z.literal(''))
+
+const observacionesSchema = textoOpcionalSchema(MAX_OBSERVACIONES)
+
+/** Recurrente: los temas son opcionales. */
+const temasOpcionalSchema = textoOpcionalSchema(MAX_TEMAS)
+
+/** Sesión única: los temas son obligatorios (la API también lo exige, con un 400 en `temas`). */
+const temasObligatoriosSchema = z
+  .string({ message: 'Campo obligatorio' })
+  .max(MAX_TEMAS, { message: `No puede superar los ${MAX_TEMAS} caracteres` })
+  .refine((v) => v.trim().length > 0, { message: 'Los temas a trabajar son obligatorios' })
 
 export const turnoFormSchema = z.discriminatedUnion('tipo', [
   z.object({
     tipo: z.literal('SESION_UNICA'),
     fecha: fechaSchema,
-    motivoConsulta: motivoConsultaSchema,
+    observaciones: observacionesSchema,
+    temas: temasObligatoriosSchema,
   }),
   z.object({
     tipo: z.literal('RECURRENTE'),
     fechaInicio: fechaSchema,
     fechaFin: fechaOpcionalSchema,
-    motivoConsulta: motivoConsultaSchema,
+    observaciones: observacionesSchema,
+    temas: temasOpcionalSchema,
   }),
 ])
 
 export type TurnoFormValues = z.input<typeof turnoFormSchema>
 
 /** Campos del formulario que un 400 de la API puede marcar (según el tipo, están unos u otros). */
-export const CAMPOS_TURNO_FORM = ['fecha', 'fechaInicio', 'fechaFin', 'motivoConsulta'] as const
+export const CAMPOS_TURNO_FORM = [
+  'fecha',
+  'fechaInicio',
+  'fechaFin',
+  'observaciones',
+  'temas',
+] as const
 
 export type CampoTurnoForm = (typeof CAMPOS_TURNO_FORM)[number]
 
 /** Valores iniciales de cada tipo, para el alta y para cambiar de tipo sin arrastrar campos. */
 export const TURNO_FORM_VACIO = {
-  RECURRENTE: { tipo: 'RECURRENTE', fechaInicio: '', fechaFin: '', motivoConsulta: '' },
-  SESION_UNICA: { tipo: 'SESION_UNICA', fecha: '', motivoConsulta: '' },
+  RECURRENTE: { tipo: 'RECURRENTE', fechaInicio: '', fechaFin: '', observaciones: '', temas: '' },
+  SESION_UNICA: { tipo: 'SESION_UNICA', fecha: '', observaciones: '', temas: '' },
 } as const satisfies Record<TurnoFormValues['tipo'], TurnoFormValues>
 
 /** Lo que sale de la búsqueda: el alumno, la materia y las horas tildadas de un bloque. */
@@ -78,8 +99,8 @@ export type SeleccionTurno = {
 
 /**
  * Body del `POST /turnos` a partir de la selección y del formulario. En una sesión única la fecha
- * va como `fechaInicio` (sin `fechaFin`); un recurrente sin fin manda `fechaFin: null`. El motivo
- * vacío (o solo espacios) no se manda. Los `bloqueIds` van ordenados por hora.
+ * va como `fechaInicio` (sin `fechaFin`); un recurrente sin fin manda `fechaFin: null`. Las observaciones
+ * y los temas vacíos (o solo espacios) no se mandan. Los `bloqueIds` van ordenados por hora.
  */
 export function armarTurnoCrear(
   seleccion: SeleccionTurno,
@@ -90,7 +111,8 @@ export function armarTurnoCrear(
   const bloqueIds = [...seleccion.horas]
     .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio))
     .map((hora) => hora.bloqueId)
-  const motivo = valores.motivoConsulta?.trim()
+  const observaciones = valores.observaciones?.trim()
+  const temas = valores.temas?.trim()
 
   const fechas =
     valores.tipo === 'SESION_UNICA'
@@ -103,7 +125,8 @@ export function armarTurnoCrear(
     bloqueIds,
     tipo: valores.tipo,
     ...fechas,
-    ...(motivo ? { motivoConsulta: motivo } : {}),
+    ...(observaciones ? { observaciones } : {}),
+    ...(temas ? { temas } : {}),
     asignarDondeHayLugar,
   }
 }

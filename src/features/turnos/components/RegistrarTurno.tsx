@@ -82,7 +82,7 @@ function ResumenBloque({ bloque }: { bloque: BloqueDisponible }) {
 
 /**
  * Pantalla de registrar turno (HU-07): una sola pantalla con secciones que se habilitan en orden
- * (alumno → horario → horas → tipo, fechas y motivo). Cambiar algo de arriba limpia lo de abajo que
+ * (alumno → horario → horas → tipo, fechas y temas). Cambiar algo de arriba limpia lo de abajo que
  * depende de eso. No calcula reglas: la ocupación, `lleno`, las fechas y los rechazos vienen de la
  * API; los errores se interpretan en `errores-turnos.ts`.
  */
@@ -240,11 +240,11 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno, renderDetalle }: Regi
     setAvisoBusqueda(null)
     limpiarHoras()
     // La fecha propuesta es la del resultado: la próxima ocurrencia que devolvió la API.
-    const { tipo, motivoConsulta = '' } = form.getValues()
+    const { tipo, observaciones = '', temas = '' } = form.getValues()
     form.reset(
       tipo === 'SESION_UNICA'
-        ? { tipo, fecha: bloque.fecha, motivoConsulta }
-        : { tipo, fechaInicio: bloque.fecha, fechaFin: '', motivoConsulta },
+        ? { tipo, fecha: bloque.fecha, observaciones, temas }
+        : { tipo, fechaInicio: bloque.fecha, fechaFin: '', observaciones, temas },
     )
   }
 
@@ -430,7 +430,7 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno, renderDetalle }: Regi
 
       <SeccionPaso
         numero={4}
-        titulo="Tipo, fechas y motivo"
+        titulo="Tipo, fechas y temas"
         bloqueada={!pasoHorasHabilitado}
         textoBloqueada={alumno ? 'Elegí un horario de la búsqueda.' : 'Primero elegí un alumno.'}
       >
