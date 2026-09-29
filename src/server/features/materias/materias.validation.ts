@@ -10,6 +10,41 @@ import { textoOpcional, textoRequerido } from '@/server/shared/zod'
 
 const NOMBRE_MAX = 100
 const DESCRIPCION_MAX = 500
+// Tope de `Decimal(10,2)`: 8 dígitos enteros y 2 decimales. Uno mayor desbordaría la columna.
+const PRECIO_MAX = 99_999_999.99
+// Se valida sobre `String(valor)`, la representación más corta que vuelve al mismo número
+// (`1.13` → `"1.13"`): multiplicar por 100 falla con floats (`1.13 * 100 = 112.99999999999999`).
+// `1.005` o `1e-7` no pasan: tienen más de dos decimales.
+const PRECIO_FORMATO = /^\d+(\.\d{1,2})?$/
+
+/**
+ * Precio por hora de clase (HU-12), en pesos: número JSON mayor a 0 con hasta dos decimales. No
+ * acepta `null`: desde la API una materia nunca queda sin precio. Viaja a Prisma como texto
+ * (`materias.repository`), así el `Decimal` no pasa por un float (decisión T-46).
+ */
+const precioHoraEntrada = z
+  .number({ error: 'Debe ser un número' })
+  .positive({ error: 'El precio debe ser mayor a 0' })
+  .max(PRECIO_MAX, { error: `El precio no puede superar ${PRECIO_MAX}` })
+  .refine((valor) => PRECIO_FORMATO.test(String(valor)), {
+    error: 'El precio puede tener hasta dos decimales',
+  })
+  .openapi({
+    description: 'Precio por hora de clase en pesos: mayor a 0, con hasta dos decimales',
+    example: 8000.5,
+  })
+
+/** Precio en las respuestas: `null` solo en materias anteriores a HU-12 ("Sin precio"). */
+const precioSalida = {
+  precioHora: z.number().nullable().openapi({
+    description: 'Precio por hora en pesos, con hasta dos decimales. `null`: sin precio',
+    example: 8000.5,
+  }),
+  sinPrecio: z.boolean().openapi({
+    description: 'No tiene precio cargado: queda inactiva hasta que el gerente se lo cargue',
+    example: false,
+  }),
+}
 
 /** Valores del filtro `estado` del listado: los de `Estado` más `TODOS` (sin filtrar). */
 export const ESTADOS_FILTRO = [...ESTADOS, 'TODOS'] as const
@@ -55,6 +90,7 @@ export const materiaListadoItemSchema = z
     nombre: z.string(),
     // Va en el ítem porque con `estado=TODOS` el listado mezcla activas e inactivas.
     estado: z.enum(ESTADOS),
+    ...precioSalida,
   })
   .openapi('MateriaListadoItem')
 
@@ -86,10 +122,24 @@ export const crearMateriaSchema = z
       'Descripción de la materia',
       'Álgebra y análisis para el ciclo básico',
     ),
+    precioHora: precioHoraEntrada,
   })
   .openapi('MateriaCrear')
 
 export type CrearMateria = z.infer<typeof crearMateriaSchema>
+
+/**
+ * Edición parcial: lo omitido no cambia. `nombre` y `precioHora` no aceptan `null`; `descripcion`
+ * sí (la borra). Un body sin ningún campo conocido responde 400.
+ */
+export const editarMateriaSchema = crearMateriaSchema
+  .partial()
+  .refine((cambios) => Object.values(cambios).some((valor) => valor !== undefined), {
+    error: 'Debe enviar al menos un campo',
+  })
+  .openapi('MateriaEditar')
+
+export type EditarMateria = z.infer<typeof editarMateriaSchema>
 
 /**
  * Profesor que dicta la materia, para el detalle. Es la forma de salida del `ProfesorDeMateria`
@@ -113,6 +163,7 @@ export const materiaDetalleSchema = z
     nombre: z.string(),
     descripcion: z.string().nullable(),
     estado: z.enum(ESTADOS),
+    ...precioSalida,
     profesores: z.array(materiaProfesorSchema).openapi({
       description:
         'Profesores con una asignación activa a esta materia, ordenados por apellido y nombre',
