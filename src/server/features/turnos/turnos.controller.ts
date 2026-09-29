@@ -5,16 +5,7 @@ import { materiasRepository } from '@/server/features/materias/materias.reposito
 import { profesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { AppEnv } from '@/server/router'
 import { turnosRepository } from './turnos.repository'
-import type {
-  crearTurnoRoute,
-  disponibilidadRoute,
-  listarAgendaProfesorRoute,
-  listarAgendaPropiaRoute,
-  listarAgendaRoute,
-  listarAulasConTurnoRoute,
-  listarMateriasConTurnoRoute,
-  obtenerTurnoRoute,
-} from './turnos.routes'
+import type { crearTurnoRoute, disponibilidadRoute, obtenerTurnoRoute } from './turnos.routes'
 import { crearTurnosService } from './turnos.service'
 
 // Recibe el dato ya validado, llama al service y arma la respuesta (201, 204...).
@@ -29,27 +20,6 @@ const turnosService = crearTurnosService({
   profesoresRepository,
   materiasRepository,
 })
-
-export const listarAgenda: RouteHandler<typeof listarAgendaRoute, AppEnv> = async (c) =>
-  c.json(await turnosService.listarAgenda(c.req.valid('query')), 200)
-
-// El profesor sale del Actor de la sesión: nunca de un parámetro (HU-10).
-export const listarAgendaPropia: RouteHandler<typeof listarAgendaPropiaRoute, AppEnv> = async (c) =>
-  c.json(await turnosService.listarAgendaPropia(c.req.valid('query'), c.get('actor')), 200)
-
-export const listarAgendaDeProfesor: RouteHandler<
-  typeof listarAgendaProfesorRoute,
-  AppEnv
-> = async (c) => c.json(await turnosService.listarAgendaDeProfesor(c.req.valid('query')), 200)
-
-export const listarMateriasConTurno: RouteHandler<
-  typeof listarMateriasConTurnoRoute,
-  AppEnv
-> = async (c) => c.json(await turnosService.listarMateriasConTurno(c.req.valid('query')), 200)
-
-export const listarAulasConTurno: RouteHandler<typeof listarAulasConTurnoRoute, AppEnv> = async (
-  c,
-) => c.json(await turnosService.listarAulasConTurno(c.req.valid('query')), 200)
 
 export const disponibilidad: RouteHandler<typeof disponibilidadRoute, AppEnv> = async (c) =>
   c.json(await turnosService.disponibilidad(c.req.valid('query')), 200)
