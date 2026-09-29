@@ -169,6 +169,13 @@ async function main() {
     })
   }
 
+  // Una materia sin precio no se ofrece hasta que el gerente le cargue uno y la reactive (HU-12).
+  // Lo hace el seed y no la migración (decisión T-50: migraciones sólo generadas por Prisma).
+  const sinPrecio = await prisma.materia.updateMany({
+    where: { precioHora: null, estado: 'ACTIVO' },
+    data: { estado: 'INACTIVO', updatedById: gerente.id },
+  })
+
   for (const { nombre, capacidad } of AULAS) {
     await prisma.aula.upsert({
       where: { nombre },
@@ -187,7 +194,8 @@ async function main() {
 
   console.log(
     `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias, ` +
-      `${AULAS.length} aulas y ${FORMAS_PAGO.length} forma(s) de pago.`,
+      `${AULAS.length} aulas y ${FORMAS_PAGO.length} forma(s) de pago; ` +
+      `${sinPrecio.count} materia(s) sin precio pasadas a INACTIVO.`,
   )
 }
 

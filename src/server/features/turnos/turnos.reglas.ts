@@ -6,6 +6,7 @@ import { minutosAHora } from '@/server/shared/zod'
 import type {
   FechasSinTurno,
   PlanReserva,
+  SerieFechas,
   SnapshotReserva,
   TipoTurno,
   TurnoDelAlumno,
@@ -13,8 +14,9 @@ import type {
   TurnoNuevo,
 } from './turnos.validation'
 
-// Reglas puras de turnos (docs/dominio.md → Turnos): qué turno ocupa lugar en una fecha, qué
-// fechas de una hora están llenas y cómo se parte un recurrente en tramos, y la decisión de una
+// Reglas puras de turnos (docs/dominio.md → Turnos): las fechas de una serie, su fin efectivo, qué
+// ocurrencia ocupa lugar, su estado y el horizonte de un cálculo sin fin (el motor de
+// `ocurrencias.condiciones.ts` las usa y no las reescribe), qué fechas de una hora están llenas y cómo se parte un recurrente en tramos, y la decisión de una
 // reserva a partir de lo leído bajo lock. Sin Prisma y sin `hoy()`: las fechas son `YYYY-MM-DD`
 // (la comparación de textos es la de fechas). Los mensajes y códigos de error viven acá: ni el
 // repository ni el service los reescriben.
@@ -63,13 +65,67 @@ function sumarDias(fecha: string, dias: number): string {
   return dateAFecha(new Date(fechaADate(fecha).getTime() + dias * MS_POR_DIA))
 }
 
+/** Días de calendario de `desde` a `hasta` (negativo si `hasta` es anterior). */
+function diasEntre(desde: string, hasta: string): number {
+  return Math.round((fechaADate(hasta).getTime() - fechaADate(desde).getTime()) / MS_POR_DIA)
+}
+
 // ---------------------------------------------------------------------------------------------
-// Ocupación
+// Series y ocurrencias (docs/convenciones-backend.md → Ocurrencias)
 // ---------------------------------------------------------------------------------------------
 
+/** Estados de una ocurrencia (definición F de las PO): sólo estos tres. */
+export const ESTADOS_OCURRENCIA = ['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR'] as const
+export type EstadoOcurrencia = (typeof ESTADOS_OCURRENCIA)[number]
+
 /**
- * El turno está `ACTIVO` y tiene al menos una fecha en `[inicio, fin]` (`fin` `null` = sin fin).
- * Equivale a `condicionTurnoSeCruzaCon` de `turnos.repository` (hay un test que lo fija).
+ * **Fin efectivo** de una serie (definición C de las PO, decisión T-48): el menor entre `fechaFin`
+ * (`null` = sin fin) y el día anterior a `finalizacion.fechaDesde`, si hay finalización. Finalizar
+ * no modifica `fechaFin`: esta cuenta es la única que la combina.
+ */
+export function finEfectivo(
+  turno: { fechaFin: string | null },
+  finalizacion?: { fechaDesde: string } | null,
+): string | null {
+  if (!finalizacion) return turno.fechaFin
+  const tope = sumarDias(finalizacion.fechaDesde, -1)
+  return turno.fechaFin === null || tope < turno.fechaFin ? tope : turno.fechaFin
+}
+
+/** Primera fecha de la serie (`fechaInicio`, `fechaInicio + 7`, …) que es `>= desde`. */
+function primeraFechaDesde(fechaInicio: string, desde: string): string {
+  if (fechaInicio >= desde) return fechaInicio
+  return sumarDias(fechaInicio, Math.ceil(diasEntre(fechaInicio, desde) / 7) * 7)
+}
+
+/**
+ * Fechas de la serie dentro de `[desde, hasta]`: `fechaInicio`, `fechaInicio + 7`, … hasta el fin
+ * efectivo, **incluidas las canceladas** (una ocurrencia cancelada sigue existiendo, con su estado).
+ * Todas caen en el día de la semana de su fila, porque `fechaInicio` cae en él. Acotada por
+ * `hasta`: nunca itera sin límite.
+ */
+export function fechasDeLaSerie(
+  serie: Pick<SerieFechas, 'fechaInicio' | 'finEfectivo'>,
+  desde: string,
+  hasta: string,
+): string[] {
+  const fin = serie.finEfectivo !== null && serie.finEfectivo < hasta ? serie.finEfectivo : hasta
+  const fechas: string[] = []
+  for (
+    let fecha = primeraFechaDesde(serie.fechaInicio, desde);
+    fecha <= fin;
+    fecha = sumarDias(fecha, 7)
+  ) {
+    fechas.push(fecha)
+  }
+  return fechas
+}
+
+/**
+ * El turno está `ACTIVO` y tiene al menos una fecha en `[inicio, fin]` (`fin` `null` = sin fin),
+ * mirando sólo el rango guardado. Es el **prefiltro** de las lecturas: equivale a
+ * `condicionTurnoSeCruzaCon` (hay un test que lo fija). Si una fecha ocupa lugar lo decide
+ * `ocupaLugarEn`, con el fin efectivo y las canceladas.
  */
 export function seCruzaCon(turno: TurnoFechas, inicio: string, fin: string | null): boolean {
   return (
@@ -80,32 +136,105 @@ export function seCruzaCon(turno: TurnoFechas, inicio: string, fin: string | nul
 }
 
 /**
- * **Turno que ocupa lugar** en `fecha` (una sola condición para los dos tipos): `ACTIVO`,
- * `fechaInicio <= fecha` y `fechaFin` nula o `>= fecha`. Una sesión única es el caso
- * `fechaInicio = fechaFin`. Se combina con el `bloqueAgendaId` de la fila. Equivale a
- * `condicionTurnoOcupaLugar` de `turnos.repository`.
+ * **Ocurrencia que ocupa lugar** en `fecha` (una sola condición para los dos tipos): serie
+ * `ACTIVO`, `fechaInicio <= fecha`, fin efectivo nulo o `>= fecha` y `fecha` no cancelada. Una
+ * pagada o pasada ocupa lugar igual. Se combina con el `bloqueAgendaId` de la fila (todas sus
+ * series caen en el mismo día de la semana). Un turno `CANCELADO` (datos anteriores al Sprint 2)
+ * no ocupa lugar.
  */
-export function ocupaLugarEn(turno: TurnoFechas, fecha: string): boolean {
-  return seCruzaCon(turno, fecha, fecha)
+export function ocupaLugarEn(serie: SerieFechas, fecha: string): boolean {
+  return (
+    serie.estado === 'ACTIVO' &&
+    serie.fechaInicio <= fecha &&
+    (serie.finEfectivo === null || serie.finEfectivo >= fecha) &&
+    !serie.canceladas.includes(fecha)
+  )
 }
 
 /**
- * Mayor cantidad de `turnos` (de una misma hora) que ocupan lugar en una misma fecha, desde
+ * Estado de una ocurrencia (definición F): `CANCELADO` si está cancelada; si no, `SIN_REGISTRAR`
+ * si su fecha es anterior a `hoy` (la asistencia es del próximo sprint), y `AGENDADO` si es de hoy
+ * en adelante.
+ */
+export function estadoDeOcurrencia(
+  fecha: string,
+  cancelada: boolean,
+  hoy: string,
+): EstadoOcurrencia {
+  if (cancelada) return 'CANCELADO'
+  return fecha < hoy ? 'SIN_REGISTRAR' : 'AGENDADO'
+}
+
+/**
+ * Primera ocurrencia **que ocupa lugar** de la serie dentro de `[desde, hasta]` (`hasta` `null` =
+ * sin límite; el fin efectivo acota igual), o `null` si no hay ninguna. Saltea las canceladas: como
+ * son finitas, itera a lo sumo una vez por cada una, aunque la serie no tenga fin.
+ *
+ * Es la regla completa de **turno vigente** (`primeraFechaLibre(serie, hoy, null) !== null`) y de
+ * la superposición del alumno (la primera fecha en la que la serie choca con un pedido del mismo
+ * día y hora).
+ */
+export function primeraFechaLibre(
+  serie: SerieFechas,
+  desde: string,
+  hasta: string | null,
+): string | null {
+  if (serie.estado !== 'ACTIVO') return null
+  const fin =
+    hasta === null
+      ? serie.finEfectivo
+      : serie.finEfectivo === null || hasta < serie.finEfectivo
+        ? hasta
+        : serie.finEfectivo
+  const canceladas = new Set(serie.canceladas)
+  let fecha = primeraFechaDesde(serie.fechaInicio, desde)
+  while (canceladas.has(fecha)) fecha = sumarDias(fecha, 7)
+  return fin === null || fecha <= fin ? fecha : null
+}
+
+/**
+ * **Horizonte** `H` de un cálculo sin fin (docs/convenciones-backend.md → Ocurrencias): la mayor
+ * fecha finita que interviene: `desde` (el inicio del pedido), las `fechaInicio`, los fines
+ * efectivos no nulos y las fechas canceladas. Después de `H` la situación es constante: sólo
+ * quedan las series sin fin efectivo y ya no hay cancelaciones. Se evalúa fecha por fecha hasta
+ * `H` y lo que sigue se resuelve en una sola cuenta.
+ */
+export function horizonte(series: readonly SerieFechas[], desde: string): string {
+  let h = desde
+  for (const serie of series) {
+    if (serie.fechaInicio > h) h = serie.fechaInicio
+    if (serie.finEfectivo !== null && serie.finEfectivo > h) h = serie.finEfectivo
+    for (const cancelada of serie.canceladas) if (cancelada > h) h = cancelada
+  }
+  return h
+}
+
+/**
+ * Mayor cantidad de `series` (de una misma hora) que ocupan lugar en una misma fecha, desde
  * `desde` (la próxima ocurrencia de su día, hoy incluido) en adelante: `{ fecha, cantidad }` de la
- * primera fecha con esa ocupación, o `null` si ninguno ocupa lugar desde ahí. La ocupación solo
- * sube cuando empieza un turno, así que alcanza con evaluar `desde` y cada `fechaInicio`
- * posterior (todas caen en el día de la hora): no se itera fecha por fecha.
+ * primera fecha con esa ocupación, o `null` si ninguna ocupa lugar desde ahí. La ocupación solo
+ * sube cuando empieza una serie o en la semana siguiente a una fecha cancelada, así que alcanza
+ * con evaluar `desde`, cada `fechaInicio` posterior y cada `cancelada + 7` posterior (todas caen
+ * en el día de la hora): no se itera fecha por fecha, aunque un fin sea lejano.
  */
 export function ocupacionMaxima(
-  turnos: readonly TurnoFechas[],
+  series: readonly SerieFechas[],
   desde: string,
 ): { fecha: string; cantidad: number } | null {
   const candidatas = [
-    ...new Set([desde, ...turnos.map((t) => t.fechaInicio).filter((f) => f > desde)]),
-  ].sort()
+    ...new Set([
+      desde,
+      ...series.flatMap((serie) => [
+        serie.fechaInicio,
+        ...serie.canceladas.map((cancelada) => sumarDias(cancelada, 7)),
+      ]),
+    ]),
+  ]
+    .filter((fecha) => fecha >= desde)
+    .sort()
   let maxima: { fecha: string; cantidad: number } | null = null
   for (const fecha of candidatas) {
-    const cantidad = turnos.filter((turno) => ocupaLugarEn(turno, fecha)).length
+    const cantidad = series.filter((serie) => ocupaLugarEn(serie, fecha)).length
     if (cantidad > 0 && (maxima === null || cantidad > maxima.cantidad)) {
       maxima = { fecha, cantidad }
     }
@@ -130,12 +259,12 @@ export type AnalisisHora = {
  * Qué fechas de una hora están llenas para un pedido de `inicio` a `fin` (`null` = recurrente
  * sin fin; en una sesión única, `fin = inicio`) y en qué tramos se puede crear el turno. Las
  * ocurrencias son `inicio`, `inicio + 7`, … hasta `fin`; una fecha está llena si los `existentes`
- * que ocupan lugar en ella son `>= capacidad`.
+ * que ocupan lugar en ella (`ocupaLugarEn`: descuenta las canceladas y respeta el fin efectivo)
+ * son `>= capacidad`.
  *
- * No itera sin límite: sea `H` la mayor fecha finita entre `inicio` y las `fechaInicio` y
- * `fechaFin` no nulas de los existentes. Después de `H` la ocupación es constante (los existentes
- * sin fin). Se evalúa fecha por fecha hasta `min(fin, H)` y lo que queda después de `H` (la
- * **cola**) se resuelve en una sola cuenta:
+ * No itera sin límite: `H = horizonte(existentes, inicio)`. Después de `H` la ocupación es
+ * constante (las series sin fin efectivo, sin cancelaciones). Se evalúa fecha por fecha hasta
+ * `min(fin, H)` y lo que queda después de `H` (la **cola**) se resuelve en una sola cuenta:
  * - Si `fin <= H` no hay cola: todas las fechas llenas van a `fechasLlenas` y `completoDesde` es
  *   `null`.
  * - Cola llena: `completoDesde` es la primera fecha desde la cual todas las siguientes están
@@ -143,7 +272,7 @@ export type AnalisisHora = {
  *   fechas no se repiten en `fechasLlenas`. Vale igual con `fin` finito o sin fin.
  * - Cola con lugar: el último tramo queda abierto hasta `fin` (que puede ser `null`).
  *
- * `existentes` son los turnos de esa fila que se cruzan con el pedido; los que no están `ACTIVO`
+ * `existentes` son las series de esa fila que se cruzan con el pedido; las que no están `ACTIVO`
  * no cuentan.
  */
 export function analizarHora({
@@ -153,7 +282,7 @@ export function analizarHora({
   fin,
 }: {
   capacidad: number
-  existentes: readonly TurnoFechas[]
+  existentes: readonly SerieFechas[]
   inicio: string
   fin: string | null
 }): AnalisisHora {
@@ -161,16 +290,12 @@ export function analizarHora({
     return { fechasLlenas: [], completoDesde: null, tramos: [], sinLugar: true }
   }
 
-  let horizonte = inicio
-  for (const turno of existentes) {
-    if (turno.fechaInicio > horizonte) horizonte = turno.fechaInicio
-    if (turno.fechaFin !== null && turno.fechaFin > horizonte) horizonte = turno.fechaFin
-  }
-  const limite = fin !== null && fin < horizonte ? fin : horizonte
+  const h = horizonte(existentes, inicio)
+  const limite = fin !== null && fin < h ? fin : h
 
   const evaluadas: { fecha: string; llena: boolean }[] = []
   for (let fecha = inicio; fecha <= limite; fecha = sumarDias(fecha, 7)) {
-    const ocupacion = existentes.filter((turno) => ocupaLugarEn(turno, fecha)).length
+    const ocupacion = existentes.filter((serie) => ocupaLugarEn(serie, fecha)).length
     evaluadas.push({ fecha, llena: ocupacion >= capacidad })
   }
 
@@ -178,7 +303,7 @@ export function analizarHora({
   const siguiente = sumarDias(evaluadas.at(-1)?.fecha ?? inicio, 7)
   const hayCola = fin === null || siguiente <= fin
   const ocupacionCola = existentes.filter(
-    (turno) => turno.estado === 'ACTIVO' && turno.fechaFin === null,
+    (serie) => serie.estado === 'ACTIVO' && serie.finEfectivo === null,
   ).length
   const colaLlena = hayCola && ocupacionCola >= capacidad
 
@@ -211,60 +336,6 @@ export function analizarHora({
   }
 
   return { fechasLlenas, completoDesde, tramos, sinLugar: tramos.length === 0 }
-}
-
-// ---------------------------------------------------------------------------------------------
-// Agenda de un rango de fechas (HU-10)
-// ---------------------------------------------------------------------------------------------
-
-/** Días que puede abarcar un rango de agenda, extremos incluidos (decisión T-43). */
-export const MAX_DIAS_AGENDA = 31
-
-export const MENSAJE_RANGO_INVERTIDO = '`hasta` no puede ser anterior a `desde`'
-export const MENSAJE_RANGO_MAXIMO = `El rango no puede superar los ${MAX_DIAS_AGENDA} días`
-
-/**
- * El rango `[desde, hasta]` está en orden y no supera `MAX_DIAS_AGENDA` días (extremos incluidos);
- * si no, 400 en `hasta`. Se valida acá y no en el schema porque los dos extremos pueden venir de
- * un default que depende de hoy (`desde` sin mandar es hoy; `hasta` sin mandar es `desde`).
- */
-export function validarRangoAgenda(desde: string, hasta: string): void {
-  if (hasta < desde) {
-    throw new ValidationError(MENSAJE_RANGO_INVERTIDO, {
-      details: [{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }],
-    })
-  }
-  const dias = (fechaADate(hasta).getTime() - fechaADate(desde).getTime()) / MS_POR_DIA + 1
-  if (dias > MAX_DIAS_AGENDA) {
-    throw new ValidationError(MENSAJE_RANGO_MAXIMO, {
-      details: [{ path: ['hasta'], message: MENSAJE_RANGO_MAXIMO }],
-    })
-  }
-}
-
-/**
- * Ocurrencias de cada turno dentro de `[desde, hasta]`: una entrada por cada fecha del rango en la
- * que el turno **ocupa lugar** (`ocupaLugarEn`, la misma condición que la agenda diaria de T-23) y
- * que cae en el día de la semana de su fila. Una sesión única aparece una vez; un recurrente, una
- * vez por semana mientras su rango cubra la fecha.
- *
- * Recorre el rango fecha por fecha (acotado por `validarRangoAgenda`), así cada día resuelve
- * exactamente igual que `GET /turnos/agenda` para esa fecha. Dentro de cada fecha conserva el
- * orden en que vienen los turnos (el repository ya los trae por hora e id).
- */
-export function expandirOcurrencias<T extends TurnoFechas & { diaSemana: number }>(
-  turnos: readonly T[],
-  desde: string,
-  hasta: string,
-): { fecha: string; turno: T }[] {
-  const ocurrencias: { fecha: string; turno: T }[] = []
-  for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 1)) {
-    const dia = diaSemanaISO(fecha)
-    for (const turno of turnos) {
-      if (turno.diaSemana === dia && ocupaLugarEn(turno, fecha)) ocurrencias.push({ fecha, turno })
-    }
-  }
-  return ocurrencias
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -434,7 +505,7 @@ function mensajeHora(
  * 1. Filas que dejaron de estar activas o cambiaron de día o de profesor (404 / 400, como en el
  *    service), fechas fuera del día, profesor inexistente o inactivo (409 `PROFESOR_INACTIVO`),
  *    materia inexistente, inactiva o sin asignación activa (404 / 409).
- * 2. Alumno con un turno que se superpone (mismo día y hora, rangos que se cruzan) → 409
+ * 2. Alumno con un turno que se superpone (mismo día y hora, en alguna fecha que ocupa lugar) → 409
  *    `ALUMNO_SUPERPUESTO`. Rechazo total: ninguna bandera lo saltea.
  * 3. `analizarHora` por cada hora pedida, con la capacidad efectiva `min(profesor, aula)`.
  * 4. Alguna hora sin lugar en ninguna fecha → 409 `BLOQUE_LLENO`, aunque venga la bandera.
@@ -467,12 +538,11 @@ export function planificarReserva(snapshot: SnapshotReserva, pedido: PedidoReser
   })
   const horasPedidas = new Set(elegidas.map((fila) => fila.horaInicio))
 
-  // 2. Superposición del alumno.
+  // 2. Superposición del alumno. `turnosAlumno` ya chocan con el pedido en alguna fecha que ocupa
+  // lugar (`superposicionesDelAlumno`, leído con el rango de horas pedido): acá se quedan los de
+  // alguna hora elegida (las horas pueden no ser contiguas).
   const superpuestos = snapshot.turnosAlumno.filter(
-    (turno) =>
-      turno.diaSemana === diaSemana &&
-      horasPedidas.has(turno.horaInicio) &&
-      seCruzaCon(turno, fechaInicio, fechaFin),
+    (turno) => turno.diaSemana === diaSemana && horasPedidas.has(turno.horaInicio),
   )
   if (superpuestos.length > 0) {
     throw new ConflictError(MENSAJE_ALUMNO_SUPERPUESTO, {
