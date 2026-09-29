@@ -224,6 +224,7 @@ export function crearTurnosService({
         fechaInicio: datos.fechaInicio,
         fechaFin,
         observaciones: datos.observaciones ?? null,
+        temas: datos.temas ?? null,
         asignarDondeHayLugar: datos.asignarDondeHayLugar,
       }
       const { turnos, fechasSinTurno } = await repository.reservar(

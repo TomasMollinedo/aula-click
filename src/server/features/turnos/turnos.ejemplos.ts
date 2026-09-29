@@ -41,6 +41,7 @@ export const ejemploAltaRecurrente = {
   fechaInicio: '2026-10-05',
   fechaFin: '2026-11-30',
   observaciones: 'Repaso de funciones',
+  temas: 'Funciones cuadráticas',
   asignarDondeHayLugar: false,
 } satisfies CrearTurno
 
@@ -50,6 +51,7 @@ export const ejemploAltaSesionUnica = {
   bloqueIds: [10, 12],
   tipo: 'SESION_UNICA',
   fechaInicio: '2026-10-05',
+  temas: 'Repaso general antes del examen',
   asignarDondeHayLugar: false,
 } satisfies CrearTurno
 
@@ -68,6 +70,7 @@ export const ejemploDetalle = {
   materia: { id: 3, nombre: 'Matemática' },
   aula: { id: 3, nombre: 'Aula 3' },
   observaciones: 'Repaso de funciones',
+  temas: 'Funciones cuadráticas',
   createdAt: '2026-09-24T13:45:00.000Z',
   updatedAt: '2026-09-24T13:45:00.000Z',
   createdBy: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },

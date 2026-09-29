@@ -151,6 +151,7 @@ function detalle(turno: TurnoEnBase): TurnoDetalle {
     materia: { id: turno.materiaId, nombre: 'Matemática' },
     aula: { id: 3, nombre: 'Aula 3' },
     observaciones: null,
+    temas: null,
     createdAt: '2026-09-22T15:00:00.000Z',
     updatedAt: '2026-09-22T15:00:00.000Z',
     createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },

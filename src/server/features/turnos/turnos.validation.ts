@@ -17,6 +17,7 @@ export type EstadoTurno = (typeof ESTADOS_TURNO)[number]
 
 const MAX_HORAS_TURNO = 24
 const MAX_OBSERVACIONES = 500
+const MAX_TEMAS = 500
 
 function idQuery(name: string, description: string, example: number) {
   return z.coerce
@@ -114,8 +115,10 @@ export const disponibilidadSchema = z.array(disponibilidadItemSchema)
 // Alta
 // ---------------------------------------------------------------------------------------------
 
-// T-29 renombró la columna motivo_consulta a observaciones; "temas a trabajar" lo agrega T-41.
+// T-29 renombró la columna motivo_consulta a observaciones; "temas a trabajar" lo agrega HU-08
+// (Sprint 2): opcional en RECURRENTE, obligatorio en SESION_UNICA (ver el superRefine de abajo).
 const observaciones = textoOpcional(MAX_OBSERVACIONES, 'Observaciones', 'Repaso de funciones')
+const temas = textoOpcional(MAX_TEMAS, 'Temas a trabajar', 'Fracciones y ecuaciones')
 
 /**
  * Body de `POST /turnos`. Formato solamente: que las filas existan, sean del mismo profesor y día,
@@ -163,6 +166,7 @@ export const crearTurnoSchema = z
       .nullable()
       .optional(),
     observaciones,
+    temas,
     asignarDondeHayLugar: z
       .boolean({ error: 'Debe ser verdadero o falso' })
       .default(false)
@@ -173,6 +177,13 @@ export const crearTurnoSchema = z
       }),
   })
   .superRefine((datos, ctx) => {
+    if (datos.tipo === 'SESION_UNICA' && (datos.temas === null || datos.temas === undefined)) {
+      ctx.addIssue({
+        code: 'custom',
+        message: 'Los temas a trabajar son obligatorios en una sesión única',
+        path: ['temas'],
+      })
+    }
     if (datos.fechaFin === undefined || datos.fechaFin === null) return
     if (datos.tipo === 'SESION_UNICA' && datos.fechaFin !== datos.fechaInicio) {
       ctx.addIssue({
@@ -231,6 +242,7 @@ export const turnoDetalleSchema = z
     materia: z.object({ id: z.number().int(), nombre: z.string() }).openapi('TurnoMateria'),
     aula: aulaResumenSchema,
     observaciones: z.string().nullable(),
+    temas: z.string().nullable(),
     ...auditoriaSchema.shape,
   })
   .openapi('TurnoDetalle')
@@ -397,6 +409,7 @@ export type TurnoNuevo = {
   fechaInicio: string
   fechaFin: string | null
   observaciones: string | null
+  temas: string | null
 }
 
 /** Lo que decide `planificar`: qué insertar y qué fechas quedaron sin turno. */
