@@ -1,37 +1,49 @@
 import type { ReactNode } from 'react'
 import { format } from 'date-fns'
-import { MousePointer2 } from 'lucide-react'
 
-import { DATOS_CENTRO } from './datos-centro'
+/** El logo lo sirve la API (misma sesión); el front no tiene una copia en `public/`. */
+const LOGO_CENTRO = '/api/v1/centro/logo'
 
 /**
- * Encabezado común de los documentos oficiales imprimibles (HU-11, HU-15): la misma marca del
- * Sidebar (ícono + `bg-dorado`, ver `components/layout/sidebar-logo.tsx`) y los datos del centro,
- * el título del documento, quién lo emite y la fecha y hora de emisión (del navegador, no del
- * servidor). El contenido propio de cada documento (comprobante, turno, agenda) va en `children`.
- * Pensado para una página con su propia ruta que use `useImprimirCuandoEsteListo`
- * (ver `docs/arquitectura-frontend.md` → Documentos imprimibles).
+ * Encabezado común de los documentos oficiales imprimibles (HU-11, HU-15): logo y datos del
+ * centro, el título del documento, quién lo emite y la fecha y hora de emisión (del navegador, no
+ * del servidor). El contenido propio de cada documento (comprobante, turno, agenda) va en `children`.
+ *
+ * `centro` llega por props porque `components/` no puede importar de `features/` (ESLint): lo pide
+ * con `useCentro()` quien arma el documento. `onLogoListo` se llama cuando el logo terminó de
+ * cargar (o falló), para no imprimir un encabezado sin logo.
+ * Ver `docs/arquitectura-frontend.md` → Documentos imprimibles.
  */
 export function DocumentoOficial({
   titulo,
   emitidoPor,
+  centro,
+  onLogoListo,
   children,
 }: {
   titulo: string
   emitidoPor: string
+  centro: { nombre: string; direccion: string; telefono: string }
+  onLogoListo?: () => void
   children: ReactNode
 }) {
   return (
     <article className="mx-auto max-w-[190mm] p-10 text-black">
       <header className="mb-8 flex items-start justify-between gap-6 border-b border-black/20 pb-4">
-        <div className="flex items-center gap-3">
-          <span className="bg-dorado flex size-10 shrink-0 items-center justify-center rounded-lg">
-            <MousePointer2 className="size-5 fill-white text-white" />
-          </span>
+        <div className="flex items-center gap-4">
+          {/* <img> y no next/image: es una imagen de la API detrás de la sesión, sin optimizar. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={LOGO_CENTRO}
+            alt={centro.nombre}
+            className="h-16 w-auto shrink-0"
+            onLoad={onLogoListo}
+            onError={onLogoListo}
+          />
           <div className="text-sm">
-            <p className="font-semibold">{DATOS_CENTRO.nombre}</p>
-            <p className="text-black/70">{DATOS_CENTRO.direccion}</p>
-            <p className="text-black/70">{DATOS_CENTRO.telefono}</p>
+            <p className="font-semibold">{centro.nombre}</p>
+            <p className="text-black/70">{centro.direccion}</p>
+            <p className="text-black/70">{centro.telefono}</p>
           </div>
         </div>
         <div className="text-right text-xs text-black/70">

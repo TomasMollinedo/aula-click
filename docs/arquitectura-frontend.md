@@ -188,27 +188,39 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 
 Patrón común para los documentos oficiales que se guardan como PDF desde el diálogo de impresión del navegador, en A4 y sin el sidebar ni los botones de la app.
 
-- **`components/impresion/datos-centro.ts`**: nombre, dirección, teléfono y logo (`public/logo-centro.svg`) del centro, como constantes — vienen precargados, sin pantalla para editarlos (HU-11). Hoy son valores de ejemplo: pedir los datos reales a las PO antes de producción.
-- **`components/impresion/DocumentoOficial.tsx`**: el encabezado común (logo, datos del centro, título, quién emite y la fecha/hora de emisión del navegador, con `date-fns`) más el contenido propio de cada documento, que llega por `children`.
+- **Datos y logo del centro: los da la API** (T-64), precargados y sin pantalla para editarlos (HU-11). El front no tiene constantes del centro ni el logo en `public/`.
+  - **`features/centro/`**: `useCentro()` pide `GET /api/v1/centro` (nombre, dirección y teléfono) con `staleTime: Infinity`, porque casi no cambian.
+  - El logo se muestra con `<img src="/api/v1/centro/logo">` (misma sesión, sin fetch propio).
+- **`components/impresion/DocumentoOficial.tsx`**: `DocumentoOficial({ titulo, emitidoPor, centro, onLogoListo, children })`, el encabezado común (logo, datos del centro, título, quién emite y la fecha/hora de emisión del navegador, con `date-fns`) más el contenido propio de cada documento, que llega por `children`. Recibe `centro` por props: `components/` no puede importar de `features/` (ESLint), así que `useCentro()` lo llama quien arma el documento. `onLogoListo` se llama en el `onLoad`/`onError` del logo.
 - **`app/impresion.css`** (importado una sola vez en `app/layout.tsx`): fija `@page { size: A4 }` con márgenes, y en `@media print` oculta todo lo marcado con el atributo `data-no-imprimir` — así en la vista previa de impresión solo queda el documento. `app-shell.tsx` marca su `<aside>` (el Sidebar) con ese atributo.
-- **`hooks/use-imprimir.ts`**: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez, apenas `listo` pasa a `true` (cuando los datos del documento ya cargaron desde la API).
-- Cada documento concreto (comprobante, turno, agenda) es su propia ruta (por ejemplo `/mesa/pagos/[id]/comprobante`), sin el layout del segmento de rol (para que el Sidebar no aparezca ni siquiera antes de imprimir), que arma su Client Component con estos tres elementos:
+- **`hooks/use-imprimir.ts`**: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez, apenas `listo` pasa a `true`. `listo` incluye los datos del documento, los del centro y que el logo haya terminado de cargar, para que no salga un encabezado sin logo.
+- Cada documento concreto (comprobante, turno, agenda) es su propia ruta (`/…/imprimir` o `/…/comprobante`, por ejemplo `/mesa/pagos/[id]/comprobante`), sin el layout del segmento de rol (para que el Sidebar no aparezca ni siquiera antes de imprimir), que arma su Client Component con `useCentro`, `DocumentoOficial` y `useImprimirCuandoEsteListo`:
 
   ```tsx
   'use client'
 
+  import { useState } from 'react'
+
   import { DocumentoOficial } from '@/components/impresion/DocumentoOficial'
+  import { useCentro } from '@/features/centro/hooks/use-centro'
   import { useImprimirCuandoEsteListo } from '@/hooks/use-imprimir'
 
   export function ComprobantePage() {
-    const { data, isLoading } = useComprobante(id) // hook de la feature
+    const { data } = useComprobante(id) // hook de la feature
+    const { data: centro } = useCentro()
+    const [logoListo, setLogoListo] = useState(false)
 
-    useImprimirCuandoEsteListo(!isLoading && !!data)
+    useImprimirCuandoEsteListo(!!data && !!centro && logoListo)
 
-    if (isLoading || !data) return null // nada que imprimir todavía
+    if (!data || !centro) return null // nada que imprimir todavía
 
     return (
-      <DocumentoOficial titulo="Comprobante de pago" emitidoPor={data.emitidoPor}>
+      <DocumentoOficial
+        titulo="Comprobante de pago"
+        emitidoPor={data.emitidoPor}
+        centro={centro}
+        onLogoListo={() => setLogoListo(true)}
+      >
         {/* contenido propio del comprobante */}
       </DocumentoOficial>
     )
