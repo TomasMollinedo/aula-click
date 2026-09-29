@@ -2,10 +2,11 @@
 
 import { use } from 'react'
 
-import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
+import { FichaAlumno } from '@/app/mesa/_componentes/ficha-alumno'
 
-// El detalle es una página (no un modal): "Editar" abre la edición como modal encima de ella.
+// El detalle es una página (no un modal): "Editar" abre la edición como modal encima de ella. Las
+// cuatro pestañas de la ficha las compone FichaAlumno.
 export default function DetalleAlumnoPage({ params }: PageProps<'/mesa/alumnos/[alumnoId]'>) {
   const { alumnoId } = use(params)
-  return <AlumnoDetalle alumnoId={alumnoId} rutaBase="/mesa/alumnos" />
+  return <FichaAlumno alumnoId={alumnoId} />
 }
