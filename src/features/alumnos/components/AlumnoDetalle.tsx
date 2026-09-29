@@ -1,19 +1,17 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
-import { format, parseISO } from 'date-fns'
+import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle,
-  AlertTriangle,
   ArrowLeft,
-  GraduationCap,
-  IdCard,
-  NotebookPen,
+  CalendarClock,
+  ClipboardList,
   Pencil,
-  Phone,
   SearchX,
   UserRound,
-  type LucideIcon,
+  Wallet,
 } from 'lucide-react'
 
 import { PageHeader } from '@/components/layout/page-header'
@@ -22,13 +20,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Dato, Datos } from '@/components/ui/datos'
 import { Skeleton } from '@/components/ui/skeleton'
-import { Trazabilidad } from '@/components/ui/trazabilidad'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 
 import { parsearAlumnoId } from '../alumnos.schema'
-import { type AlumnoDetalle as AlumnoDetalleType, NIVEL_ESCOLARIDAD_LABEL } from '../alumnos.types'
+import type { AlumnoDetalle as AlumnoDetalleType } from '../alumnos.types'
 import { useAlumno } from '../hooks/use-alumno'
+import { DatosAlumno } from './DatosAlumno'
 
 type AlumnoDetalleProps = {
   /** `alumnoId` tal como llega en la URL. */
@@ -41,13 +39,52 @@ type AlumnoDetalleProps = {
    * Default `true` (mesa de entradas, que no cambia).
    */
   puedeEditar?: boolean
+  /**
+   * Contenido de las pestañas "Turnos", "Exámenes" y "Pagos". Las compone `app/` con componentes
+   * de otras features (`ocurrencias`, `examenes`, `cuentas`), porque una feature no importa
+   * componentes de otra (docs/arquitectura-frontend.md → Quién importa a quién). Una pestaña
+   * aparece solo si su prop está: cada rol arma la ficha que le corresponde. "Datos" siempre está.
+   */
+  renderTurnos?: (alumno: AlumnoDetalleType) => ReactNode
+  renderExamenes?: (alumno: AlumnoDetalleType) => ReactNode
+  renderPagos?: (alumno: AlumnoDetalleType) => ReactNode
 }
 
-// Página de detalle del alumno, con tabs. "Editar" abre la edición como modal encima de esta página
-// (slot @modal); docs/arquitectura-frontend.md → Modales con URL propia.
-export function AlumnoDetalle({ alumnoId, rutaBase, puedeEditar = true }: AlumnoDetalleProps) {
+const TABS = ['datos', 'turnos', 'examenes', 'pagos'] as const
+type Tab = (typeof TABS)[number]
+
+// Página de detalle del alumno, con tabs en la URL (`?tab=datos|turnos|examenes|pagos`, como la del
+// profesor). "Editar" abre la edición como modal encima de esta página (slot @modal);
+// docs/arquitectura-frontend.md → Modales con URL propia.
+export function AlumnoDetalle({
+  alumnoId,
+  rutaBase,
+  puedeEditar = true,
+  renderTurnos,
+  renderExamenes,
+  renderPagos,
+}: AlumnoDetalleProps) {
   const id = parsearAlumnoId(alumnoId)
   const { data: alumno, isLoading, isError, error, refetch } = useAlumno(id ?? 0)
+  const searchParams = useSearchParams()
+  const router = useRouter()
+  const rutaDetalle = `${rutaBase}/${alumnoId}`
+
+  // Las pestañas que este rol puede ver; un `?tab=` que no está entre ellas cae en "Datos".
+  const disponibles: Record<Tab, boolean> = {
+    datos: true,
+    turnos: renderTurnos !== undefined,
+    examenes: renderExamenes !== undefined,
+    pagos: renderPagos !== undefined,
+  }
+  const tabParam = searchParams.get('tab') as Tab | null
+  const tab: Tab =
+    tabParam !== null && TABS.includes(tabParam) && disponibles[tabParam] ? tabParam : 'datos'
+  // replace: cambiar de tab no suma entradas al historial (Atrás sale del detalle).
+  const cambiarTab = (valor: string) =>
+    router.replace(valor === 'datos' ? rutaDetalle : `${rutaDetalle}?tab=${valor}`, {
+      scroll: false,
+    })
 
   const volver = (
     <Link
@@ -136,123 +173,47 @@ export function AlumnoDetalle({ alumnoId, rutaBase, puedeEditar = true }: Alumno
         }
       />
 
-      {/*
-        Existió acá una tab "Turnos" (con Tabs/TabsList/TabsTrigger/TabsContent y un ícono
-        CalendarClock, más un EmptyState "Función en construcción" con el ícono Construction),
-        oculta a propósito hasta que HU-07/turnos del alumno esté implementado: no hay endpoint
-        que devuelva los turnos de un alumno todavía. Vale para los dos roles que ven este
-        componente (mesa de entradas y, desde que GET /alumnos/{id} admite PROFESOR, el profesor).
-        Cuando se implemente, se vuelve a envolver `DatosAlumno` en un Tabs con esa segunda tab
-        (ver el historial de este archivo para el JSX exacto que se sacó).
-      */}
-      <DatosAlumno alumno={alumno} />
-    </div>
-  )
-}
+      {/* Una sola pestaña no se envuelve en tabs (ver docs/arquitectura-frontend.md → Modales con URL propia). */}
+      {TABS.filter((t) => disponibles[t]).length === 1 ? (
+        <DatosAlumno alumno={alumno} />
+      ) : (
+        <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
+          {/* Con cuatro tabs, en mobile la barra se desplaza sola en lugar de desbordar la página. */}
+          <div className="max-w-full overflow-x-auto">
+            <TabsList>
+              <TabsTrigger value="datos" className="px-4">
+                <UserRound />
+                Datos del alumno
+              </TabsTrigger>
+              {renderTurnos && (
+                <TabsTrigger value="turnos" className="px-4">
+                  <CalendarClock />
+                  Turnos
+                </TabsTrigger>
+              )}
+              {renderExamenes && (
+                <TabsTrigger value="examenes" className="px-4">
+                  <ClipboardList />
+                  Exámenes
+                </TabsTrigger>
+              )}
+              {renderPagos && (
+                <TabsTrigger value="pagos" className="px-4">
+                  <Wallet />
+                  Pagos
+                </TabsTrigger>
+              )}
+            </TabsList>
+          </div>
 
-function DatosAlumno({ alumno }: { alumno: AlumnoDetalleType }) {
-  const tieneDatosTutor = [
-    alumno.tutorNombre,
-    alumno.tutorApellido,
-    alumno.tutorDni,
-    alumno.tutorTelefono,
-    alumno.tutorEmail,
-  ].some(Boolean)
-  // Mismo criterio que el formulario: el tutor corresponde a un menor; un mayor que conserva datos
-  // de tutor (docs/dominio.md) también los ve.
-  const mostrarTutor = alumno.menorDeEdad || tieneDatosTutor
-  const faltanDatosTutor =
-    alumno.menorDeEdad &&
-    (!alumno.tutorNombre || !alumno.tutorApellido || !alumno.tutorTelefono || !alumno.tutorEmail)
-
-  return (
-    <div className="space-y-6">
-      {faltanDatosTutor && (
-        <Alert variant="destructive">
-          <AlertTriangle className="size-4" />
-          <AlertDescription className="text-destructive">
-            El alumno es menor de edad y faltan datos del tutor. Editá la ficha para completarlos.
-          </AlertDescription>
-        </Alert>
+          <TabsContent value="datos">
+            <DatosAlumno alumno={alumno} />
+          </TabsContent>
+          {renderTurnos && <TabsContent value="turnos">{renderTurnos(alumno)}</TabsContent>}
+          {renderExamenes && <TabsContent value="examenes">{renderExamenes(alumno)}</TabsContent>}
+          {renderPagos && <TabsContent value="pagos">{renderPagos(alumno)}</TabsContent>}
+        </Tabs>
       )}
-
-      <div className="grid gap-6 lg:grid-cols-2">
-        <Seccion icon={IdCard} titulo="Datos identificatorios">
-          <Datos>
-            <Dato label="Nombre" valor={alumno.nombre} />
-            <Dato label="Apellido" valor={alumno.apellido} />
-            <Dato label="DNI" valor={alumno.dni} />
-            <Dato
-              label="Fecha de nacimiento"
-              valor={format(parseISO(alumno.fechaNacimiento), 'dd/MM/yyyy')}
-            />
-          </Datos>
-        </Seccion>
-
-        <Seccion icon={Phone} titulo="Contacto">
-          <Datos>
-            <Dato label="Teléfono" valor={alumno.telefono} />
-            <Dato label="Email" valor={alumno.email} />
-          </Datos>
-        </Seccion>
-
-        {mostrarTutor && (
-          <Seccion icon={UserRound} titulo="Tutor o responsable">
-            <Datos>
-              <Dato label="Nombre" valor={alumno.tutorNombre} />
-              <Dato label="Apellido" valor={alumno.tutorApellido} />
-              <Dato label="DNI" valor={alumno.tutorDni} />
-              <Dato label="Teléfono" valor={alumno.tutorTelefono} />
-              <Dato label="Email" valor={alumno.tutorEmail} />
-            </Datos>
-          </Seccion>
-        )}
-
-        <Seccion icon={GraduationCap} titulo="Datos escolares">
-          <Datos>
-            <Dato
-              label="Nivel"
-              valor={
-                alumno.nivelEscolaridad ? NIVEL_ESCOLARIDAD_LABEL[alumno.nivelEscolaridad] : null
-              }
-            />
-            <Dato label="Grado o año" valor={alumno.grado} />
-            <Dato label="Colegio / institución" valor={alumno.institucionEducativa} />
-          </Datos>
-        </Seccion>
-
-        <Seccion icon={NotebookPen} titulo="Observaciones" className="lg:col-span-2">
-          <p className="text-sm whitespace-pre-line">
-            {alumno.observaciones ?? (
-              <span className="text-muted-foreground">Sin observaciones</span>
-            )}
-          </p>
-        </Seccion>
-      </div>
-
-      <Trazabilidad auditoria={alumno} />
     </div>
-  )
-}
-
-function Seccion({
-  icon: Icon,
-  titulo,
-  className,
-  children,
-}: {
-  icon: LucideIcon
-  titulo: string
-  className?: string
-  children: React.ReactNode
-}) {
-  return (
-    <Card className={className}>
-      <h2 className="flex items-center gap-2 font-semibold">
-        <Icon className="text-cobalto size-4" />
-        {titulo}
-      </h2>
-      {children}
-    </Card>
   )
 }
