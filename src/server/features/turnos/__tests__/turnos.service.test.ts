@@ -142,7 +142,7 @@ function detalle(turno: TurnoEnBase): TurnoDetalle {
     },
     materia: { id: turno.materiaId, nombre: 'Matemática' },
     aula: { id: 3, nombre: 'Aula 3' },
-    motivoConsulta: null,
+    observaciones: null,
     createdAt: '2026-09-22T15:00:00.000Z',
     updatedAt: '2026-09-22T15:00:00.000Z',
     createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
@@ -538,7 +538,7 @@ const resumen = (t: TurnoDetalle) => [t.bloqueId, t.tipo, t.fechaInicio, t.fecha
 
 describe('crear: caminos felices', () => {
   it('sesión única: un turno con fechaFin = fechaInicio, ACTIVO', async () => {
-    const alta = await service.crear({ ...SESION, motivoConsulta: 'Repaso' }, actor)
+    const alta = await service.crear({ ...SESION, observaciones: 'Repaso' }, actor)
 
     expect(alta.cantidad).toBe(1)
     expect(alta.turnos.map(resumen)).toEqual([[11, 'SESION_UNICA', '2026-10-05', '2026-10-05']])
@@ -548,7 +548,7 @@ describe('crear: caminos felices', () => {
         estado: 'ACTIVO',
         alumnoId: 12,
         materiaId: 3,
-        motivoConsulta: 'Repaso',
+        observaciones: 'Repaso',
       }),
     ])
   })

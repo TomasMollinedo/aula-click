@@ -379,7 +379,7 @@ export type PedidoReserva = {
   fechaInicio: string
   /** `null` = recurrente sin fin. En una sesión única se ignora (se usa `fechaInicio`). */
   fechaFin: string | null
-  motivoConsulta: string | null
+  observaciones: string | null
   asignarDondeHayLugar: boolean
 }
 
@@ -538,7 +538,7 @@ export function planificarReserva(snapshot: SnapshotReserva, pedido: PedidoReser
       estado: 'ACTIVO' as const,
       fechaInicio: tramo.fechaInicio,
       fechaFin: tipo === 'SESION_UNICA' ? tramo.fechaInicio : tramo.fechaFin,
-      motivoConsulta: pedido.motivoConsulta,
+      observaciones: pedido.observaciones,
     })),
   )
   const fechasSinTurno: FechasSinTurno[] = horas

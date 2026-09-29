@@ -419,7 +419,7 @@ describe('reservar', () => {
         estado: 'ACTIVO',
         fechaInicio: '2026-10-05',
         fechaFin: '2026-10-19',
-        motivoConsulta: null,
+        observaciones: null,
       },
       {
         bloqueAgendaId: 10,
@@ -429,7 +429,7 @@ describe('reservar', () => {
         estado: 'ACTIVO',
         fechaInicio: '2026-11-02',
         fechaFin: null,
-        motivoConsulta: null,
+        observaciones: null,
       },
     ],
     fechasSinTurno: [
@@ -624,7 +624,7 @@ describe('buscarDetalle', () => {
       estado: 'ACTIVO',
       fechaInicio: d('2026-10-05'),
       fechaFin: null,
-      motivoConsulta: null,
+      observaciones: null,
       bloqueAgendaId: 10,
       bloqueAgenda: {
         diaSemana: 1,
@@ -655,7 +655,7 @@ describe('buscarDetalle', () => {
       profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
       materia: { id: 3, nombre: 'Matemática' },
       aula: { id: 3, nombre: 'Aula 3' },
-      motivoConsulta: null,
+      observaciones: null,
       createdAt: '2026-09-24T13:45:00.000Z',
       updatedAt: '2026-09-24T13:45:00.000Z',
       createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
