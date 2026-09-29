@@ -35,6 +35,19 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - Un profesor dado de baja se puede reactivar: vuelve a `ACTIVO`, puede iniciar sesión de nuevo, vuelve a aparecer en el listado por defecto y queda disponible para agendar turnos, con sus materias y bloques intactos. La reactivación no revalida nada.
 - **Capacidad del profesor** (T-27, HU-02): entero obligatorio, mínimo 1. Es la cantidad máxima de alumnos que atiende a la vez en una franja de una hora; es un dato del profesor, no del bloque. No se puede bajar a un valor menor que la **ocupación simultánea máxima** del profesor en alguna hora de sus bloques desde hoy: la mayor cantidad de turnos que ocupan lugar en esa hora en una misma fecha (la misma cuenta que controla `BLOQUE_LLENO`; dos tramos de un mismo recurrente no suman, porque nunca coinciden en una fecha). Igualarla sí se puede. Si no se cumple, se rechaza con `CAPACIDAD_INSUFICIENTE`, indicando la hora, la fecha y la cantidad (T-15, T-40).
 
+## Materias
+
+HU-12 (T-39). Reemplaza a HU-04 en cuanto a quién administra el catálogo.
+
+- **Quién:** alta, edición, baja y reactivación son **solo del gerente**. Mesa de entradas lista, busca y ve el detalle (con el precio y los profesores asignados), pero no escribe, cualquiera sea el precio. Asignar y quitar materias a un profesor (HU-05) sigue siendo de mesa de entradas: HU-12 cambia quién administra el catálogo, no quién arma el plantel.
+- **Datos:** nombre y precio por hora de clase son obligatorios; la descripción es opcional. El nombre es único sin distinguir mayúsculas ni tildes.
+- **Precio por hora:** importe en pesos, mayor a 0, con hasta dos decimales. Se exige en el alta y no se puede borrar al editar: toda materia creada o editada desde el sistema tiene precio.
+- **Materias sin precio:** solo las anteriores a HU-12. Al migrar quedaron inactivas y el listado las marca "Sin precio". No se ofrecen para asignar a profesores ni para registrar turnos hasta que el gerente les carga el precio (se pueden editar estando inactivas) y las reactiva. Por eso **toda materia activa tiene precio**, y siempre hay un importe para cobrar sus turnos.
+- **Edición:** nombre, descripción y precio, con las mismas validaciones del alta. Cambiar el precio no modifica los pagos ya registrados ni el importe de los turnos ya cobrados: rige para los cobros que se registren desde ese momento (ver Pagos).
+- **Baja:** lógica. Solo si la materia no tiene profesores con una asignación activa; si los tiene, se rechaza con `MATERIA_CON_PROFESORES` indicando cuántos y cuáles.
+- **Reactivación:** vuelve la materia a activa y disponible para asignar a profesores y registrar turnos. Una materia sin precio no se reactiva (`MATERIA_SIN_PRECIO`): primero hay que cargarle el precio.
+- El detalle muestra quién creó la materia y quién la modificó por última vez, con fecha y hora (ver Auditoría).
+
 ## Aulas
 
 - Catálogo cargado por el seed; sin alta, edición ni baja en este release (HU-05): sólo lectura.

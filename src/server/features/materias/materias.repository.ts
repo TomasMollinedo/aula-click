@@ -7,6 +7,7 @@ import type { Estado } from '@/server/shared/estado'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import type {
   CrearMateria,
+  EditarMateria,
   MateriaConEstado,
   MateriaGuardada,
   MateriaSelectorItem,
@@ -33,6 +34,29 @@ const MENSAJE_NO_ENCONTRADA = 'Materia no encontrada'
 // Nombre del índice único que genera Prisma para `Materia.busqueda` (ver la migración inicial).
 const INDICE_BUSQUEDA = 'materia_busqueda_key'
 
+/**
+ * Único punto donde el `Decimal(10,2)` de la base pasa a número JSON (decisión T-46). Con hasta
+ * dos decimales y el tope de la columna, `toNumber()` da el double más cercano, que se escribe
+ * igual que el decimal (`"8000.50"` → `8000.5`). `null` = materia anterior a HU-12, sin precio.
+ */
+function aPrecio(
+  precioHora: Prisma.Decimal | null,
+): Pick<MateriaGuardada, 'precioHora' | 'sinPrecio'> {
+  return {
+    precioHora: precioHora === null ? null : precioHora.toNumber(),
+    sinPrecio: precioHora === null,
+  }
+}
+
+/**
+ * Número ya validado (> 0, hasta dos decimales) → texto para Prisma, que lo parsea como decimal
+ * exacto. `String()` y no `toFixed()`: ya tiene como máximo dos decimales y no hay nada que redondear.
+ */
+function aDecimal<T extends { precioHora?: number }>(datos: T) {
+  const { precioHora, ...resto } = datos
+  return { ...resto, ...(precioHora === undefined ? {} : { precioHora: String(precioHora) }) }
+}
+
 function aGuardada(fila: FilaMateria): MateriaGuardada {
   const estado: MismosValores<Estado, EstadoPrisma> = fila.estado
   return {
@@ -40,7 +64,14 @@ function aGuardada(fila: FilaMateria): MateriaGuardada {
     nombre: fila.nombre,
     descripcion: fila.descripcion,
     estado,
+    ...aPrecio(fila.precioHora),
     ...armarAuditoria(fila),
+  }
+}
+
+function traducirNoEncontrada(error: unknown): void {
+  if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
+    throw new NotFoundError(MENSAJE_NO_ENCONTRADA, { cause: error })
   }
 }
 
@@ -76,6 +107,21 @@ function traducirNombreDuplicado(error: unknown): never {
   throw error
 }
 
+/** Baja o reactivación: solo cambia `estado`, con `updatedById` del actor. */
+async function cambiarEstado(id: number, estado: Estado, actor: Actor): Promise<MateriaGuardada> {
+  try {
+    const fila = await prisma.materia.update({
+      where: { id },
+      data: { estado, updatedById: actor.userId },
+      include: INCLUDE_AUDITORIA,
+    })
+    return aGuardada(fila)
+  } catch (error) {
+    traducirNoEncontrada(error)
+    throw error
+  }
+}
+
 export const materiasRepository = {
   /**
    * Página de materias cuya `busqueda` contiene **todos** los `terminos` (sin términos: todas),
@@ -94,15 +140,16 @@ export const materiasRepository = {
       AND: parametros.terminos.map((termino) => ({ busqueda: { contains: termino } })),
       ...(parametros.estado === undefined ? {} : { estado: parametros.estado }),
     } satisfies Prisma.MateriaWhereInput
-    const [data, total] = await prisma.$transaction([
+    const [filas, total] = await prisma.$transaction([
       prisma.materia.findMany({
         where,
-        select: { id: true, nombre: true, estado: true },
+        select: { id: true, nombre: true, estado: true, precioHora: true },
         orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
         ...calcularSkipTake(parametros),
       }),
       prisma.materia.count({ where }),
     ])
+    const data = filas.map(({ precioHora, ...fila }) => ({ ...fila, ...aPrecio(precioHora) }))
     return { data, meta: armarMeta(parametros, total) }
   },
 
@@ -112,6 +159,8 @@ export const materiasRepository = {
    */
   listarActivas(): Promise<MateriaSelectorItem[]> {
     return prisma.materia.findMany({
+      // No filtra por precio: toda materia activa lo tiene, porque la API lo exige en el alta y en
+      // la reactivación y no deja borrarlo (las anteriores a HU-12 sin precio quedaron inactivas).
       where: { estado: 'ACTIVO' },
       select: { id: true, nombre: true },
       orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
@@ -139,7 +188,7 @@ export const materiasRepository = {
   async crear(datos: CrearMateria & { busqueda: string }, actor: Actor): Promise<MateriaGuardada> {
     try {
       const fila = await prisma.materia.create({
-        data: { ...datos, createdById: actor.userId, updatedById: actor.userId },
+        data: { ...aDecimal(datos), createdById: actor.userId, updatedById: actor.userId },
         include: INCLUDE_AUDITORIA,
       })
       return aGuardada(fila)
@@ -149,23 +198,43 @@ export const materiasRepository = {
   },
 
   /**
-   * Baja lógica: `estado` a `INACTIVO` con `updatedById` del actor. Nada se borra.
-   * Inexistente → `NotFoundError` (el service ya la buscó: acá cubre la carrera entre los dos).
+   * Edición parcial (lo `undefined` no cambia; `descripcion: null` la borra) con `updatedById` del
+   * actor. Solo escribe la fila de la materia: los pagos guardan su propio importe.
+   * Inexistente → `NotFoundError`; nombre repetido → `ConflictError`.
    */
-  async darDeBaja(id: number, actor: Actor): Promise<MateriaGuardada> {
+  async actualizar(
+    id: number,
+    datos: EditarMateria & { busqueda?: string },
+    actor: Actor,
+  ): Promise<MateriaGuardada> {
     try {
       const fila = await prisma.materia.update({
         where: { id },
-        data: { estado: 'INACTIVO', updatedById: actor.userId },
+        data: { ...aDecimal(datos), updatedById: actor.userId },
         include: INCLUDE_AUDITORIA,
       })
       return aGuardada(fila)
     } catch (error) {
-      if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2025') {
-        throw new NotFoundError(MENSAJE_NO_ENCONTRADA, { cause: error })
-      }
-      throw error
+      traducirNoEncontrada(error)
+      traducirNombreDuplicado(error)
     }
+  },
+
+  /**
+   * Baja lógica: `estado` a `INACTIVO` con `updatedById` del actor. Nada se borra.
+   * Inexistente → `NotFoundError` (el service ya la buscó: acá cubre la carrera entre los dos).
+   */
+  async darDeBaja(id: number, actor: Actor): Promise<MateriaGuardada> {
+    return cambiarEstado(id, 'INACTIVO', actor)
+  },
+
+  /**
+   * Reactivación: `estado` a `ACTIVO` con `updatedById` del actor. Que tenga precio lo exige el
+   * service; como la API no deja borrar el precio, no hay carrera que lo invalide.
+   * Inexistente → `NotFoundError`.
+   */
+  async reactivar(id: number, actor: Actor): Promise<MateriaGuardada> {
+    return cambiarEstado(id, 'ACTIVO', actor)
   },
 }
 

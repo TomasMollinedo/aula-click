@@ -5,8 +5,10 @@ import { materiasRepository } from './materias.repository'
 import type {
   crearMateriaRoute,
   darDeBajaMateriaRoute,
+  editarMateriaRoute,
   listarMateriasRoute,
   obtenerMateriaRoute,
+  reactivarMateriaRoute,
   selectorMateriasRoute,
 } from './materias.routes'
 import { crearMateriasService } from './materias.service'
@@ -33,5 +35,14 @@ export const obtener: RouteHandler<typeof obtenerMateriaRoute, AppEnv> = async (
 export const crear: RouteHandler<typeof crearMateriaRoute, AppEnv> = async (c) =>
   c.json(await materiasService.crear(c.req.valid('json'), c.get('actor')), 201)
 
+export const editar: RouteHandler<typeof editarMateriaRoute, AppEnv> = async (c) =>
+  c.json(
+    await materiasService.editar(c.req.valid('param').id, c.req.valid('json'), c.get('actor')),
+    200,
+  )
+
 export const darDeBaja: RouteHandler<typeof darDeBajaMateriaRoute, AppEnv> = async (c) =>
   c.json(await materiasService.darDeBaja(c.req.valid('param').id, c.get('actor')), 200)
+
+export const reactivar: RouteHandler<typeof reactivarMateriaRoute, AppEnv> = async (c) =>
+  c.json(await materiasService.reactivar(c.req.valid('param').id, c.get('actor')), 200)

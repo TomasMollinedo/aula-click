@@ -5,6 +5,7 @@ import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda
 import type { MateriasRepository } from './materias.repository'
 import type {
   CrearMateria,
+  EditarMateria,
   ListarMateriasQuery,
   MateriaDetalle,
   MateriaGuardada,
@@ -15,9 +16,12 @@ import type {
 
 const MENSAJE_NO_ENCONTRADA = 'Materia no encontrada'
 const MENSAJE_CON_PROFESORES = 'No se puede dar de baja una materia con profesores asignados'
+const MENSAJE_SIN_PRECIO = 'La materia no tiene precio: cárguelo antes de reactivarla'
 
 /** Código del 409 al dar de baja una materia con asignaciones activas (`contrato-api.md`). */
 export const CODIGO_MATERIA_CON_PROFESORES = 'MATERIA_CON_PROFESORES'
+/** Código del 409 al reactivar una materia sin precio (`contrato-api.md`, HU-12). */
+export const CODIGO_MATERIA_SIN_PRECIO = 'MATERIA_SIN_PRECIO'
 
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
@@ -71,6 +75,26 @@ export function crearMateriasService({
     },
 
     /**
+     * Edición parcial de nombre, descripción y precio; también de una materia inactiva (así el
+     * gerente le carga el precio antes de reactivarla). Solo se escribe la materia: cambiar el
+     * precio no toca los pagos registrados, que guardan su importe (`dominio.md` → Materias).
+     */
+    async editar(id: number, cambios: EditarMateria, actor: Actor): Promise<MateriaDetalle> {
+      const actual = await repository.buscarPorId(id)
+      if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+
+      // Como en el alta: `busqueda` sigue al nombre, y el repository traduce el choque a 409.
+      const materia = await repository.actualizar(
+        id,
+        cambios.nombre === undefined
+          ? cambios
+          : { ...cambios, busqueda: normalizarBusqueda(cambios.nombre) },
+        actor,
+      )
+      return conProfesores(materia, await profesoresRepository.listarProfesoresDeMateria(id))
+    },
+
+    /**
      * Baja lógica. No se puede dar de baja una materia que tiene profesores asignados: se responde
      * 409 con el código específico y los profesores en `details`, para que la UI los liste
      * (`dominio.md` → Profesores y materias).
@@ -88,6 +112,24 @@ export function crearMateriasService({
       }
 
       return conProfesores(await repository.darDeBaja(id, actor), [])
+    },
+
+    /**
+     * Reactivación: vuelve a `ACTIVO` y queda disponible para asignar a profesores y registrar
+     * turnos. Una materia sin precio (anterior a HU-12) no se reactiva: 409 `MATERIA_SIN_PRECIO`,
+     * primero hay que cargarle el precio. Si ya estaba activa, no es un error (como en profesores).
+     */
+    async reactivar(id: number, actor: Actor): Promise<MateriaDetalle> {
+      const materia = await repository.buscarPorId(id)
+      if (!materia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+      if (materia.sinPrecio) {
+        throw new ConflictError(MENSAJE_SIN_PRECIO, { code: CODIGO_MATERIA_SIN_PRECIO })
+      }
+
+      return conProfesores(
+        await repository.reactivar(id, actor),
+        await profesoresRepository.listarProfesoresDeMateria(id),
+      )
     },
   }
 }
