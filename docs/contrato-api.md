@@ -256,7 +256,43 @@ A completar por T-43.
 
 ## Cancelaciones
 
-A completar por T-45.
+HU-13 (T-45). Cancelar una o varias ocurrencias de un alumno. Reglas en `dominio.md` → Cancelación.
+
+| Endpoint                     | Roles           | Qué hace                                                                                       |
+| ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
+| `POST /api/v1/cancelaciones` | `MESA_ENTRADAS` | Cancela las ocurrencias, todo o nada. 201 con `{ cantidad }`; 400; 409 `TURNOS_NO_CANCELABLES` |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**Body de `POST /cancelaciones`:**
+
+```json
+{
+  "ocurrencias": [
+    { "turnoId": 41, "fecha": "2026-10-12" },
+    { "turnoId": 57, "fecha": "2026-10-14" }
+  ],
+  "motivo": "CANCELACION_ALUMNO",
+  "detalle": "El alumno viaja esa semana"
+}
+```
+
+- `ocurrencias`: de 1 a 200 pares `(turnoId, fecha)` sin repetir (un repetido: 400 en `["ocurrencias", <posición>]`). El alumno no viaja: sale de las ocurrencias, que tienen que ser todas del mismo alumno (si no, 400 `VALIDACION` con un detalle en `["ocurrencias", <posición>]` por cada una ajena).
+- `motivo`: `CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`.
+- `detalle`: opcional, hasta 500 caracteres; `""`, espacios o `null` = sin detalle. **Obligatorio si `motivo = OTRO`**: 400 `VALIDACION` en `["detalle"]`.
+
+**Respuesta 201:** `{ "cantidad": 2 }` (una `CancelacionTurno` por ocurrencia, con `fechaOcurrencia` = la fecha de la ocurrencia, también para una sesión única).
+
+**Todo o nada.** Se cancela sólo si **todas** son cancelables; si alguna no, 409 `TURNOS_NO_CANCELABLES` (forma de `details` en Errores) con **todas** las que fallan y no se cancela ninguna. Cada una lleva un solo `motivo`, el primero que se cumple:
+
+| `motivo`       | Mensaje                                    | Cuándo                                                           |
+| -------------- | ------------------------------------------ | ---------------------------------------------------------------- |
+| `NO_EXISTE`    | El turno no existe en esa fecha            | El turno no genera esa fecha (o no existe)                       |
+| `YA_CANCELADO` | El turno ya está cancelado                 | Ya tiene su cancelación                                          |
+| `PAGADO`       | El turno está pagado: no se puede cancelar | Tiene un pago (en este sprint no se anulan pagos). Suma `pagoId` |
+| `PASADO`       | El turno ya pasó: no se puede cancelar     | Su fecha es anterior a hoy                                       |
+
+Una cancelación sólo afecta a esa fecha: el resto de la serie sigue agendado y la hora vuelve a tener lugar ese día.
 
 ## Finalizaciones
 
@@ -460,6 +496,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `ALUMNO_SUPERPUESTO`     | "El alumno ya tiene un turno en ese horario". Rechazo total (ninguna bandera lo saltea). `details`: un ítem por turno en conflicto (de cualquier profesor), `[{ "turnoId", "tipo", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" } }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 409    | `MATERIA_NO_ASIGNADA`    | "La materia no está asignada al profesor" (o su asignación está dada de baja), al registrar un turno. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |
+| 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 
