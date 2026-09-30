@@ -300,7 +300,51 @@ A completar por T-47.
 
 ## Reprogramaciones
 
-A completar por T-49.
+HU-20 (T-49). Mover una ocurrencia a otra fecha, hora o profesor. Reglas en `dominio.md` → Reprogramación. No hay tabla de reprogramaciones (decisión T-47): la API **edita el turno** y el cliente no manda ni recibe nada sobre cómo se parte la serie. La búsqueda de horarios reutiliza `GET /turnos/disponibilidad` con `fecha`: no hay endpoint nuevo.
+
+| Endpoint                        | Roles           | Qué hace                                                                             |
+| ------------------------------- | --------------- | ------------------------------------------------------------------------------------ |
+| `POST /api/v1/reprogramaciones` | `MESA_ENTRADAS` | Reprograma una ocurrencia, todo o nada. 200 con `{ turnoId, cambio }`; 400; 404; 409 |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**Body:**
+
+```json
+{
+  "turnoId": 41,
+  "fecha": "2026-10-12",
+  "bloqueAgendaDestinoId": 18,
+  "fechaDestino": "2026-10-15"
+}
+```
+
+- `turnoId` + `fecha`: la ocurrencia que se mueve (definición B). `fecha` es la de la ocurrencia, no la del turno.
+- `bloqueAgendaDestinoId`: la hora (fila del horario) de destino; `fechaDestino`: hoy o posterior y en el día de la semana de esa hora.
+
+**Respuesta 200:**
+
+```json
+{
+  "turnoId": 58,
+  "cambio": "Del lunes 12/10 9:00–10:00 con Prof. Gómez al jueves 15/10 17:00–18:00 con Prof. Ruiz"
+}
+```
+
+- `turnoId`: el turno de la fecha movida. Es el mismo `turnoId` si el turno era una sesión única (o la única fecha de un recurrente); si era una fecha de un recurrente, es la `SESION_UNICA` nueva. El cliente vuelve a pedir el detalle con ese id y `fechaDestino`.
+- `cambio`: el texto para el mensaje de confirmación, armado por la API.
+
+**Errores:**
+
+| Status | Cuándo                                                                                                                                                                                               |
+| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | Formato inválido; `fechaDestino` anterior a hoy o que no cae en el día de la hora de destino (`details` en `["fechaDestino"]`); mismo lugar que el de origen (misma hora y misma fecha)              |
+| 404    | El turno no existe, el turno no tiene una ocurrencia en `fecha`, o la hora de destino no existe o está dada de baja                                                                                  |
+| 409    | La ocurrencia está cancelada o ya pasó; `PROFESOR_INACTIVO`, `MATERIA_INACTIVA` o `MATERIA_NO_ASIGNADA` en el destino; `BLOQUE_LLENO`; `ALUMNO_SUPERPUESTO` (mismos códigos y `details` que el alta) |
+
+`BLOQUE_LLENO` y `ALUMNO_SUPERPUESTO` **no cuentan la ocurrencia que se mueve**: mover una fecha a otro profesor a la misma hora no choca con sí misma.
+
+**Efecto sobre los turnos (lo ve el cliente al releer):** una ocurrencia pagada se puede reprogramar y conserva su pago; en un recurrente, el resto de la serie queda igual en las agendas. Cada turno creado o modificado lleva como creador o modificador a quien reprogramó (`updatedBy` / `updatedAt` en el detalle).
 
 ## Pagos
 

@@ -1,9 +1,23 @@
 import type { MotivoCancelacion, Prisma } from '@/generated/prisma/client'
 import { dateAFecha, diaSemanaISO, fechaADate, hoy, type Reloj } from '@/server/shared/fechas'
 import {
+  CODIGO_ALUMNO_SUPERPUESTO,
+  CODIGO_BLOQUE_LLENO,
+  CODIGO_MATERIA_INACTIVA,
+  CODIGO_MATERIA_NO_ASIGNADA,
+  CODIGO_PROFESOR_INACTIVO,
+  MENSAJE_ALUMNO_SUPERPUESTO,
+  MENSAJE_BLOQUE_NO_ENCONTRADO,
+  MENSAJE_FECHA_PASADA,
+  MENSAJE_MATERIA_INACTIVA,
+  MENSAJE_MATERIA_NO_ASIGNADA,
+  MENSAJE_MATERIA_NO_ENCONTRADA,
+  MENSAJE_PROFESOR_INACTIVO,
+  MENSAJE_PROFESOR_NO_ENCONTRADO,
   estadoDeOcurrencia,
   fechasDeLaSerie,
   finEfectivo,
+  nombreDia,
   ocupaLugarEn,
   primeraFechaLibre,
   type EstadoOcurrencia,
@@ -27,6 +41,24 @@ import { ESTADOS_TURNO, TIPOS_TURNO, type SerieFechas, type TipoTurno } from './
 
 // Valores y tipos que otras features necesitan sin importar la validation de `turnos`.
 export { ESTADOS_TURNO, TIPOS_TURNO }
+// Códigos, mensajes y nombres de día de las validaciones del destino de un turno (alta y
+// reprogramación): una sola definición, la de `turnos.reglas.ts`.
+export {
+  CODIGO_ALUMNO_SUPERPUESTO,
+  CODIGO_BLOQUE_LLENO,
+  CODIGO_MATERIA_INACTIVA,
+  CODIGO_MATERIA_NO_ASIGNADA,
+  CODIGO_PROFESOR_INACTIVO,
+  MENSAJE_ALUMNO_SUPERPUESTO,
+  MENSAJE_BLOQUE_NO_ENCONTRADO,
+  MENSAJE_FECHA_PASADA,
+  MENSAJE_MATERIA_INACTIVA,
+  MENSAJE_MATERIA_NO_ASIGNADA,
+  MENSAJE_MATERIA_NO_ENCONTRADA,
+  MENSAJE_PROFESOR_INACTIVO,
+  MENSAJE_PROFESOR_NO_ENCONTRADO,
+  nombreDia,
+}
 export type { EstadoOcurrencia, MotivoCancelacion, TipoTurno }
 
 /** Cliente con el que se consulta: `prisma` o el `tx` de una transacción. */
