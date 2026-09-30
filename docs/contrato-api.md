@@ -252,7 +252,92 @@ Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backe
 
 ## Ocurrencias
 
-A completar por T-43.
+El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectura desde la que se opera (cancelar, finalizar, reprogramar, registrar pago, T-44 en adelante). La API calcula qué acciones están permitidas en `acciones`; ninguna pantalla repite esas reglas.
+
+> **Sin `pago`.** El ticket original pedía un campo `pago` (`PENDIENTE`/`PAGADO`, importe, forma de pago, comprobante) y que `acciones.cancelar` viniera deshabilitado con "El turno está pagado: no se puede cancelar" en una ocurrencia pagada. Decisión explícita de este incremento: **no hay hoy una fuente de datos de `Pago` de la que traerlo**, así que ninguno de los dos sale. `acciones.cancelar` es `{ visible, habilitada }` sin `motivo`, y depende únicamente de si la ocurrencia está `AGENDADO`; no mira el pago para nada. Se retoma cuando `pagos` (T-51) esté disponible.
+
+### Detalle de una ocurrencia
+
+**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas). `PROFESOR` sólo puede pedir un turno suyo: si no lo es, 403 con las cuatro acciones en `false`. Con `MESA_ENTRADAS` o con el profesor dueño del turno, el resto de la respuesta es igual — salvo `acciones`, que para `PROFESOR` siempre viene con las cuatro en `false` (el profesor no cancela, finaliza, reprograma ni registra pagos en este incremento; sólo lee).
+
+```json
+{
+  "turnoId": 31,
+  "fecha": "2026-09-28",
+  "alumno": { "id": 12, "nombre": "Lucía", "apellido": "González", "dni": "40123456" },
+  "materia": { "id": 3, "nombre": "Matemática" },
+  "profesor": { "id": 3, "nombre": "Ana", "apellido": "Pérez" },
+  "aula": { "id": 3, "nombre": "Aula 3" },
+  "horaInicio": "09:00",
+  "horaFin": "10:00",
+  "tipo": "RECURRENTE",
+  "serie": {
+    "fechaInicio": "2026-03-02",
+    "fechaFin": null,
+    "finalizacion": null
+  },
+  "estado": "AGENDADO",
+  "observaciones": null,
+  "temas": null,
+  "cancelacion": null,
+  "prioridad": "ALTA",
+  "examen": {
+    "id": 8,
+    "fecha": "2026-10-05",
+    "tipo": "PARCIAL",
+    "materiaNombre": "Matemática",
+    "dias": 7
+  },
+  "acciones": {
+    "cancelar": { "visible": true, "habilitada": true },
+    "finalizar": { "visible": true },
+    "reprogramar": { "visible": true },
+    "registrarPago": { "visible": true }
+  },
+  "createdAt": "2026-08-01T13:00:00.000Z",
+  "updatedAt": "2026-08-01T13:00:00.000Z",
+  "createdBy": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+  "updatedBy": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" }
+}
+```
+
+- `estado`: sólo `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (definición F de las PO: cancelada, o pasada sin cancelar, o de hoy en adelante).
+- `serie`: período del turno o tramo (`fechaInicio`, `fechaFin`, `null` sin fin) y, si tiene una, la `finalizacion` (`fechaDesde` es el fin efectivo, definición C, más `motivo`, `detalle`, `createdBy`, `createdAt`); `null` si no está finalizada. Sin sección de reprogramación: un turno reprogramado ya está en su fecha y bloque nuevos, y no muestra desde cuándo se movió (definición A).
+- `cancelacion`: `null` salvo `estado = "CANCELADO"` (`motivo`, `detalle`, `createdBy`, `createdAt`).
+- `prioridad` y `examen` (el examen que la determina, T-31): `null` en una ocurrencia cancelada.
+- `acciones`: `cancelar` sólo mira si está `AGENDADO` (agendada, hoy o posterior); `finalizar`, si el turno es `RECURRENTE`, la serie está vigente (sin fin efectivo, o no llegó todavía) y no tiene ya una finalización aplicada; `reprogramar`, igual que `cancelar`; `registrarPago`, si no está `CANCELADO`.
+- `createdBy`/`updatedBy`: quién creó el turno y quién lo modificó por última vez. Si el turno se reprogramó, quien lo modificó es quien lo reprogramó (no hay un campo aparte).
+- Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` (rol distinto de `MESA_ENTRADAS`/`PROFESOR`, o un `PROFESOR` que no es dueño del turno) o `USUARIO_INHABILITADO`; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias (incluida una posterior al fin efectivo de una serie ya finalizada).
+
+### Turnos de un alumno
+
+**`GET /api/v1/ocurrencias?alumnoId&desde?&hasta?`** (rol `MESA_ENTRADAS`): las ocurrencias del alumno en `[desde, hasta]`, para la pestaña "Turnos" de su ficha (HU-02). Incluye las canceladas (a diferencia de las agendas): se siguen viendo con su estado.
+
+- `alumnoId` (obligatorio). `desde`/`hasta` (`YYYY-MM-DD`, opcionales, extremos incluidos): sin `desde`, 30 días atrás de hoy; sin `hasta`, 8 semanas (56 días) adelante. El rango pedido no puede exceder esa misma ventana (30 atrás / 56 adelante de hoy), ni venir invertido.
+- Devuelve un **arreglo sin paginar**, ordenado por fecha y hora.
+
+  ```json
+  [
+    {
+      "turnoId": 31,
+      "fecha": "2026-09-28",
+      "diaSemana": 1,
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "profesor": { "id": 3, "nombre": "Ana", "apellido": "Pérez" },
+      "materia": { "id": 3, "nombre": "Matemática" },
+      "tipo": "RECURRENTE",
+      "estado": "AGENDADO",
+      "prioridad": "ALTA",
+      "cancelable": true
+    }
+  ]
+  ```
+
+- `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle.
+- Errores: 400 `VALIDACION` (`alumnoId` faltante o inválido, `hasta` anterior a `desde`, o rango fuera de la ventana permitida, `details` sobre `hasta`); 401 `NO_AUTENTICADO`; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+
+Todo sale de `leerOcurrencias` (T-30) y `leerPrioridades` (T-31): la feature no reimplementa ninguna de las dos.
 
 ## Cancelaciones
 
