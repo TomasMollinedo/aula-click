@@ -1,5 +1,6 @@
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 import type { OcurrenciaACobrar } from '@/types/pago'
+import { sumarImportes } from '@/utils/moneda'
 
 // Lo que se ofrece cobrar en el diálogo (HU-15). Los importes los manda la API a quien abre el
 // diálogo: el detalle del turno con `pago.importeVigente` (T-43) y `cuentas` con los de sus
@@ -33,18 +34,12 @@ export type ResumenACobrar = {
 }
 
 /**
- * Cantidad y total de lo que se ofrece cobrar. La suma va en centavos, como en la API, para no
- * acumular el error de coma flotante. Sin total si alguna no tiene precio: la API la va a rechazar
- * con `SIN_PRECIO` y el envío no se bloquea.
+ * Cantidad y total de lo que se ofrece cobrar. La suma va en centavos, como en la API
+ * (`sumarImportes`). Sin total si alguna no tiene precio: la API la va a rechazar con `SIN_PRECIO`
+ * y el envío no se bloquea.
  */
 export function resumenACobrar(
   ocurrencias: readonly Pick<OcurrenciaACobrar, 'importe'>[],
 ): ResumenACobrar {
-  const sinPrecio = ocurrencias.filter((o) => o.importe === null).length
-  const centavos = ocurrencias.reduce((suma, o) => suma + Math.round((o.importe ?? 0) * 100), 0)
-  return {
-    cantidad: ocurrencias.length,
-    total: sinPrecio > 0 ? null : centavos / 100,
-    sinPrecio,
-  }
+  return { cantidad: ocurrencias.length, ...sumarImportes(ocurrencias.map((o) => o.importe)) }
 }

@@ -148,10 +148,16 @@ src/
 │   │       │                           #   (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
 │   │       ├── AccionRegistrarPago.tsx # slot del pie del detalle del turno
 │   │       └── ComprobantePago.tsx     # el documento imprimible (ver Documentos imprimibles)
+│   ├── cuentas/                        # pagos y deuda del alumno y vista global "Pagos" (HU-16, T-54)
+│   │   ├── cuentas.types.ts, a-cobrar.ts   # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
+│   │   ├── seleccion.ts                # la selección a cobrar (inmutable) y su resumen
+│   │   ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts   # textos; errores de lectura; comprobante y ficha
+│   │   ├── api/{cuentas.api.ts, cuentas.keys.ts}
+│   │   ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-invalidar-cuentas.ts}
+│   │   └── components/{PagosDelAlumno.tsx, PagosGlobal.tsx}
 │   ├── cancelaciones/  finalizaciones/ # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
-│   ├── cuentas/  examenes/             #   (AccionCancelarTurno, AccionCancelarVarios, AccionFinalizarTurno,
-│   │                                   #   PagosDelAlumno, PagosGlobal, ExamenesDelAlumno): placeholders con las
-│   │                                   #   props definitivas (T-46 a T-56)
+│   ├── examenes/                       #   (AccionCancelarTurno, AccionCancelarVarios, AccionFinalizarTurno,
+│   │                                   #   ExamenesDelAlumno): placeholders con las props definitivas (T-46 a T-56)
 │   ├── documentos/                     # AccionPdfTurno y BotonPdfAgenda (placeholders, T-60); sin datos propios: sin keys
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
@@ -188,7 +194,8 @@ src/
 │   ├── pago.ts                         # OcurrenciaACobrar y SolicitudRegistrarPago: lo que pagos y cuentas comparten
 │   └── agenda.ts                       # FiltrosAgenda (profesor, estado y prioridad)
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts,
-           moneda.ts}                   # moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API
+           moneda.ts}                   # moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API,
+                                        # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas
 ```
 
 ## Anatomía de una feature de UI
@@ -481,4 +488,4 @@ Accesibilidad: el color nunca es el único canal (siempre está la palabra, y el
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `pagos` (`pagos.schema.ts`: el formulario, `parsearMonto` y el body del `POST`; `a-cobrar.ts`: la ocurrencia del detalle a cobrar y el resumen; `formato-pagos.ts`: los textos del diálogo y del comprobante; `errores-pagos.ts`: los errores del `POST` en lo que muestra el diálogo), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`, `moneda.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `pagos` (`pagos.schema.ts`: el formulario, `parsearMonto` y el body del `POST`; `a-cobrar.ts`: la ocurrencia del detalle a cobrar y el resumen; `formato-pagos.ts`: los textos del diálogo y del comprobante; `errores-pagos.ts`: los errores del `POST` en lo que muestra el diálogo), las de `cuentas` (`a-cobrar.ts`: la fila a cobrar y la clave de la ocurrencia; `seleccion.ts`: la selección, su orden y su resumen; `formato-cuentas.ts`: los textos; `errores-cuentas.ts`: los errores de lectura), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`, `moneda.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
