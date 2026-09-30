@@ -786,6 +786,12 @@ Anular un pago (definición D): pasa al próximo sprint.
 - Registrar el pago de un turno desde su detalle e imprimir el comprobante en A4.
 - El total y los importes no se calculan en el cliente más allá de sumar lo que muestra la API.
 
+**Actualización (T-52 UI)**
+
+- **Importes antes de pagar.** `POST /pagos` no tiene previa y `OcurrenciaDeAlumno` no trae importe. Quien abre el diálogo le pasa los importes con dos tipos compartidos de `src/types/pago.ts`: `OcurrenciaACobrar` (la ocurrencia `(turnoId, fecha)` con horario, materia, profesor e `importe`, que es `null` si la materia no tiene precio) y `SolicitudRegistrarPago` (`{ alumnoId, ocurrencias, onCerrar }`, las props de `RegistrarPagoDialog` y el argumento de `renderRegistrarPago`). El detalle arma la ocurrencia con `pago.importeVigente` (T-43, `aCobrarDesdeDetalle`) y `cuentas`, con los importes de T-53. El cliente solo suma esos importes para el resumen; cantidad, total y vuelto del éxito salen de la respuesta. Quien abre guarda su copia de `ocurrencias` y deja el diálogo montado hasta `onCerrar`, porque registrar invalida lo que lo abrió (decisión T-67).
+- **Comprobante.** La ruta es `app/(documentos)/mesa/pagos/[pagoId]/comprobante/page.tsx` (URL `/mesa/pagos/<id>/comprobante`), en el route group `(documentos)`, cuyo layout solo monta `SegmentoDeRol`: misma URL, sin el `AppShell` de `app/mesa/layout.tsx`. Reemplaza a `app/mesa/pagos/[pagoId]/comprobante/page.tsx` del punto 3, que habría quedado con el Sidebar. T-60 suma ahí sus `/…/imprimir` (`arquitectura-frontend.md` → Documentos imprimibles).
+- **Pendiente.** La verificación en A4 depende de T-64: sin `GET /centro`, el comprobante muestra "No se pudieron cargar los datos del centro" y no imprime. El recorrido real desde el detalle del turno depende de T-44: hoy `OcurrenciaDetalle` es un placeholder que no llama a `renderAcciones`, así que se verificó con una página temporal, con ocurrencias reales y un `OcurrenciaDetalle` armado a mano.
+
 ---
 
 ## T-53 · [Back] HU-16 · API de pagos y deuda del alumno (feature `cuentas`)
@@ -838,6 +844,8 @@ Anular pagos y que sus turnos vuelvan a la deuda (definición D): pasa al próxi
 
 - Cobrar dos turnos adeudados de un alumno desde su pestaña y verlos desaparecer de la deuda.
 - En la vista global, filtrar por un alumno habilita la selección múltiple.
+
+**Nota (T-52):** `renderRegistrarPago` recibe `SolicitudRegistrarPago` (`src/types/pago.ts`). `cuentas` arma cada `OcurrenciaACobrar` con el importe de sus adeudados o próximos (T-53), y guarda su propia copia de la selección mientras el diálogo está abierto: al registrar se invalidan las cuentas y la fila cobrada desaparece, pero el diálogo tiene que seguir mostrando el éxito hasta que se cierre. El enlace al comprobante del historial es `/mesa/pagos/<pagoId>/comprobante`.
 
 ---
 

@@ -3,18 +3,14 @@
 import type { ReactNode } from 'react'
 
 import { Card } from '@/components/ui/card'
-import type { OcurrenciaDeAlumno } from '@/types/ocurrencia'
+import type { SolicitudRegistrarPago } from '@/types/pago'
 
 export type PagosGlobalProps = {
   /**
    * El diálogo de registrar un pago. Lo compone `app/` (es de `features/pagos`): recibe lo que
    * necesita `RegistrarPagoDialog`.
    */
-  renderRegistrarPago: (pago: {
-    alumnoId: number
-    ocurrencias: OcurrenciaDeAlumno[]
-    onCerrar: () => void
-  }) => ReactNode
+  renderRegistrarPago: (pago: SolicitudRegistrarPago) => ReactNode
 }
 
 /**

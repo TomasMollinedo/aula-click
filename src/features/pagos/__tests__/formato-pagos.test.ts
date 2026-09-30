@@ -1,6 +1,37 @@
 import { describe, expect, it } from 'vitest'
 
-import { textoCantidad, textoConfirmacion, textoExito, textoVuelto } from '../formato-pagos'
+import {
+  fechaDocumento,
+  textoCantidad,
+  textoConfirmacion,
+  textoExito,
+  textoHorario,
+  textoImporte,
+  textoNumeroComprobante,
+  textoRegistradoEl,
+  textoTotal,
+  textoVuelto,
+} from '../formato-pagos'
+
+describe('textos del resumen', () => {
+  it('horario, importe y total, con "Sin precio" y "sin calcular" sin importe', () => {
+    expect(textoHorario('09:00', '10:00')).toBe('de 9:00 a 10:00')
+    expect(textoImporte(8000)).toBe('$ 8.000')
+    expect(textoImporte(null)).toBe('Sin precio')
+    expect(textoTotal(32000)).toBe('Total: $ 32.000')
+    expect(textoTotal(null)).toBe('Total: sin calcular')
+  })
+})
+
+describe('textos del comprobante', () => {
+  it('número, fecha de pago e instante del registro en hora local', () => {
+    expect(textoNumeroComprobante(1024)).toBe('Comprobante N° 1024')
+    expect(fechaDocumento('2026-10-05')).toBe('05/10/2026')
+    // Armado en hora local: el test no depende de la zona horaria de la máquina.
+    const instante = new Date(2026, 9, 5, 14, 30).toISOString()
+    expect(textoRegistradoEl(instante)).toBe('Registrado el 05/10/2026 14:30')
+  })
+})
 
 describe('textoCantidad', () => {
   it('singular y plural', () => {

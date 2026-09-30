@@ -16,7 +16,15 @@ export type OcurrenciaACobrar = {
   importe: number | null
 }
 
-/** Lo que recibe `RegistrarPagoDialog` y lo que `cuentas` le pasa a `renderRegistrarPago`. */
+/**
+ * Lo que recibe `RegistrarPagoDialog` y lo que `cuentas` le pasa a `renderRegistrarPago`.
+ *
+ * **Quien abre el diálogo guarda su propia copia de `ocurrencias` (y lo mantiene montado) mientras
+ * está abierto**, hasta `onCerrar`. Registrar un pago (y también su 409) invalida las ocurrencias,
+ * las cuentas y las agendas: el detalle se vuelve a pedir y su `acciones.registrarPago.visible`
+ * pasa a `false`, y en `cuentas` la fila cobrada desaparece. Si quien abre deriva el diálogo de
+ * esos datos, el paso de éxito (o el rechazo) desaparece antes de que se lea.
+ */
 export type SolicitudRegistrarPago = {
   alumnoId: number
   ocurrencias: OcurrenciaACobrar[]

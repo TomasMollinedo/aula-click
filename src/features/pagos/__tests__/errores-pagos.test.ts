@@ -69,7 +69,7 @@ describe('interpretarErrorPago: 409 TURNOS_NO_COBRABLES', () => {
           motivo: 'YA_PAGADO',
           pagoId: 29,
           ocurrencia: LISTA[1],
-          linea: 'lunes 12/10 · 9:00 a 10:00 · Matemática: El turno ya está pagado',
+          linea: 'lunes 12/10 de 9:00 a 10:00 · Matemática — El turno ya está pagado',
         },
         {
           turnoId: 57,
@@ -78,7 +78,7 @@ describe('interpretarErrorPago: 409 TURNOS_NO_COBRABLES', () => {
           motivo: 'CANCELADO',
           pagoId: null,
           ocurrencia: LISTA[3],
-          linea: 'miércoles 14/10 · 17:00 a 18:00 · Física: El turno está cancelado',
+          linea: 'miércoles 14/10 de 17:00 a 18:00 · Física — El turno está cancelado',
         },
       ],
     })
@@ -118,7 +118,7 @@ describe('interpretarErrorPago: 409 TURNOS_NO_COBRABLES', () => {
           fecha: '2026-10-19',
           motivo: 'NO_EXISTE',
           ocurrencia: null,
-          linea: 'lunes 19/10: El turno no existe en esa fecha',
+          linea: 'lunes 19/10 — El turno no existe en esa fecha',
         },
       ],
     })
@@ -201,7 +201,7 @@ describe('interpretarErrorPago: 400 VALIDACION', () => {
           motivo: null,
           pagoId: null,
           ocurrencia: LISTA[2],
-          linea: 'miércoles 07/10 · 17:00 a 18:00 · Física: El turno no es del alumno',
+          linea: 'miércoles 07/10 de 17:00 a 18:00 · Física — El turno no es del alumno',
         },
       ],
     })

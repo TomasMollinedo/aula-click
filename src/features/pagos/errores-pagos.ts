@@ -3,8 +3,8 @@ import { isValid, parseISO } from 'date-fns'
 import type { OcurrenciaACobrar } from '@/types/pago'
 import { ApiError } from '@/utils/fetch-json'
 import { fechaConDia } from '@/utils/formato-fechas'
-import { rangoHoras } from '@/utils/horas'
 
+import { textoHorario } from './formato-pagos'
 import { CAMPOS_PAGO_FORM, type CampoPagoForm } from './pagos.schema'
 import type { MotivoNoCobrable } from './pagos.types'
 
@@ -37,7 +37,10 @@ export type TurnoRechazado = {
   pagoId: number | null
   /** La ocurrencia de la lista mostrada, o `null` si no está en ella. */
   ocurrencia: OcurrenciaACobrar | null
-  /** `'lunes 12/10 · 9:00 a 10:00 · Matemática: El turno ya está pagado'`, o solo la fecha si no está en la lista. */
+  /**
+   * `'lunes 12/10 de 9:00 a 10:00 · Matemática — El turno ya está pagado'`; si no está en la lista,
+   * solo con la fecha de la API (`'lunes 19/10 — El turno no existe en esa fecha'`).
+   */
   linea: string
 }
 
@@ -76,9 +79,9 @@ function posicionDeOcurrencia(path: unknown[]): number | null {
 
 function linea(fecha: string, ocurrencia: OcurrenciaACobrar | null, mensaje: string): string {
   const cuando = ocurrencia
-    ? `${fechaConDia(fecha)} · ${rangoHoras(ocurrencia.horaInicio, ocurrencia.horaFin)} · ${ocurrencia.materia.nombre}`
+    ? `${fechaConDia(fecha)} ${textoHorario(ocurrencia.horaInicio, ocurrencia.horaFin)} · ${ocurrencia.materia.nombre}`
     : fechaConDia(fecha)
-  return `${cuando}: ${mensaje}`
+  return `${cuando} — ${mensaje}`
 }
 
 /**
