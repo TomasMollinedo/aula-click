@@ -15,5 +15,10 @@ export function PrecioMateria({
   if (materia.sinPrecio || materia.precioHora === null) {
     return <Badge variant="urgente">Sin precio</Badge>
   }
-  return <span className="tabular-nums">{formatearPesos(materia.precioHora)}</span>
+  // Verde de la paleta (`confirmado`) y semibold: el importe tiene que destacarse en la fila.
+  return (
+    <span className="text-confirmado font-semibold tabular-nums">
+      {formatearPesos(materia.precioHora)}
+    </span>
+  )
 }
