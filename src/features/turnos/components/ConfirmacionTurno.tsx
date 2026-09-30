@@ -89,6 +89,12 @@ export function ConfirmacionTurno({
           />
           <Dato label="Tipo" valor={TIPO_TURNO_LABEL[pedido.tipo]} />
           <Dato label="Fechas" valor={textoRangoPedido(pedido)} />
+          <Dato label="Temas a trabajar" valor={primero.temas} className="whitespace-pre-line" />
+          <Dato
+            label="Observaciones"
+            valor={primero.observaciones}
+            className="whitespace-pre-line"
+          />
         </Datos>
       )}
 
