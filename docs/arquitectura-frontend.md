@@ -67,7 +67,7 @@ src/
 │   │   │       ├── nuevo/page.tsx      # entrando por URL o al recargar
 │   │   │       └── [alumnoId]/page.tsx # null: sin modal del listado al ir al detalle
 │   │   ├── profesores/page.tsx
-│   │   ├── materias/page.tsx
+│   │   ├── materias/page.tsx           # solo lectura (HU-12): listado y detalle, sin alta ni slot @modal
 │   │   ├── turnos/page.tsx              # registrar turno; compone el detalle del turno (renderDetalle)
 │   │   ├── agenda/page.tsx              # "Agenda diaria" (HU-09, T-24); compone el detalle y el PDF
 │   │   ├── pagos/page.tsx               # vista global de pagos y deuda (HU-16); compone RegistrarPagoDialog
@@ -83,7 +83,11 @@ src/
 │   │   ├── layout.tsx                  # <AppShell sidebar={<GerenteSidebar />} userMenu={<UserMenu />}>
 │   │   ├── page.tsx                    # raíz del segmento: lleva a /gerente/tablero
 │   │   ├── tablero/page.tsx            # placeholder (T-62)
-│   │   └── materias/page.tsx           # placeholder (T-40)
+│   │   └── materias/                   # catálogo con escritura (HU-12): `puedeEscribir` (ver Roles y URLs)
+│   │       ├── layout.tsx              # {children} + {modal}
+│   │       ├── page.tsx                # listado; detalle (?detalle=) y edición (?editar=) como modales
+│   │       ├── nueva/page.tsx          # alta entrando por URL: el listado de fondo
+│   │       └── @modal/                 # default.tsx, page.tsx, (.)nueva/page.tsx, nueva/page.tsx
 │   ├── portal/                         # se crea con las HU del alumno (Sprint 3)
 │   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
 │
@@ -167,7 +171,7 @@ src/
 │   ├── index.ts                        # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
 │   ├── ocurrencia.ts                   # OcurrenciaDetalle, OcurrenciaDeAlumno, acciones y renderDetalle: lo comparten varias features
 │   └── agenda.ts                       # FiltrosAgenda (profesor, estado y prioridad)
-└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts}
+└── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts, moneda.ts}
 ```
 
 ## Anatomía de una feature de UI
@@ -201,6 +205,7 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 - La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/`. Si dos roles ven la misma entidad (por ejemplo, turnos), cada uno tiene su página (`/mesa/turnos`, `/profesor/turnos`) y las dos componen los mismos componentes de `features/turnos/`. La lógica no se duplica: vive en la feature.
 - Por eso los componentes de una feature **no escriben el segmento del rol en sus links**: la página les pasa `rutaBase` (la URL del listado de la entidad en su segmento, por ejemplo `rutaBase="/mesa/alumnos"`) y el componente arma el resto (`${rutaBase}/nuevo`, `${rutaBase}/<id>`, `${rutaBase}/<id>/editar`).
 - El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que, si el rol de la sesión no es el del segmento, muestra "No tiene permiso para acceder a esta sección" con un enlace a la pantalla de inicio del propio rol en lugar del contenido (HU-21): es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
+- **Acciones de escritura según el segmento.** Si dos roles ven la misma entidad pero solo uno escribe (materias: el gerente administra el catálogo y mesa de entradas lo lee, HU-12), la página de cada segmento se lo dice a la feature con una prop (`puedeEscribir`, por defecto `false`), igual que `rutaBase`. La feature no lee la sesión: `SegmentoDeRol` ya garantiza que en `/gerente` solo se ve el contenido con rol `GERENTE`. Sin permiso tampoco se montan los formularios que abriría la URL (`?editar=` se saca con `router.replace`) ni existen las rutas del alta en ese segmento. Es ayuda visual: lo que decide es el 403 de la API, que se muestra igual.
 - La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `ALUMNO` no tiene segmento todavía: para él la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlo a un 404.
 - No se usan route groups para separar roles. Si alguna vez se usan para otra cosa (compartir un layout sin cambiar la URL), dos route groups nunca pueden definir la misma ruta: los paréntesis no aparecen en la URL y el build falla.
 
@@ -259,6 +264,7 @@ Patrón común para los documentos oficiales que se guardan como PDF desde el di
   ```
 
 - No se agrega ninguna dependencia nueva: se usa el diálogo de impresión nativo del navegador (`window.print()`), no una librería de generación de PDF.
+
 ## Acciones sobre una ocurrencia: slots compuestos desde `app/`
 
 Una **ocurrencia** es un turno en una fecha concreta (`docs/sprint-2/sprint-2.md` → Vocabulario). Varias features muestran algo en las mismas pantallas —el detalle del turno, la ficha del alumno, la agenda—, y una feature no importa componentes de otra. El patrón, ya usado con `renderAgenda`, es un **slot**: la feature dueña de la pantalla recibe una prop de render y `app/` la completa con los componentes de las demás.
@@ -293,7 +299,7 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 ## Modales con URL propia
 
-El **detalle de una entidad sencilla** (una hora del horario, y a futuro materias y otras con pocos datos y sin secciones propias) no es una página: es un **modal de solo lectura** con `DetalleModal` de `components/ui/` (decisión T-34). La feature solo arma sus datos con `Datos` / `Dato` y le pasa la query (`cargando`, `error`, `onReintentar`) y la auditoría: el modal resuelve la carga, el 404, el 403, la sección "Trazabilidad" y el pie con "Cerrar" y las acciones (por ejemplo, un link a la edición). Se abre con un parámetro de la pantalla que queda de fondo, con el mismo criterio que `?editar=<id>` (en el horario del profesor, `?tab=horario&detalle=<id>`), y se cierra también con un clic afuera: no hay nada que perder.
+El **detalle de una entidad sencilla** (una hora del horario, una materia y otras con pocos datos y sin secciones propias) no es una página: es un **modal de solo lectura** con `DetalleModal` de `components/ui/` (decisión T-34). La feature solo arma sus datos con `Datos` / `Dato` y le pasa la query (`cargando`, `error`, `onReintentar`) y la auditoría: el modal resuelve la carga, el 404, el 403, la sección "Trazabilidad" y el pie con "Cerrar" y las acciones (por ejemplo, un link a la edición). Se abre con un parámetro de la pantalla que queda de fondo, con el mismo criterio que `?editar=<id>` (en el horario del profesor, `?tab=horario&detalle=<id>`), y se cierra también con un clic afuera: no hay nada que perder.
 
 El **detalle** de una entidad con secciones propias es una **página** (`[id]/page.tsx`), con tabs cuando tiene más de una sección: la ficha del alumno tiene `?tab=datos|turnos|examenes|pagos` (sin `tab`, "Datos") y una pestaña aparece solo si `app/` le pasó su render prop (`renderTurnos`, `renderExamenes`, `renderPagos`): mesa de entradas ve las cuatro y el profesor, Datos y Exámenes; con una sola pestaña no se envuelve en `Tabs`. El **alta** y la **edición** se abren **siempre como modal**, encima de la pantalla desde la que se abrieron: el alta y la edición desde el lápiz de una fila, encima del listado; la edición desde "Editar" del detalle, encima de la página de detalle. Entrando por URL o al recargar, cada modal queda sobre la misma pantalla. Todas tienen URL propia (`/mesa/alumnos/nuevo`, `/mesa/alumnos/12/editar`, `/mesa/alumnos?editar=12`), así que se pueden compartir y Atrás cierra el modal. El alta y la edición desde el detalle usan el patrón de Next de Parallel + Intercepting Routes (`node_modules/next/dist/docs/01-app/03-api-reference/03-file-conventions/parallel-routes.md` → Modals); `alumnos` es el modelo:
 
@@ -301,6 +307,7 @@ El **detalle** de una entidad con secciones propias es una **página** (`[id]/pa
 - **Navegando:** `@modal/(.)nuevo/page.tsx` (desde el listado) y `[id]/@modal/(.)editar/page.tsx` (desde el detalle) interceptan la navegación y muestran el componente de la feature con `mode="modal"`. `children` sigue siendo la pantalla de fondo, con su estado (el `q` y la `page` del listado, el tab del detalle).
 - **Nunca una carpeta interceptora con parámetro dinámico** (`@modal/(.)[id]/…`). En Next 16, con `pnpm dev`, cada recompilación le vuelve a agregar el `(.)` al parámetro (`Invalid interception route: /mesa/alumnos/(.)(.)(.)2/editar`, o `alumnoId` llega como `"(.)2"`). La navegación del cliente falla con un 500 y el navegador recarga la página entera, sin intercepción. Recién reiniciado funciona, así que el error aparece y desaparece.
 - **Edición desde el lápiz del listado:** por eso no es una ruta interceptada, sino un parámetro del listado, `?editar=<id>` (se suma a `q` y `page`). `<Entidad>Listado` lo lee y muestra `<Singular>Editar` con `mode="modal"`. El lápiz lo agrega con un `Link` (`push`, así Atrás cierra el modal); cerrar o guardar es `router.back()` si se abrió con el lápiz en esa pestaña, o `router.replace` sin `editar` si se entró por URL.
+- **Edición de una entidad sencilla (materias):** como el detalle es un modal `?detalle=<id>` sobre el listado y no una página, la edición también es un parámetro del listado, `?editar=<id>`. Se abre con el lápiz de la fila (como en alumnos y profesores) o con "Editar" del detalle, un `Link` (`push`) que cambia `detalle` por `editar`, igual que el horario del profesor pasa de `?detalle=` a `?bloque=`. `MateriasListado` cuenta los modales que abrió con un link: cerrar o guardar hace `router.back()` mientras queden (edición → detalle → listado, o edición → listado desde el lápiz) y, entrando por URL, `router.replace` al detalle de esa materia.
 - Después de crear, mover o borrar carpetas de rutas, **reiniciar `pnpm dev`**: con el árbol de rutas viejo en memoria, las rutas nuevas o borradas se comportan mal.
 - **Entrando por URL o al recargar:** no hay intercepción. `nuevo/page.tsx` renderiza el listado de fondo (`<Entidad>Pantalla`, el mismo componente que usa `page.tsx`) y `[id]/editar/page.tsx` el detalle; el modal lo ponen `@modal/nuevo/page.tsx` y `[id]/@modal/editar/page.tsx`, las rutas de cada slot sin `(.)`.
 - Rutas del slot que devuelven `null`: `default.tsx`, para la carga por URL de una ruta que el slot no define; `page.tsx`, para que volver a la pantalla de fondo (un `Link` al listado, como el del Sidebar, o `router.replace` al detalle) cierre el modal; y `@modal/[id]/page.tsx` en el slot del listado, para que ir al detalle no deje un modal del listado abierto. Sin ellas, en una navegación del cliente el slot conserva el último modal abierto.

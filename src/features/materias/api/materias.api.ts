@@ -4,6 +4,7 @@ import type {
   ListarMateriasParams,
   MateriaCrear,
   MateriaDetalle,
+  MateriaEditar,
   MateriaSelectorItem,
   MateriasListadoResponse,
 } from '../materias.types'
@@ -38,7 +39,21 @@ export function crearMateria(datos: MateriaCrear): Promise<MateriaDetalle> {
   })
 }
 
+/** Edición parcial de nombre, descripción y precio. También sobre una materia inactiva. */
+export function editarMateria(id: number, datos: MateriaEditar): Promise<MateriaDetalle> {
+  return fetchJson<MateriaDetalle>(`${BASE}/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  })
+}
+
 /** Baja lógica: pasa a INACTIVO. No se puede si tiene profesores asignados (409). */
 export function darDeBajaMateria(id: number): Promise<MateriaDetalle> {
   return fetchJson<MateriaDetalle>(`${BASE}/${id}/baja`, { method: 'PATCH' })
+}
+
+/** Vuelve a ACTIVO. Sin precio cargado responde 409 `MATERIA_SIN_PRECIO`. */
+export function reactivarMateria(id: number): Promise<MateriaDetalle> {
+  return fetchJson<MateriaDetalle>(`${BASE}/${id}/reactivacion`, { method: 'PATCH' })
 }
