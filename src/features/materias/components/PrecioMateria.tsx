@@ -17,7 +17,7 @@ export function PrecioMateria({
   }
   // Verde de la paleta (`confirmado`) y semibold: el importe tiene que destacarse en la fila.
   return (
-    <span className="text-confirmado font-semibold tabular-nums">
+    <span className="text-confirmado text-xl font-semibold tabular-nums">
       {formatearPesos(materia.precioHora)}
     </span>
   )
