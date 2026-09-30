@@ -113,7 +113,14 @@ Modelo de datos (T-29); las reglas completas de alta, edición y baja las fija H
 
 ## Cancelación
 
-A completar por T-45.
+HU-13 (T-45). Cancelar registra una `CancelacionTurno` por ocurrencia (`turnoId` + fecha de la ocurrencia), también para una sesión única; el modelo está en [Turnos](#turnos) más arriba.
+
+- **Qué se puede cancelar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), en estado `AGENDADO` (no cancelada y de **hoy en adelante**) y con pago `PENDIENTE`.
+- **Un turno pagado no se cancela** (definición D): en este sprint no se anulan pagos, así que no hay forma de deshacer el cobro. Una pasada tampoco: es historia.
+- **Una cancelación sólo afecta a esa fecha:** el resto de la serie sigue agendado y la hora vuelve a tener lugar ese día. No se deshace una cancelación.
+- **Varias a la vez:** de un mismo alumno (aunque sean de distintos turnos o profesores). **Todo o nada:** si alguna no se puede cancelar, no se cancela ninguna y la API informa cuáles y por qué (no existe, ya cancelada, pagada o pasada).
+- **Motivo y detalle:** el motivo es obligatorio (`CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`); el detalle es libre, de hasta 500 caracteres, y **obligatorio con `OTRO`**. El mismo motivo y detalle valen para todas las ocurrencias del pedido.
+- **Concurrencia:** la cancelación y un pago simultáneos de la misma ocurrencia se serializan con `alumno` `FOR UPDATE` (`bloquearAlumno`, decisión T-59): si el pago entra primero, la cancelación ve el turno pagado y responde 409.
 
 ## Finalización
 
