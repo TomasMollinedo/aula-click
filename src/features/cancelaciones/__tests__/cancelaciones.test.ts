@@ -10,7 +10,12 @@ import {
 } from '../cancelaciones.schema'
 import type { OcurrenciaACancelar } from '../cancelaciones.types'
 import { interpretarErrorCancelacion } from '../errores-api'
-import { mensajeCancelado, preguntaUna, preguntaVarias } from '../formato-cancelaciones'
+import {
+  mensajeCancelado,
+  preguntaUna,
+  preguntaVarias,
+  textoOcurrencia,
+} from '../formato-cancelaciones'
 
 const matematica: OcurrenciaACancelar = {
   turnoId: 41,
@@ -72,6 +77,12 @@ describe('mensajes', () => {
     )
     expect(preguntaUna(matematica)).toBe(
       '¿Cancelar el turno de Matemática del lunes 12/10 de 9:00 a 10:00?',
+    )
+  })
+
+  it('la línea de una ocurrencia suma el profesor si se conoce', () => {
+    expect(textoOcurrencia({ ...matematica, profesor: { nombre: 'Ana', apellido: 'Gómez' } })).toBe(
+      'Matemática del lunes 12/10 de 9:00 a 10:00, con Ana Gómez',
     )
   })
 

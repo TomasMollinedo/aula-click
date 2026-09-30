@@ -6,9 +6,10 @@ import type { OcurrenciaACancelar } from './cancelaciones.types'
 // Presentación de la cancelación: el resumen de confirmación y los mensajes de éxito, como los pide
 // la HU. Sin reglas: qué se puede cancelar lo decide la API.
 
-/** `'Matemática del lunes 12/10 de 9:00 a 10:00'`. */
+/** `'Matemática del lunes 12/10 de 9:00 a 10:00'`, más `', con Ana Gómez'` si se conoce el profesor. */
 export function textoOcurrencia(o: OcurrenciaACancelar): string {
-  return `${o.materia.nombre} del ${fechaConDia(o.fecha)} de ${rangoHoras(o.horaInicio, o.horaFin)}`
+  const con = o.profesor ? `, con ${o.profesor.nombre} ${o.profesor.apellido}` : ''
+  return `${o.materia.nombre} del ${fechaConDia(o.fecha)} de ${rangoHoras(o.horaInicio, o.horaFin)}${con}`
 }
 
 /**

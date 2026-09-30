@@ -12,6 +12,8 @@ export type OcurrenciaACancelar = {
   horaInicio: string
   horaFin: string
   materia: { nombre: string }
+  /** Profesor del turno: la lista de varios lo muestra (la pregunta de uno no lo necesita). */
+  profesor?: { nombre: string; apellido: string }
 }
 
 /** Body de `POST /cancelaciones`. */
