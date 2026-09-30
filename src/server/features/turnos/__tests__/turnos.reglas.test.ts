@@ -293,6 +293,7 @@ describe('planificarReserva', () => {
     fechaInicio: '2026-10-05',
     fechaFin: '2026-11-30',
     observaciones: null,
+    temas: null,
     asignarDondeHayLugar: false,
   }
   const snapshot: SnapshotReserva = {
@@ -326,10 +327,30 @@ describe('planificarReserva', () => {
           fechaInicio: '2026-10-05',
           fechaFin: '2026-11-30',
           observaciones: null,
+          temas: null,
         },
       ],
       fechasSinTurno: [],
     })
+  })
+
+  it('copia observaciones y temas del pedido a cada tramo ("Asignar igual")', () => {
+    // Capacidad 1 (aulaCapacidad del snapshot) y un ocupante el 26/10: dos tramos que la saltean.
+    const ocupantes: SnapshotReserva['ocupantes'] = [
+      { bloqueAgendaId: 10, ...sesion('2026-10-26') },
+    ]
+    const conDatos: PedidoReserva = {
+      ...pedido,
+      observaciones: 'Repaso',
+      temas: 'Fracciones',
+      asignarDondeHayLugar: true,
+    }
+    const plan = planificarReserva({ ...snapshot, ocupantes }, conDatos)
+    expect(plan.turnos.length).toBeGreaterThan(1)
+    for (const turno of plan.turnos) {
+      expect(turno.observaciones).toBe('Repaso')
+      expect(turno.temas).toBe('Fracciones')
+    }
   })
 
   it('la fila cambió de día bajo lock: 400 en la fecha', () => {
@@ -610,6 +631,7 @@ describe('planificarReserva: superposición del alumno', () => {
     fechaInicio: '2026-10-05',
     fechaFin: '2026-10-05',
     observaciones: null,
+    temas: 'Fracciones',
     asignarDondeHayLugar: false,
   }
   const fila = (id: number, horaInicio: number) => ({

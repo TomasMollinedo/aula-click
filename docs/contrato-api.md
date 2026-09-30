@@ -171,18 +171,20 @@ Todos los endpoints son de `MESA_ENTRADAS`. En `turnos` quedan la disponibilidad
     "fechaInicio": "2026-10-05",
     "fechaFin": "2026-11-30",
     "observaciones": "Repaso de funciones",
+    "temas": "Funciones cuadráticas",
     "asignarDondeHayLugar": false
   }
   ```
 
   - `bloqueIds`: 1 a 24 ids de filas, sin repetir, del mismo profesor y el mismo día.
   - `fechaInicio`: hoy o posterior. `fechaFin`: opcional y nullable; en `RECURRENTE`, `>= fechaInicio`; en `SESION_UNICA`, si viene, igual a `fechaInicio`.
-  - `observaciones` (T-29; antes `motivoConsulta`): opcional, hasta 500 caracteres; vacío se guarda como `null`. El campo `temas` ("Temas a trabajar", obligatorio en `SESION_UNICA`) lo agrega T-41.
+  - `observaciones` (T-29; antes `motivoConsulta`): opcional, hasta 500 caracteres; vacío se guarda como `null`.
+  - `temas` ("Temas a trabajar", HU-08): opcional y hasta 500 caracteres en `RECURRENTE`; **obligatorio** en `SESION_UNICA` (400 `VALIDACION` en `temas` si falta o queda vacío). Con "Asignar igual", todos los tramos creados de una hora llevan las mismas `observaciones` y `temas` del pedido.
   - `asignarDondeHayLugar` (default `false`): con un 409 `BLOQUE_LLENO` por fechas llenas, la UI ofrece "Asignar igual" (con la aclaración "Se crea solo en las fechas con lugar") o "Cancelar" y reenvía con `true`. En `SESION_UNICA` no cambia nada. Todo se recalcula al reenviar.
   - Respuesta `201`: `{ "cantidad", "turnos", "fechasSinTurno" }`. `cantidad` = filas creadas (puede ser mayor que la cantidad de horas, por los tramos); `turnos` (detalle, ver abajo) ordenados por hora y fecha de inicio; `fechasSinTurno` es `[]` sin conflictos, o `[{ "bloqueId", "horaInicio", "horaFin", "fechas", "completoDesde" }]` con lo que la UI muestra en el mensaje de éxito ("en estas fechas no hay turno").
-  - Errores, agrupados por status (no es el orden en que se validan: por ejemplo, `PROFESOR_INACTIVO` se decide antes que el 404 de materia): 400 (formato, fecha pasada, horas de más de un profesor o día, fechas que no caen en el día), 404 (alumno, horas por posición en `bloqueIds`, materia), 409 `PROFESOR_INACTIVO`, `MATERIA_INACTIVA`, `MATERIA_NO_ASIGNADA`, `ALUMNO_SUPERPUESTO` y `BLOQUE_LLENO` (ver Errores).
+  - Errores, agrupados por status (no es el orden en que se validan: por ejemplo, `PROFESOR_INACTIVO` se decide antes que el 404 de materia): 400 (formato, fecha pasada, horas de más de un profesor o día, fechas que no caen en el día, `temas` faltante en una sesión única), 404 (alumno, horas por posición en `bloqueIds`, materia), 409 `PROFESOR_INACTIVO`, `MATERIA_INACTIVA`, `MATERIA_NO_ASIGNADA`, `ALUMNO_SUPERPUESTO` y `BLOQUE_LLENO` (ver Errores).
 
-- **`GET /api/v1/turnos/{turnoId}`**: `{ "id", "tipo", "estado", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "bloqueId", "alumno": { "id", "nombre", "apellido", "dni" }, "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" }, "aula": { "id", "nombre" }, "observaciones" }` más la auditoría plana. `fechaFin` es `null` en un recurrente sin fin. 404 si no existe.
+- **`GET /api/v1/turnos/{turnoId}`**: `{ "id", "tipo", "estado", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "bloqueId", "alumno": { "id", "nombre", "apellido", "dni" }, "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" }, "aula": { "id", "nombre" }, "observaciones", "temas" }` más la auditoría plana. `fechaFin` es `null` en un recurrente sin fin. 404 si no existe.
 
 ## Agendas
 
@@ -266,7 +268,102 @@ A completar por T-49.
 
 ## Pagos
 
-A completar por T-51.
+HU-15 (T-51). Registrar el pago de una o varias ocurrencias de un alumno y leer su comprobante. Reglas en `dominio.md` → Pagos. **Los importes, el total y el vuelto los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
+
+| Endpoint                 | Roles           | Qué hace                                                                                            |
+| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/pagos`     | `MESA_ENTRADAS` | Registra el pago en efectivo, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409 |
+| `GET /api/v1/pagos/{id}` | `MESA_ENTRADAS` | Datos del comprobante. 404 si el pago no existe                                                     |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**Body de `POST /pagos`:**
+
+```json
+{
+  "alumnoId": 12,
+  "ocurrencias": [
+    { "turnoId": 41, "fecha": "2026-10-05" },
+    { "turnoId": 57, "fecha": "2026-10-07" }
+  ],
+  "fechaPago": "2026-10-05",
+  "montoRecibido": 20000,
+  "observaciones": "Paga el mes de octubre"
+}
+```
+
+- `ocurrencias`: de 1 a 200 pares `(turnoId, fecha)` sin repetir (un repetido: 400 en `["ocurrencias", <posición>]`). Todas del alumno.
+- `fechaPago`: `YYYY-MM-DD`, obligatoria, hoy o anterior (400 en `["fechaPago"]`).
+- `montoRecibido`: opcional (`null` u omitido = no se informó). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`; si viene, >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000) es menor al total ($ 32.000)").
+- `observaciones`: opcional, hasta 500 caracteres; `""` o `null` = sin observaciones.
+- La forma de pago no viaja: es "Efectivo" (única en este sprint).
+
+**Respuesta 201:**
+
+```json
+{
+  "pagoId": 31,
+  "numeroComprobante": 1024,
+  "cantidad": 2,
+  "total": 17000,
+  "montoRecibido": 20000,
+  "vuelto": 3000
+}
+```
+
+`montoRecibido` y `vuelto` son `null` si no se informó el monto. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000" y "Vuelto: $ 3.000". El vuelto no se guarda.
+
+**Errores del `POST`**, en este orden (el primero que falla gana):
+
+1. Body inválido → 400 `VALIDACION`.
+2. `fechaPago` posterior a hoy → 400 en `["fechaPago"]`.
+3. Alumno inexistente → 404 (su estado no importa).
+4. Alguna ocurrencia es de otro alumno → 400 `VALIDACION`, `details`: `[{ "path": ["ocurrencias", <posición>], "message": "El turno no es del alumno", "turnoId", "fecha" }]`.
+5. Alguna no se puede cobrar → 409 `TURNOS_NO_COBRABLES` con **todas** las que fallan (forma de `details` en Errores). Cada una lleva un solo `motivo`, el primero que se cumple en este orden:
+
+   | `motivo`         | Cuándo                                                                                        | `message`                                                |
+   | ---------------- | --------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+   | `NO_EXISTE`      | El turno no existe, es un cancelado anterior al Sprint 2 o la fecha no es una ocurrencia suya | "El turno no existe en esa fecha"                        |
+   | `CANCELADO`      | La ocurrencia está cancelada                                                                  | "El turno está cancelado"                                |
+   | `YA_PAGADO`      | Ya tiene un pago (el detalle trae su `pagoId`)                                                | "El turno ya está pagado"                                |
+   | `FUERA_DE_RANGO` | Su fecha es posterior a hoy + 56 días                                                         | "Sólo se pueden cobrar turnos de las próximas 8 semanas" |
+   | `SIN_PRECIO`     | Su materia no tiene precio cargado                                                            | "La materia no tiene precio cargado"                     |
+
+6. Total mayor a `99999999.99` → 400 en `["ocurrencias"]`; `montoRecibido` menor al total → 400 en `["montoRecibido"]`.
+
+**Respuesta de `GET /pagos/{id}`:**
+
+```json
+{
+  "id": 31,
+  "numeroComprobante": 1024,
+  "fechaPago": "2026-10-05",
+  "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Álvarez", "dni": "52345678" },
+  "turnos": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-10-05",
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+      "importe": 8000
+    }
+  ],
+  "total": 17000,
+  "montoRecibido": 20000,
+  "vuelto": 3000,
+  "formaPago": { "id": 1, "nombre": "Efectivo" },
+  "observaciones": null,
+  "registradoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+  "registradoEl": "2026-10-05T14:30:00.000Z"
+}
+```
+
+- `turnos`: ordenados por fecha, hora de inicio y `turnoId`, con los datos **actuales** de su turno (una ocurrencia pagada que se reprogramó muestra su fecha, hora y profesor nuevos) e `importe` = lo que se cobró (no cambia si después cambia el precio de la materia).
+- `vuelto`: recalculado en cada lectura (`montoRecibido - total`); `null` sin monto recibido.
+- `registradoPor` es un `UsuarioAuditoria`; `registradoEl`, un instante ISO 8601 en UTC.
+- `numeroComprobante` es correlativo y único, pero puede tener huecos (decisión T-62).
 
 ## Cuentas
 
@@ -362,6 +459,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `CAPACIDAD_INSUFICIENTE` | "La capacidad no puede ser menor que la cantidad de turnos que el profesor ya tiene a la vez en una hora", al editar la capacidad de un profesor (T-15). `details`: una entrada por hora en conflicto, sobre el campo: `[{ "path": ["capacidad"], "message", "bloqueId", "diaSemana", "horaInicio", "horaFin", "fecha", "cantidad" }]`, con la fecha en que esa hora tiene más turnos a la vez desde hoy y cuántos                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 409    | `ALUMNO_SUPERPUESTO`     | "El alumno ya tiene un turno en ese horario". Rechazo total (ninguna bandera lo saltea). `details`: un ítem por turno en conflicto (de cualquier profesor), `[{ "turnoId", "tipo", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" } }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 409    | `MATERIA_NO_ASIGNADA`    | "La materia no está asignada al profesor" (o su asignación está dada de baja), al registrar un turno. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 

@@ -88,6 +88,7 @@ HU-12 (T-39). Reemplaza a HU-04 en cuanto a quién administra el catálogo.
 - **Superposición del alumno:** un alumno no puede tener dos turnos que se pisen (mismo día y hora, con rangos de fechas que se cruzan), aunque sean de profesores distintos. Es un **rechazo total** (`ALUMNO_SUPERPUESTO`): no hay opción de crearlo en las fechas libres.
 - **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
 - Un turno está `ACTIVO` o `CANCELADO`; la UI muestra `ACTIVO` como **"Agendado"** (no es otro valor). Que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no es vigente ni ocupa lugar: no impide ninguna baja.
+- **Observaciones y temas a trabajar (HU-08):** las observaciones son siempre opcionales. Los **temas a trabajar** son opcionales en un `RECURRENTE` y **obligatorios** en una `SESION_UNICA`. Con "Asignar igual" (fechas sin lugar en un recurrente, tramos), todos los tramos creados de esa hora llevan las mismas observaciones y los mismos temas del pedido.
 - **Ocurrencia (Sprint 2, T-46):** un turno en una fecha concreta es lo que se cancela, se paga, se reprograma y tiene prioridad. Se identifica por el par **`(turnoId, fecha)`**: no tiene una "fecha original" distinta de su fecha.
 - **Cancelación de una ocurrencia (HU-13):** a partir del Sprint 2, cancelar registra siempre una fila en `CancelacionTurno` (`turnoId` + fecha de la ocurrencia), también para una sesión única; el resto de la serie sigue agendado. El valor `CANCELADO` de `Turno.estado` queda sólo para los turnos cancelados antes de este sprint (no se deshace una cancelación). El detalle de las reglas de HU-13 lo fija su propia tarea.
 - **Finalización de una recurrencia (HU-14):** pone fin a una serie `RECURRENTE` desde una fecha (`FinalizacionRecurrencia`, a lo sumo una por turno); los turnos anteriores a esa fecha no cambian. El detalle de las reglas de HU-14 lo fija su propia tarea.
@@ -124,7 +125,16 @@ A completar por T-49.
 
 ## Pagos
 
-A completar por T-51.
+HU-15 (T-51). El modelo (un pago de un alumno con una o varias ocurrencias, comprobante correlativo, forma de pago "Efectivo", precio vigente) está en [Pagos](#pagos) más arriba; acá van las reglas del cobro.
+
+- **Qué se puede cobrar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), con estado `AGENDADO` o `SIN_REGISTRAR` (las canceladas no) y pago `PENDIENTE`. Pasadas o futuras.
+- **Tope de 8 semanas:** una ocurrencia futura, de una serie o una sesión única, se cobra sólo hasta hoy + 56 días. Las pasadas no tienen tope (T-60).
+- **Precio vigente:** el importe de cada ocurrencia es el precio por hora de su materia al registrar el pago (no lo manda el cliente). Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
+- **Todo o nada:** si alguna ocurrencia no se puede cobrar, no se registra ninguna y la API informa cuáles y por qué (no existe, cancelada, ya pagada, fuera de las 8 semanas o sin precio). Dos pagos simultáneos de la misma ocurrencia: sólo uno se registra.
+- **Fecha de pago:** obligatoria, hoy o anterior.
+- **Monto recibido y vuelto:** el monto recibido es opcional; si se informa, tiene que ser >= el total. El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**.
+- **Comprobante:** muestra los datos **actuales** de cada turno (si una ocurrencia pagada se reprograma, reimprimirlo muestra la fecha, la hora y el profesor nuevos) y el importe que se cobró, que no cambia (T-63). La numeración es correlativa pero puede tener huecos (T-62).
+- Los importes, el total y el vuelto los calcula siempre la API; la UI sólo los muestra.
 
 ## Deuda
 

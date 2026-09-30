@@ -67,7 +67,9 @@ export type TurnoCrear = {
   fechaInicio: string
   /** `RECURRENTE`: última fecha, o `null` si no tiene fin. `SESION_UNICA`: no se manda. */
   fechaFin?: string | null
-  motivoConsulta?: string
+  observaciones?: string
+  /** Obligatorio en `SESION_UNICA`, opcional en `RECURRENTE`. */
+  temas?: string
   asignarDondeHayLugar?: boolean
 }
 
@@ -87,7 +89,8 @@ export type TurnoDetalle = {
   profesor: PersonaResumen
   materia: Referencia
   aula: Referencia
-  motivoConsulta: string | null
+  observaciones: string | null
+  temas: string | null
 } & Auditoria
 
 /** Fechas en las que una hora pedida no tenía lugar y quedó sin turno. */
