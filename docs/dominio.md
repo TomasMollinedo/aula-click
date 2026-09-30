@@ -138,7 +138,15 @@ HU-15 (T-51). El modelo (un pago de un alumno con una o varias ocurrencias, comp
 
 ## Deuda
 
-A completar por T-53.
+HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla vale para la cuenta del alumno, la vista global "Pagos" y el tablero del gerente.
+
+- **Adeudado:** una ocurrencia con fecha **anterior a hoy**, estado "Sin registrar" (no cancelada) y pago pendiente. La ocurrencia de hoy no se adeuda todavía: es un próximo turno. Las canceladas no se adeudan.
+- **Pagada:** hay un pago registrado para esa ocurrencia. No hay anulación de pagos en este sprint (definición D): una ocurrencia pagada no vuelve a la deuda.
+- **Próximos turnos:** ocurrencias agendadas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos-1): 8 semanas). No suman a la deuda, pero se pueden cobrar por adelantado.
+- **Importe:** el precio por hora **vigente** de la materia. Si el gerente cambia el precio, los turnos impagos muestran el precio nuevo; lo ya pagado conserva el importe que se cobró. Una materia sin precio muestra el turno sin importe y no suma al total.
+- **Total adeudado:** la suma de los importes de los turnos adeudados. En la vista global es el de todos los adeudados del filtro, no sólo el de la página.
+- **Pagado del mes:** la suma de los pagos del alumno con fecha de pago entre el día 1 del mes actual y hoy. Cuenta la fecha del pago, no la fecha en que se cargó.
+- Los importes y los totales los calcula siempre la API; la UI sólo los muestra.
 
 ## Exámenes
 

@@ -364,7 +364,7 @@ describe('registrar: errores', () => {
     expect(error.details).toEqual([
       {
         path: ['montoRecibido'],
-        message: 'El monto recibido ($ 30.000) es menor al total ($ 32.000)',
+        message: 'El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)',
       },
     ])
     expect(memoria.repository.registrar).not.toHaveBeenCalled()

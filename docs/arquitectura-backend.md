@@ -51,7 +51,7 @@ src/
 │           ├── <dominio>.repository.ts
 │           ├── <dominio>.ejemplos.ts  # opcional: ejemplos del OpenAPI
 │           ├── <regla>.ts             # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
-│           ├── <dominio>.condiciones.ts # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos, examenes)
+│           ├── <dominio>.condiciones.ts # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos, examenes, cuentas, pagos)
 │           └── __tests__/             # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts, <dominio>.repository.test.ts (excepcional)
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```

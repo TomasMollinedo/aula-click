@@ -19,18 +19,18 @@ export function textoHorario(horaInicio: string, horaFin: string): string {
   return `de ${rangoHoras(horaInicio, horaFin)}`
 }
 
-/** El importe de un turno a cobrar: `'$ 8.000'`, o `'Sin precio'` si la materia no tiene. */
+/** El importe de un turno a cobrar: `'$ 8.000,00'`, o `'Sin precio'` si la materia no tiene. */
 export function textoImporte(importe: number | null): string {
   return importe === null ? 'Sin precio' : formatearPesos(importe)
 }
 
-/** `'Total: $ 32.000'`, o `'Total: sin calcular'` si alguno no tiene precio. */
+/** `'Total: $ 32.000,00'`, o `'Total: sin calcular'` si alguno no tiene precio. */
 export function textoTotal(total: number | null): string {
   return `Total: ${total === null ? 'sin calcular' : formatearPesos(total)}`
 }
 
 /**
- * `'¿Registrar el pago de 4 turnos por $ 32.000 en efectivo?'`. Sin total (alguna sin precio):
+ * `'¿Registrar el pago de 4 turnos por $ 32.000,00 en efectivo?'`. Sin total (alguna sin precio):
  * `'¿Registrar el pago de 4 turnos en efectivo?'`.
  */
 export function textoConfirmacion(resumen: Pick<ResumenACobrar, 'cantidad' | 'total'>): string {
@@ -38,7 +38,7 @@ export function textoConfirmacion(resumen: Pick<ResumenACobrar, 'cantidad' | 'to
   return `¿Registrar el pago de ${textoCantidad(resumen.cantidad)}${importe} en efectivo?`
 }
 
-/** `'Pago registrado: 4 turnos por $ 32.000'`, con la cantidad y el total de la respuesta. */
+/** `'Pago registrado: 4 turnos por $ 32.000,00'`, con la cantidad y el total de la respuesta. */
 export function textoExito(pago: Pick<PagoRegistrado, 'cantidad' | 'total'>): string {
   return `Pago registrado: ${textoCantidad(pago.cantidad)} por ${formatearPesos(pago.total)}`
 }
@@ -49,8 +49,8 @@ export function textoNumeroComprobante(numeroComprobante: number): string {
 }
 
 /**
- * `'Vuelto: $ 3.000'`, o `null` si no se informó el monto recibido. Un vuelto de 0 se muestra
- * (`'Vuelto: $ 0'`): el monto se informó y era justo. Sirve para la respuesta y el comprobante.
+ * `'Vuelto: $ 3.000,00'`, o `null` si no se informó el monto recibido. Un vuelto de 0 se muestra
+ * (`'Vuelto: $ 0,00'`): el monto se informó y era justo. Sirve para la respuesta y el comprobante.
  */
 export function textoVuelto(pago: Pick<PagoRegistrado, 'vuelto'>): string | null {
   return pago.vuelto === null ? null : `Vuelto: ${formatearPesos(pago.vuelto)}`

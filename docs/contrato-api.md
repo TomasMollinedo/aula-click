@@ -294,7 +294,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 - `ocurrencias`: de 1 a 200 pares `(turnoId, fecha)` sin repetir (un repetido: 400 en `["ocurrencias", <posición>]`). Todas del alumno.
 - `fechaPago`: `YYYY-MM-DD`, obligatoria, hoy o anterior (400 en `["fechaPago"]`).
-- `montoRecibido`: opcional (`null` u omitido = no se informó). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`; si viene, >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000) es menor al total ($ 32.000)").
+- `montoRecibido`: opcional (`null` u omitido = no se informó). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`; si viene, >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)").
 - `observaciones`: opcional, hasta 500 caracteres; `""` o `null` = sin observaciones.
 - La forma de pago no viaja: es "Efectivo" (única en este sprint).
 
@@ -311,7 +311,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 }
 ```
 
-`montoRecibido` y `vuelto` son `null` si no se informó el monto. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000" y "Vuelto: $ 3.000". El vuelto no se guarda.
+`montoRecibido` y `vuelto` son `null` si no se informó el monto. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000,00" y "Vuelto: $ 3.000,00". El vuelto no se guarda.
 
 **Errores del `POST`**, en este orden (el primero que falla gana):
 
@@ -367,7 +367,101 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 ## Cuentas
 
-A completar por T-53.
+HU-16 (T-53). Pagos y deuda de un alumno y vista global de lo adeudado. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
+
+| Endpoint                                 | Roles           | Qué hace                                                                    |
+| ---------------------------------------- | --------------- | --------------------------------------------------------------------------- |
+| `GET /api/v1/cuentas/alumnos/{alumnoId}` | `MESA_ENTRADAS` | Cuenta del alumno. 400 si el id es inválido; 404 si el alumno no existe     |
+| `GET /api/v1/cuentas/adeudados`          | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: uno dado de baja puede deber.
+
+**Una ocurrencia de la cuenta (`OcurrenciaDeCuenta`):**
+
+```json
+{
+  "turnoId": 41,
+  "fecha": "2026-09-28",
+  "horaInicio": "09:00",
+  "horaFin": "10:00",
+  "materia": { "id": 2, "nombre": "Matemática" },
+  "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+  "estado": "SIN_REGISTRAR",
+  "importe": 8000
+}
+```
+
+- Tiene los mismos campos que una ocurrencia del body de `POST /pagos` necesita para armarse (`turnoId`, `fecha`) y lo que muestra el diálogo de cobro: el frontend la pasa a `OcurrenciaACobrar` sin transformar nada.
+- `estado`: `SIN_REGISTRAR` en los adeudados y `AGENDADO` en los próximos (código, no texto: "Sin registrar" lo pone la UI).
+- `importe`: precio vigente de la materia en pesos, número JSON; `null` si la materia no tiene precio (no suma al total).
+
+**Respuesta de `GET /cuentas/alumnos/{alumnoId}`:**
+
+```json
+{
+  "totalAdeudado": 16000,
+  "pagadoDelMes": 32000,
+  "adeudados": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-09-21",
+      "...": "...",
+      "estado": "SIN_REGISTRAR",
+      "importe": 8000
+    },
+    {
+      "turnoId": 41,
+      "fecha": "2026-09-28",
+      "...": "...",
+      "estado": "SIN_REGISTRAR",
+      "importe": 8000
+    }
+  ],
+  "proximos": [
+    { "turnoId": 41, "fecha": "2026-10-05", "...": "...", "estado": "AGENDADO", "importe": 8000 }
+  ],
+  "pagos": [
+    {
+      "pagoId": 31,
+      "numeroComprobante": 1024,
+      "fechaPago": "2026-10-01",
+      "cantidad": 4,
+      "total": 32000
+    }
+  ]
+}
+```
+
+- `adeudados`: ocurrencias anteriores a hoy, sin registrar (no canceladas) e impagas, del más antiguo al más reciente (fecha, hora de inicio y `turnoId`).
+- `proximos`: ocurrencias agendadas e impagas de hoy a hoy + 56 días, de series y sesiones únicas, en el mismo orden. Es exactamente lo que `POST /pagos` acepta cobrar hacia adelante (el mismo tope, ver Pagos). No suman a la deuda.
+- `totalAdeudado`: suma de los importes de `adeudados` (los `null` no suman).
+- `pagadoDelMes`: suma de los `total` de los pagos del alumno con `fechaPago` entre el día 1 del mes de hoy y hoy.
+- `pagos`: todos los pagos del alumno, sin paginar, del más reciente al más antiguo (`fechaPago` y `numeroComprobante`). `cantidad` es la cantidad de turnos pagados y `total` el importe cobrado. El comprobante se lee con `GET /pagos/{pagoId}`.
+
+**`GET /cuentas/adeudados`:** query `page` y `pageSize` (Listados paginados) y `alumnoId` opcional (entero positivo; 400 si no, 404 si el alumno no existe). Responde el formato de un listado paginado **más `totalAdeudado`, junto a `data` y `meta`** (no dentro de `meta`, que no cambia):
+
+```json
+{
+  "data": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-09-21",
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+      "estado": "SIN_REGISTRAR",
+      "importe": 8000,
+      "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Álvarez", "dni": "52345678" }
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 20, "total": 37, "totalPages": 2 },
+  "totalAdeudado": 296000.5
+}
+```
+
+- Los mismos adeudados que la cuenta del alumno, de todos los alumnos (o del filtrado), del más antiguo al más reciente.
+- `totalAdeudado` es la suma de **todos** los adeudados del filtro, no sólo de la página: coincide con la suma de los importes de todas las páginas y con el total adeudado del tablero (T-61).
 
 ## Exámenes
 

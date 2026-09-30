@@ -88,15 +88,16 @@ export function calcularVuelto(montoRecibido: number | null, total: number): num
 }
 
 /**
- * Pesos para los mensajes de error, con el formato de Argentina armado a mano (no depende del ICU
- * del entorno): `$ 32.000`, `$ 30.000,50`.
+ * Pesos para los mensajes de error, con el formato de Argentina y siempre dos decimales, como los
+ * muestra la UI: `$ 32.000,00`, `$ 30.000,50`. Armado a mano (no depende del ICU del servidor) y
+ * con un espacio normal entre `$` y el número: es un texto que viaja en JSON.
  */
 export function formatearPesos(importe: number): string {
   const total = Math.abs(centavos(importe))
   const enteros = String(Math.floor(total / 100)).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
-  const resto = total % 100
+  const resto = String(total % 100).padStart(2, '0')
   const signo = importe < 0 ? '-' : ''
-  return `${signo}$ ${enteros}${resto === 0 ? '' : `,${String(resto).padStart(2, '0')}`}`
+  return `${signo}$ ${enteros},${resto}`
 }
 
 /** Motivo por el que no se puede cobrar (el primero, en el orden de la tabla), o `null`. */

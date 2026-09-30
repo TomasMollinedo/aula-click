@@ -13,12 +13,15 @@ import {
   textoVuelto,
 } from '../formato-pagos'
 
+// `formatearPesos` (Intl) separa el `$` del número con un espacio duro (U+00A0).
+const NBSP = String.fromCharCode(0xa0)
+
 describe('textos del resumen', () => {
   it('horario, importe y total, con "Sin precio" y "sin calcular" sin importe', () => {
     expect(textoHorario('09:00', '10:00')).toBe('de 9:00 a 10:00')
-    expect(textoImporte(8000)).toBe('$ 8.000')
+    expect(textoImporte(8000)).toBe(`$${NBSP}8.000,00`)
     expect(textoImporte(null)).toBe('Sin precio')
-    expect(textoTotal(32000)).toBe('Total: $ 32.000')
+    expect(textoTotal(32000)).toBe(`Total: $${NBSP}32.000,00`)
     expect(textoTotal(null)).toBe('Total: sin calcular')
   })
 })
@@ -43,10 +46,10 @@ describe('textoCantidad', () => {
 describe('textoConfirmacion', () => {
   it('con total', () => {
     expect(textoConfirmacion({ cantidad: 4, total: 32000 })).toBe(
-      '¿Registrar el pago de 4 turnos por $ 32.000 en efectivo?',
+      `¿Registrar el pago de 4 turnos por $${NBSP}32.000,00 en efectivo?`,
     )
     expect(textoConfirmacion({ cantidad: 1, total: 8000.5 })).toBe(
-      '¿Registrar el pago de 1 turno por $ 8.000,50 en efectivo?',
+      `¿Registrar el pago de 1 turno por $${NBSP}8.000,50 en efectivo?`,
     )
   })
 
@@ -62,15 +65,19 @@ describe('textoConfirmacion', () => {
 
 describe('textoExito', () => {
   it('con la cantidad y el total de la respuesta', () => {
-    expect(textoExito({ cantidad: 4, total: 32000 })).toBe('Pago registrado: 4 turnos por $ 32.000')
-    expect(textoExito({ cantidad: 1, total: 8000 })).toBe('Pago registrado: 1 turno por $ 8.000')
+    expect(textoExito({ cantidad: 4, total: 32000 })).toBe(
+      `Pago registrado: 4 turnos por $${NBSP}32.000,00`,
+    )
+    expect(textoExito({ cantidad: 1, total: 8000 })).toBe(
+      `Pago registrado: 1 turno por $${NBSP}8.000,00`,
+    )
   })
 })
 
 describe('textoVuelto', () => {
   it('solo si la API devolvió un vuelto; 0 también se muestra', () => {
-    expect(textoVuelto({ vuelto: 3000 })).toBe('Vuelto: $ 3.000')
-    expect(textoVuelto({ vuelto: 0 })).toBe('Vuelto: $ 0')
+    expect(textoVuelto({ vuelto: 3000 })).toBe(`Vuelto: $${NBSP}3.000,00`)
+    expect(textoVuelto({ vuelto: 0 })).toBe(`Vuelto: $${NBSP}0,00`)
     expect(textoVuelto({ vuelto: null })).toBeNull()
   })
 })

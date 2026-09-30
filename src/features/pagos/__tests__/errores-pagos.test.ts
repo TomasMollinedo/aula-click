@@ -26,7 +26,7 @@ const DETALLES_NO_COBRABLES = [
     motivo: 'CANCELADO',
   },
 ]
-const MENSAJE_MONTO = 'El monto recibido ($ 30.000) es menor al total ($ 32.000)'
+const MENSAJE_MONTO = 'El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)'
 const MENSAJE_DE_OTRO_ALUMNO = 'El turno no es del alumno'
 const MENSAJE_CONCURRENTE = 'Alguno de los turnos ya fue pagado'
 
@@ -230,7 +230,7 @@ describe('interpretarErrorPago: 400 VALIDACION', () => {
 
   it('el total supera el máximo (path ["ocurrencias"]): general con el message del detalle', () => {
     const mensaje =
-      'El total del pago ($ 100.000.000) supera el máximo de un pago ($ 99.999.999,99): dividilo en varios pagos'
+      'El total del pago ($ 100.000.000,00) supera el máximo de un pago ($ 99.999.999,99): dividilo en varios pagos'
     const error = new ApiError(400, 'VALIDACION', mensaje, [
       { path: ['ocurrencias'], message: mensaje },
     ])

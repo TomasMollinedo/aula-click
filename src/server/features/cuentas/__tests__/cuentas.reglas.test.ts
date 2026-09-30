@@ -1,0 +1,120 @@
+import { describe, expect, it } from 'vitest'
+import {
+  esAdeudado,
+  esProximo,
+  importeVigente,
+  paginarEnMemoria,
+  primerDiaDelMes,
+  totalDe,
+  type OcurrenciaCuenta,
+} from '../cuentas.reglas'
+
+// Reglas puras de la cuenta (T-53). Hoy: lunes 05/10/2026; hoy + 56 = lunes 30/11/2026.
+
+const HOY = '2026-10-05'
+
+function ocurrencia(
+  fecha: string,
+  estado: OcurrenciaCuenta['estado'],
+  pago: 'PENDIENTE' | 'PAGADO' = 'PENDIENTE',
+): OcurrenciaCuenta {
+  return { fecha, estado, pago: { estado: pago } }
+}
+
+describe('esAdeudado', () => {
+  it('pasada, sin registrar e impaga → adeuda; ayer es el borde', () => {
+    expect(esAdeudado(ocurrencia('2026-09-01', 'SIN_REGISTRAR'), HOY)).toBe(true)
+    expect(esAdeudado(ocurrencia('2026-10-04', 'SIN_REGISTRAR'), HOY)).toBe(true)
+  })
+
+  it('hoy no adeuda (es próxima)', () => {
+    expect(esAdeudado(ocurrencia(HOY, 'AGENDADO'), HOY)).toBe(false)
+    expect(esAdeudado(ocurrencia(HOY, 'SIN_REGISTRAR'), HOY)).toBe(false)
+  })
+
+  it('cancelada o pagada → no adeuda', () => {
+    expect(esAdeudado(ocurrencia('2026-10-04', 'CANCELADO'), HOY)).toBe(false)
+    expect(esAdeudado(ocurrencia('2026-10-04', 'SIN_REGISTRAR', 'PAGADO'), HOY)).toBe(false)
+  })
+})
+
+describe('esProximo', () => {
+  it('hoy y hoy + 56, agendadas e impagas → próximas', () => {
+    expect(esProximo(ocurrencia(HOY, 'AGENDADO'), HOY)).toBe(true)
+    expect(esProximo(ocurrencia('2026-11-30', 'AGENDADO'), HOY)).toBe(true)
+  })
+
+  it('hoy + 57 → ninguna; ayer → no es próxima', () => {
+    expect(esProximo(ocurrencia('2026-12-01', 'AGENDADO'), HOY)).toBe(false)
+    expect(esProximo(ocurrencia('2026-10-04', 'SIN_REGISTRAR'), HOY)).toBe(false)
+  })
+
+  it('cancelada o pagada → no es próxima', () => {
+    expect(esProximo(ocurrencia('2026-10-12', 'CANCELADO'), HOY)).toBe(false)
+    expect(esProximo(ocurrencia('2026-10-12', 'AGENDADO', 'PAGADO'), HOY)).toBe(false)
+  })
+
+  it('ninguna ocurrencia es adeudada y próxima a la vez', () => {
+    for (const fecha of ['2026-10-04', HOY, '2026-11-30', '2026-12-01']) {
+      for (const estado of ['SIN_REGISTRAR', 'AGENDADO', 'CANCELADO'] as const) {
+        const o = ocurrencia(fecha, estado)
+        expect(esAdeudado(o, HOY) && esProximo(o, HOY)).toBe(false)
+      }
+    }
+  })
+})
+
+describe('importeVigente y totalDe', () => {
+  it('precio de la materia; null si no tiene o no está', () => {
+    const precios = new Map<number, number | null>([
+      [2, 8000],
+      [7, null],
+    ])
+    expect(importeVigente(precios, 2)).toBe(8000)
+    expect(importeVigente(precios, 7)).toBeNull()
+    expect(importeVigente(precios, 99)).toBeNull()
+  })
+
+  it('suma en centavos, sin los null', () => {
+    expect(totalDe([{ importe: 10000.5 }, { importe: 10000.5 }, { importe: 10000.5 }])).toBe(
+      30001.5,
+    )
+    expect(totalDe([{ importe: 0.1 }, { importe: 0.2 }, { importe: null }])).toBe(0.3)
+    expect(totalDe([])).toBe(0)
+  })
+})
+
+describe('primerDiaDelMes', () => {
+  it('día 1 del mes, en los bordes de fin y principio de mes y de año', () => {
+    expect(primerDiaDelMes('2026-10-05')).toBe('2026-10-01')
+    expect(primerDiaDelMes('2026-10-01')).toBe('2026-10-01')
+    expect(primerDiaDelMes('2026-09-30')).toBe('2026-09-01')
+    expect(primerDiaDelMes('2026-12-31')).toBe('2026-12-01')
+    expect(primerDiaDelMes('2027-01-01')).toBe('2027-01-01')
+  })
+})
+
+describe('paginarEnMemoria', () => {
+  const items = [1, 2, 3, 4, 5]
+
+  it('página 1 y 2 con su meta', () => {
+    expect(paginarEnMemoria(items, { page: 1, pageSize: 2 })).toEqual({
+      data: [1, 2],
+      meta: { page: 1, pageSize: 2, total: 5, totalPages: 3 },
+    })
+    expect(paginarEnMemoria(items, { page: 3, pageSize: 2 }).data).toEqual([5])
+  })
+
+  it('fuera de rango → vacía con el meta correcto; sin items → totalPages 0', () => {
+    expect(paginarEnMemoria(items, { page: 4, pageSize: 2 })).toEqual({
+      data: [],
+      meta: { page: 4, pageSize: 2, total: 5, totalPages: 3 },
+    })
+    expect(paginarEnMemoria([], { page: 1, pageSize: 20 }).meta).toEqual({
+      page: 1,
+      pageSize: 20,
+      total: 0,
+      totalPages: 0,
+    })
+  })
+})
