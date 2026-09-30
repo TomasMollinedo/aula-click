@@ -14,7 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
 
-import { profesoresQueImpidenLaBaja } from '../errores-api'
+import { mensajeErrorAccion, profesoresQueImpidenLaBaja } from '../errores-api'
 import { useDarDeBajaMateria } from '../hooks/use-dar-de-baja-materia'
 import type { MateriaDetalle } from '../materias.types'
 import { ProfesoresDeMateria } from './ProfesoresDeMateria'
@@ -25,8 +25,11 @@ type ConfirmarBajaMateriaProps = {
    * tanto el detalle (que tiene el `MateriaDetalle` completo) como una fila del listado.
    */
   materia: Pick<MateriaDetalle, 'id' | 'nombre'> | null
-  /** URL del listado de profesores en el segmento del rol (por ejemplo `/mesa/profesores`). */
-  rutaProfesores: string
+  /**
+   * URL del listado de profesores en el segmento del rol (por ejemplo `/mesa/profesores`). Sin ella
+   * (el gerente no tiene la pantalla de profesores) se listan sin enlace.
+   */
+  rutaProfesores?: string
   /** Cierra el diálogo: al cancelar, al cerrar el rechazo y también después de la baja. */
   onCerrar: () => void
   /**
@@ -51,7 +54,7 @@ export function ConfirmarBajaMateria({
   const toast = useToast()
 
   const profesores = mutation.error ? profesoresQueImpidenLaBaja(mutation.error) : []
-  const mensajeError = mutation.error?.message ?? null
+  const mensajeError = mutation.error ? mensajeErrorAccion(mutation.error) : null
 
   const cerrar = () => {
     // Sin esto, volver a abrir el diálogo mostraría el error del intento anterior.

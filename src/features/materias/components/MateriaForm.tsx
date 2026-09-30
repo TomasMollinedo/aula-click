@@ -24,15 +24,24 @@ import {
 import type { MateriaCrear } from '../materias.types'
 
 type MateriaFormProps = {
+  /** Valores iniciales: vacío en el alta; los de la materia en la edición. */
+  defaultValues?: MateriaFormValues
+  /** Alta y edición mandan el mismo body (el PATCH recibe los tres campos). */
   onSubmit: (datos: MateriaCrear) => void
   onCancelar: () => void
   isPending: boolean
   error: ApiError | null
 }
 
-// Cuerpo y pie del formulario: va dentro de un <Panel> (modal o página) que pone el encabezado.
-// En este sprint solo hay alta: la edición de materias no existe todavía en la API.
-export function MateriaForm({ onSubmit, onCancelar, isPending, error }: MateriaFormProps) {
+// Cuerpo y pie del formulario de alta y edición: va dentro de un <Panel> (modal o página) que pone
+// el encabezado.
+export function MateriaForm({
+  defaultValues = MATERIA_FORM_VACIO,
+  onSubmit,
+  onCancelar,
+  isPending,
+  error,
+}: MateriaFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
 
   const {
@@ -42,7 +51,7 @@ export function MateriaForm({ onSubmit, onCancelar, isPending, error }: MateriaF
     formState: { errors },
   } = useForm<MateriaFormValues>({
     resolver: zodResolver(materiaFormSchema),
-    defaultValues: MATERIA_FORM_VACIO,
+    defaultValues,
   })
 
   const camposValidos = useMemo(() => new Set(MATERIA_FORM_FIELDS), [])
@@ -55,7 +64,7 @@ export function MateriaForm({ onSubmit, onCancelar, isPending, error }: MateriaF
     onSubmit(valoresFormACrear(valores))
   })
 
-  // El 409 por nombre repetido se muestra sobre el campo `nombre`, igual que un 400.
+  // Los 400 (por ejemplo, el precio) y el 409 por nombre repetido se muestran sobre su campo.
   useEffect(() => {
     if (!error) return
     aplicarErroresApi(error, setFieldError, camposValidos, formRef)
@@ -85,6 +94,25 @@ export function MateriaForm({ onSubmit, onCancelar, isPending, error }: MateriaF
             aria-invalid={errors.nombre ? true : undefined}
             aria-describedby={errors.nombre ? fieldErrorId('nombre') : undefined}
             {...register('nombre')}
+          />
+        </Field>
+
+        <Field
+          label="Precio por hora de clase (en pesos)"
+          htmlFor="precioHora"
+          required
+          error={errors.precioHora?.message}
+        >
+          {/* Texto y no type="number": acepta coma o punto decimal y no cambia el valor con la
+              rueda del mouse. El teclado del celular es el numérico con separador. */}
+          <Input
+            id="precioHora"
+            inputMode="decimal"
+            placeholder="Por ejemplo, 7500,50"
+            autoComplete="off"
+            aria-invalid={errors.precioHora ? true : undefined}
+            aria-describedby={errors.precioHora ? fieldErrorId('precioHora') : undefined}
+            {...register('precioHora')}
           />
         </Field>
 

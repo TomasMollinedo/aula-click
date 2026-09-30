@@ -17,7 +17,12 @@ describe('armarTurnoCrear', () => {
   it('sesión única: la fecha va como fechaInicio, sin fechaFin', () => {
     const body = armarTurnoCrear(
       SELECCION,
-      { tipo: 'SESION_UNICA', fecha: '2026-10-05', motivoConsulta: 'Repaso de funciones' },
+      {
+        tipo: 'SESION_UNICA',
+        fecha: '2026-10-05',
+        observaciones: 'Viene con el parcial',
+        temas: 'Repaso de funciones',
+      },
       false,
     )
     expect(body).toEqual({
@@ -26,7 +31,8 @@ describe('armarTurnoCrear', () => {
       bloqueIds: [10, 11, 12],
       tipo: 'SESION_UNICA',
       fechaInicio: '2026-10-05',
-      motivoConsulta: 'Repaso de funciones',
+      observaciones: 'Viene con el parcial',
+      temas: 'Repaso de funciones',
       asignarDondeHayLugar: false,
     })
     expect(body).not.toHaveProperty('fechaFin')
@@ -35,7 +41,13 @@ describe('armarTurnoCrear', () => {
   it('recurrente con fin', () => {
     const body = armarTurnoCrear(
       SELECCION,
-      { tipo: 'RECURRENTE', fechaInicio: '2026-10-05', fechaFin: '2026-11-30', motivoConsulta: '' },
+      {
+        tipo: 'RECURRENTE',
+        fechaInicio: '2026-10-05',
+        fechaFin: '2026-11-30',
+        observaciones: '',
+        temas: '',
+      },
       true,
     )
     expect(body).toMatchObject({
@@ -56,22 +68,37 @@ describe('armarTurnoCrear', () => {
     expect(body).toHaveProperty('fechaFin', null)
   })
 
-  it.each(['', '   ', undefined])('motivo %o: no se manda', (motivoConsulta) => {
+  it.each(['', '   ', undefined])('observaciones %o: no se mandan', (observaciones) => {
     const body = armarTurnoCrear(
       SELECCION,
-      { tipo: 'SESION_UNICA', fecha: '2026-10-05', motivoConsulta },
+      { tipo: 'SESION_UNICA', fecha: '2026-10-05', temas: 'Funciones', observaciones },
       false,
     )
-    expect(body).not.toHaveProperty('motivoConsulta')
+    expect(body).not.toHaveProperty('observaciones')
   })
 
-  it('recorta los espacios del motivo', () => {
+  it.each(['', '   ', undefined])('temas %o en un recurrente: no se mandan', (temas) => {
     const body = armarTurnoCrear(
       SELECCION,
-      { tipo: 'SESION_UNICA', fecha: '2026-10-05', motivoConsulta: '  Repaso  ' },
+      { tipo: 'RECURRENTE', fechaInicio: '2026-10-05', fechaFin: '', temas },
       false,
     )
-    expect(body.motivoConsulta).toBe('Repaso')
+    expect(body).not.toHaveProperty('temas')
+  })
+
+  it('recorta los espacios de observaciones y temas', () => {
+    const body = armarTurnoCrear(
+      SELECCION,
+      {
+        tipo: 'SESION_UNICA',
+        fecha: '2026-10-05',
+        observaciones: '  Repaso  ',
+        temas: '  Funciones  ',
+      },
+      false,
+    )
+    expect(body.observaciones).toBe('Repaso')
+    expect(body.temas).toBe('Funciones')
   })
 
   it('ordena los bloqueIds por hora, no por id ni por orden de selección', () => {
@@ -83,7 +110,7 @@ describe('armarTurnoCrear', () => {
           { bloqueId: 9, horaInicio: '09:00' },
         ],
       },
-      { tipo: 'SESION_UNICA', fecha: '2026-10-05' },
+      { tipo: 'SESION_UNICA', fecha: '2026-10-05', temas: 'Funciones' },
       false,
     )
     expect(body.bloqueIds).toEqual([9, 3])
@@ -92,7 +119,7 @@ describe('armarTurnoCrear', () => {
 
 describe('turnoFormSchema', () => {
   it('sesión única: exige la fecha', () => {
-    const r = turnoFormSchema.safeParse({ tipo: 'SESION_UNICA', fecha: '' })
+    const r = turnoFormSchema.safeParse({ tipo: 'SESION_UNICA', fecha: '', temas: 'Funciones' })
     expect(r.success).toBe(false)
     expect(r.error?.issues[0]?.path).toEqual(['fecha'])
   })
@@ -106,7 +133,9 @@ describe('turnoFormSchema', () => {
   })
 
   it.each(['05/10/2026', '2026-13-01', '2026-02-30'])('rechaza la fecha %o', (fecha) => {
-    expect(turnoFormSchema.safeParse({ tipo: 'SESION_UNICA', fecha }).success).toBe(false)
+    expect(
+      turnoFormSchema.safeParse({ tipo: 'SESION_UNICA', fecha, temas: 'Funciones' }).success,
+    ).toBe(false)
   })
 
   it('no valida reglas: acepta un fin anterior al inicio (lo decide la API)', () => {
@@ -119,13 +148,21 @@ describe('turnoFormSchema', () => {
     ).toBe(true)
   })
 
-  it('motivo de hasta 500 caracteres', () => {
-    const base = { tipo: 'SESION_UNICA', fecha: '2026-10-05' } as const
-    expect(turnoFormSchema.safeParse({ ...base, motivoConsulta: 'a'.repeat(500) }).success).toBe(
-      true,
-    )
-    expect(turnoFormSchema.safeParse({ ...base, motivoConsulta: 'a'.repeat(501) }).success).toBe(
-      false,
-    )
+  it.each([undefined, '', '   '])('sesión única: los temas son obligatorios (%o)', (temas) => {
+    const r = turnoFormSchema.safeParse({ tipo: 'SESION_UNICA', fecha: '2026-10-05', temas })
+    expect(r.success).toBe(false)
+    expect(r.error?.issues[0]?.path).toEqual(['temas'])
+  })
+
+  it('recurrente: los temas son opcionales', () => {
+    expect(
+      turnoFormSchema.safeParse({ tipo: 'RECURRENTE', fechaInicio: '2026-10-05' }).success,
+    ).toBe(true)
+  })
+
+  it.each(['observaciones', 'temas'] as const)('%s de hasta 500 caracteres', (campo) => {
+    const base = { tipo: 'SESION_UNICA', fecha: '2026-10-05', temas: 'Funciones' } as const
+    expect(turnoFormSchema.safeParse({ ...base, [campo]: 'a'.repeat(500) }).success).toBe(true)
+    expect(turnoFormSchema.safeParse({ ...base, [campo]: 'a'.repeat(501) }).success).toBe(false)
   })
 })

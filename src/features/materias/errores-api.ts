@@ -14,6 +14,24 @@ const CAMPOS_CONFLICTO = new Set(['nombre'])
 /** Código del 409 al dar de baja una materia que tiene profesores asignados. */
 export const CODIGO_MATERIA_CON_PROFESORES = 'MATERIA_CON_PROFESORES'
 
+/** Código del 409 al reactivar una materia que no tiene precio: primero hay que cargarlo. */
+export const CODIGO_MATERIA_SIN_PRECIO = 'MATERIA_SIN_PRECIO'
+
+const MENSAJE_SIN_PERMISO =
+  'No tenés permiso para esta operación: el catálogo de materias lo administra el gerente'
+
+/**
+ * Mensaje de un error de una acción sin formulario (baja o reactivación). El 403 `SIN_PERMISO` y
+ * el 409 `MATERIA_SIN_PRECIO` tienen texto propio; el resto muestra el `message` de la API.
+ */
+export function mensajeErrorAccion(error: ApiError): string {
+  if (error.status === 403 && error.code === 'SIN_PERMISO') return MENSAJE_SIN_PERMISO
+  if (error.code === CODIGO_MATERIA_SIN_PRECIO) {
+    return 'La materia no tiene precio: cargalo desde "Editar" y después reactivala.'
+  }
+  return error.message
+}
+
 type Detalle = { path?: unknown; message: string }
 
 type ResultadoErrores<TCampo extends string> = {
@@ -32,7 +50,7 @@ export function interpretarErroresApi<TCampo extends string>(
   camposValidos: ReadonlySet<TCampo>,
 ): ResultadoErrores<TCampo> {
   if (error.status === 403 && error.code === 'SIN_PERMISO') {
-    return { errorGeneral: 'No tenés permiso para esta operación', camposMarcados: [] }
+    return { errorGeneral: MENSAJE_SIN_PERMISO, camposMarcados: [] }
   }
 
   const details = Array.isArray(error.details) ? (error.details as Detalle[]) : []

@@ -183,17 +183,22 @@ describe('interpretarErrorAlta: 400 VALIDACION', () => {
     })
   })
 
-  it('bloqueIds (con o sin posición) y motivoConsulta', () => {
+  it('bloqueIds (con o sin posición), observaciones y temas', () => {
     const error = new ApiError(400, 'VALIDACION', 'Datos inválidos', [
       { path: ['bloqueIds'], message: 'Todas las horas deben ser del mismo día' },
       { path: ['bloqueIds', 1], message: 'No puede repetir horas' },
-      { path: ['motivoConsulta'], message: 'No puede superar los 500 caracteres' },
+      { path: ['observaciones'], message: 'No puede superar los 500 caracteres' },
+      { path: ['temas'], message: 'Los temas a trabajar son obligatorios en una sesión única' },
     ])
     expect(interpretarErrorAlta(error, 'RECURRENTE')).toEqual({
       tipo: 'campos',
       camposMarcados: [
         { campo: 'bloqueIds', mensaje: 'Todas las horas deben ser del mismo día' },
-        { campo: 'motivoConsulta', mensaje: 'No puede superar los 500 caracteres' },
+        { campo: 'observaciones', mensaje: 'No puede superar los 500 caracteres' },
+        {
+          campo: 'temas',
+          mensaje: 'Los temas a trabajar son obligatorios en una sesión única',
+        },
       ],
       mensaje: null,
     })

@@ -13,8 +13,8 @@ export default function NuevaMateriaModalPorUrl() {
   return (
     <MateriaNueva
       mode="modal"
-      onCerrar={() => router.push('/mesa/materias')}
-      onCreada={() => router.replace('/mesa/materias')}
+      onCerrar={() => router.push('/gerente/materias')}
+      onCreada={() => router.replace('/gerente/materias')}
     />
   )
 }

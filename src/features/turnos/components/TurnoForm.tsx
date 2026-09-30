@@ -11,10 +11,13 @@ import { Textarea } from '@/components/ui/textarea'
 import { cn } from '@/utils/cn'
 import { nombreDiaSemana } from '@/utils/dias-semana'
 
-import type { CampoTurnoForm, TurnoFormValues } from '../turnos.schema'
+import {
+  MAX_OBSERVACIONES,
+  MAX_TEMAS,
+  type CampoTurnoForm,
+  type TurnoFormValues,
+} from '../turnos.schema'
 import type { TipoTurno } from '../turnos.types'
-
-const MAX_MOTIVO = 500
 
 const TIPOS: { valor: TipoTurno; titulo: string; ayuda: string }[] = [
   { valor: 'RECURRENTE', titulo: 'Recurrente', ayuda: 'Todas las semanas, desde una fecha' },
@@ -41,7 +44,7 @@ type TurnoFormProps = {
 }
 
 /**
- * Paso 4: tipo, fechas y motivo, con el schema de la feature (solo formato). Que la fecha caiga en
+ * Paso 4: tipo, fechas, observaciones y temas a trabajar, con el schema de la feature (solo formato). Que la fecha caiga en
  * el día del bloque, que no sea pasada y que el fin no sea anterior al inicio lo decide la API:
  * sus 400 se marcan en el campo.
  */
@@ -56,20 +59,24 @@ export function TurnoForm({
 }: TurnoFormProps) {
   const { register, handleSubmit, control, getValues, reset } = form
   const errors = form.formState.errors as Partial<Record<CampoTurnoForm, { message?: string }>>
-  const [tipo, motivo] = useWatch({ control, name: ['tipo', 'motivoConsulta'] })
+  const [tipo, observaciones, temas] = useWatch({
+    control,
+    name: ['tipo', 'observaciones', 'temas'],
+  })
   const ayudaDia = `Tiene que ser un ${nombreDiaSemana(diaSemana).toLowerCase()}`
 
   // Cambiar de tipo conserva la fecha (la de la sesión única es la de inicio del recurrente) y el
-  // motivo, y limpia los errores del tipo anterior.
+  // observaciones y los temas, y limpia los errores del tipo anterior.
   const cambiarTipo = (nuevo: TipoTurno) => {
     const valores = getValues()
     if (valores.tipo === nuevo) return
     const fecha = valores.tipo === 'SESION_UNICA' ? valores.fecha : valores.fechaInicio
-    const motivoConsulta = valores.motivoConsulta ?? ''
+    const observaciones = valores.observaciones ?? ''
+    const temas = valores.temas ?? ''
     reset(
       nuevo === 'SESION_UNICA'
-        ? { tipo: nuevo, fecha, motivoConsulta }
-        : { tipo: nuevo, fechaInicio: fecha, fechaFin: '', motivoConsulta },
+        ? { tipo: nuevo, fecha, observaciones, temas }
+        : { tipo: nuevo, fechaInicio: fecha, fechaFin: '', observaciones, temas },
     )
   }
 
@@ -163,22 +170,43 @@ export function TurnoForm({
       )}
 
       <Field
-        label="Motivo de consulta"
-        htmlFor="turno-motivo"
-        optional
-        error={errors.motivoConsulta?.message}
+        label="Temas a trabajar"
+        htmlFor="turno-temas"
+        required={tipo === 'SESION_UNICA'}
+        optional={tipo !== 'SESION_UNICA'}
+        error={errors.temas?.message}
       >
         <Textarea
-          id="turno-motivo"
+          id="turno-temas"
           rows={3}
-          maxLength={MAX_MOTIVO}
-          placeholder="Por ejemplo: repaso de funciones para el parcial"
-          aria-invalid={!!errors.motivoConsulta}
-          aria-describedby={cn(fieldErrorId('turno-motivo'), 'turno-motivo-contador')}
-          {...register('motivoConsulta')}
+          maxLength={MAX_TEMAS}
+          placeholder="Por ejemplo: funciones cuadráticas y ecuaciones"
+          aria-invalid={!!errors.temas}
+          aria-describedby={cn(fieldErrorId('turno-temas'), 'turno-temas-contador')}
+          {...register('temas')}
         />
-        <p id="turno-motivo-contador" className="text-muted-foreground text-right text-xs">
-          {(motivo ?? '').length} / {MAX_MOTIVO}
+        <p id="turno-temas-contador" className="text-muted-foreground text-right text-xs">
+          {(temas ?? '').length} / {MAX_TEMAS}
+        </p>
+      </Field>
+
+      <Field
+        label="Observaciones"
+        htmlFor="turno-observaciones"
+        optional
+        error={errors.observaciones?.message}
+      >
+        <Textarea
+          id="turno-observaciones"
+          rows={3}
+          maxLength={MAX_OBSERVACIONES}
+          placeholder="Por ejemplo: viene con el parcial del viernes"
+          aria-invalid={!!errors.observaciones}
+          aria-describedby={cn(fieldErrorId('turno-observaciones'), 'turno-observaciones-contador')}
+          {...register('observaciones')}
+        />
+        <p id="turno-observaciones-contador" className="text-muted-foreground text-right text-xs">
+          {(observaciones ?? '').length} / {MAX_OBSERVACIONES}
         </p>
       </Field>
 
