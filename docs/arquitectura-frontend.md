@@ -133,7 +133,11 @@ src/
 │   ├── ocurrencias/                    # el detalle de un turno en una fecha y los turnos de un alumno (T-44)
 │   │   ├── detalle-url.ts, api/ocurrencias.keys.ts, hooks/{use-detalle-en-url.ts, use-invalidar-ocurrencias.ts}
 │   │   └── components/{OcurrenciaDetalle.tsx, TurnosDelAlumno.tsx}   # placeholders (T-44)
-│   ├── cancelaciones/  finalizaciones/ # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
+│   ├── cancelaciones/                  # HU-13 (T-46): cancelar uno o varios turnos
+│   │   ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
+│   │   ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts}  # al cancelar invalida ocurrencias, agendas y cuentas
+│   │   └── components/{AccionCancelarTurno, AccionCancelarVarios, CancelarTurnosDialog}.tsx
+│   ├── finalizaciones/                 # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
 │   ├── pagos/  cuentas/  examenes/     #   (AccionCancelarTurno, AccionCancelarVarios, AccionFinalizarTurno,
 │   │                                   #   AccionRegistrarPago, RegistrarPagoDialog, PagosDelAlumno, PagosGlobal,
 │   │                                   #   ExamenesDelAlumno): placeholders con las props definitivas (T-46 a T-56)
