@@ -9,11 +9,10 @@ import { sumarImportes } from '@/utils/moneda'
 
 /**
  * La ocurrencia del detalle del turno como `OcurrenciaACobrar`. Es el único lugar de `pagos` que
- * conoce la forma de `OcurrenciaDetalle` (provisoria hasta T-44): usa solo lo mínimo. El importe es
- * el vigente si el pago está `PENDIENTE`; si ya está pagada, `null` (la API la rechaza igual).
+ * conoce la forma de `OcurrenciaDetalle`: usa solo lo mínimo.
  */
 export function aCobrarDesdeDetalle(ocurrencia: OcurrenciaDetalle): OcurrenciaACobrar {
-  const { turnoId, fecha, horaInicio, horaFin, materia, profesor, pago } = ocurrencia
+  const { turnoId, fecha, horaInicio, horaFin, materia, profesor } = ocurrencia
   return {
     turnoId,
     fecha,
@@ -21,7 +20,10 @@ export function aCobrarDesdeDetalle(ocurrencia: OcurrenciaDetalle): OcurrenciaAC
     horaFin,
     materia: { id: materia.id, nombre: materia.nombre },
     profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
-    importe: pago.estado === 'PENDIENTE' ? pago.importeVigente : null,
+    // TODO integración detalle (prompt 2): `OcurrenciaDetalle` (T-44) ya no trae `pago`, así que el
+    // detalle no tiene de dónde sacar el importe. Antes: el vigente si el pago estaba `PENDIENTE` y
+    // `null` si ya estaba pagada. Provisorio: siempre `null` (el diálogo lo muestra sin importe).
+    importe: null,
   }
 }
 

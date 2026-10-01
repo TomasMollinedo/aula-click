@@ -1,5 +1,13 @@
 @import 'tailwindcss';
 
+/* Sidebar expandido (components/layout/app-shell.tsx): lo decide solo el botón de modo
+   (`data-modo='fijo'` en el wrapper `group/sidebar`). Aplica a todo lo que tiene adentro. */
+@custom-variant sidebar-abierto {
+  &:is(:where(.group\/sidebar)[data-modo='fijo'] *) {
+    @slot;
+  }
+}
+
 :root {
   /* Paleta de marca  */
   --color-cobalto: #3552cc;

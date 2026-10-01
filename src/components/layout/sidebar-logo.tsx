@@ -8,7 +8,7 @@ export function SidebarLogo() {
       <span className="bg-dorado flex size-8 shrink-0 items-center justify-center rounded-lg">
         <MousePointer2 className="size-4 fill-white text-white" />
       </span>
-      <span className="text-base font-semibold">
+      <span className="sidebar-abierto:opacity-100 text-base font-semibold whitespace-nowrap opacity-0 transition-opacity duration-300">
         <span className="text-white">Aula</span>
         <span className="text-dorado">Click</span>
       </span>

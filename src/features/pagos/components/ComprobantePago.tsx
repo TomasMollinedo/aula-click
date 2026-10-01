@@ -13,7 +13,6 @@ import { useCentro } from '@/features/centro/hooks/use-centro'
 import { useImprimirCuandoEsteListo } from '@/hooks/use-imprimir'
 import { formatearPesos } from '@/utils/moneda'
 
-import { CENTRO_PROVISORIO } from '../centro-provisorio'
 import {
   fechaDocumento,
   textoHorario,
@@ -48,13 +47,7 @@ function ComprobanteDelPago({ pagoId, rutaVolver }: { pagoId: number; rutaVolver
   const centro = useCentro()
   const [logoListo, setLogoListo] = useState(false)
 
-  // TEMPORAL (T-52, issue #129): mientras no existe `GET /centro` (T-64) responde 404, y el
-  // comprobante usa los datos de prueba. Se mira `failureReason` para no esperar los reintentos.
-  // Borrar esta línea (y `centro-provisorio.ts`) cuando T-64 esté mergeada: queda `centro.data`.
-  const datosCentro =
-    centro.data ?? (centro.failureReason?.status === 404 ? CENTRO_PROVISORIO : undefined)
-
-  useImprimirCuandoEsteListo(!!comprobante.data && !!datosCentro && logoListo)
+  useImprimirCuandoEsteListo(!!comprobante.data && !!centro.data && logoListo)
 
   // El 404 no se reintenta: con el primer fallo ya se sabe que el pago no existe.
   if (comprobante.failureReason?.status === 404) return <PagoNoExiste rutaVolver={rutaVolver} />
@@ -67,7 +60,7 @@ function ComprobanteDelPago({ pagoId, rutaVolver }: { pagoId: number; rutaVolver
             : comprobante.error.message,
         reintentar: comprobante.error.status === 403 ? undefined : () => comprobante.refetch(),
       }
-    : centro.error && !datosCentro
+    : centro.error && !centro.data
       ? {
           mensaje: 'No se pudieron cargar los datos del centro',
           reintentar: () => centro.refetch(),
@@ -75,7 +68,7 @@ function ComprobanteDelPago({ pagoId, rutaVolver }: { pagoId: number; rutaVolver
       : null
 
   const datos =
-    comprobante.data && datosCentro ? { comprobante: comprobante.data, centro: datosCentro } : null
+    comprobante.data && centro.data ? { comprobante: comprobante.data, centro: centro.data } : null
 
   return (
     <main className="bg-background min-h-screen">

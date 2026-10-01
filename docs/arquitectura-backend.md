@@ -42,7 +42,7 @@ src/
 │   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, auditoria, detalles (ver convenciones-backend.md)
 │   └── features/
 │       ├── turnos/ocurrencias.condiciones.ts  # motor de ocurrencias (T-30): lo consumen agendas y las features del Sprint 2
-│       ├── agendas/                          # agendas diaria, propia y de un profesor: sin tablas propias, leen ocurrencias
+│       ├── agendas/                          # agendas diaria, propia, de un profesor y del centro: sin tablas propias, leen ocurrencias y prioridades
 │       └── <dominio>/
 │           ├── <dominio>.routes.ts
 │           ├── <dominio>.controller.ts
@@ -60,7 +60,7 @@ Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignada
 
 Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la completa su tarea dueña):
 
-- `agendas`: agenda diaria del centro, agenda propia del profesor, agenda de un profesor y los selectores de materias y aulas de la agenda (salieron de `turnos` en T-30, `/api/v1/agendas/*`). No tiene tablas propias: lee ocurrencias con el motor de `turnos`.
+- `agendas`: agenda diaria del centro, agenda propia del profesor, agenda de un profesor, agenda del centro para un rango (calendario semanal) y los selectores de materias y aulas de la agenda (salieron de `turnos` en T-30, `/api/v1/agendas/*`). No tiene tablas propias: lee ocurrencias con el motor de `turnos` y la prioridad con `leerPrioridades` de `examenes` (T-57), y muestra también las canceladas.
 - `ocurrencias`: detalle de un turno en una fecha puntual (con las acciones permitidas) y los turnos de un alumno.
 - `cancelaciones`: cancelar una o varias ocurrencias de un alumno.
 - `finalizaciones`: finalizar un turno recurrente a partir de una fecha.
@@ -69,6 +69,7 @@ Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la com
 - `cuentas`: turnos adeudados y próximos de un alumno, y las vistas globales de adeudados y de próximos.
 - `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
 - `tablero`: indicadores agregados para el gerente (opcional).
+- `centro`: nombre, dirección, teléfono y logo del centro, para el encabezado de los documentos oficiales (T-64). Sin tabla: son constantes de la feature (el logo, un archivo); surgió con las definiciones del 29/09, así que es la única que agregó su línea a `app.ts` después de T-32.
 
 `turnos` publica el **motor de ocurrencias** en `turnos/ocurrencias.condiciones.ts` (T-30): leer ocurrencias con su estado y su pago, la ocupación de una hora, la superposición del alumno y los locks de la reserva. Las features del Sprint 2 lo consumen desde su repository (o con su `tx`) y no reimplementan ninguna de esas reglas (`convenciones-backend.md` → Ocurrencias).
 

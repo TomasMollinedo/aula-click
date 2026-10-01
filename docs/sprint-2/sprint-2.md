@@ -788,7 +788,7 @@ Anular un pago (definición D): pasa al próximo sprint.
 
 **Actualización (T-52 UI)**
 
-- **Importes antes de pagar.** `POST /pagos` no tiene previa y `OcurrenciaDeAlumno` no trae importe. Quien abre el diálogo le pasa los importes con dos tipos compartidos de `src/types/pago.ts`: `OcurrenciaACobrar` (la ocurrencia `(turnoId, fecha)` con horario, materia, profesor e `importe`, que es `null` si la materia no tiene precio) y `SolicitudRegistrarPago` (`{ alumnoId, ocurrencias, onCerrar }`, las props de `RegistrarPagoDialog` y el argumento de `renderRegistrarPago`). El detalle arma la ocurrencia con `pago.importeVigente` (T-43, `aCobrarDesdeDetalle`) y `cuentas`, con los importes de T-53. El cliente solo suma esos importes para el resumen; cantidad, total y vuelto del éxito salen de la respuesta. Quien abre guarda su copia de `ocurrencias` y deja el diálogo montado hasta `onCerrar`, porque registrar invalida lo que lo abrió (decisión T-67).
+- **Importes antes de pagar.** `POST /pagos` no tiene previa y `OcurrenciaDeAlumno` no trae importe. Quien abre el diálogo le pasa los importes con dos tipos compartidos de `src/types/pago.ts`: `OcurrenciaACobrar` (la ocurrencia `(turnoId, fecha)` con horario, materia, profesor e `importe`, que es `null` si la materia no tiene precio) y `SolicitudRegistrarPago` (`{ alumnoId, ocurrencias, onCerrar }`, las props de `RegistrarPagoDialog` y el argumento de `renderRegistrarPago`). El detalle arma la ocurrencia con `pago.importeVigente` (T-43, `aCobrarDesdeDetalle`) y `cuentas`, con los importes de T-53. El cliente solo suma esos importes para el resumen; cantidad, total y vuelto del éxito salen de la respuesta. Quien abre guarda su copia de `ocurrencias` y deja el diálogo montado hasta `onCerrar`, porque registrar invalida lo que lo abrió (decisión T-80).
 - **Comprobante.** La ruta es `app/(documentos)/mesa/pagos/[pagoId]/comprobante/page.tsx` (URL `/mesa/pagos/<id>/comprobante`), en el route group `(documentos)`, cuyo layout solo monta `SegmentoDeRol`: misma URL, sin el `AppShell` de `app/mesa/layout.tsx`. Reemplaza a `app/mesa/pagos/[pagoId]/comprobante/page.tsx` del punto 3, que habría quedado con el Sidebar. T-60 suma ahí sus `/…/imprimir` (`arquitectura-frontend.md` → Documentos imprimibles).
 - **Pendiente.** La verificación en A4 depende de T-64: sin `GET /centro`, el comprobante muestra "No se pudieron cargar los datos del centro" y no imprime. El recorrido real desde el detalle del turno depende de T-44: hoy `OcurrenciaDetalle` es un placeholder que no llama a `renderAcciones`, así que se verificó con una página temporal, con ocurrencias reales y un `OcurrenciaDetalle` armado a mano.
 - **Página temporal eliminada (T-54).** `app/mesa/prueba-pagos/` y `features/prueba-pagos/` se borraron en T-54: el diálogo ya se abre de verdad desde `cuentas` (ficha y `/mesa/pagos`). El recorrido desde el detalle del turno se verifica con T-44.
@@ -827,12 +827,12 @@ Anular pagos y que sus turnos vuelvan a la deuda (definición D): pasa al próxi
 
 **Actualización (ajustes de la PO, 01/10)**
 
-El texto de arriba queda como se escribió; lo que sigue lo corrige (ver "Ajustes de la PO (01/10)" al final y las decisiones T-79 a T-84). **Los criterios de aceptación van a cambiar: los reescribe la PO.**
+El texto de arriba queda como se escribió; lo que sigue lo corrige (ver "Ajustes de la PO (01/10)" al final y las decisiones T-91 a T-96). **Los criterios de aceptación van a cambiar: los reescribe la PO.**
 
 - **Punto 1 del alcance.** `FiltroDeuda` pasa a `{ alumnoId?, materiaId?, profesorId?, desde?, hasta?, hoy }` (todo opcional salvo `hoy`). `leerAdeudados`, `totalAdeudado` y `leerProximos` (ahora con `alumnoId` opcional) lo respetan. `totalAdeudado(client, { hoy })` de T-61 no cambia.
 - **Punto 2.** `GET /cuentas/alumnos/{alumnoId}` acepta `desde`, `hasta`, `materiaId` y `profesorId`, y responde `{ totalAdeudado, adeudados, proximos, limiteCobro }`. Ya **no** devuelve `pagos` ni `pagadoDelMes` (pasan a otro sprint). `adeudados` y `proximos` van `null` si la sección no aplica al período.
 - **Punto 3.** `GET /cuentas/adeudados` suma los mismos filtros y `aplica`. Nuevo `GET /cuentas/proximos?alumnoId&desde&hasta&materiaId&profesorId&page&pageSize` (`MESA_ENTRADAS`): la misma fila con alumno y DNI, sin `totalAdeudado`, con `aplica` y `limiteCobro`.
-- **Punto 4.** Con `desde` en el período, el rango de la deuda empieza ahí y no hace falta buscar el primer turno; sin `desde`, sigue como en T-69, con materia y profesor en el filtro.
+- **Punto 4.** Con `desde` en el período, el rango de la deuda empieza ahí y no hace falta buscar el primer turno; sin `desde`, sigue como en T-81, con materia y profesor en el filtro.
 - **Regla nueva.** `rangosDelPeriodo` (`cuentas.reglas.ts`, con tests): qué parte del período le toca a cada sección y cuál no aplica. El cliente no la repite.
 - **Punto 5.** Tests nuevos de la regla, de las condiciones (filtros, período y `aggregate`), del service (`null`, `aplica`, `limiteCobro`, próximos paginados) y de las rutas (400 de `hasta < desde` en los tres endpoints).
 
@@ -864,15 +864,15 @@ El texto de arriba queda como se escribió; lo que sigue lo corrige (ver "Ajuste
 **Actualización (T-54 UI)**
 
 - **Rama y PR.** Se hizo en `feat/pagos-ui`, no en `feat/cuentas-ui`: el equipo decidió un solo PR con T-52, T-53 y T-54.
-- **Ficha: una sola selección.** Adeudados y próximos se tildan juntos y un mismo pago puede mezclarlos (la API cobra hasta hoy + 56 días). "Seleccionar todos los adeudados" suma sin sacar los próximos tildados. La selección es por `(turnoId, fecha)` y guarda la copia de cada fila; va al diálogo en el orden en que se ve (decisión T-75).
+- **Ficha: una sola selección.** Adeudados y próximos se tildan juntos y un mismo pago puede mezclarlos (la API cobra hasta hoy + 56 días). "Seleccionar todos los adeudados" suma sin sacar los próximos tildados. La selección es por `(turnoId, fecha)` y guarda la copia de cada fila; va al diálogo en el orden en que se ve (decisión T-87).
 - **Vista global: selección entre páginas.** Sólo con alumno filtrado (`?alumnoId=&page=` en la URL). Se conserva al paginar y se limpia al cambiar o quitar el filtro. Sin filtro, se cobra de a un turno. Si al cobrar la página queda fuera de rango, pasa a la última (`replace`).
-- **Cierre del diálogo.** Quien lo abre guarda la solicitud y ajusta la selección en `onCerrar`, sin callback de éxito (`useDialogoDePago`): la ficha poda contra la cuenta actual; la vista global saca sólo las ocurrencias de esa solicitud si los adeudados se volvieron a pedir mientras estaba abierto o se están volviendo a pedir al cerrarlo (`isFetching`: registrar invalida sin esperar el refetch, así que el éxito se puede cerrar antes de que termine) (decisiones T-76 y T-77). Si el botón que lo abrió ya no está, el foco va al título "Turnos adeudados".
-- **`sumarImportes`.** La suma en centavos pasó a `utils/moneda.ts` y la usan `resumenACobrar` (`pagos`, sin cambiar su comportamiento) y `resumenSeleccion` (`cuentas`) (decisión T-74).
+- **Cierre del diálogo.** Quien lo abre guarda la solicitud y ajusta la selección en `onCerrar`, sin callback de éxito (`useDialogoDePago`): la ficha poda contra la cuenta actual; la vista global saca sólo las ocurrencias de esa solicitud si los adeudados se volvieron a pedir mientras estaba abierto o se están volviendo a pedir al cerrarlo (`isFetching`: registrar invalida sin esperar el refetch, así que el éxito se puede cerrar antes de que termine) (decisiones T-88 y T-89). Si el botón que lo abrió ya no está, el foco va al título "Turnos adeudados".
+- **`sumarImportes`.** La suma en centavos pasó a `utils/moneda.ts` y la usan `resumenACobrar` (`pagos`, sin cambiar su comportamiento) y `resumenSeleccion` (`cuentas`) (decisión T-86).
 - **Página temporal.** Se eliminaron `app/mesa/prueba-pagos/` y `features/prueba-pagos/` de T-52.
 
 **Actualización (ajustes de la PO, 01/10)**
 
-El alcance y la actualización de arriba quedan como se escribieron; lo que sigue los corrige (ver "Ajustes de la PO (01/10)" al final y las decisiones T-85 a T-89). **Los criterios de aceptación los reescribe la PO.**
+El alcance y la actualización de arriba quedan como se escribieron; lo que sigue los corrige (ver "Ajustes de la PO (01/10)" al final y las decisiones T-97 a T-101). **Los criterios de aceptación los reescribe la PO.**
 
 - **Misma estructura en las dos vistas.** Total, filtros, barra de selección, "Turnos adeudados" y "Próximos turnos". En la vista global las dos tablas llevan la columna del alumno (con el enlace a su ficha) y cada una tiene su paginación (`GET /cuentas/proximos`, `use-proximos.ts`).
 - **Filtros en la URL.** Período (`desde`, `hasta`), materia y profesor en las dos vistas, más el alumno en la global: `FiltrosCuenta` con `filtros-cuenta.ts` (puro) y `use-filtros-cuenta.ts`. Ficha: `?tab=pagos&desde&hasta&materiaId&profesorId`; global: `?alumnoId&desde&hasta&materiaId&profesorId&pageAdeudados&pageProximos` (el `?page=` anterior deja de leerse). Al cambiar de pestaña en la ficha, los filtros se van solos. "Limpiar filtros" deja la vista por defecto. Las materias del filtro son todas, también las dadas de baja.
@@ -893,7 +893,7 @@ El alcance y la actualización de arriba quedan como se escribieron; lo que sigu
 - **Calendario.** El botón que deja la fecha vacía ("Sin fecha de inicio", "Sin fecha de fin") tiene borde, color e ícono. Vale para todo el que use `CalendarioFecha` con `textoVaciar` (también el alta de turnos).
 - **Barra de selección fija.** Queda arriba al scrollear las listas, en las dos vistas, para registrar el pago de lo tildado sin volver al principio.
 - **Pago de una fila.** El botón de cada fila es el azul y dice "Registrar pago único".
-- **"Seleccionar todos los adeudados" en la vista global**, con un alumno filtrado: tilda los adeudados de todas las páginas, con los filtros activos (decisión T-90).
+- **"Seleccionar todos los adeudados" en la vista global**, con un alumno filtrado: tilda los adeudados de todas las páginas, con los filtros activos (decisión T-102).
 - **Limpiar filtros reutilizable.** El botón es `LimpiarFiltros` de `components/ui/`, con el contorno más grueso, para que lo usen las demás pantallas con filtros.
 - **Total a pagar.** En la barra de selección, el total de lo tildado va grande y en negrita ("Total a pagar · 8 turnos seleccionados" y debajo el importe), para que se lea con la barra fija.
 - **Tabla.** Fecha y horario comparten columna y hay menos margen entre columnas, para que el importe y el botón de la fila entren sin scroll horizontal en un escritorio.
@@ -1165,7 +1165,7 @@ Reemplazan a los "Puntos a confirmar" del inicio del sprint. Las tareas abiertas
 
 ## Ajustes de la PO (01/10)
 
-La PO revisó HU-16 (T-53 y T-54, ya implementadas) y pidió estos ajustes. T-53 y T-54 no se reescriben: llevan una "Actualización" en su sección. Los criterios de aceptación de HU-16 los reescribe la PO. Decisiones T-79 a T-84.
+La PO revisó HU-16 (T-53 y T-54, ya implementadas) y pidió estos ajustes. T-53 y T-54 no se reescriben: llevan una "Actualización" en su sección. Los criterios de aceptación de HU-16 los reescribe la PO. Decisiones T-91 a T-96.
 
 1. **La vista global tiene la misma estructura que la del alumno:** "Turnos adeudados" y "Próximos turnos" por separado, de todos los alumnos (o de uno, con el filtro).
 2. **Filtros en las dos vistas:** período (`desde`, `hasta`), materia y profesor. En la vista global, además, el alumno, que ya existía.

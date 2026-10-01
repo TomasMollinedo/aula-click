@@ -25,7 +25,7 @@ export type Adeudado = { ocurrencia: Ocurrencia; importe: number | null }
 /**
  * Filtro de la deuda y de los próximos. `hoy` (`YYYY-MM-DD`) lo calcula quien llama con su reloj;
  * el resto es opcional. `desde` y `hasta` son el período **pedido**, sin recortar: cada lectura
- * toma su parte con `rangosDelPeriodo` (decisión T-80). `profesorId` es el profesor del bloque.
+ * toma su parte con `rangosDelPeriodo` (decisión T-92). `profesorId` es el profesor del bloque.
  */
 export type FiltroDeuda = {
   alumnoId?: number
@@ -76,7 +76,7 @@ async function conImportes(
 
 /**
  * `fechaInicio` más antigua de los turnos `ACTIVO` del filtro que empezaron hasta `hasta`
- * (decisión T-69), o `null` si no hay ninguno. `profesorId` usa la misma relación que el motor
+ * (decisión T-81), o `null` si no hay ninguno. `profesorId` usa la misma relación que el motor
  * (`bloqueAgenda.profesorId`, como `leerSeries`), así no deja afuera nada que el motor devuelva.
  */
 async function primerInicio(
@@ -106,7 +106,7 @@ async function primerInicio(
  * Rango: la parte del período que le toca a la deuda (`rangosDelPeriodo`), nunca hoy ni después;
  * si el período es sólo futuro, `[]` sin consultar. Sin `desde`, empieza en la `fechaInicio` más
  * antigua de los turnos `ACTIVO` del filtro (un `aggregate`; si no hay ninguno, no hay deuda y no
- * se lee nada más), sin acotar (decisión T-69): la expansión es en memoria. Materia y profesor los
+ * se lee nada más), sin acotar (decisión T-81): la expansión es en memoria. Materia y profesor los
  * filtra el motor. Una llamada a `leerOcurrencias` y una consulta de precios.
  */
 export async function leerAdeudados(

@@ -113,15 +113,42 @@ Modelo de datos (T-29); las reglas completas de alta, edición y baja las fija H
 
 ## Cancelación
 
-A completar por T-45.
+HU-13 (T-45). Cancelar registra una `CancelacionTurno` por ocurrencia (`turnoId` + fecha de la ocurrencia), también para una sesión única; el modelo está en [Turnos](#turnos) más arriba.
+
+- **Qué se puede cancelar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), en estado `AGENDADO` (no cancelada y de **hoy en adelante**) y con pago `PENDIENTE`.
+- **Un turno pagado no se cancela** (definición D): en este sprint no se anulan pagos, así que no hay forma de deshacer el cobro. Una pasada tampoco: es historia.
+- **Una cancelación sólo afecta a esa fecha:** el resto de la serie sigue agendado y la hora vuelve a tener lugar ese día. No se deshace una cancelación.
+- **Varias a la vez:** de un mismo alumno (aunque sean de distintos turnos o profesores). **Todo o nada:** si alguna no se puede cancelar, no se cancela ninguna y la API informa cuáles y por qué (no existe, ya cancelada, pagada o pasada).
+- **Motivo y detalle:** el motivo es obligatorio (`CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`); el detalle es libre, de hasta 500 caracteres, y **obligatorio con `OTRO`**. El mismo motivo y detalle valen para todas las ocurrencias del pedido.
+- **Concurrencia:** la cancelación y un pago simultáneos de la misma ocurrencia se serializan con `alumno` `FOR UPDATE` (`bloquearAlumno`, decisión T-59): si el pago entra primero, la cancelación ve el turno pagado y responde 409.
 
 ## Finalización
 
-A completar por T-47.
+HU-14 (T-47). Finalizar un turno recurrente es darlo por terminado desde una fecha: registra una `FinalizacionRecurrencia` (`turnoId` único, `fechaDesde`, motivo, detalle y quién la hizo). Lo hace mesa de entradas, desde el detalle del turno.
+
+- **Qué se puede finalizar:** un turno `RECURRENTE`, vigente y sin finalización previa. **Vigente**, acá, es `ACTIVO` con `fechaFin` nula o de hoy en adelante: el mismo criterio con el que el detalle ofrece "Finalizar" (decisión T-75). Una sesión única no se finaliza: se cancela.
+- **Desde qué fecha (`fechaDesde`):** de hoy en adelante, en el día de la semana de la serie, posterior a su `fechaInicio` y no posterior a su `fechaFin`. Es siempre una fecha de la serie y es la primera que se libera. Para liberar sólo la primera fecha de un turno, se cancela.
+- **`fechaFin` no se modifica** (definición C, decisión T-48): el **fin efectivo** pasa a ser el día anterior a `fechaDesde` y lo aplica el motor de ocurrencias. Desde `fechaDesde` la serie no aparece en las agendas ni en los turnos del alumno, su lugar queda libre y deja de contar como turno vigente (no bloquea la baja del profesor, de la materia ni del bloque). El turno conserva su rango original junto con el motivo del fin anticipado.
+- **Las ocurrencias anteriores a `fechaDesde` no cambian:** siguen con su estado, su pago y su cancelación.
+- **Turnos pagados** (definición D): en este sprint no se anulan pagos, así que si alguna ocurrencia desde `fechaDesde` está pagada, **no se finaliza**. La API informa cuáles son (fecha, horario e importe), la última fecha pagada y la primera fecha que sí se puede elegir (la ocurrencia siguiente a la última pagada). Si los pagados llegan hasta la última fecha de la serie, no hay fecha posible y el turno no se puede finalizar.
+- **Una fecha reprogramada no se libera:** al reprogramar una fecha de la serie, esa fecha pasa a ser una `SESION_UNICA` aparte (definición A). Finalizar la serie no la toca; si hay que liberarla, se cancela.
+- **Tramos** (definición C): los tramos de una serie no están vinculados entre sí, así que se finaliza **sólo el tramo desde cuyo detalle se opera**. La previa avisa si el alumno tiene tramos posteriores de la misma materia y la misma hora (la misma fila del horario) sin finalizar, para que el usuario los finalice también, cada uno desde su detalle.
+- **Reprogramación posterior** (T-49): si se reprograma una fecha de un turno ya finalizado y la serie se parte, la finalización pasa al tramo nuevo, que es el que termina en `fechaDesde`.
+- **Motivo y detalle:** las mismas reglas que la cancelación (HU-13): motivo obligatorio (`CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`) y detalle libre de hasta 500 caracteres, **obligatorio con `OTRO`**.
+- **No se deshace** una finalización, y un turno se finaliza una sola vez.
+- **Concurrencia:** la finalización se serializa con un pago, una cancelación y una reprogramación del mismo alumno con `alumno` `FOR UPDATE` (`bloquearAlumno`, decisión T-78): con el lock tomado se vuelve a leer y a validar todo antes de escribir.
 
 ## Reprogramación
 
-A completar por T-49.
+HU-20 (T-49). Reprogramar **edita el turno**: no hay tabla de reprogramaciones (definición A, decisión T-47) ni se guarda desde qué fecha y hora se reprogramó. Quién lo modificó y cuándo sale de la auditoría del turno.
+
+- **Qué se puede reprogramar:** una ocurrencia `AGENDADO` (de hoy o posterior). Una cancelada o pasada, no. **Pagada se puede**: el pago acompaña a la ocurrencia y pasa a la fecha nueva.
+- **Qué se valida en el destino** (las de HU-08, sobre la hora y la fecha nuevas): `fechaDestino` hoy o posterior y en el día de la hora; profesor activo; materia activa y asignada al profesor de destino (`MATERIA_NO_ASIGNADA`); lugar en la hora (`BLOQUE_LLENO`) y sin superposición del alumno (`ALUMNO_SUPERPUESTO`). En los dos últimos chequeos **la propia ocurrencia no cuenta**. Mover a la misma hora y la misma fecha es un error.
+- **Sesión única:** se actualizan la hora, `fechaInicio` y `fechaFin` (= `fechaDestino`) del mismo turno.
+- **Recurrente:** sólo se mueve esa fecha, así que la serie se parte en hasta tres turnos: el original termina en la ocurrencia anterior; un tramo `RECURRENTE` nuevo, en la misma hora, sigue desde la siguiente hasta el fin original (o sin fin); y la fecha movida es una `SESION_UNICA` nueva en el destino. Alumno, materia, observaciones y temas se copian.
+- **Sin turnos vacíos:** si es la **primera** fecha, el original arranca en la siguiente (no hay tramo nuevo y nada se re-apunta); si es la **última** (o la última antes del fin efectivo), no hay tramo nuevo; si es su **única** fecha, el original se edita como una sesión única en el destino.
+- **Cancelaciones y pagos:** los de las fechas posteriores pasan al tramo nuevo y el de la fecha movida, a la sesión única con la fecha nueva.
+- **Finalización de la serie:** si el turno tiene una y se crea el tramo nuevo, pasa al tramo nuevo (es el que termina en `fechaDesde`); si no se crea, queda en el original. Si la ocurrencia era la única fecha del turno, se borra: una sesión única no se finaliza y la finalización podría cortar la fecha movida.
 
 ## Pagos
 

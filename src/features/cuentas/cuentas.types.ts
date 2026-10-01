@@ -46,7 +46,7 @@ export type OcurrenciaDeCuentaGlobal = OcurrenciaDeCuenta & {
 
 /**
  * `GET /cuentas/adeudados`: la página y `totalAdeudado` de **todos** los adeudados del filtro, junto
- * a `data` y `meta` (no dentro de `meta`, T-70). Con `aplica: false` va vacía y en 0.
+ * a `data` y `meta` (no dentro de `meta`, T-82). Con `aplica: false` va vacía y en 0.
  */
 export type AdeudadosGlobal = PaginatedResponse<OcurrenciaDeCuentaGlobal> & {
   totalAdeudado: number

@@ -56,7 +56,7 @@ export type Periodo = { desde?: string; hasta?: string }
 
 /**
  * La parte de un período que le toca a cada sección de la cuenta; `null` si la sección no aplica.
- * En adeudados, sin `desde` el rango empieza en el primer turno (decisión T-69).
+ * En adeudados, sin `desde` el rango empieza en el primer turno (decisión T-81).
  */
 export type RangosDelPeriodo = {
   adeudados: { desde?: string; hasta: string } | null
@@ -64,7 +64,7 @@ export type RangosDelPeriodo = {
 }
 
 /**
- * Recorta el período a cada sección (ajustes de la PO del 01/10, decisión T-80). Las fechas se
+ * Recorta el período a cada sección (ajustes de la PO del 01/10, decisión T-92). Las fechas se
  * comparan como texto `YYYY-MM-DD`.
  *
  * - **Adeudados:** del período, pero nunca hoy ni después: `hasta` es el menor entre el pedido y
