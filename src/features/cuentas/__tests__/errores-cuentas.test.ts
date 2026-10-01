@@ -8,11 +8,12 @@ describe('interpretarErrorCuenta', () => {
   it('404: el alumno no existe, sin reintentar', () => {
     expect(
       interpretarErrorCuenta(new ApiError(404, 'NO_ENCONTRADO', 'Alumno no encontrado')),
-    ).toEqual({ mensaje: 'El alumno no existe', reintentar: false })
+    ).toEqual({ tipo: 'noEncontrado', mensaje: 'El alumno no existe', reintentar: false })
   })
 
   it('400: id inválido, sin reintentar', () => {
     expect(interpretarErrorCuenta(new ApiError(400, 'VALIDACION', 'Datos inválidos'))).toEqual({
+      tipo: 'invalido',
       mensaje: 'El alumno indicado no es válido',
       reintentar: false,
     })
@@ -20,6 +21,7 @@ describe('interpretarErrorCuenta', () => {
 
   it('403: sin permiso, sin reintentar', () => {
     expect(interpretarErrorCuenta(new ApiError(403, 'SIN_PERMISO', 'Sin permiso'))).toEqual({
+      tipo: 'sinPermiso',
       mensaje: 'No tenés permiso para ver los pagos',
       reintentar: false,
     })
@@ -27,6 +29,7 @@ describe('interpretarErrorCuenta', () => {
 
   it('500, red o desconocido: genérico con reintentar', () => {
     const generico = {
+      tipo: 'general',
       mensaje: 'No se pudieron cargar los pagos. Revisá la conexión e intentá de nuevo.',
       reintentar: true,
     }

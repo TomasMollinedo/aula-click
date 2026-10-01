@@ -12,5 +12,7 @@ export function useCuentaDelAlumno(alumnoId: number) {
     queryKey: cuentasKeys.alumno(alumnoId),
     queryFn: () => obtenerCuentaDelAlumno(alumnoId),
     enabled: alumnoId > 0,
+    // Un 4xx (alumno inexistente, sin permiso) no cambia al reintentar: se muestra enseguida.
+    retry: (intentos, error) => intentos < 3 && !(error.status >= 400 && error.status < 500),
   })
 }

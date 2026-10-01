@@ -5,6 +5,7 @@ import type { ApiError } from '@/utils/fetch-json'
 // (redirige a /login); acá solo se elige el texto que va en el lugar del contenido.
 
 export type ErrorCuenta = {
+  tipo: 'noEncontrado' | 'invalido' | 'sinPermiso' | 'general'
   mensaje: string
   /** Si tiene sentido ofrecer "Reintentar" (no con 400, 403 ni 404: daría lo mismo). */
   reintentar: boolean
@@ -20,13 +21,18 @@ export type ErrorCuenta = {
 export function interpretarErrorCuenta(error: ApiError | null | undefined): ErrorCuenta {
   switch (error?.status) {
     case 404:
-      return { mensaje: 'El alumno no existe', reintentar: false }
+      return { tipo: 'noEncontrado', mensaje: 'El alumno no existe', reintentar: false }
     case 400:
-      return { mensaje: 'El alumno indicado no es válido', reintentar: false }
+      return { tipo: 'invalido', mensaje: 'El alumno indicado no es válido', reintentar: false }
     case 403:
-      return { mensaje: 'No tenés permiso para ver los pagos', reintentar: false }
+      return {
+        tipo: 'sinPermiso',
+        mensaje: 'No tenés permiso para ver los pagos',
+        reintentar: false,
+      }
     default:
       return {
+        tipo: 'general',
         mensaje: 'No se pudieron cargar los pagos. Revisá la conexión e intentá de nuevo.',
         reintentar: true,
       }

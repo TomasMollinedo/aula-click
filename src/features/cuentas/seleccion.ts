@@ -53,7 +53,8 @@ export function seleccionarTodos(sel: Seleccion, filas: readonly FilaDeCuenta[])
  *
  * Es el cierre del diálogo en la vista global, donde no se puede podar (solo está la página
  * actual): si los adeudados se volvieron a pedir mientras el diálogo estaba abierto (cambió el
- * `dataUpdatedAt` de `useAdeudados`), hubo un pago o un 409 y se sacan las ocurrencias de **esa
+ * `dataUpdatedAt` de `useAdeudados`) o se están volviendo a pedir al cerrarlo (`isFetching`),
+ * hubo un pago o un 409 y se sacan las ocurrencias de **esa
  * solicitud**; si no, se canceló y la selección no cambia. Así la acción de una fila no borra lo
  * demás tildado.
  *

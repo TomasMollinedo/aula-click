@@ -15,5 +15,7 @@ export function useAdeudados(params: ListarAdeudadosParams) {
     queryKey: cuentasKeys.adeudadosLista(params),
     queryFn: () => listarAdeudados(params),
     placeholderData: keepPreviousData,
+    // Un 4xx (alumno del filtro inexistente, sin permiso) no cambia al reintentar.
+    retry: (intentos, error) => intentos < 3 && !(error.status >= 400 && error.status < 500),
   })
 }

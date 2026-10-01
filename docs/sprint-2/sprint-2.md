@@ -791,6 +791,7 @@ Anular un pago (definición D): pasa al próximo sprint.
 - **Importes antes de pagar.** `POST /pagos` no tiene previa y `OcurrenciaDeAlumno` no trae importe. Quien abre el diálogo le pasa los importes con dos tipos compartidos de `src/types/pago.ts`: `OcurrenciaACobrar` (la ocurrencia `(turnoId, fecha)` con horario, materia, profesor e `importe`, que es `null` si la materia no tiene precio) y `SolicitudRegistrarPago` (`{ alumnoId, ocurrencias, onCerrar }`, las props de `RegistrarPagoDialog` y el argumento de `renderRegistrarPago`). El detalle arma la ocurrencia con `pago.importeVigente` (T-43, `aCobrarDesdeDetalle`) y `cuentas`, con los importes de T-53. El cliente solo suma esos importes para el resumen; cantidad, total y vuelto del éxito salen de la respuesta. Quien abre guarda su copia de `ocurrencias` y deja el diálogo montado hasta `onCerrar`, porque registrar invalida lo que lo abrió (decisión T-67).
 - **Comprobante.** La ruta es `app/(documentos)/mesa/pagos/[pagoId]/comprobante/page.tsx` (URL `/mesa/pagos/<id>/comprobante`), en el route group `(documentos)`, cuyo layout solo monta `SegmentoDeRol`: misma URL, sin el `AppShell` de `app/mesa/layout.tsx`. Reemplaza a `app/mesa/pagos/[pagoId]/comprobante/page.tsx` del punto 3, que habría quedado con el Sidebar. T-60 suma ahí sus `/…/imprimir` (`arquitectura-frontend.md` → Documentos imprimibles).
 - **Pendiente.** La verificación en A4 depende de T-64: sin `GET /centro`, el comprobante muestra "No se pudieron cargar los datos del centro" y no imprime. El recorrido real desde el detalle del turno depende de T-44: hoy `OcurrenciaDetalle` es un placeholder que no llama a `renderAcciones`, así que se verificó con una página temporal, con ocurrencias reales y un `OcurrenciaDetalle` armado a mano.
+- **Página temporal eliminada (T-54).** `app/mesa/prueba-pagos/` y `features/prueba-pagos/` se borraron en T-54: el diálogo ya se abre de verdad desde `cuentas` (ficha y `/mesa/pagos`). El recorrido desde el detalle del turno se verifica con T-44.
 
 ---
 
@@ -846,6 +847,15 @@ Anular pagos y que sus turnos vuelvan a la deuda (definición D): pasa al próxi
 - En la vista global, filtrar por un alumno habilita la selección múltiple.
 
 **Nota (T-52):** `renderRegistrarPago` recibe `SolicitudRegistrarPago` (`src/types/pago.ts`). `cuentas` arma cada `OcurrenciaACobrar` con el importe de sus adeudados o próximos (T-53), y guarda su propia copia de la selección mientras el diálogo está abierto: al registrar se invalidan las cuentas y la fila cobrada desaparece, pero el diálogo tiene que seguir mostrando el éxito hasta que se cierre. El enlace al comprobante del historial es `/mesa/pagos/<pagoId>/comprobante`.
+
+**Actualización (T-54 UI)**
+
+- **Rama y PR.** Se hizo en `feat/pagos-ui`, no en `feat/cuentas-ui`: el equipo decidió un solo PR con T-52, T-53 y T-54.
+- **Ficha: una sola selección.** Adeudados y próximos se tildan juntos y un mismo pago puede mezclarlos (la API cobra hasta hoy + 56 días). "Seleccionar todos los adeudados" suma sin sacar los próximos tildados. La selección es por `(turnoId, fecha)` y guarda la copia de cada fila; va al diálogo en el orden en que se ve (decisión T-75).
+- **Vista global: selección entre páginas.** Sólo con alumno filtrado (`?alumnoId=&page=` en la URL). Se conserva al paginar y se limpia al cambiar o quitar el filtro. Sin filtro, se cobra de a un turno. Si al cobrar la página queda fuera de rango, pasa a la última (`replace`).
+- **Cierre del diálogo.** Quien lo abre guarda la solicitud y ajusta la selección en `onCerrar`, sin callback de éxito (`useDialogoDePago`): la ficha poda contra la cuenta actual; la vista global saca sólo las ocurrencias de esa solicitud si los adeudados se volvieron a pedir mientras estaba abierto o se están volviendo a pedir al cerrarlo (`isFetching`: registrar invalida sin esperar el refetch, así que el éxito se puede cerrar antes de que termine) (decisiones T-76 y T-77). Si el botón que lo abrió ya no está, el foco va al título "Turnos adeudados".
+- **`sumarImportes`.** La suma en centavos pasó a `utils/moneda.ts` y la usan `resumenACobrar` (`pagos`, sin cambiar su comportamiento) y `resumenSeleccion` (`cuentas`) (decisión T-74).
+- **Página temporal.** Se eliminaron `app/mesa/prueba-pagos/` y `features/prueba-pagos/` de T-52.
 
 ---
 

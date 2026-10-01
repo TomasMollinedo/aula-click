@@ -153,8 +153,14 @@ src/
 │   │   ├── seleccion.ts                # la selección a cobrar (inmutable) y su resumen
 │   │   ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts   # textos; errores de lectura; comprobante y ficha
 │   │   ├── api/{cuentas.api.ts, cuentas.keys.ts}
-│   │   ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-invalidar-cuentas.ts}
-│   │   └── components/{PagosDelAlumno.tsx, PagosGlobal.tsx}
+│   │   ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-invalidar-cuentas.ts,
+│   │   │   use-dialogo-de-pago.ts}     # el diálogo de cobro: copia al abrir, ajuste de la selección y foco al cerrar
+│   │   └── components/
+│   │       ├── PagosDelAlumno.tsx      # pestaña "Pagos" de la ficha; la compone app/ con renderRegistrarPago
+│   │       ├── PagosGlobal.tsx         # /mesa/pagos: ?alumnoId=&page= en la URL; la compone app/
+│   │       ├── OcurrenciasTabla.tsx, BarraSeleccion.tsx   # filas con casilla y acción; resumen y acciones de la selección
+│   │       ├── HistorialPagos.tsx, TotalDestacado.tsx     # pagos registrados; un importe grande con su etiqueta
+│   │       └── FiltroAlumno.tsx        # buscador (hook de alumnos) o chip del alumno filtrado
 │   ├── cancelaciones/  finalizaciones/ # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
 │   ├── examenes/                       #   (AccionCancelarTurno, AccionCancelarVarios, AccionFinalizarTurno,
 │   │                                   #   ExamenesDelAlumno): placeholders con las props definitivas (T-46 a T-56)
@@ -304,6 +310,10 @@ Una **ocurrencia** es un turno en una fecha concreta (`docs/sprint-2/sprint-2.md
 - **Agendas.** Las tres reciben `renderDetalle`; la diaria, además, `renderPdf` (el `BotonPdfAgenda`, de `features/documentos`) y el calendario semanal es `CalendarioSemanal`.
 - **Tipos compartidos.** Lo que cruza features vive en `src/types/` para que ninguna importe los `types` de otra: `ocurrencia.ts` (`OcurrenciaDetalle`, `OcurrenciaDeAlumno`, `SolicitudDetalleOcurrencia`), `pago.ts` (`OcurrenciaACobrar`, `SolicitudRegistrarPago`) y `agenda.ts` (`FiltrosAgenda`). Los args de los `render*` son exactamente las props del componente que los completa, así `app/` los pasa con un spread.
 - **Un diálogo abierto desde una acción sobrevive a la invalidación.** Registrar un pago invalida las ocurrencias, las cuentas y las agendas, así que el detalle vuelve con la acción oculta y en `cuentas` la fila cobrada desaparece. Quien abre el diálogo guarda su propia copia de lo que le pasa (`AccionRegistrarPago` guarda la `SolicitudRegistrarPago` al abrir) y lo deja montado hasta `onCerrar`, aunque su botón ya no se muestre. Si no, el éxito o el rechazo desaparecen antes de leerse. Por lo mismo, el detalle no desmonta `renderAcciones` mientras vuelve a pedir sus datos (`isFetching`), solo en la carga inicial.
+- **Un diálogo que invalida la lista que lo abrió (`cuentas`, `useDialogoDePago`).** Tres pasos, sin callback de éxito en `SolicitudRegistrarPago` (decisiones T-76 y T-77):
+  1. **Copia al abrir.** La solicitud se arma con copias (`aCobrar`) de lo tildado o de la fila, en el orden en que se ve, y se guarda en el estado del componente (no de la fila).
+  2. **Ajuste al cerrar.** `onCerrar` desmonta el diálogo y ajusta la selección con los datos propios, sin saber cómo terminó: la ficha poda contra la cuenta actual (lo cobrado ya no está); la vista global, que solo tiene la página actual, saca las ocurrencias de esa solicitud si la query se volvió a pedir desde que se abrió (`dataUpdatedAt`) o se está volviendo a pedir al cerrar (`isFetching`: la invalidación no se espera).
+  3. **Foco a un elemento estable.** Si el botón que lo abrió ya no está (la acción de una fila cobrada) o quedó deshabilitado, el foco va al título de la sección (`tabIndex={-1}`), después del retorno de foco del `Dialog`.
 - **Una acción se muestra según `ocurrencia.acciones`**, que calcula la API (`cancelar: { visible, habilitada, motivo? }`, `finalizar`, `reprogramar`, `registrarPago`), y nunca con reglas propias del cliente: si un turno se puede cancelar, cuánto cuesta o qué prioridad tiene lo dice la API. Lo mismo vale para la casilla de selección de la lista de turnos del alumno (`cancelable`).
 - **Placeholders.** Mientras una HU no se completa, su componente existe con sus props definitivas y devuelve `null` o un aviso "Próximamente": cada tarea solo completa su archivo. Los `types/ocurrencia.ts` siguen el contrato de T-43 y los ajusta T-44.
 
