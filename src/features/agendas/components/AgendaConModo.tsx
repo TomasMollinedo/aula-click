@@ -24,7 +24,7 @@ type AgendaConModoProps = {
 
 /**
  * Lo que comparten las tres agendas (diaria, de un profesor y "Mi agenda"): el selector
- * "Calendario / Lista" cuyo modo va en la URL y por defecto es la lista (HU-19), el detalle del
+ * "Calendario / Lista" cuyo modo va en la URL y por defecto es el calendario (HU-19), el detalle del
  * turno abierto desde la URL y el lugar para las acciones del encabezado. Los filtros de estado y
  * prioridad (HU-18) viven en la URL (`useFiltrosAgenda`) y valen en los dos modos: en la lista van
  * a la derecha de la navegación por fecha, dentro de su tarjeta (`AgendaDiariaListado`,

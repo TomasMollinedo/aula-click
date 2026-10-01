@@ -80,6 +80,16 @@ export function textoDiasHastaExamen(dias: number): string {
   return `en ${dias} días`
 }
 
+/**
+ * El examen en corto, para leerlo al lado de la prioridad sin abrir el tooltip: `'Examen 15/10 ·
+ * en 5 días'`, `'Examen 05/10 · el mismo día'`. Los días son los de la API, desde la fecha del turno.
+ */
+export function textoExamenCorto(examen: ExamenPrioridad): string {
+  const fecha = format(parseISO(examen.fecha), 'dd/MM', { locale: es })
+  const dias = examen.dias === 0 ? 'el mismo día' : textoDiasHastaExamen(examen.dias)
+  return `Examen ${fecha} · ${dias}`
+}
+
 /** Examen que determina la prioridad: `'Examen de Matemática el 15/10 (en 5 días)'`. */
 export function textoExamenPrioridad(examen: ExamenPrioridad): string {
   const fecha = format(parseISO(examen.fecha), 'dd/MM', { locale: es })
