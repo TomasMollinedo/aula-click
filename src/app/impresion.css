@@ -14,4 +14,22 @@
   [data-no-imprimir] {
     display: none !important;
   }
+
+  /*
+   * AppShell fija el layout al tamaño de la pantalla (`fixed inset-0`) y scrollea el contenido
+   * (`overflow-y-auto` en el <main>) para navegar la app. Al imprimir eso le impide partirse en
+   * varias hojas: el navegador trata todo como una única "página" con scroll propio. Acá se
+   * vuelve al flujo normal del documento, que sí se parte en varias hojas si no entra en una.
+   */
+  [data-app-shell] {
+    position: static !important;
+    inset: auto !important;
+    display: block !important;
+    height: auto !important;
+  }
+
+  [data-app-shell] > main {
+    overflow: visible !important;
+    height: auto !important;
+  }
 }

@@ -64,7 +64,7 @@ export function AppShell({
   const textoBoton = fijo ? 'Mostrar solo íconos' : 'Expandir el menú'
 
   return (
-    <div className="bg-canvas fixed inset-0 flex">
+    <div data-app-shell className="bg-canvas fixed inset-0 flex">
       <div
         data-modo={modo}
         data-no-imprimir
