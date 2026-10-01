@@ -1,22 +1,24 @@
 import type { ReactNode } from 'react'
 
-import type { Auditoria } from './index'
+import type { Auditoria, UsuarioAuditoria } from './index'
 
-// Tipos compartidos de la ocurrencia de un turno (T-35). Viven acá y no en una feature porque los
-// usan varias (`ocurrencias`, `cancelaciones`, `finalizaciones`, `pagos`, `cuentas`, `documentos`,
+// Tipos compartidos de la ocurrencia de un turno. Viven acá y no en una feature porque los usan
+// varias (`ocurrencias`, `cancelaciones`, `finalizaciones`, `pagos`, `cuentas`, `documentos`,
 // `turnos`) y ninguna puede importar los types de otra (docs/arquitectura-frontend.md).
 //
-// Siguen el contrato de `GET /ocurrencias/{turnoId}/{fecha}` y `GET /ocurrencias?alumnoId` (T-43,
-// docs/sprint-2/sprint-2.md). Mientras el contrato final no esté escrito son provisorios: T-44
-// (dueña de este archivo desde que empieza) los ajusta y avisa a T-46, T-48, T-50, T-52 y T-60.
-// Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`.
+// Siguen el contrato real de `GET /ocurrencias/{turnoId}/{fecha}` y `GET /ocurrencias?alumnoId`
+// (T-43, docs/contrato-api.md → Ocurrencias). T-44 los ajustó a ese contrato final: **sin `pago`**
+// (T-43 no tiene de dónde traerlo todavía: no hay sección de pago en el detalle ni columna de pago
+// en "Turnos", y `EstadoPagoBadge` queda sin usar hasta que `pagos`, T-51/T-54, lo resuelva) y
+// **sin `reprogramacion`/`fechaOriginal`**: reprogramar cambia el turno a su fecha y bloque nuevos
+// (una sesión única nueva si era una ocurrencia de un recurrente), así que `turnoId` + `fecha` ya
+// identifican la ocurrencia tal cual está ahora; no se guarda desde dónde se movió (definición A de
+// las PO). Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`.
 
 export type TipoOcurrencia = 'RECURRENTE' | 'SESION_UNICA'
 
-/** Lo calcula la API. La UI lo muestra como "Agendado", "Cancelado" y "Sin registrar". */
+/** Lo calcula la API. La UI lo muestra como "Agendado", "Cancelado" y "Sin registrado". */
 export type EstadoOcurrencia = 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR'
-
-export type EstadoPagoOcurrencia = 'PENDIENTE' | 'PAGADO'
 
 /** La calcula la API a partir de los exámenes del alumno (HU-18); `null` en una cancelada. */
 export type PrioridadOcurrencia = 'ALTA' | 'MEDIA' | 'BAJA'
@@ -26,98 +28,87 @@ export type MotivoCancelacion =
 
 type Persona = { id: number; nombre: string; apellido: string }
 type Referencia = { id: number; nombre: string }
-/** Quién hizo algo y cuándo (registro de un pago, cancelación, reprogramación…). */
-type Registro = { por: Persona | null; en: string }
 
 /**
  * Qué acciones admite la ocurrencia. **Lo decide la API**: cada acción se muestra según este dato
  * y nunca con reglas propias (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia).
+ * `cancelar.motivo` queda sin usar hasta que haya pago del que depender (T-43): hoy `cancelar`
+ * nunca viene visible-pero-deshabilitado.
  */
 export type AccionesOcurrencia = {
-  /** Visible pero deshabilitada (con su `motivo`) cuando el turno está pagado. */
   cancelar: { visible: boolean; habilitada: boolean; motivo?: string }
   finalizar: { visible: boolean }
   reprogramar: { visible: boolean }
   registrarPago: { visible: boolean }
 }
 
-export type PagoOcurrencia =
-  | {
-      estado: 'PENDIENTE'
-      /** Precio vigente de la materia: lo que costaría pagarlo hoy. */
-      importeVigente: number
-    }
-  | {
-      estado: 'PAGADO'
-      pagoId: number
-      numeroComprobante: number
-      importe: number
-      formaPago: string
-      /** Fecha del pago. */
-      fecha: string
-      registro: Registro
-    }
+/** El examen que determina la prioridad (T-31), si hay uno próximo. */
+export type ExamenQueDeterminaPrioridad = {
+  id: number
+  fecha: string
+  tipo: string
+  materiaNombre: string
+  /** Días desde la fecha de la ocurrencia hasta el examen. */
+  dias: number
+}
+
+export type FinalizacionDeSerie = {
+  /** Fin efectivo de la serie (definición C): desde esta fecha ya no genera ocurrencias. */
+  fechaDesde: string
+  motivo: MotivoCancelacion
+  detalle: string | null
+  createdBy: UsuarioAuditoria | null
+  createdAt: string
+}
+
+export type CancelacionDeOcurrencia = {
+  motivo: MotivoCancelacion
+  detalle: string | null
+  createdBy: UsuarioAuditoria | null
+  createdAt: string
+}
 
 /**
- * Detalle de una ocurrencia: un turno en una fecha. Se identifica por `turnoId` + `fechaOriginal`
- * (la fecha de la serie), aunque después se reprograme a otra fecha u hora; `fecha`, `horaInicio`
- * y `horaFin` son los **efectivos**.
+ * Detalle de una ocurrencia: un turno en una fecha. La identifican `turnoId` + `fecha` (definición
+ * B); si se reprogramó, son los nuevos.
  */
 export type OcurrenciaDetalle = {
   turnoId: number
-  fechaOriginal: string
   fecha: string
-  diaSemana: number
+  alumno: Persona & { dni: string }
+  materia: Referencia
+  profesor: Persona
+  aula: Referencia
   horaInicio: string
   horaFin: string
   tipo: TipoOcurrencia
   estado: EstadoOcurrencia
-  alumno: Persona & { dni: string }
-  profesor: Persona
-  materia: Referencia
-  aula: Referencia
   observaciones: string | null
   temas: string | null
   serie: {
     fechaInicio: string
     /** `null` en un recurrente sin fin. */
     fechaFin: string | null
-    /** Fecha original de cada ocurrencia de la serie que se movió (HU-20). */
-    fechasReprogramadas: string[]
-    finalizacion: {
-      fechaDesde: string
-      motivo: MotivoCancelacion
-      detalle: string | null
-      registro: Registro
-    } | null
+    finalizacion: FinalizacionDeSerie | null
   }
-  pago: PagoOcurrencia
-  cancelacion: { motivo: MotivoCancelacion; detalle: string | null; registro: Registro } | null
-  reprogramacion: {
-    desdeFecha: string
-    desdeHoraInicio: string
-    desdeHoraFin: string
-    desdeProfesor: Persona
-    registro: Registro
-  } | null
+  cancelacion: CancelacionDeOcurrencia | null
   prioridad: PrioridadOcurrencia | null
-  /** El examen que determina la prioridad, si lo hay. */
-  examen: { id: number; fecha: string; materiaNombre: string; dias: number } | null
+  examen: ExamenQueDeterminaPrioridad | null
   acciones: AccionesOcurrencia
 } & Auditoria
 
 /**
  * Una ocurrencia en la lista de turnos de un alumno (`GET /ocurrencias?alumnoId`). Es lo que
- * reciben las acciones sobre varias a la vez (cancelar varios, registrar un pago).
+ * reciben las acciones sobre varias a la vez (cancelar varios).
  */
 export type OcurrenciaDeAlumno = {
   turnoId: number
-  fechaOriginal: string
   fecha: string
+  diaSemana: number
   horaInicio: string
   horaFin: string
+  tipo: TipoOcurrencia
   estado: EstadoOcurrencia
-  estadoPago: EstadoPagoOcurrencia
   prioridad: PrioridadOcurrencia | null
   profesor: Persona
   materia: Referencia
@@ -131,7 +122,6 @@ export type OcurrenciaDeAlumno = {
  */
 export type SolicitudDetalleOcurrencia = {
   turnoId: number
-  /** Fecha **original** de la ocurrencia. */
   fecha: string
   onCerrar: () => void
 }

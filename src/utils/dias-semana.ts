@@ -1,3 +1,5 @@
+import { getISODay, parseISO } from 'date-fns'
+
 // Días de la semana en formato ISO, como viajan en la API (docs/contrato-api.md → Formatos):
 // 1 = lunes … 7 = domingo. Los usan el horario de los profesores, los turnos y las agendas.
 
@@ -19,4 +21,9 @@ export function nombreDiaSemana(dia: number): string {
   const encontrado = DIAS_SEMANA.find((d) => d.dia === dia)
   if (!encontrado) throw new RangeError(`Día de la semana inválido: ${dia} (se espera 1 a 7)`)
   return encontrado.nombre
+}
+
+/** Día ISO (1 = lunes … 7 = domingo) de una fecha `YYYY-MM-DD`, en hora local (`parseISO`). */
+export function diaSemanaDeFecha(fecha: string): number {
+  return getISODay(parseISO(fecha))
 }
