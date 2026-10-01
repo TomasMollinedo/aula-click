@@ -6,6 +6,7 @@ import { alumnosRoutes } from './features/alumnos/alumnos.routes'
 import { aulasRoutes } from './features/aulas/aulas.routes'
 import { bloquesRoutes } from './features/bloques/bloques.routes'
 import { cancelacionesRoutes } from './features/cancelaciones/cancelaciones.routes'
+import { centroRoutes } from './features/centro/centro.routes'
 import { cuentasRoutes } from './features/cuentas/cuentas.routes'
 import { examenesRoutes } from './features/examenes/examenes.routes'
 import { finalizacionesRoutes } from './features/finalizaciones/finalizaciones.routes'
@@ -38,6 +39,7 @@ app.route('/aulas', aulasRoutes)
 app.route('/agendas', agendasRoutes)
 app.route('/ocurrencias', ocurrenciasRoutes)
 app.route('/cancelaciones', cancelacionesRoutes)
+app.route('/centro', centroRoutes)
 app.route('/finalizaciones', finalizacionesRoutes)
 app.route('/reprogramaciones', reprogramacionesRoutes)
 app.route('/pagos', pagosRoutes)

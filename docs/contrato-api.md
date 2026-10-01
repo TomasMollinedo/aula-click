@@ -637,6 +637,26 @@ A completar por T-55.
 
 A completar por T-61 (opcional).
 
+## Centro
+
+Los datos del centro para el encabezado de los documentos oficiales (turno, agenda, comprobante — HU-11, HU-15, T-60). Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
+
+**`GET /api/v1/centro`**: `{ "nombre", "direccion", "telefono" }`, los tres `string`.
+
+```json
+{
+  "nombre": "Aula Click",
+  "direccion": "Los Tarcos 300, Tres Cerritos",
+  "telefono": "3875631032"
+}
+```
+
+- Errores: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea uno de los tres.
+
+**`GET /api/v1/centro/logo`**: la imagen del logo (`image/svg+xml`), con `Cache-Control` largo (`public, max-age=604800`): no hay pantalla para reemplazarlo, así que no hace falta revalidar seguido. Se lee de un archivo de la propia feature (`src/server/features/centro/assets/logo.svg`), no de `public/` (la imagen va detrás de la sesión, como el resto de la API) ni de `src/config`.
+
+- Errores: los mismos 401/403 que el endpoint anterior.
+
 ## Filtros
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
