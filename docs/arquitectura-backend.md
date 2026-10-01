@@ -69,6 +69,7 @@ Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la com
 - `cuentas`: deuda y pagos de un alumno, y la vista global de adeudados.
 - `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
 - `tablero`: indicadores agregados para el gerente (opcional).
+- `centro`: nombre, dirección, teléfono y logo del centro, para el encabezado de los documentos oficiales (T-64). Sin tabla: son constantes de la feature (el logo, un archivo); surgió con las definiciones del 29/09, así que es la única que agregó su línea a `app.ts` después de T-32.
 
 `turnos` publica el **motor de ocurrencias** en `turnos/ocurrencias.condiciones.ts` (T-30): leer ocurrencias con su estado y su pago, la ocupación de una hora, la superposición del alumno y los locks de la reserva. Las features del Sprint 2 lo consumen desde su repository (o con su `tx`) y no reimplementan ninguna de esas reglas (`convenciones-backend.md` → Ocurrencias).
 
