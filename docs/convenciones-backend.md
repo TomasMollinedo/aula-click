@@ -117,7 +117,7 @@ Una **ocurrencia** es un turno en una fecha concreta y se identifica por `(turno
 - Su implementación es el predicado puro `ocupaLugarEn(serie, fecha)` de `turnos/turnos.reglas.ts`, sobre una `SerieFechas` (`{ estado, fechaInicio, finEfectivo, canceladas }`). La base sólo aplica el prefiltro `condicionTurnoSeCruzaCon(inicio, fin | null)` (turno `ACTIVO` con alguna fecha guardada en `[inicio, fin]`, su equivalente puro es `seCruzaCon`; un test fija que dicen lo mismo); lo demás (finalización y cancelaciones) se decide en memoria. Ya no hay una condición de Prisma de "ocupa lugar".
 - La ocupación de una hora en una fecha sale **siempre** del motor: `ocupacionEn(client, { bloqueAgendaId, fecha, excluir? })` o, para varias horas y fechas, `ocupacionesEn(client, consultas)` en una sola consulta (decisión T-55). `excluir` saca una ocurrencia puntual (la propia, al reprogramar). Un turno reprogramado es un turno más.
 - `turnosRepository.contarOcupacionPorBloque(pares)` delega en `ocupacionesEn`; lo usan el horario de `bloques` y la disponibilidad de `turnos`. El control de capacidad del alta (`BLOQUE_LLENO`) usa el mismo predicado (`analizarHora` sobre las series de las filas): no se reescribe.
-- Las agendas (feature `agendas`) leen con `leerOcurrencias` y un rango acotado (`MAX_DIAS_AGENDA`).
+- Las agendas (feature `agendas`) leen con `leerOcurrencias` y un rango acotado (`MAX_DIAS_AGENDA`), incluyen las canceladas y piden la prioridad de las no canceladas con `leerPrioridades`, una sola consulta por lote (T-57).
 
 ## Lecturas que publica `turnos`
 
