@@ -4,10 +4,11 @@ import { clavePrioridad, type Prioridad } from '@/server/features/examenes/exame
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import { normalizarBusqueda, terminosDeBusqueda } from '@/server/shared/busqueda'
+import { claveOcupacion } from '@/server/features/turnos/ocurrencias.condiciones'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
-import type { AgendasRepository, Ocurrencia, PrioridadDeTurno } from './agendas.repository'
+import type { AgendasRepository, Cupo, Ocurrencia, PrioridadDeTurno } from './agendas.repository'
 import { validarRangoAgenda } from './agendas.reglas'
 import type {
   AgendaCentroListado,
@@ -49,6 +50,9 @@ function coinciden(busqueda: string, terminos: readonly string[]): boolean {
 /** Una ocurrencia con su prioridad (y el examen que la determina); `null` si está cancelada. */
 type ConPrioridad = { ocurrencia: Ocurrencia; prioridad: PrioridadDeTurno | null }
 
+/** Una ocurrencia con su prioridad y el cupo de su clase (el de todos los turnos de la clase). */
+type ConCupo = ConPrioridad & { cupo: Cupo }
+
 /** Filtros de estado y prioridad, comunes a las cuatro agendas. */
 type FiltroEstadoYPrioridad = { estado?: Ocurrencia['estado']; prioridad?: Prioridad }
 
@@ -63,7 +67,7 @@ function porFechaHoraYProfesor(a: ConPrioridad, b: ConPrioridad): number {
 }
 
 /** Ítem de la agenda de un profesor, campo por campo (sin `busqueda`, que es interno del motor). */
-function aAgendaPropiaItem({ ocurrencia, prioridad }: ConPrioridad): AgendaPropiaItem {
+function aAgendaPropiaItem({ ocurrencia, prioridad, cupo }: ConCupo): AgendaPropiaItem {
   return {
     turnoId: ocurrencia.turnoId,
     fecha: ocurrencia.fecha,
@@ -83,14 +87,15 @@ function aAgendaPropiaItem({ ocurrencia, prioridad }: ConPrioridad): AgendaPropi
     estadoPago: ocurrencia.pago.estado,
     prioridad: prioridad?.prioridad ?? null,
     examen: prioridad?.examen ?? null,
+    cupo: { ocupados: cupo.ocupados, capacidad: cupo.capacidad },
   }
 }
 
 /** Ítem de la agenda diaria y de la del centro: el de un profesor más el profesor del bloque. */
-function aAgendaItem(conPrioridad: ConPrioridad): AgendaItem {
-  const { profesor } = conPrioridad.ocurrencia
+function aAgendaItem(conCupo: ConCupo): AgendaItem {
+  const { profesor } = conCupo.ocurrencia
   return {
-    ...aAgendaPropiaItem(conPrioridad),
+    ...aAgendaPropiaItem(conCupo),
     profesor: { id: profesor.id, apellido: profesor.apellido, nombre: profesor.nombre },
   }
 }
@@ -106,7 +111,7 @@ export function crearAgendasService({
   aulasRepository,
   reloj,
 }: {
-  repository: Pick<AgendasRepository, 'leerOcurrencias' | 'leerPrioridades'>
+  repository: Pick<AgendasRepository, 'leerOcurrencias' | 'leerPrioridades' | 'leerCupos'>
   profesoresRepository: Pick<ProfesoresRepository, 'buscarIdPorUsuario' | 'buscarConAsignaciones'>
   aulasRepository: Pick<AulasRepository, 'listar'>
   reloj?: Reloj
@@ -147,6 +152,27 @@ export function crearAgendasService({
   }
 
   /**
+   * Le suma a cada ocurrencia el cupo de su clase (HU-19): cuántos turnos ocupan lugar y la
+   * capacidad de la hora. Una sola consulta para todas las clases distintas. El cupo no depende de
+   * los filtros de la agenda: una clase con 3 de 4 lugares ocupados lo dice aunque el filtro deje
+   * ver un solo turno. Mantiene el orden que recibe.
+   */
+  async function conCupos(items: readonly ConPrioridad[]): Promise<ConCupo[]> {
+    const clases = new Map(
+      items.map(({ ocurrencia: { bloqueAgendaId, fecha } }) => [
+        claveOcupacion(bloqueAgendaId, fecha),
+        { bloqueAgendaId, fecha },
+      ]),
+    )
+    const cupos = await repository.leerCupos([...clases.values()])
+    return items.map((item) => {
+      const cupo = cupos.get(claveOcupacion(item.ocurrencia.bloqueAgendaId, item.ocurrencia.fecha))
+      if (!cupo) throw new Error('El repository no devolvió el cupo de una clase pedida')
+      return { ...item, cupo }
+    })
+  }
+
+  /**
    * Agenda de un profesor ya resuelto, común a la agenda propia (T-43) y a la que consulta mesa de
    * entradas (T-44). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango tiene que
    * estar en orden y no superar `MAX_DIAS_AGENDA` días (400 en `hasta`). El motor ya las devuelve
@@ -163,7 +189,7 @@ export function crearAgendasService({
     validarRangoAgenda(desde, hasta)
 
     const ocurrencias = await repository.leerOcurrencias({ desde, hasta, profesorId }, reloj)
-    return (await conPrioridades(ocurrencias, filtro)).map(aAgendaPropiaItem)
+    return (await conCupos(await conPrioridades(ocurrencias, filtro))).map(aAgendaPropiaItem)
   }
 
   return {
@@ -201,7 +227,7 @@ export function crearAgendasService({
       const ordenadas = (await conPrioridades(buscadas, query)).sort(porFechaHoraYProfesor)
       const { skip, take } = calcularSkipTake(query)
       return {
-        data: ordenadas.slice(skip, skip + take).map(aAgendaItem),
+        data: (await conCupos(ordenadas.slice(skip, skip + take))).map(aAgendaItem),
         meta: armarMeta(query, ordenadas.length),
       }
     },
@@ -225,7 +251,8 @@ export function crearAgendasService({
         },
         reloj,
       )
-      return (await conPrioridades(ocurrencias, query)).sort(porFechaHoraYProfesor).map(aAgendaItem)
+      const ordenadas = (await conPrioridades(ocurrencias, query)).sort(porFechaHoraYProfesor)
+      return (await conCupos(ordenadas)).map(aAgendaItem)
     },
 
     /**

@@ -19,7 +19,7 @@ type CalendarioGrillaProps = {
 // Ancho mínimo de la columna de un día y de la de las horas: debajo de eso la grilla se desplaza
 // dentro de su contenedor, en vez de apretar los bloques o ensanchar la página (mobile).
 const ANCHO_DIA = '10rem'
-const ANCHO_HORAS = '4.5rem'
+const ANCHO_HORAS = '5rem'
 
 /**
  * La grilla de una semana (HU-19): los días con clases en columnas, de lunes a domingo, y las horas
@@ -55,7 +55,7 @@ export function CalendarioGrilla({ semana, mostrarProfesor, isFetching }: Calend
           <tr>
             <th
               scope="col"
-              className="bg-card border-border sticky left-0 z-20 border-b"
+              className="bg-canvas border-border sticky left-0 z-20 border-b"
               style={{ minWidth: ANCHO_HORAS, width: ANCHO_HORAS }}
             >
               <span className="sr-only">Hora</span>
@@ -75,6 +75,7 @@ export function CalendarioGrilla({ semana, mostrarProfesor, isFetching }: Calend
                   className={cn(
                     'block text-xs font-medium tracking-wide uppercase',
                     dia.esHoy ? 'text-primary' : 'text-muted-foreground',
+                    dia.esPasado && 'opacity-60',
                   )}
                 >
                   {nombreDiaSemana(dia.diaSemana)}
@@ -83,6 +84,7 @@ export function CalendarioGrilla({ semana, mostrarProfesor, isFetching }: Calend
                   className={cn(
                     'mx-auto mt-1 flex size-9 items-center justify-center rounded-full text-lg font-semibold',
                     dia.esHoy && 'bg-primary text-primary-foreground',
+                    dia.esPasado && 'text-muted-foreground',
                   )}
                 >
                   {format(parseISO(dia.fecha), 'd')}
@@ -96,7 +98,7 @@ export function CalendarioGrilla({ semana, mostrarProfesor, isFetching }: Calend
             <tr key={hora}>
               <th
                 scope="row"
-                className="bg-card border-border text-muted-foreground sticky left-0 z-10 border-t px-2 py-2 text-right align-top text-xs font-medium tabular-nums"
+                className="bg-canvas border-border text-foreground sticky left-0 z-10 border-t border-r px-3 py-2 text-right align-top text-base font-bold tabular-nums"
               >
                 {etiquetaDeHora(hora)}
               </th>
@@ -119,6 +121,7 @@ export function CalendarioGrilla({ semana, mostrarProfesor, isFetching }: Calend
                             expandida={abiertas.has(clase.clave)}
                             onAlternar={() => alternar(clase.clave)}
                             mostrarProfesor={mostrarProfesor}
+                            esPasada={dia.esPasado}
                           />
                         ))}
                       </div>

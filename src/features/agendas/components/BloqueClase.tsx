@@ -2,20 +2,29 @@
 
 import { useId } from 'react'
 import Link from 'next/link'
-import { ChevronDown, DoorOpen, UserRound } from 'lucide-react'
+import { ChevronDown, UserRound } from 'lucide-react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
 import { cn } from '@/utils/cn'
-import { getInitials } from '@/utils/initials'
 
 import type { CalendarioItem } from '../agendas.types'
-import { cantidadCancelados, type ClaseCalendario, textoAlumnos } from '../calendario'
+import {
+  cantidadCancelados,
+  type ClaseCalendario,
+  disponibilidadDeClase,
+  type NivelDeCupo,
+  textoDisponibilidad,
+} from '../calendario'
 import { useDetalleAgenda } from '../hooks/use-detalle-agenda'
 
-// Cuántos alumnos se dibujan como iniciales en el resumen; el resto lo dice el texto.
-const INICIALES_VISIBLES = 3
+// Cómo se ve la disponibilidad de la clase: el color de la palabra y el de la barra. La palabra
+// siempre está escrita: el color nunca es el único canal.
+const ESTILO_CUPO: Record<NivelDeCupo, { texto: string; barra: string }> = {
+  llena: { texto: 'text-cancelado', barra: 'bg-cancelado' },
+  ultimo: { texto: 'text-urgente', barra: 'bg-urgente' },
+  libre: { texto: 'text-confirmado', barra: 'bg-confirmado' },
+}
 
 type BloqueClaseProps = {
   clase: ClaseCalendario
@@ -23,32 +32,48 @@ type BloqueClaseProps = {
   onAlternar: () => void
   /** La agenda del centro muestra el profesor de cada clase; las de un solo profesor, no. */
   mostrarProfesor: boolean
+  /** La clase es de un día anterior a hoy: se ve atenuada porque ya no tiene relevancia. */
+  esPasada: boolean
 }
 
 /**
  * Una clase en el calendario (HU-19): un único bloque por hora de un bloque del horario, con sus
- * alumnos adentro. Contraído es un resumen (horario, materia, profesor y aula según el origen, y
- * cuántos alumnos tiene); un clic lo expande y muestra cada turno con su propio estado y su
- * prioridad, porque la clase no tiene un estado ni una prioridad comunes. Un clic en un alumno
- * abre el detalle de su turno (`?detalle=&fecha=`).
+ * alumnos adentro. Contraído es un resumen: horario, materia, profesor y aula en una sola línea
+ * (según el origen) y cómo viene el cupo ("3/4 alumnos", cuántos lugares quedan o si está llena).
+ * Un clic lo expande y muestra cada turno con su propio estado y su prioridad, porque la clase no
+ * tiene un estado ni una prioridad comunes. Un clic en un alumno abre el detalle de su turno
+ * (`?detalle=&fecha=`). El cupo es el de la clase entera, lo calcula la API y no cambia con los
+ * filtros: los turnos visibles pueden ser menos que los ocupados.
  */
-export function BloqueClase({ clase, expandida, onAlternar, mostrarProfesor }: BloqueClaseProps) {
+export function BloqueClase({
+  clase,
+  expandida,
+  onAlternar,
+  mostrarProfesor,
+  esPasada,
+}: BloqueClaseProps) {
   const idPanel = useId()
   const cantidad = clase.turnos.length
   const cancelados = cantidadCancelados(clase)
   const todosCancelados = cancelados === cantidad
   const materias = clase.materias.map((materia) => materia.nombre).join(' · ')
+  const disponibilidad = disponibilidadDeClase(clase.cupo)
+  const estiloCupo = ESTILO_CUPO[disponibilidad.nivel]
+  const ocupacion = Math.min(clase.cupo.ocupados / Math.max(clase.cupo.capacidad, 1), 1)
 
   return (
     <div
       data-slot="bloque-clase"
       className={cn(
-        'overflow-hidden rounded-lg border-l-4 transition-shadow',
+        'overflow-hidden rounded-lg border-l-4 transition',
         todosCancelados
           ? 'border-cancelado/60 bg-muted'
           : expandida
             ? 'border-primary bg-card ring-primary/30 shadow-md ring-1'
             : 'border-primary bg-primary/10 hover:bg-primary/15',
+        // Una clase pasada ya no importa: se atenúa, pero sigue legible y se recupera al apuntarla
+        // o abrirla.
+        esPasada && !expandida && 'opacity-55 focus-within:opacity-100 hover:opacity-100',
       )}
     >
       <button
@@ -78,46 +103,44 @@ export function BloqueClase({ clase, expandida, onAlternar, mostrarProfesor }: B
           {materias}
         </span>
 
-        <span className="text-muted-foreground flex flex-col gap-0.5 text-xs">
+        {/* Profesor y aula en una sola línea: el nombre se recorta si no entra, el aula no. */}
+        <span className="text-muted-foreground flex min-w-0 items-center gap-1 text-xs">
           {mostrarProfesor && clase.profesor && (
-            <span className="flex items-center gap-1">
+            <>
               <UserRound aria-hidden className="size-3 shrink-0" />
               <span className="truncate">
                 {clase.profesor.apellido}, {clase.profesor.nombre}
               </span>
-            </span>
+              <span aria-hidden>·</span>
+            </>
           )}
-          <span className="flex items-center gap-1">
-            <DoorOpen aria-hidden className="size-3 shrink-0" />
-            <span className="truncate">{clase.aula.nombre}</span>
-          </span>
+          <span className="shrink-0 font-medium">{clase.aula.nombre}</span>
         </span>
 
-        <span className="mt-1 flex items-center gap-2">
-          <span aria-hidden className="flex -space-x-1">
-            {clase.turnos.slice(0, INICIALES_VISIBLES).map((turno) => (
-              <Avatar key={turno.turnoId} className="ring-card size-5 ring-2">
-                <AvatarFallback className="text-[9px]">
-                  {getInitials(turno.alumno.nombre, turno.alumno.apellido)}
-                </AvatarFallback>
-              </Avatar>
-            ))}
+        <span className="mt-1 flex flex-col gap-1">
+          <span className="flex items-baseline justify-between gap-2 text-xs">
+            <span className="font-semibold tabular-nums">
+              {clase.cupo.ocupados}/{clase.cupo.capacidad} alumnos
+            </span>
+            <span className={cn('font-semibold', estiloCupo.texto)}>
+              {textoDisponibilidad(disponibilidad)}
+            </span>
           </span>
           <span
-            className={cn(
-              'text-xs font-semibold',
-              cantidad > 1 && !todosCancelados ? 'text-primary' : 'text-muted-foreground',
-            )}
+            aria-hidden
+            className="bg-foreground/10 block h-1.5 overflow-hidden rounded-full"
+            data-slot="cupo-barra"
           >
-            {textoAlumnos(cantidad)}
-            {cancelados > 0 && !todosCancelados && (
-              <span className="text-muted-foreground font-normal">
-                {' '}
-                · {cancelados === 1 ? '1 cancelado' : `${cancelados} cancelados`}
-              </span>
-            )}
-            {todosCancelados && <span className="font-normal"> · cancelados</span>}
+            <span
+              className={cn('block h-full rounded-full', estiloCupo.barra)}
+              style={{ width: `${Math.round(ocupacion * 100)}%` }}
+            />
           </span>
+          {cancelados > 0 && (
+            <span className="text-muted-foreground text-xs">
+              {cancelados === 1 ? '1 turno cancelado' : `${cancelados} turnos cancelados`}
+            </span>
+          )}
         </span>
       </button>
 

@@ -6,12 +6,18 @@ import {
   armarSemana,
   cantidadCancelados,
   claveDeCelda,
+  disponibilidadDeClase,
   etiquetaDeHora,
+  FILTROS_GRILLA_VACIOS,
+  filtrarOcurrencias,
   filtrosDelOrigen,
+  hayFiltrosGrilla,
   horaDe,
+  opcionesDeFiltros,
   paramsDeSemana,
   paramsDelCalendario,
   textoAlumnos,
+  textoDisponibilidad,
   tituloDeSemana,
 } from '../calendario'
 
@@ -34,6 +40,7 @@ function item(parcial: Partial<CalendarioItem> & { turnoId: number }): Calendari
     estadoPago: 'PENDIENTE',
     prioridad: null,
     examen: null,
+    cupo: { ocupados: 1, capacidad: 4 },
     ...parcial,
   }
 }
@@ -115,9 +122,9 @@ describe('armarSemana', () => {
     )
 
     expect(semana.dias).toEqual([
-      { fecha: '2026-10-05', diaSemana: 1, esHoy: false },
-      { fecha: '2026-10-07', diaSemana: 3, esHoy: true },
-      { fecha: '2026-10-09', diaSemana: 5, esHoy: false },
+      { fecha: '2026-10-05', diaSemana: 1, esHoy: false, esPasado: true },
+      { fecha: '2026-10-07', diaSemana: 3, esHoy: true, esPasado: false },
+      { fecha: '2026-10-09', diaSemana: 5, esHoy: false, esPasado: false },
     ])
   })
 
@@ -249,5 +256,93 @@ describe('tituloDeSemana', () => {
 
   it('una semana que cruza de año', () => {
     expect(tituloDeSemana('2026-12-28')).toBe('28 dic 2026 – 3 ene 2027')
+  })
+})
+
+describe('cupo de la clase', () => {
+  it('la clase lleva el cupo que manda la API, completo aunque se vean pocos turnos', () => {
+    const [clase] = agruparClases([item({ turnoId: 1, cupo: { ocupados: 3, capacidad: 4 } })])
+    expect(clase.cupo).toEqual({ ocupados: 3, capacidad: 4 })
+  })
+
+  it.each([
+    [{ ocupados: 4, capacidad: 4 }, 'llena', 0, 'Llena'],
+    [{ ocupados: 5, capacidad: 4 }, 'llena', 0, 'Llena'],
+    [{ ocupados: 3, capacidad: 4 }, 'ultimo', 1, '1 libre'],
+    [{ ocupados: 1, capacidad: 4 }, 'libre', 3, '3 libres'],
+    [{ ocupados: 0, capacidad: 2 }, 'libre', 2, '2 libres'],
+  ] as const)('disponibilidad de %j', (cupo, nivel, libres, texto) => {
+    const disponibilidad = disponibilidadDeClase(cupo)
+    expect(disponibilidad).toEqual({ nivel, libres })
+    expect(textoDisponibilidad(disponibilidad)).toBe(texto)
+  })
+})
+
+describe('filtros de la grilla', () => {
+  const FISICA_ = { id: 2, nombre: 'Física' }
+  const AULA_2 = { id: 2, nombre: 'Aula 2' }
+  const items = [
+    item({ turnoId: 1, alumno: { id: 1, apellido: 'Paz', nombre: 'Ana' }, profesor: ANA }),
+    item({
+      turnoId: 2,
+      alumno: { id: 2, apellido: 'Gómez', nombre: 'Luis' },
+      materia: FISICA_,
+      aula: AULA_2,
+      profesor: ANA,
+    }),
+    item({
+      turnoId: 3,
+      alumno: { id: 3, apellido: 'Núñez', nombre: 'Rosa' },
+      materia: FISICA_,
+      profesor: { id: 9, apellido: 'Ibarra', nombre: 'Mario' },
+    }),
+  ]
+  const ids = (resultado: readonly CalendarioItem[]) => resultado.map((i) => i.turnoId)
+
+  it('sin filtros deja todo, en el mismo orden', () => {
+    expect(ids(filtrarOcurrencias(items, FILTROS_GRILLA_VACIOS))).toEqual([1, 2, 3])
+    expect(hayFiltrosGrilla(FILTROS_GRILLA_VACIOS)).toBe(false)
+  })
+
+  it('filtra por materia y por aula, y se combinan', () => {
+    expect(ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, materia: FISICA_ }))).toEqual([
+      2, 3,
+    ])
+    expect(ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, aula: AULA_2 }))).toEqual([2])
+    expect(
+      ids(
+        filtrarOcurrencias(items, { materia: FISICA_, aula: { id: 1, nombre: 'Aula 1' }, q: '' }),
+      ),
+    ).toEqual([3])
+  })
+
+  it('busca al alumno sin importar tildes, mayúsculas ni el orden de las palabras', () => {
+    const buscar = (q: string) => ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, q }))
+    expect(buscar('nunez')).toEqual([3])
+    expect(buscar('ANA paz')).toEqual([1])
+    expect(buscar('paz ana')).toEqual([1])
+    expect(buscar('gom')).toEqual([2])
+    expect(buscar('  ')).toEqual([1, 2, 3])
+    expect(buscar('zzz')).toEqual([])
+  })
+
+  it('la búsqueda es solo por alumno: el nombre del profesor de la clase no cuenta', () => {
+    const buscar = (q: string) => ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, q }))
+    // "ibarra" es el profesor de 3 y no el apellido de ningún alumno.
+    expect(buscar('ibarra')).toEqual([])
+    // "ana" es el nombre del alumno de 1 y el del profesor de 1 y 2: solo cuenta el del alumno.
+    expect(buscar('ana')).toEqual([1])
+  })
+
+  it('hayFiltrosGrilla', () => {
+    expect(hayFiltrosGrilla({ ...FILTROS_GRILLA_VACIOS, q: 'ana' })).toBe(true)
+    expect(hayFiltrosGrilla({ ...FILTROS_GRILLA_VACIOS, aula: AULA_2 })).toBe(true)
+  })
+
+  it('las opciones salen de las ocurrencias, sin repetir y por nombre', () => {
+    expect(opcionesDeFiltros(items)).toEqual({
+      materias: [FISICA_, MATEMATICA],
+      aulas: [{ id: 1, nombre: 'Aula 1' }, AULA_2],
+    })
   })
 })

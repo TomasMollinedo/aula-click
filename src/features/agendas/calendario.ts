@@ -5,7 +5,7 @@ import type { FiltrosAgenda } from '@/types/agenda'
 import { diaSemanaDeFecha } from '@/utils/dias-semana'
 
 import { esRangoActual, normalizarFecha } from './agenda-propia'
-import type { CalendarioItem, CalendarioParams, OrigenAgenda } from './agendas.types'
+import type { CalendarioItem, CalendarioParams, CupoClase, OrigenAgenda } from './agendas.types'
 
 // El calendario semanal de una agenda (HU-19). Solo presentación: qué ocurrencias hay en la semana,
 // con qué estado y con qué prioridad lo decide la API; acá se agrupan en clases y se ubican en la
@@ -31,6 +31,8 @@ export type ClaseCalendario = {
   horaInicio: string
   horaFin: string
   aula: Referencia
+  /** Cuánto lugar tiene la clase, completo (no solo el de los turnos que quedan visibles). */
+  cupo: CupoClase
   /** Solo la agenda del centro lo trae; en las de un profesor es siempre el mismo. */
   profesor: Persona | null
   /** Las materias distintas de sus turnos: un profesor puede dar varias en la misma hora. */
@@ -44,6 +46,8 @@ export type DiaCalendario = {
   /** ISO: 1 = lunes … 7 = domingo. */
   diaSemana: number
   esHoy: boolean
+  /** Anterior a hoy: el calendario lo atenúa, ya no tiene relevancia. */
+  esPasado: boolean
 }
 
 export type SemanaCalendario = {
@@ -98,6 +102,7 @@ export function agruparClases(items: readonly CalendarioItem[]): ClaseCalendario
         horaInicio: item.horaInicio,
         horaFin: item.horaFin,
         aula: item.aula,
+        cupo: item.cupo,
         profesor: item.profesor ?? null,
         materias: [item.materia],
         turnos: [item],
@@ -133,6 +138,8 @@ export function armarSemana(items: readonly CalendarioItem[], hoy: string): Sema
     fecha,
     diaSemana: diaSemanaDeFecha(fecha),
     esHoy: fecha === hoy,
+    // `YYYY-MM-DD`: comparar los textos es comparar las fechas.
+    esPasado: fecha < hoy,
   }))
 
   const horasConClases = clases.map((clase) => clase.hora)
@@ -147,6 +154,26 @@ export function armarSemana(items: readonly CalendarioItem[], hoy: string): Sema
 /** `1` → `'1 alumno'`, `3` → `'3 alumnos'`. */
 export function textoAlumnos(cantidad: number): string {
   return cantidad === 1 ? '1 alumno' : `${cantidad} alumnos`
+}
+
+/** Cómo viene la disponibilidad de una clase: llena, queda un solo lugar o hay lugar de sobra. */
+export type NivelDeCupo = 'llena' | 'ultimo' | 'libre'
+
+/**
+ * La disponibilidad de la clase a partir de su cupo (los números los calcula la API): llena si
+ * `ocupados >= capacidad` (la misma regla del alta de turnos), y avisa aparte cuando queda un solo
+ * lugar. `libres` nunca es negativo.
+ */
+export function disponibilidadDeClase(cupo: CupoClase): { nivel: NivelDeCupo; libres: number } {
+  const libres = Math.max(cupo.capacidad - cupo.ocupados, 0)
+  if (cupo.ocupados >= cupo.capacidad) return { nivel: 'llena', libres: 0 }
+  return { nivel: libres === 1 ? 'ultimo' : 'libre', libres }
+}
+
+/** `'Llena'`, `'1 libre'`, `'3 libres'`: corto, para que entre al lado de "3/6 alumnos". */
+export function textoDisponibilidad({ nivel, libres }: { nivel: NivelDeCupo; libres: number }) {
+  if (nivel === 'llena') return 'Llena'
+  return libres === 1 ? '1 libre' : `${libres} libres`
 }
 
 /** Cuántos de los turnos de la clase están cancelados. */
@@ -212,4 +239,83 @@ export function tituloDeSemana(desde: string): string {
     return `${format(inicio, 'd MMM', { locale: es })} – ${format(fin, conAnio, { locale: es })}`
   }
   return `${format(inicio, conAnio, { locale: es })} – ${format(fin, conAnio, { locale: es })}`
+}
+
+// ---------------------------------------------------------------------------------------------
+// Filtros de la grilla: materia, aula y alumno
+// ---------------------------------------------------------------------------------------------
+
+// Se aplican acá, sobre la semana que ya llegó, y no en la API: son coincidencias de texto o de id
+// sin reglas de negocio, así responden al instante y los selectores se arman con lo que hay en la
+// semana. Los de estado, prioridad y profesor siguen siendo de la API (`useFiltrosAgenda`).
+
+export type FiltrosGrilla = {
+  materia: Referencia | null
+  aula: Referencia | null
+  /** Lo que se escribió en el buscador de alumnos; vacío = sin búsqueda. */
+  q: string
+}
+
+export const FILTROS_GRILLA_VACIOS: FiltrosGrilla = { materia: null, aula: null, q: '' }
+
+export function hayFiltrosGrilla(filtros: FiltrosGrilla): boolean {
+  return filtros.materia !== null || filtros.aula !== null || filtros.q.trim() !== ''
+}
+
+/** Sin tildes ni mayúsculas, para comparar nombres como lo hace la búsqueda del backend (T-36). */
+function normalizar(texto: string): string {
+  return texto
+    .normalize('NFD')
+    .replace(/\p{Diacritic}/gu, '')
+    .toLowerCase()
+}
+
+/** Las palabras de la búsqueda, normalizadas y sin vacías. */
+function terminosDe(q: string): string[] {
+  return normalizar(q).split(/\s+/).filter(Boolean)
+}
+
+function coincide(nombre: string, terminos: readonly string[]): boolean {
+  const texto = normalizar(nombre)
+  return terminos.every((termino) => texto.includes(termino))
+}
+
+/**
+ * Las ocurrencias que pasan los filtros de la grilla, en el mismo orden. La búsqueda es solo por
+ * alumno (para un profesor está su filtro): coincide si **todas** sus palabras están en el nombre
+ * del alumno, en cualquier orden ("ana paz" o "paz ana"), sin importar tildes ni mayúsculas.
+ */
+export function filtrarOcurrencias(
+  items: readonly CalendarioItem[],
+  { materia, aula, q }: FiltrosGrilla,
+): CalendarioItem[] {
+  const terminos = terminosDe(q)
+  return items.filter(
+    (item) =>
+      (materia === null || item.materia.id === materia.id) &&
+      (aula === null || item.aula.id === aula.id) &&
+      (terminos.length === 0 ||
+        coincide(`${item.alumno.apellido} ${item.alumno.nombre}`, terminos)),
+  )
+}
+
+/**
+ * Las materias y las aulas de la semana, para los selectores, ordenadas por nombre. Salen de lo que
+ * llegó de la API, antes de filtrar con la grilla: elegir una no deja a las demás sin opción.
+ */
+export function opcionesDeFiltros(items: readonly CalendarioItem[]): {
+  materias: Referencia[]
+  aulas: Referencia[]
+} {
+  const materias = new Map<number, Referencia>()
+  const aulas = new Map<number, Referencia>()
+  for (const { materia, aula } of items) {
+    materias.set(materia.id, materia)
+    aulas.set(aula.id, aula)
+  }
+  const porNombre = (a: Referencia, b: Referencia) => a.nombre.localeCompare(b.nombre, 'es')
+  return {
+    materias: [...materias.values()].sort(porNombre),
+    aulas: [...aulas.values()].sort(porNombre),
+  }
 }

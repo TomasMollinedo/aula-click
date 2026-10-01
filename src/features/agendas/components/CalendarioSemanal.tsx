@@ -1,7 +1,7 @@
 'use client'
 
-import { useMemo } from 'react'
-import { AlertCircle, CalendarX2 } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { AlertCircle, CalendarX2, FilterX } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,16 @@ import type { ApiError } from '@/utils/fetch-json'
 
 import { esRangoActual, moverRango } from '../agenda-propia'
 import type { OrigenAgenda } from '../agendas.types'
-import { armarSemana, filtrosDelOrigen, tituloDeSemana } from '../calendario'
+import {
+  armarSemana,
+  FILTROS_GRILLA_VACIOS,
+  filtrarOcurrencias,
+  type FiltrosGrilla,
+  filtrosDelOrigen,
+  hayFiltrosGrilla,
+  opcionesDeFiltros,
+  tituloDeSemana,
+} from '../calendario'
 import { hayFiltrosActivos } from '../filtros-agenda'
 import { useCalendario } from '../hooks/use-calendario'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
@@ -22,7 +31,7 @@ import { useSemanaEnUrl } from '../hooks/use-semana-en-url'
 import { CalendarioGrilla } from './CalendarioGrilla'
 import { FiltroProfesorAgenda } from './FiltroProfesorAgenda'
 import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
-import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
+import { FiltrosGrillaCalendario } from './FiltrosGrillaCalendario'
 import { NavegacionFecha } from './NavegacionFecha'
 
 export type CalendarioSemanalProps = {
@@ -49,22 +58,30 @@ function mensajeError(origen: OrigenAgenda, error: ApiError | null): string {
 /**
  * El calendario semanal de una agenda (HU-19), del centro, de un profesor o del profesor de la
  * sesión según `origen`: navegación por semana (anterior, siguiente, "Hoy" o una fecha), los filtros
- * de la agenda y la grilla de clases. La semana va en la URL (`useSemanaEnUrl`) y los filtros
- * también (`useFiltrosAgenda`), así valen igual que en la lista. Los filtros los resuelve la API: el
- * calendario muestra las clases con al menos un turno que coincida y, adentro, solo esos turnos.
+ * de la agenda y la grilla de clases. La semana va en la URL (`useSemanaEnUrl`) y los filtros de
+ * estado, prioridad y profesor también (`useFiltrosAgenda`), así valen igual que en la lista; los
+ * resuelve la API. Buscar un alumno y filtrar por materia y por aula son propios del calendario:
+ * se aplican sobre la semana que llegó y no cambian al pasar de semana. En los dos casos se ven las
+ * clases con al menos un turno que coincida y, adentro, solo esos turnos.
  */
 export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
   const { fecha, rango, hoy, cambiar } = useSemanaEnUrl()
   const { cambiar: cambiarFiltros } = useFiltrosAgenda()
   const query = useCalendario({ origen, rango, filtros })
-  const semana = useMemo(() => armarSemana(query.data ?? [], hoy), [query.data, hoy])
+  const [filtrosGrilla, setFiltrosGrilla] = useState<FiltrosGrilla>(FILTROS_GRILLA_VACIOS)
+  const opciones = useMemo(() => opcionesDeFiltros(query.data ?? []), [query.data])
+  const semana = useMemo(
+    () => armarSemana(filtrarOcurrencias(query.data ?? [], filtrosGrilla), hoy),
+    [query.data, filtrosGrilla, hoy],
+  )
   const esCentro = origen.tipo === 'centro'
-  const hayFiltros = hayFiltrosActivos(filtrosDelOrigen(origen, filtros))
+  const hayFiltrosApi = hayFiltrosActivos(filtrosDelOrigen(origen, filtros))
+  const hayFiltros = hayFiltrosApi || hayFiltrosGrilla(filtrosGrilla)
   const status = query.error?.status
 
   return (
     <Card className="gap-0 overflow-hidden p-0">
-      <div className="border-border flex flex-col gap-4 border-b p-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+      <div className="border-border flex flex-col gap-4 border-b p-6">
         <NavegacionFecha
           fecha={fecha}
           esActual={esRangoActual('semana', fecha, hoy)}
@@ -80,6 +97,12 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
           }}
         />
         <div className="flex flex-wrap items-center gap-2">
+          <FiltrosGrillaCalendario
+            valor={filtrosGrilla}
+            onChange={(cambios) => setFiltrosGrilla((actuales) => ({ ...actuales, ...cambios }))}
+            materias={opciones.materias}
+            aulas={opciones.aulas}
+          />
           <FiltrosEstadoPrioridad />
           {esCentro && (
             <FiltroProfesorAgenda
@@ -87,7 +110,23 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
               onChange={(profesorId) => cambiarFiltros({ profesorId })}
             />
           )}
-          <LimpiarFiltrosAgenda conProfesor={esCentro} />
+          {hayFiltros && (
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={() => {
+                setFiltrosGrilla(FILTROS_GRILLA_VACIOS)
+                cambiarFiltros({
+                  estado: null,
+                  prioridad: null,
+                  ...(esCentro ? { profesorId: null } : {}),
+                })
+              }}
+            >
+              <FilterX />
+              Limpiar
+            </Button>
+          )}
         </div>
       </div>
 

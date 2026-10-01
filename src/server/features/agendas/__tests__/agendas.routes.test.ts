@@ -8,7 +8,7 @@ import { agendasRoutes } from '../agendas.routes'
 // y Better Auth se reemplazan por mocks. Las reglas se prueban en el service.
 
 const { repository, profesoresRepository, aulasRepository, getSession } = vi.hoisted(() => ({
-  repository: { leerOcurrencias: vi.fn(), leerPrioridades: vi.fn() },
+  repository: { leerOcurrencias: vi.fn(), leerPrioridades: vi.fn(), leerCupos: vi.fn() },
   profesoresRepository: { buscarIdPorUsuario: vi.fn(), buscarConAsignaciones: vi.fn() },
   aulasRepository: { listar: vi.fn() },
   getSession: vi.fn(),
@@ -74,6 +74,11 @@ beforeEach(() => {
   repository.leerPrioridades.mockResolvedValue(
     new Map([['12-2-2099-01-05', { prioridad: 'MEDIA', examen: EXAMEN }]]),
   )
+  // Cupo de cada clase pedida: 1 ocupado de 4, con la clave de `claveOcupacion`.
+  repository.leerCupos.mockImplementation(
+    async (clases: { bloqueAgendaId: number; fecha: string }[]) =>
+      new Map(clases.map((c) => [`${c.bloqueAgendaId}|${c.fecha}`, { ocupados: 1, capacidad: 4 }])),
+  )
   aulasRepository.listar.mockResolvedValue([])
 })
 
@@ -121,6 +126,7 @@ describe('GET /agendas/diaria', () => {
         estadoPago: 'PENDIENTE',
         prioridad: 'MEDIA',
         examen: EXAMEN,
+        cupo: { ocupados: 1, capacidad: 4 },
       },
     ])
   })
@@ -199,6 +205,7 @@ describe('GET /agendas/propia', () => {
         estadoPago: 'PENDIENTE',
         prioridad: 'MEDIA',
         examen: EXAMEN,
+        cupo: { ocupados: 1, capacidad: 4 },
       },
     ])
     expect(repository.leerOcurrencias).toHaveBeenCalledWith(
@@ -314,6 +321,7 @@ describe('GET /agendas/centro', () => {
         estadoPago: 'PENDIENTE',
         prioridad: 'MEDIA',
         examen: EXAMEN,
+        cupo: { ocupados: 1, capacidad: 4 },
       },
     ])
     expect(repository.leerOcurrencias).toHaveBeenCalledWith(

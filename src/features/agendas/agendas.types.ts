@@ -36,7 +36,16 @@ export type AgendaOcurrencia = {
   prioridad: PrioridadOcurrencia | null
   /** El examen que determina la prioridad, si lo hay. */
   examen: { id: number; fecha: string; tipo: string; materiaNombre: string; dias: number } | null
+  /** El cupo de la clase (`fecha` + `bloqueAgendaId`): el mismo para todas sus ocurrencias. */
+  cupo: CupoClase
 }
+
+/**
+ * Cuánto lugar tiene una clase, como lo calcula la API: `capacidad` es la efectiva de la hora y
+ * `ocupados` cuenta todos los turnos que ocupan lugar (los cancelados no), también los que un filtro
+ * deja afuera.
+ */
+export type CupoClase = { ocupados: number; capacidad: number }
 
 /** Filtros de estado y prioridad que aceptan las cuatro agendas (combinables con los demás). */
 export type FiltrosEstadoPrioridadParams = {

@@ -66,6 +66,19 @@ const examenQueDeterminaSchema = z
   })
   .openapi('AgendaExamen')
 
+/** Cupo de la clase de una ocurrencia (HU-19): lugares ocupados y capacidad de esa hora. */
+const cupoSchema = z
+  .object({
+    ocupados: z.number().int().min(0).openapi({
+      description:
+        'Turnos que ocupan lugar en la clase (los cancelados no). Cuenta todos los turnos de la clase, no sólo los que pasaron los filtros de la agenda',
+    }),
+    capacidad: z.number().int().min(0).openapi({
+      description: 'Capacidad efectiva de la hora: min(profesor.capacidad, aula.capacidad)',
+    }),
+  })
+  .openapi('AgendaCupo')
+
 /**
  * Lo que tiene toda ocurrencia de una agenda (T-57): qué turno, cuándo, quién, con qué estado, si
  * se pagó y su prioridad. `turnoId` se repite entre fechas cuando el turno es recurrente: la
@@ -104,6 +117,10 @@ const camposDeOcurrencia = {
   examen: examenQueDeterminaSchema
     .nullable()
     .openapi({ description: 'El examen que determina la prioridad, si hay uno próximo' }),
+  cupo: cupoSchema.openapi({
+    description:
+      'Cupo de la clase (`fecha` + `bloqueAgendaId`): el mismo para todas las ocurrencias de la clase. La clase está llena si `ocupados >= capacidad`',
+  }),
 }
 
 /**
