@@ -138,8 +138,12 @@ src/
 │   │   ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
 │   │   ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts}  # al cancelar invalida ocurrencias, agendas y cuentas
 │   │   └── components/{AccionCancelarTurno, AccionCancelarVarios, CancelarTurnosDialog}.tsx
-│   ├── finalizaciones/                 # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
-│   ├── pagos/  cuentas/  examenes/     #   (AccionCancelarTurno, AccionCancelarVarios, AccionFinalizarTurno,
+│   ├── finalizaciones/                 # HU-14 (T-48): finalizar un turno recurrente desde una fecha
+│   │   ├── finalizaciones.{types,schema}.ts, errores-api.ts, formato-finalizaciones.ts, api/{finalizaciones.api,finalizaciones.keys}.ts
+│   │   ├── hooks/{use-previa-finalizacion.ts, use-finalizar-turno.ts, use-invalidar-finalizaciones.ts}  # al finalizar invalida agendas, cuentas y las previas
+│   │   └── components/{AccionFinalizarTurno, FinalizarTurnoDialog}.tsx  # la acción invalida las ocurrencias después de mover el detalle
+│   ├── pagos/  cuentas/  examenes/     # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
+│   │                                   #   (AccionCancelarTurno, AccionCancelarVarios,
 │   │                                   #   AccionRegistrarPago, RegistrarPagoDialog, PagosDelAlumno, PagosGlobal,
 │   │                                   #   ExamenesDelAlumno): placeholders con las props definitivas (T-46 a T-56)
 │   ├── documentos/                     # AccionPdfTurno y BotonPdfAgenda (placeholders, T-60); sin datos propios: sin keys
