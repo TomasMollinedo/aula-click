@@ -1,7 +1,7 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Ban, CalendarClock, History, NotebookPen } from 'lucide-react'
+import { Ban, History, NotebookPen, type LucideIcon } from 'lucide-react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
@@ -10,7 +10,7 @@ import { Dato, Datos } from '@/components/ui/datos'
 import { DetalleModal } from '@/components/ui/detalle-modal'
 import type { OcurrenciaDetalle as OcurrenciaDetalleDatos } from '@/types/ocurrencia'
 import { formatoInstante, nombreUsuarioAuditoria } from '@/utils/auditoria'
-import { fechaConDia } from '@/utils/formato-fechas'
+import { fechaConDia, fechaCorta } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 
 import { useOcurrencia } from '../hooks/use-ocurrencia'
@@ -33,7 +33,7 @@ function Seccion({
   className,
   children,
 }: {
-  icon: typeof CalendarClock
+  icon: LucideIcon
   titulo: string
   className?: string
   children: ReactNode
@@ -50,8 +50,8 @@ function Seccion({
 }
 
 /**
- * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20): datos del turno, prioridad,
- * cancelación, período de la serie y su finalización, y las acciones del pie. Sin pago: T-43 no
+ * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20): datos del turno (con el período de
+ * la serie si es recurrente), prioridad, cancelación y las acciones del pie. Sin pago: T-43 no
  * tiene de dónde traerlo todavía (no hay sección de pago, ver docs/contrato-api.md → Ocurrencias).
  */
 export function OcurrenciaDetalle({
@@ -100,7 +100,26 @@ export function OcurrenciaDetalle({
               label="Tipo"
               valor={ocurrencia.tipo === 'RECURRENTE' ? 'Recurrente' : 'Sesión única'}
             />
+            {ocurrencia.tipo === 'RECURRENTE' && (
+              <Dato
+                label="Período"
+                valor={`${fechaCorta(ocurrencia.serie.fechaInicio)} – ${
+                  ocurrencia.serie.fechaFin ? fechaCorta(ocurrencia.serie.fechaFin) : 'sin fin'
+                }`}
+              />
+            )}
           </Datos>
+
+          {ocurrencia.tipo === 'RECURRENTE' && ocurrencia.serie.finalizacion && (
+            <p className="text-muted-foreground text-sm">
+              Finalizada el {fechaConDia(ocurrencia.serie.finalizacion.fechaDesde)} ·{' '}
+              {etiquetaMotivoCancelacion(ocurrencia.serie.finalizacion.motivo)}
+              {ocurrencia.serie.finalizacion.detalle &&
+                `: ${ocurrencia.serie.finalizacion.detalle}`}{' '}
+              · {nombreUsuarioAuditoria(ocurrencia.serie.finalizacion.createdBy)},{' '}
+              {formatoInstante(ocurrencia.serie.finalizacion.createdAt)}
+            </p>
+          )}
 
           {ocurrencia.prioridad && (
             <PrioridadIndicador
@@ -116,30 +135,6 @@ export function OcurrenciaDetalle({
                 <Dato label="Observaciones" valor={ocurrencia.observaciones} />
                 <Dato label="Temas a trabajar" valor={ocurrencia.temas} />
               </Datos>
-            </Seccion>
-          )}
-
-          {ocurrencia.tipo === 'RECURRENTE' && (
-            <Seccion icon={CalendarClock} titulo="Serie">
-              <Datos>
-                <Dato label="Desde" valor={fechaConDia(ocurrencia.serie.fechaInicio)} />
-                <Dato
-                  label="Hasta"
-                  valor={
-                    ocurrencia.serie.fechaFin ? fechaConDia(ocurrencia.serie.fechaFin) : 'Sin fin'
-                  }
-                />
-              </Datos>
-              {ocurrencia.serie.finalizacion && (
-                <p className="text-muted-foreground mt-3 text-sm">
-                  Finalizada el {fechaConDia(ocurrencia.serie.finalizacion.fechaDesde)} ·{' '}
-                  {etiquetaMotivoCancelacion(ocurrencia.serie.finalizacion.motivo)}
-                  {ocurrencia.serie.finalizacion.detalle &&
-                    `: ${ocurrencia.serie.finalizacion.detalle}`}{' '}
-                  · {nombreUsuarioAuditoria(ocurrencia.serie.finalizacion.createdBy)},{' '}
-                  {formatoInstante(ocurrencia.serie.finalizacion.createdAt)}
-                </p>
-              )}
             </Seccion>
           )}
 
