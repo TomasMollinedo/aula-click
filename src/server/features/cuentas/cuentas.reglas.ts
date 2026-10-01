@@ -1,10 +1,12 @@
 import { limiteDeCobro, sumarImportes } from '@/server/features/pagos/pagos.condiciones'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import { sumarDias } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake, type MetaPaginacion } from '@/server/shared/paginacion'
 
-// Reglas puras de la cuenta del alumno (HU-16, T-53): qué ocurrencia adeuda, cuál es próxima, su
-// importe, el total y la página. Sin Prisma y sin `hoy()` adentro: "hoy" lo pasa quien llama. Las
-// usan `cuentas.condiciones.ts` (la única lectura de la deuda) y el service.
+// Reglas puras de la cuenta del alumno (HU-16, T-53): qué ocurrencia adeuda, cuál es próxima, qué
+// parte de un período le toca a cada sección, su importe, el total y la página. Sin Prisma y sin
+// `hoy()` adentro: "hoy" lo pasa quien llama. Las usan `cuentas.condiciones.ts` (la única lectura
+// de la deuda) y el service.
 
 /** Lo que las reglas miran de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
 export type OcurrenciaCuenta = Pick<Ocurrencia, 'fecha' | 'estado'> & {
@@ -49,9 +51,49 @@ export function totalDe(items: readonly { importe: number | null }[]): number {
   return sumarImportes(items.flatMap((item) => (item.importe === null ? [] : [item.importe])))
 }
 
-/** Día 1 del mes de `fecha` (`YYYY-MM-DD`): `'2026-10-31'` → `'2026-10-01'`. */
-export function primerDiaDelMes(fecha: string): string {
-  return `${fecha.slice(0, 7)}-01`
+/** Período pedido (`YYYY-MM-DD`, extremos incluidos). Cada extremo es opcional. */
+export type Periodo = { desde?: string; hasta?: string }
+
+/**
+ * La parte de un período que le toca a cada sección de la cuenta; `null` si la sección no aplica.
+ * En adeudados, sin `desde` el rango empieza en el primer turno (decisión T-69).
+ */
+export type RangosDelPeriodo = {
+  adeudados: { desde?: string; hasta: string } | null
+  proximos: { desde: string; hasta: string } | null
+}
+
+/**
+ * Recorta el período a cada sección (ajustes de la PO del 01/10, decisión T-80). Las fechas se
+ * comparan como texto `YYYY-MM-DD`.
+ *
+ * - **Adeudados:** del período, pero nunca hoy ni después: `hasta` es el menor entre el pedido y
+ *   ayer. No aplica (`null`) si el período es sólo futuro (`desde >= hoy`).
+ * - **Próximos:** del período, pero nunca antes de hoy ni después del tope de cobro
+ *   (`limiteDeCobro(hoy)`, el de `POST /pagos`). No aplica (`null`) si el período es sólo pasado
+ *   (`hasta < hoy`). Si empieza después del tope, aplica y el rango queda vacío (`hasta < desde`).
+ *
+ * Sin período: adeudados hasta ayer y próximos de hoy al tope.
+ */
+export function rangosDelPeriodo({ desde, hasta }: Periodo, hoy: string): RangosDelPeriodo {
+  const ayer = sumarDias(hoy, -1)
+  const tope = limiteDeCobro(hoy)
+  return {
+    adeudados:
+      desde !== undefined && desde >= hoy
+        ? null
+        : {
+            ...(desde === undefined ? {} : { desde }),
+            hasta: hasta !== undefined && hasta < ayer ? hasta : ayer,
+          },
+    proximos:
+      hasta !== undefined && hasta < hoy
+        ? null
+        : {
+            desde: desde !== undefined && desde > hoy ? desde : hoy,
+            hasta: hasta !== undefined && hasta < tope ? hasta : tope,
+          },
+  }
 }
 
 /**

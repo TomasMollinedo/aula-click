@@ -66,7 +66,7 @@ Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la com
 - `finalizaciones`: finalizar un turno recurrente a partir de una fecha.
 - `reprogramaciones`: mover una ocurrencia a otra fecha, hora o profesor.
 - `pagos`: registrar el pago de una o varias ocurrencias y su comprobante.
-- `cuentas`: deuda y pagos de un alumno, y la vista global de adeudados.
+- `cuentas`: turnos adeudados y próximos de un alumno, y las vistas globales de adeudados y de próximos.
 - `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
 - `tablero`: indicadores agregados para el gerente (opcional).
 

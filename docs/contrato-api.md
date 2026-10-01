@@ -367,14 +367,32 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 ## Cuentas
 
-HU-16 (T-53). Pagos y deuda de un alumno y vista global de lo adeudado. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
+HU-16 (T-53, con los ajustes de la PO del 01/10: decisiones T-79 a T-84). Turnos adeudados y próximos turnos de un alumno, y las dos vistas globales con la misma estructura. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
 
-| Endpoint                                 | Roles           | Qué hace                                                                    |
-| ---------------------------------------- | --------------- | --------------------------------------------------------------------------- |
-| `GET /api/v1/cuentas/alumnos/{alumnoId}` | `MESA_ENTRADAS` | Cuenta del alumno. 400 si el id es inválido; 404 si el alumno no existe     |
-| `GET /api/v1/cuentas/adeudados`          | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado |
+| Endpoint                                 | Roles           | Qué hace                                                                         |
+| ---------------------------------------- | --------------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/cuentas/alumnos/{alumnoId}` | `MESA_ENTRADAS` | Adeudados y próximos del alumno, con el total adeudado. 404 si no existe         |
+| `GET /api/v1/cuentas/adeudados`          | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado      |
+| `GET /api/v1/cuentas/proximos`           | `MESA_ENTRADAS` | Próximos turnos de todos los alumnos (o de uno), paginados, con el tope de cobro |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: uno dado de baja puede deber.
+
+**Filtros comunes a los tres (query, todos opcionales):**
+
+- `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos. Cada extremo es opcional y **no hay tope de días**. Si vienen los dos y `hasta` es anterior a `desde`: 400 `VALIDACION` con `details` sobre `hasta`.
+- `materiaId`, `profesorId` (el profesor del bloque): enteros positivos (400 si no). Si la materia o el profesor no existen, la respuesta va vacía: **no hay 404**.
+
+**El período y las secciones.** Las dos secciones nunca se mezclan: "hoy" las separa. Las fechas de corte las calcula la API; el cliente no las repite.
+
+| Sección   | Sin período                            | Con período                                                                             | No aplica si…                             |
+| --------- | -------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Adeudados | Todos los impagos anteriores a hoy     | La parte del período anterior a hoy (nunca hoy ni después)                              | el período es sólo futuro: `desde` >= hoy |
+| Próximos  | De hoy a `limiteCobro` (hoy + 56 días) | La parte del período entre hoy y `limiteCobro` (nunca antes de hoy ni después del tope) | el período es sólo pasado: `hasta` < hoy  |
+
+- Una sección que **no aplica** no es lo mismo que una vacía: en la cuenta del alumno va `null` (y `[]` si aplica y no hay nada); en las vistas globales, `aplica: false` (y `aplica: true` con `data: []` si aplica y no hay nada).
+- Si el período es futuro pero empieza después de `limiteCobro`, los próximos **aplican y quedan vacíos**: la UI avisa con `limiteCobro` hasta qué fecha se puede cobrar.
+- `limiteCobro`: la última fecha que se puede cobrar por adelantado, la misma que usa `POST /pagos` (ver Pagos).
+- `totalAdeudado`: la suma de los adeudados con **todos** los filtros (alumno, período, materia y profesor). Los próximos **nunca** suman, tampoco con un período futuro: en ese caso el total es 0.
 
 **Una ocurrencia de la cuenta (`OcurrenciaDeCuenta`):**
 
@@ -400,7 +418,6 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: un
 ```json
 {
   "totalAdeudado": 16000,
-  "pagadoDelMes": 32000,
   "adeudados": [
     {
       "turnoId": 41,
@@ -420,25 +437,19 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: un
   "proximos": [
     { "turnoId": 41, "fecha": "2026-10-05", "...": "...", "estado": "AGENDADO", "importe": 8000 }
   ],
-  "pagos": [
-    {
-      "pagoId": 31,
-      "numeroComprobante": 1024,
-      "fechaPago": "2026-10-01",
-      "cantidad": 4,
-      "total": 32000
-    }
-  ]
+  "limiteCobro": "2026-11-26"
 }
 ```
 
-- `adeudados`: ocurrencias anteriores a hoy, sin registrar (no canceladas) e impagas, del más antiguo al más reciente (fecha, hora de inicio y `turnoId`).
-- `proximos`: ocurrencias agendadas e impagas de hoy a hoy + 56 días, de series y sesiones únicas, en el mismo orden. Es exactamente lo que `POST /pagos` acepta cobrar hacia adelante (el mismo tope, ver Pagos). No suman a la deuda.
-- `totalAdeudado`: suma de los importes de `adeudados` (los `null` no suman).
-- `pagadoDelMes`: suma de los `total` de los pagos del alumno con `fechaPago` entre el día 1 del mes de hoy y hoy.
-- `pagos`: todos los pagos del alumno, sin paginar, del más reciente al más antiguo (`fechaPago` y `numeroComprobante`). `cantidad` es la cantidad de turnos pagados y `total` el importe cobrado. El comprobante se lee con `GET /pagos/{pagoId}`.
+Con un período sólo pasado (`?desde=2026-09-01&hasta=2026-09-30`), `"proximos": null`; con uno sólo futuro, `"adeudados": null` y `"totalAdeudado": 0`.
 
-**`GET /cuentas/adeudados`:** query `page` y `pageSize` (Listados paginados) y `alumnoId` opcional (entero positivo; 400 si no, 404 si el alumno no existe). Responde el formato de un listado paginado **más `totalAdeudado`, junto a `data` y `meta`** (no dentro de `meta`, que no cambia):
+- `adeudados`: ocurrencias anteriores a hoy, sin registrar (no canceladas) e impagas, del más antiguo al más reciente (fecha, hora de inicio y `turnoId`). `null` si la sección no aplica al período.
+- `proximos`: ocurrencias agendadas e impagas de hoy a `limiteCobro`, de series y sesiones únicas, en el mismo orden. Es exactamente lo que `POST /pagos` acepta cobrar hacia adelante (el mismo tope, ver Pagos). No suman a la deuda. `null` si la sección no aplica al período.
+- `totalAdeudado`: suma de los importes de `adeudados` (los `null` no suman); 0 si `adeudados` es `null`.
+- `limiteCobro`: siempre viene, haya o no período.
+- La cuenta **no** trae el historial de pagos ni lo pagado en el mes (decisión T-83). El comprobante de un pago se sigue leyendo con `GET /pagos/{pagoId}`.
+
+**`GET /cuentas/adeudados`:** query `page` y `pageSize` (Listados paginados), `alumnoId` opcional (entero positivo; 400 si no, 404 si el alumno no existe) y los filtros comunes. Responde el formato de un listado paginado **más `totalAdeudado` y `aplica`, junto a `data` y `meta`** (no dentro de `meta`, que no cambia):
 
 ```json
 {
@@ -456,12 +467,40 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: un
     }
   ],
   "meta": { "page": 1, "pageSize": 20, "total": 37, "totalPages": 2 },
-  "totalAdeudado": 296000.5
+  "totalAdeudado": 296000.5,
+  "aplica": true
 }
 ```
 
-- Los mismos adeudados que la cuenta del alumno, de todos los alumnos (o del filtrado), del más antiguo al más reciente.
-- `totalAdeudado` es la suma de **todos** los adeudados del filtro, no sólo de la página: coincide con la suma de los importes de todas las páginas y con el total adeudado del tablero (T-61).
+- Los mismos adeudados que la cuenta del alumno, de todos los alumnos (o del filtrado), del más antiguo al más reciente. Cada fila es una `OcurrenciaDeCuenta` más `alumno` (`OcurrenciaDeCuentaGlobal`).
+- `totalAdeudado` es la suma de **todos** los adeudados del filtro, no sólo de la página: coincide con la suma de los importes de todas las páginas, con el `totalAdeudado` de la cuenta del alumno con los mismos filtros (si se manda `alumnoId`) y con el total adeudado del tablero (T-61).
+- `aplica: false` (período sólo futuro): `data: []`, `meta.total: 0`, `meta.totalPages: 0` y `totalAdeudado: 0`.
+
+**`GET /cuentas/proximos`:** el mismo query que los adeudados (404 si `alumnoId` no existe). Responde el formato de un listado paginado **más `aplica` y `limiteCobro`**, sin `totalAdeudado` (los próximos no son deuda):
+
+```json
+{
+  "data": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-10-05",
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+      "estado": "AGENDADO",
+      "importe": 8000,
+      "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Álvarez", "dni": "52345678" }
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 20, "total": 9, "totalPages": 1 },
+  "aplica": true,
+  "limiteCobro": "2026-11-26"
+}
+```
+
+- Los mismos próximos que la cuenta del alumno, de todos los alumnos (o del filtrado), por fecha, hora de inicio y `turnoId`. La misma fila que los adeudados (`OcurrenciaDeCuentaGlobal`).
+- `aplica: false` (período sólo pasado): `data: []`, `meta.total: 0` y `meta.totalPages: 0`. `limiteCobro` viene igual.
 
 ## Exámenes
 
@@ -484,7 +523,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                     |
 | `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (`/agendas/propia` y `/agendas/profesor`). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                                                            |
+| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos. `hasta` no puede ser anterior a `desde`. En las agendas (`/agendas/propia` y `/agendas/profesor`): sin `desde`, hoy; sin `hasta`, el mismo día que `desde`; el rango no puede superar los 31 días. En cuentas (`/cuentas/...`): cada extremo es opcional y **no hay tope de días**; cada sección toma la parte del período que le toca (adeudados, lo anterior a hoy; próximos, de hoy al tope de cobro) y la que no tiene parte no aplica (ver Cuentas)  |
 | `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Recursos individuales

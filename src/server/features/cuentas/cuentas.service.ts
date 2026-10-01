@@ -1,22 +1,26 @@
 import { NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
+import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
-import type { Adeudado } from './cuentas.condiciones'
+import type { Adeudado, FiltroDeuda } from './cuentas.condiciones'
 import type { CuentasRepository } from './cuentas.repository'
-import { paginarEnMemoria, primerDiaDelMes, totalDe } from './cuentas.reglas'
+import { paginarEnMemoria, rangosDelPeriodo, totalDe } from './cuentas.reglas'
 import type {
-  AdeudadoGlobal,
   AdeudadosGlobal,
-  AdeudadosQuery,
   CuentaDelAlumno,
+  FiltroCuentaQuery,
+  ListadoCuentaQuery,
   OcurrenciaDeCuenta,
+  OcurrenciaDeCuentaGlobal,
+  ProximosGlobal,
 } from './cuentas.validation'
 
-// Cuenta del alumno y vista global de la deuda (HU-16, T-53). No conoce HTTP ni Prisma: lanza
-// AppError o sus subclases. No hace consultas propias: qué se adeuda y qué es próximo lo leen las
-// condiciones por el repository; acá se calcula `hoy`, se chequea el alumno, se suma, se pagina y
-// se arman los DTOs.
+// Cuenta del alumno y vistas globales de adeudados y próximos (HU-16, T-53). No conoce HTTP ni
+// Prisma: lanza AppError o sus subclases. No hace consultas propias: qué se adeuda y qué es próximo
+// lo leen las condiciones por el repository; acá se calcula `hoy`, se chequea el alumno, se decide
+// qué sección aplica al período (`rangosDelPeriodo`: la que no aplica no se lee), se suma, se
+// pagina y se arman los DTOs.
 
 const MENSAJE_ALUMNO_NO_ENCONTRADO = 'Alumno no encontrado'
 
@@ -42,6 +46,23 @@ function aOcurrenciaDeCuenta({ ocurrencia, importe }: Adeudado): OcurrenciaDeCue
   }
 }
 
+/** La fila de una vista global: la ocurrencia con su alumno y el DNI leído aparte. */
+function aOcurrenciaGlobal(
+  adeudado: Adeudado,
+  dnis: ReadonlyMap<number, string>,
+): OcurrenciaDeCuentaGlobal {
+  const { alumno } = adeudado.ocurrencia
+  return {
+    ...aOcurrenciaDeCuenta(adeudado),
+    alumno: {
+      id: alumno.id,
+      nombre: alumno.nombre,
+      apellido: alumno.apellido,
+      dni: dnis.get(alumno.id) ?? '',
+    },
+  }
+}
+
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
  * reales; los tests, con falsos y un reloj fijo (`reloj` opcional; por defecto el del sistema, vía
@@ -52,10 +73,7 @@ export function crearCuentasService({
   alumnosRepository,
   reloj,
 }: {
-  repository: Pick<
-    CuentasRepository,
-    'leerAdeudados' | 'leerProximos' | 'sumarPagos' | 'listarPagos' | 'dnisDeAlumnos'
-  >
+  repository: Pick<CuentasRepository, 'leerAdeudados' | 'leerProximos' | 'dnisDeAlumnos'>
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
 }) {
@@ -65,52 +83,95 @@ export function crearCuentasService({
     if (!alumno) throw new NotFoundError(MENSAJE_ALUMNO_NO_ENCONTRADO)
   }
 
+  /** El filtro de las condiciones: el período va tal cual se pidió (lo recortan ellas). */
+  function aFiltroDeuda(
+    filtro: FiltroCuentaQuery,
+    alumnoId: number | undefined,
+    fechaHoy: string,
+  ): FiltroDeuda {
+    return {
+      alumnoId,
+      materiaId: filtro.materiaId,
+      profesorId: filtro.profesorId,
+      desde: filtro.desde,
+      hasta: filtro.hasta,
+      hoy: fechaHoy,
+    }
+  }
+
+  /** La página de una vista global, con el DNI sólo de los alumnos de la página. */
+  async function paginarConAlumno(
+    items: readonly Adeudado[],
+    query: { page: number; pageSize: number },
+  ): Promise<Pick<AdeudadosGlobal, 'data' | 'meta'>> {
+    const pagina = paginarEnMemoria(items, query)
+    const dnis = await repository.dnisDeAlumnos(pagina.data.map((a) => a.ocurrencia.alumno.id))
+    return { data: pagina.data.map((a) => aOcurrenciaGlobal(a, dnis)), meta: pagina.meta }
+  }
+
   return {
     /**
-     * Cuenta de un alumno: total adeudado, pagado del mes (por `fechaPago`, del día 1 del mes de
-     * hoy a hoy), adeudados, próximos e historial de pagos. 404 si el alumno no existe.
+     * Cuenta de un alumno: total adeudado, adeudados, próximos y el tope de cobro, con los filtros
+     * de período, materia y profesor. Una sección que no aplica al período va `null` y no se lee;
+     * el total es sólo de los adeudados (los próximos nunca suman). 404 si el alumno no existe.
      */
-    async obtenerCuenta(alumnoId: number): Promise<CuentaDelAlumno> {
+    async obtenerCuenta(
+      alumnoId: number,
+      filtro: FiltroCuentaQuery = {},
+    ): Promise<CuentaDelAlumno> {
       await exigirAlumno(alumnoId)
       const fechaHoy = hoy(reloj)
-      const [adeudados, proximos, pagadoDelMes, pagos] = await Promise.all([
-        repository.leerAdeudados({ alumnoId, hoy: fechaHoy }),
-        repository.leerProximos({ alumnoId, hoy: fechaHoy }),
-        repository.sumarPagos(alumnoId, primerDiaDelMes(fechaHoy), fechaHoy),
-        repository.listarPagos(alumnoId),
+      const rangos = rangosDelPeriodo(filtro, fechaHoy)
+      const filtroDeuda = aFiltroDeuda(filtro, alumnoId, fechaHoy)
+      const [adeudados, proximos] = await Promise.all([
+        rangos.adeudados === null ? null : repository.leerAdeudados(filtroDeuda),
+        rangos.proximos === null ? null : repository.leerProximos(filtroDeuda),
       ])
       return {
-        totalAdeudado: totalDe(adeudados),
-        pagadoDelMes,
-        adeudados: adeudados.map(aOcurrenciaDeCuenta),
-        proximos: proximos.map(aOcurrenciaDeCuenta),
-        pagos,
+        totalAdeudado: totalDe(adeudados ?? []),
+        adeudados: adeudados && adeudados.map(aOcurrenciaDeCuenta),
+        proximos: proximos && proximos.map(aOcurrenciaDeCuenta),
+        limiteCobro: limiteDeCobro(fechaHoy),
       }
     },
 
     /**
      * Vista global de la deuda, paginada en memoria, del más antiguo al más reciente, con el total
      * de **todos** los adeudados del filtro (no de la página). Con `alumnoId`, 404 si el alumno no
-     * existe. El DNI se lee sólo para los alumnos de la página.
+     * existe. Si la sección no aplica al período (`aplica: false`), vacía y en 0, sin leer nada. El
+     * DNI se lee sólo para los alumnos de la página.
      */
-    async listarAdeudados(query: AdeudadosQuery): Promise<AdeudadosGlobal> {
+    async listarAdeudados(query: ListadoCuentaQuery): Promise<AdeudadosGlobal> {
       if (query.alumnoId !== undefined) await exigirAlumno(query.alumnoId)
-      const adeudados = await repository.leerAdeudados({
-        alumnoId: query.alumnoId,
-        hoy: hoy(reloj),
-      })
-      const pagina = paginarEnMemoria(adeudados, query)
-      const dnis = await repository.dnisDeAlumnos(pagina.data.map((a) => a.ocurrencia.alumno.id))
-      const data = pagina.data.map((adeudado): AdeudadoGlobal => ({
-        ...aOcurrenciaDeCuenta(adeudado),
-        alumno: {
-          id: adeudado.ocurrencia.alumno.id,
-          nombre: adeudado.ocurrencia.alumno.nombre,
-          apellido: adeudado.ocurrencia.alumno.apellido,
-          dni: dnis.get(adeudado.ocurrencia.alumno.id) ?? '',
-        },
-      }))
-      return { data, meta: pagina.meta, totalAdeudado: totalDe(adeudados) }
+      const fechaHoy = hoy(reloj)
+      const aplica = rangosDelPeriodo(query, fechaHoy).adeudados !== null
+      const adeudados = aplica
+        ? await repository.leerAdeudados(aFiltroDeuda(query, query.alumnoId, fechaHoy))
+        : []
+      return {
+        ...(await paginarConAlumno(adeudados, query)),
+        totalAdeudado: totalDe(adeudados),
+        aplica,
+      }
+    },
+
+    /**
+     * Vista global de los próximos, paginada en memoria, por fecha, hora de inicio y `turnoId`,
+     * con el tope de cobro. No tiene total: los próximos no son deuda. Con `alumnoId`, 404 si el
+     * alumno no existe. Si la sección no aplica al período (`aplica: false`), vacía, sin leer nada.
+     */
+    async listarProximos(query: ListadoCuentaQuery): Promise<ProximosGlobal> {
+      if (query.alumnoId !== undefined) await exigirAlumno(query.alumnoId)
+      const fechaHoy = hoy(reloj)
+      const aplica = rangosDelPeriodo(query, fechaHoy).proximos !== null
+      const proximos = aplica
+        ? await repository.leerProximos(aFiltroDeuda(query, query.alumnoId, fechaHoy))
+        : []
+      return {
+        ...(await paginarConAlumno(proximos, query)),
+        aplica,
+        limiteCobro: limiteDeCobro(fechaHoy),
+      }
     },
   }
 }

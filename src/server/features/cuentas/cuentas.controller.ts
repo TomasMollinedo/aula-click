@@ -1,7 +1,11 @@
 import type { RouteHandler } from '@hono/zod-openapi'
 import { alumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { AppEnv } from '@/server/router'
-import type { listarAdeudadosRoute, obtenerCuentaRoute } from './cuentas.routes'
+import type {
+  listarAdeudadosRoute,
+  listarProximosRoute,
+  obtenerCuentaRoute,
+} from './cuentas.routes'
 import { cuentasRepository } from './cuentas.repository'
 import { crearCuentasService } from './cuentas.service'
 
@@ -13,7 +17,13 @@ import { crearCuentasService } from './cuentas.service'
 const cuentasService = crearCuentasService({ repository: cuentasRepository, alumnosRepository })
 
 export const obtenerCuenta: RouteHandler<typeof obtenerCuentaRoute, AppEnv> = async (c) =>
-  c.json(await cuentasService.obtenerCuenta(c.req.valid('param').alumnoId), 200)
+  c.json(
+    await cuentasService.obtenerCuenta(c.req.valid('param').alumnoId, c.req.valid('query')),
+    200,
+  )
 
 export const listarAdeudados: RouteHandler<typeof listarAdeudadosRoute, AppEnv> = async (c) =>
   c.json(await cuentasService.listarAdeudados(c.req.valid('query')), 200)
+
+export const listarProximos: RouteHandler<typeof listarProximosRoute, AppEnv> = async (c) =>
+  c.json(await cuentasService.listarProximos(c.req.valid('query')), 200)

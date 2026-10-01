@@ -1,11 +1,10 @@
-import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
 import {
   leerOcurrencias,
   type ClienteOcurrencias,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
-import { dateAFecha, fechaADate, sumarDias, type Reloj } from '@/server/shared/fechas'
-import { esAdeudado, esProximo, importeVigente, totalDe } from './cuentas.reglas'
+import { dateAFecha, fechaADate, type Reloj } from '@/server/shared/fechas'
+import { esAdeudado, esProximo, importeVigente, rangosDelPeriodo, totalDe } from './cuentas.reglas'
 
 // Deuda del alumno (HU-16, T-53): la **única** implementación de qué se adeuda y cuánto. La usan
 // el repository de `cuentas` (ficha del alumno y vista global) y el tablero del gerente (T-61),
@@ -23,8 +22,19 @@ export type { ClienteOcurrencias, Ocurrencia }
  */
 export type Adeudado = { ocurrencia: Ocurrencia; importe: number | null }
 
-/** Filtro de la deuda. `hoy` (`YYYY-MM-DD`) lo calcula quien llama con su reloj. */
-export type FiltroDeuda = { alumnoId?: number; hoy: string }
+/**
+ * Filtro de la deuda y de los próximos. `hoy` (`YYYY-MM-DD`) lo calcula quien llama con su reloj;
+ * el resto es opcional. `desde` y `hasta` son el período **pedido**, sin recortar: cada lectura
+ * toma su parte con `rangosDelPeriodo` (decisión T-80). `profesorId` es el profesor del bloque.
+ */
+export type FiltroDeuda = {
+  alumnoId?: number
+  materiaId?: number
+  profesorId?: number
+  desde?: string
+  hasta?: string
+  hoy: string
+}
 
 /**
  * Reloj fijo al mediodía UTC de `fecha`: en Salta (UTC-3) es la misma fecha, así `hoy()` del motor
@@ -65,32 +75,53 @@ async function conImportes(
 }
 
 /**
- * Ocurrencias adeudadas (`esAdeudado`: anteriores a hoy, `SIN_REGISTRAR` y pago `PENDIENTE`), con
- * el importe vigente de su materia, del filtro (`alumnoId` opcional: sin él, de todos los
- * alumnos). Ordenadas del más antiguo al más reciente (fecha, hora de inicio y `turnoId`).
- *
- * Rango: desde la `fechaInicio` más antigua de los turnos `ACTIVO` que empezaron antes de hoy (un
- * `aggregate`; si no hay ninguno, no hay deuda y no se lee nada más) hasta ayer. Sin acotar
- * (decisión T-69): la expansión es en memoria. Una llamada a `leerOcurrencias` y una consulta de
- * precios.
+ * `fechaInicio` más antigua de los turnos `ACTIVO` del filtro que empezaron hasta `hasta`
+ * (decisión T-69), o `null` si no hay ninguno. `profesorId` usa la misma relación que el motor
+ * (`bloqueAgenda.profesorId`, como `leerSeries`), así no deja afuera nada que el motor devuelva.
  */
-export async function leerAdeudados(
+async function primerInicio(
   client: ClienteOcurrencias,
-  { alumnoId, hoy }: FiltroDeuda,
-): Promise<Adeudado[]> {
+  { alumnoId, materiaId, profesorId }: FiltroDeuda,
+  hasta: string,
+): Promise<string | null> {
   const { _min } = await client.turno.aggregate({
     where: {
       estado: 'ACTIVO',
-      fechaInicio: { lt: fechaADate(hoy) },
+      fechaInicio: { lte: fechaADate(hasta) },
       ...(alumnoId === undefined ? {} : { alumnoId }),
+      ...(materiaId === undefined ? {} : { materiaId }),
+      ...(profesorId === undefined ? {} : { bloqueAgenda: { profesorId } }),
     },
     _min: { fechaInicio: true },
   })
-  if (!_min.fechaInicio) return []
+  return _min.fechaInicio && dateAFecha(_min.fechaInicio)
+}
+
+/**
+ * Ocurrencias adeudadas (`esAdeudado`: anteriores a hoy, `SIN_REGISTRAR` y pago `PENDIENTE`), con
+ * el importe vigente de su materia, del filtro (todo opcional salvo `hoy`: sin `alumnoId`, de
+ * todos los alumnos). Ordenadas del más antiguo al más reciente (fecha, hora de inicio y
+ * `turnoId`).
+ *
+ * Rango: la parte del período que le toca a la deuda (`rangosDelPeriodo`), nunca hoy ni después;
+ * si el período es sólo futuro, `[]` sin consultar. Sin `desde`, empieza en la `fechaInicio` más
+ * antigua de los turnos `ACTIVO` del filtro (un `aggregate`; si no hay ninguno, no hay deuda y no
+ * se lee nada más), sin acotar (decisión T-69): la expansión es en memoria. Materia y profesor los
+ * filtra el motor. Una llamada a `leerOcurrencias` y una consulta de precios.
+ */
+export async function leerAdeudados(
+  client: ClienteOcurrencias,
+  filtro: FiltroDeuda,
+): Promise<Adeudado[]> {
+  const { alumnoId, materiaId, profesorId, hoy } = filtro
+  const rango = rangosDelPeriodo(filtro, hoy).adeudados
+  if (rango === null) return []
+  const desde = rango.desde ?? (await primerInicio(client, filtro, rango.hasta))
+  if (desde === null) return []
 
   const ocurrencias = await leerOcurrencias(
     client,
-    { desde: dateAFecha(_min.fechaInicio), hasta: sumarDias(hoy, -1), alumnoId },
+    { desde, hasta: rango.hasta, alumnoId, materiaId, profesorId },
     relojDelDia(hoy),
   )
   return conImportes(
@@ -100,8 +131,10 @@ export async function leerAdeudados(
 }
 
 /**
- * Total adeudado del filtro: la suma en centavos de los importes de `leerAdeudados` (los `null` no
- * suman). No tiene otra implementación: el tablero (T-61) y la vista global dan el mismo número.
+ * Total adeudado del filtro (alumno, período, materia y profesor): la suma en centavos de los
+ * importes de `leerAdeudados` (los `null` no suman). No tiene otra implementación: el tablero
+ * (T-61) y la vista global dan el mismo número con el mismo filtro. Los próximos nunca suman: con
+ * un período sólo futuro es 0.
  */
 export async function totalAdeudado(
   client: ClienteOcurrencias,
@@ -111,18 +144,26 @@ export async function totalAdeudado(
 }
 
 /**
- * Próximos del alumno (`esProximo`: de hoy a `limiteDeCobro(hoy)`, `AGENDADO` y pago
- * `PENDIENTE`, de series y sesiones únicas), con el importe vigente, ordenados por fecha, hora de
- * inicio y `turnoId`. Es lo mismo que `POST /pagos` puede cobrar hacia adelante (mismo tope de 8
- * semanas, decisión T-60). La usa el repository de `cuentas`; no suma a la deuda.
+ * Próximos del filtro (`esProximo`: de hoy a `limiteDeCobro(hoy)`, `AGENDADO` y pago `PENDIENTE`,
+ * de series y sesiones únicas; sin `alumnoId`, de todos los alumnos), con el importe vigente,
+ * ordenados por fecha, hora de inicio y `turnoId`. Es lo mismo que `POST /pagos` puede cobrar
+ * hacia adelante (mismo tope de 8 semanas, decisión T-60). No suman a la deuda.
+ *
+ * Rango: la parte del período que les toca (`rangosDelPeriodo`), nunca antes de hoy ni después
+ * del tope; si el período es sólo pasado, `[]` sin consultar, y si empieza después del tope, `[]`
+ * (el motor no lee un rango vacío).
  */
 export async function leerProximos(
   client: ClienteOcurrencias,
-  { alumnoId, hoy }: { alumnoId: number; hoy: string },
+  filtro: FiltroDeuda,
 ): Promise<Adeudado[]> {
+  const { alumnoId, materiaId, profesorId, hoy } = filtro
+  const rango = rangosDelPeriodo(filtro, hoy).proximos
+  if (rango === null) return []
+
   const ocurrencias = await leerOcurrencias(
     client,
-    { desde: hoy, hasta: limiteDeCobro(hoy), alumnoId },
+    { desde: rango.desde, hasta: rango.hasta, alumnoId, materiaId, profesorId },
     relojDelDia(hoy),
   )
   return conImportes(

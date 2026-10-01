@@ -4,7 +4,7 @@ import {
   esProximo,
   importeVigente,
   paginarEnMemoria,
-  primerDiaDelMes,
+  rangosDelPeriodo,
   totalDe,
   type OcurrenciaCuenta,
 } from '../cuentas.reglas'
@@ -84,13 +84,82 @@ describe('importeVigente y totalDe', () => {
   })
 })
 
-describe('primerDiaDelMes', () => {
-  it('día 1 del mes, en los bordes de fin y principio de mes y de año', () => {
-    expect(primerDiaDelMes('2026-10-05')).toBe('2026-10-01')
-    expect(primerDiaDelMes('2026-10-01')).toBe('2026-10-01')
-    expect(primerDiaDelMes('2026-09-30')).toBe('2026-09-01')
-    expect(primerDiaDelMes('2026-12-31')).toBe('2026-12-01')
-    expect(primerDiaDelMes('2027-01-01')).toBe('2027-01-01')
+describe('rangosDelPeriodo', () => {
+  const AYER = '2026-10-04'
+  const TOPE = '2026-11-30'
+
+  it('sin período: adeudados hasta ayer (sin desde) y próximos de hoy al tope', () => {
+    const rangos = rangosDelPeriodo({}, HOY)
+
+    expect(rangos).toEqual({
+      adeudados: { hasta: AYER },
+      proximos: { desde: HOY, hasta: TOPE },
+    })
+    expect(rangos.adeudados).not.toHaveProperty('desde')
+  })
+
+  it('sólo `desde` en el pasado: adeudados desde ahí hasta ayer; próximos como siempre', () => {
+    expect(rangosDelPeriodo({ desde: '2026-09-01' }, HOY)).toEqual({
+      adeudados: { desde: '2026-09-01', hasta: AYER },
+      proximos: { desde: HOY, hasta: TOPE },
+    })
+  })
+
+  it('sólo `hasta` en el pasado: adeudados hasta ahí (sin desde); próximos no aplican', () => {
+    const rangos = rangosDelPeriodo({ hasta: '2026-09-15' }, HOY)
+
+    expect(rangos).toEqual({ adeudados: { hasta: '2026-09-15' }, proximos: null })
+    expect(rangos.adeudados).not.toHaveProperty('desde')
+  })
+
+  it('un período que cruza hoy se parte: adeudados hasta ayer y próximos desde hoy', () => {
+    expect(rangosDelPeriodo({ desde: '2026-09-21', hasta: '2026-10-19' }, HOY)).toEqual({
+      adeudados: { desde: '2026-09-21', hasta: AYER },
+      proximos: { desde: HOY, hasta: '2026-10-19' },
+    })
+  })
+
+  it('`desde` igual a hoy: los adeudados no aplican', () => {
+    expect(rangosDelPeriodo({ desde: HOY, hasta: '2026-10-19' }, HOY)).toEqual({
+      adeudados: null,
+      proximos: { desde: HOY, hasta: '2026-10-19' },
+    })
+  })
+
+  it('`desde` igual a ayer: los adeudados aplican, sólo ayer', () => {
+    expect(rangosDelPeriodo({ desde: AYER }, HOY).adeudados).toEqual({ desde: AYER, hasta: AYER })
+  })
+
+  it('`hasta` igual a ayer: los próximos no aplican', () => {
+    expect(rangosDelPeriodo({ desde: '2026-09-01', hasta: AYER }, HOY)).toEqual({
+      adeudados: { desde: '2026-09-01', hasta: AYER },
+      proximos: null,
+    })
+  })
+
+  it('`hasta` igual a hoy: los próximos aplican, sólo hoy', () => {
+    expect(rangosDelPeriodo({ desde: '2026-09-01', hasta: HOY }, HOY)).toEqual({
+      adeudados: { desde: '2026-09-01', hasta: AYER },
+      proximos: { desde: HOY, hasta: HOY },
+    })
+  })
+
+  it('un período que pasa el tope: los próximos se recortan al tope', () => {
+    expect(rangosDelPeriodo({ desde: '2026-10-12', hasta: '2027-03-31' }, HOY)).toEqual({
+      adeudados: null,
+      proximos: { desde: '2026-10-12', hasta: TOPE },
+    })
+  })
+
+  it('un período que empieza después del tope: los próximos aplican con un rango vacío', () => {
+    const { adeudados, proximos } = rangosDelPeriodo(
+      { desde: '2026-12-01', hasta: '2026-12-31' },
+      HOY,
+    )
+
+    expect(adeudados).toBeNull()
+    expect(proximos).toEqual({ desde: '2026-12-01', hasta: TOPE })
+    expect(proximos && proximos.hasta < proximos.desde).toBe(true)
   })
 })
 

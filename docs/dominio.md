@@ -142,10 +142,16 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 
 - **Adeudado:** una ocurrencia con fecha **anterior a hoy**, estado "Sin registrar" (no cancelada) y pago pendiente. La ocurrencia de hoy no se adeuda todavía: es un próximo turno. Las canceladas no se adeudan.
 - **Pagada:** hay un pago registrado para esa ocurrencia. No hay anulación de pagos en este sprint (definición D): una ocurrencia pagada no vuelve a la deuda.
-- **Próximos turnos:** ocurrencias agendadas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos-1): 8 semanas). No suman a la deuda, pero se pueden cobrar por adelantado.
+- **Próximos turnos:** ocurrencias agendadas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos-1): 8 semanas). **Nunca son deuda:** no suman al total, pero se pueden cobrar por adelantado.
 - **Importe:** el precio por hora **vigente** de la materia. Si el gerente cambia el precio, los turnos impagos muestran el precio nuevo; lo ya pagado conserva el importe que se cobró. Una materia sin precio muestra el turno sin importe y no suma al total.
-- **Total adeudado:** la suma de los importes de los turnos adeudados. En la vista global es el de todos los adeudados del filtro, no sólo el de la página.
-- **Pagado del mes:** la suma de los pagos del alumno con fecha de pago entre el día 1 del mes actual y hoy. Cuenta la fecha del pago, no la fecha en que se cargó.
+- **Dos secciones, en las dos vistas:** "Turnos adeudados" y "Próximos turnos" se muestran por separado, tanto en la cuenta de un alumno como en la vista global (de todos los alumnos, o de uno). Hoy las separa: una ocurrencia nunca está en las dos.
+- **Filtros:** período (desde y hasta, cada uno opcional y sin tope de días), materia y profesor en las dos vistas; en la global, además, el alumno.
+- **Sin período:** los adeudados son todos los impagos anteriores a hoy y los próximos van de hoy al tope de cobro.
+- **Con período:** cada sección muestra la parte del período que le toca.
+  - Adeudados: del período, pero nunca hoy ni después. Si el período es sólo futuro (empieza hoy o después), la sección **no aplica**.
+  - Próximos: del período, pero nunca antes de hoy ni después del tope de cobro. Si el período es sólo pasado (termina antes de hoy), la sección **no aplica**. Si es futuro pero empieza después del tope, aplica y queda vacía: la pantalla avisa hasta qué fecha se puede cobrar.
+  - Una sección que no aplica no se muestra como "sin turnos": no tiene nada que ver con ese período.
+- **Total adeudado:** la suma de los importes de los turnos adeudados de **todos** los filtros (alumno, período, materia y profesor): con un período es la deuda de ese período. En la vista global es el de todos los adeudados del filtro, no sólo el de la página. Con un período sólo futuro es $ 0, aunque haya próximos turnos con importe.
 - Los importes y los totales los calcula siempre la API; la UI sólo los muestra.
 
 ## Exámenes

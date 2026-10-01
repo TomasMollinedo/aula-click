@@ -825,6 +825,17 @@ Anular pagos y que sus turnos vuelvan a la deuda (definición D): pasa al próxi
 - Después de registrar un pago o cancelar un turno, la siguiente consulta ya no lo muestra como adeudado.
 - El total adeudado global coincide con la suma de los adeudados.
 
+**Actualización (ajustes de la PO, 01/10)**
+
+El texto de arriba queda como se escribió; lo que sigue lo corrige (ver "Ajustes de la PO (01/10)" al final y las decisiones T-79 a T-84). **Los criterios de aceptación van a cambiar: los reescribe la PO.**
+
+- **Punto 1 del alcance.** `FiltroDeuda` pasa a `{ alumnoId?, materiaId?, profesorId?, desde?, hasta?, hoy }` (todo opcional salvo `hoy`). `leerAdeudados`, `totalAdeudado` y `leerProximos` (ahora con `alumnoId` opcional) lo respetan. `totalAdeudado(client, { hoy })` de T-61 no cambia.
+- **Punto 2.** `GET /cuentas/alumnos/{alumnoId}` acepta `desde`, `hasta`, `materiaId` y `profesorId`, y responde `{ totalAdeudado, adeudados, proximos, limiteCobro }`. Ya **no** devuelve `pagos` ni `pagadoDelMes` (pasan a otro sprint). `adeudados` y `proximos` van `null` si la sección no aplica al período.
+- **Punto 3.** `GET /cuentas/adeudados` suma los mismos filtros y `aplica`. Nuevo `GET /cuentas/proximos?alumnoId&desde&hasta&materiaId&profesorId&page&pageSize` (`MESA_ENTRADAS`): la misma fila con alumno y DNI, sin `totalAdeudado`, con `aplica` y `limiteCobro`.
+- **Punto 4.** Con `desde` en el período, el rango de la deuda empieza ahí y no hace falta buscar el primer turno; sin `desde`, sigue como en T-69, con materia y profesor en el filtro.
+- **Regla nueva.** `rangosDelPeriodo` (`cuentas.reglas.ts`, con tests): qué parte del período le toca a cada sección y cuál no aplica. El cliente no la repite.
+- **Punto 5.** Tests nuevos de la regla, de las condiciones (filtros, período y `aggregate`), del service (`null`, `aplica`, `limiteCobro`, próximos paginados) y de las rutas (400 de `hasta < desde` en los tres endpoints).
+
 ---
 
 ## T-54 · [Front] HU-16 · Pestaña "Pagos" del alumno y vista global "Pagos"
@@ -845,6 +856,8 @@ Anular pagos y que sus turnos vuelvan a la deuda (definición D): pasa al próxi
 
 - Cobrar dos turnos adeudados de un alumno desde su pestaña y verlos desaparecer de la deuda.
 - En la vista global, filtrar por un alumno habilita la selección múltiple.
+
+> **Ajustes de la PO (01/10):** el alcance y estos criterios van a cambiar (los reescribe la PO): las dos vistas pasan a tener "Turnos adeudados" y "Próximos turnos" con filtros de período, materia y profesor, y se sacan el historial de pagos y "Pagado este mes". Ver "Ajustes de la PO (01/10)" al final.
 
 **Nota (T-52):** `renderRegistrarPago` recibe `SolicitudRegistrarPago` (`src/types/pago.ts`). `cuentas` arma cada `OcurrenciaACobrar` con el importe de sus adeudados o próximos (T-53), y guarda su propia copia de la selección mientras el diálogo está abierto: al registrar se invalidan las cuentas y la fila cobrada desaparece, pero el diálogo tiene que seguir mostrando el éxito hasta que se cierre. El enlace al comprobante del historial es `/mesa/pagos/<pagoId>/comprobante`.
 
@@ -1121,3 +1134,18 @@ Reemplazan a los "Puntos a confirmar" del inicio del sprint. Las tareas abiertas
 - **H. HU-08.** Las fechas sin lugar sólo se avisan al registrar y el recurrente se guarda en tramos, como en el Sprint 1. No se guardan excepciones (T-41, T-42).
 - **I. HU-19.** No se recuerda la última vista (calendario o lista): las PO sacan el criterio.
 - **J. Migraciones sólo generadas por Prisma, sin SQL a mano.** Los CHECK, los índices parciales y el `UPDATE` de materias sin precio no van en la migración. El `UPDATE` va en `seed.ts`; lo demás lo valida la API y queda como pendiente en `decisiones.md`. Corrige lo que T-29 decía sobre SQL a mano.
+
+## Ajustes de la PO (01/10)
+
+La PO revisó HU-16 (T-53 y T-54, ya implementadas) y pidió estos ajustes. T-53 y T-54 no se reescriben: llevan una "Actualización" en su sección. Los criterios de aceptación de HU-16 los reescribe la PO. Decisiones T-79 a T-84.
+
+1. **La vista global tiene la misma estructura que la del alumno:** "Turnos adeudados" y "Próximos turnos" por separado, de todos los alumnos (o de uno, con el filtro).
+2. **Filtros en las dos vistas:** período (`desde`, `hasta`), materia y profesor. En la vista global, además, el alumno, que ya existía.
+3. **Sin período, como hasta ahora:** los adeudados son todos los impagos anteriores a hoy y los próximos van de hoy a hoy + 56 días.
+4. **Con período, cada sección muestra la parte que le toca:**
+   - Adeudados: del período, pero nunca hoy ni después. Si el período es sólo futuro (`desde >= hoy`), la sección no aplica (definición de Tomás, por simetría).
+   - Próximos: del período, pero nunca antes de hoy ni después del tope de cobro (8 semanas, el mismo de `POST /pagos`). Si el período es sólo pasado (`hasta < hoy`), la sección no aplica. Si es futuro pero empieza después del tope, aplica y queda vacía: la UI avisa hasta qué fecha se puede cobrar.
+5. **Total adeudado:** la suma de los adeudados de todos los filtros (alumno, período, materia y profesor). Los próximos nunca suman: no son deuda, ni con un período futuro (en ese caso el total del período es $ 0). La etiqueta "Total adeudado del período" es de la UI.
+6. **Se sacan de la cuenta del alumno** el historial de pagos (`pagos`) y `pagadoDelMes`: pasan a otro sprint y la API ya no los devuelve.
+
+Los cálculos de rangos son reglas de negocio: están en `cuentas.reglas.ts` (`rangosDelPeriodo`) y el cliente no los repite; la API dice si cada sección aplica (`null` en la cuenta del alumno, `aplica` en las vistas globales).
