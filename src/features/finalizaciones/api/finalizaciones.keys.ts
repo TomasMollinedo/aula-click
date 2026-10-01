@@ -1,4 +1,6 @@
-// Todo cuelga de `all`. T-48 suma las keys que necesite.
+// Todo cuelga de `all`: finalizar (y lo que invalide finalizaciones) vuelve a pedir las previas.
 export const finalizacionesKeys = {
   all: ['finalizaciones'] as const,
+  previa: (turnoId: number, fechaDesde: string) =>
+    [...finalizacionesKeys.all, 'previa', turnoId, fechaDesde] as const,
 }
