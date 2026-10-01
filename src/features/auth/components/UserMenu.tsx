@@ -5,7 +5,6 @@ import { LogOut, MoreHorizontal } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar'
-import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -35,35 +34,34 @@ export function UserMenu() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <Avatar className="size-9">
-        <AvatarFallback className="bg-luminoso text-cobalto text-xs font-semibold">
-          {iniciales}
-        </AvatarFallback>
-      </Avatar>
-      <div className="min-w-0 flex-1">
-        <p className="text-luminoso truncate text-sm font-medium">{nombre}</p>
-        <p className="text-luminoso/60 truncate text-xs">{rolLabel(session.user.role)}</p>
-      </div>
-      <DropdownMenu>
-        <DropdownMenuTrigger asChild>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            aria-label="Más opciones"
-            className="text-luminoso/70 hover:text-luminoso size-7 shrink-0 hover:bg-white/10"
-          >
-            <MoreHorizontal className="size-4" />
-          </Button>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" side="top">
-          <DropdownMenuItem onSelect={cerrarSesion}>
-            <LogOut className="size-4" />
-            Cerrar sesión
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+    // Toda la fila es el disparador: con el Sidebar en modo "solo íconos" queda solo el avatar y
+    // el menú sigue accesible. Los textos y el "⋯" aparecen con el Sidebar expandido (variante
+    // `sidebar-abierto` del AppShell).
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <button
+          type="button"
+          aria-label="Menú de usuario"
+          className="flex w-full items-center gap-2 rounded-lg text-left transition-colors hover:bg-white/10"
+        >
+          <Avatar className="size-9 shrink-0">
+            <AvatarFallback className="bg-luminoso text-cobalto text-xs font-semibold">
+              {iniciales}
+            </AvatarFallback>
+          </Avatar>
+          <div className="sidebar-abierto:opacity-100 min-w-0 flex-1 opacity-0 transition-opacity duration-300">
+            <p className="text-luminoso truncate text-sm font-medium">{nombre}</p>
+            <p className="text-luminoso/60 truncate text-xs">{rolLabel(session.user.role)}</p>
+          </div>
+          <MoreHorizontal className="text-luminoso/70 sidebar-abierto:opacity-100 mr-2 size-4 shrink-0 opacity-0 transition-opacity duration-300" />
+        </button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start" side="top">
+        <DropdownMenuItem onSelect={cerrarSesion}>
+          <LogOut className="size-4" />
+          Cerrar sesión
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   )
 }

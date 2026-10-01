@@ -19,7 +19,9 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
 
   return (
     <nav>
-      <p className="mb-4 px-3 text-xs font-medium tracking-wide text-white/60 uppercase">{label}</p>
+      <p className="sidebar-abierto:opacity-100 mb-4 px-3 text-xs font-medium tracking-wide whitespace-nowrap text-white/60 uppercase opacity-0 transition-opacity duration-300">
+        {label}
+      </p>
       <ul className="space-y-1">
         {links.map((link) => {
           const activo = pathname.startsWith(link.href)
@@ -27,6 +29,7 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
             <li key={link.href}>
               <Link
                 href={link.href}
+                title={link.label}
                 aria-current={activo ? 'page' : undefined}
                 className={cn(
                   'flex items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-white transition-colors hover:bg-white/5 hover:text-white',
@@ -35,7 +38,9 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
                 )}
               >
                 <link.icon className={cn('size-4 shrink-0', activo && 'text-dorado')} />
-                <span className="flex-1">{link.label}</span>
+                <span className="sidebar-abierto:opacity-100 flex-1 whitespace-nowrap opacity-0 transition-opacity duration-300">
+                  {link.label}
+                </span>
               </Link>
             </li>
           )
