@@ -8,7 +8,7 @@ import { agendasRoutes } from '../agendas.routes'
 // y Better Auth se reemplazan por mocks. Las reglas se prueban en el service.
 
 const { repository, profesoresRepository, aulasRepository, getSession } = vi.hoisted(() => ({
-  repository: { leerOcurrencias: vi.fn() },
+  repository: { leerOcurrencias: vi.fn(), leerPrioridades: vi.fn() },
   profesoresRepository: { buscarIdPorUsuario: vi.fn(), buscarConAsignaciones: vi.fn() },
   aulasRepository: { listar: vi.fn() },
   getSession: vi.fn(),
@@ -21,6 +21,15 @@ vi.mock('@/lib/auth', () => ({ auth: { api: { getSession } } }))
 const app = createRouter().basePath('/api/v1')
 app.onError(errorHandler)
 app.route('/agendas', agendasRoutes)
+
+/** Examen que determina la prioridad del alumno de `OCURRENCIA`, como lo arma `leerPrioridades`. */
+const EXAMEN = {
+  id: 5,
+  fecha: '2099-01-20',
+  tipo: 'PARCIAL',
+  materiaNombre: 'Matemática',
+  dias: 15,
+}
 
 const paginaVacia = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }
 
@@ -61,6 +70,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   getSession.mockResolvedValue(sesion())
   repository.leerOcurrencias.mockResolvedValue([])
+  // Prioridad del alumno 12 en la materia 2 ese día, como la arma `leerPrioridades`.
+  repository.leerPrioridades.mockResolvedValue(
+    new Map([['12-2-2099-01-05', { prioridad: 'MEDIA', examen: EXAMEN }]]),
+  )
   aulasRepository.listar.mockResolvedValue([])
 })
 
@@ -93,15 +106,39 @@ describe('GET /agendas/diaria', () => {
     expect(texto).not.toContain('busqueda')
     expect(JSON.parse(texto).data).toEqual([
       {
-        id: 15,
+        turnoId: 15,
+        fecha: '2099-01-05',
+        bloqueAgendaId: 10,
+        diaSemana: 1,
+        horaInicio: '09:00',
+        horaFin: '10:00',
         alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
         profesor: { id: 3, apellido: 'Pérez', nombre: 'Ana' },
         materia: { id: 2, nombre: 'Matemática' },
         aula: { id: 1, nombre: 'Aula 1' },
-        horaInicio: '09:00',
-        horaFin: '10:00',
-        estado: 'ACTIVO',
+        tipo: 'RECURRENTE',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: 'MEDIA',
+        examen: EXAMEN,
       },
+    ])
+  })
+
+  it('filtra por prioridad y por estado: los pasa al service y devuelve sólo lo que cumple', async () => {
+    repository.leerOcurrencias.mockResolvedValue([
+      OCURRENCIA,
+      { ...OCURRENCIA, turnoId: 16, alumnoId: 13, estado: 'CANCELADO' },
+    ])
+
+    const altas = await pedir('/diaria?fecha=2099-01-05&prioridad=ALTA')
+    expect(altas.status).toBe(200)
+    expect((await altas.json()).data).toEqual([])
+
+    const canceladas = await pedir('/diaria?fecha=2099-01-05&estado=CANCELADO')
+    const { data } = await canceladas.json()
+    expect(data).toEqual([
+      expect.objectContaining({ turnoId: 16, estado: 'CANCELADO', prioridad: null, examen: null }),
     ])
   })
 
@@ -111,6 +148,8 @@ describe('GET /agendas/diaria', () => {
     ['materiaId no numérico', '?materiaId=abc'],
     ['aulaId cero', '?aulaId=0'],
     ['profesorId negativo', '?profesorId=-1'],
+    ['estado desconocido', '?estado=ACTIVO'],
+    ['prioridad desconocida', '?prioridad=URGENTE'],
     ['q de más de 100 caracteres', `?q=${'a'.repeat(101)}`],
     ['pageSize mayor a 100', '?pageSize=101'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
@@ -148,6 +187,7 @@ describe('GET /agendas/propia', () => {
       {
         turnoId: 15,
         fecha: '2099-01-05',
+        bloqueAgendaId: 10,
         diaSemana: 1,
         horaInicio: '09:00',
         horaFin: '10:00',
@@ -155,7 +195,10 @@ describe('GET /agendas/propia', () => {
         materia: { id: 2, nombre: 'Matemática' },
         aula: { id: 1, nombre: 'Aula 1' },
         tipo: 'RECURRENTE',
-        estado: 'ACTIVO',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: 'MEDIA',
+        examen: EXAMEN,
       },
     ])
     expect(repository.leerOcurrencias).toHaveBeenCalledWith(
@@ -178,6 +221,8 @@ describe('GET /agendas/propia', () => {
     ['hasta inexistente', '?hasta=2099-02-30'],
     ['hasta anterior a desde', '?desde=2099-01-05&hasta=2099-01-04'],
     ['rango mayor al máximo', '?desde=2099-01-05&hasta=2099-02-05'],
+    ['estado desconocido', '?estado=ACTIVO'],
+    ['prioridad desconocida', '?prioridad=URGENTE'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
     const res = await pedir(`/propia${query}`)
     expect(res.status).toBe(400)
@@ -238,6 +283,84 @@ describe('GET /agendas/profesor', () => {
   it('con un rol que no es MESA_ENTRADAS → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR'))
     const res = await pedir('/profesor?profesorId=7')
+    expect(res.status).toBe(403)
+    expect(repository.leerOcurrencias).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /agendas/centro', () => {
+  it('responde 200 con el arreglo que arma el service (con profesor), sin envolver en { data } y sin `busqueda`', async () => {
+    repository.leerOcurrencias.mockResolvedValue([OCURRENCIA])
+
+    const res = await pedir('/centro?desde=2099-01-05&hasta=2099-01-11')
+    const texto = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(texto).not.toContain('busqueda')
+    expect(JSON.parse(texto)).toEqual([
+      {
+        turnoId: 15,
+        fecha: '2099-01-05',
+        bloqueAgendaId: 10,
+        diaSemana: 1,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
+        profesor: { id: 3, apellido: 'Pérez', nombre: 'Ana' },
+        materia: { id: 2, nombre: 'Matemática' },
+        aula: { id: 1, nombre: 'Aula 1' },
+        tipo: 'RECURRENTE',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: 'MEDIA',
+        examen: EXAMEN,
+      },
+    ])
+    expect(repository.leerOcurrencias).toHaveBeenCalledWith(
+      { desde: '2099-01-05', hasta: '2099-01-11' },
+      undefined,
+    )
+  })
+
+  it('pasa profesor, materia y aula al motor y filtra por estado y prioridad', async () => {
+    await pedir(
+      '/centro?desde=2099-01-05&hasta=2099-01-11&profesorId=3&materiaId=2&aulaId=1&estado=AGENDADO&prioridad=ALTA',
+    )
+
+    expect(repository.leerOcurrencias).toHaveBeenCalledWith(
+      { desde: '2099-01-05', hasta: '2099-01-11', profesorId: 3, materiaId: 2, aulaId: 1 },
+      undefined,
+    )
+  })
+
+  it.each([
+    ['sin desde', '?hasta=2099-01-11'],
+    ['sin hasta', '?desde=2099-01-05'],
+    ['desde con formato inválido', '?desde=05-01-2099&hasta=2099-01-11'],
+    ['hasta anterior a desde', '?desde=2099-01-05&hasta=2099-01-04'],
+    ['rango mayor a 31 días', '?desde=2099-01-05&hasta=2099-02-05'],
+    ['profesorId cero', '?desde=2099-01-05&hasta=2099-01-11&profesorId=0'],
+    ['estado desconocido', '?desde=2099-01-05&hasta=2099-01-11&estado=ACTIVO'],
+    ['prioridad desconocida', '?desde=2099-01-05&hasta=2099-01-11&prioridad=URGENTE'],
+  ])('%s → 400 VALIDACION', async (_caso, query) => {
+    const res = await pedir(`/centro${query}`)
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+    expect(repository.leerOcurrencias).not.toHaveBeenCalled()
+  })
+
+  it('un rango de 31 días se acepta', async () => {
+    expect((await pedir('/centro?desde=2099-01-05&hasta=2099-02-04')).status).toBe(200)
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('/centro?desde=2099-01-05&hasta=2099-01-11')).status).toBe(401)
+  })
+
+  it('con un rol que no es MESA_ENTRADAS → 403', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    const res = await pedir('/centro?desde=2099-01-05&hasta=2099-01-11')
     expect(res.status).toBe(403)
     expect(repository.leerOcurrencias).not.toHaveBeenCalled()
   })
@@ -325,19 +448,28 @@ describe('OpenAPI de las agendas', () => {
     expect(codigos('/aulas')).toEqual(['200', '400', '401', '403'])
     expect(codigos('/propia')).toEqual(['200', '400', '401', '403', '404'])
     expect(codigos('/profesor')).toEqual(['200', '400', '401', '403', '404'])
+    expect(codigos('/centro')).toEqual(['200', '400', '401', '403'])
   })
 
   it('la agenda propia no recibe el profesor por parámetro (sale del Actor)', () => {
     const parametros = doc.paths['/api/v1/agendas/propia']?.get?.parameters ?? []
     expect(parametros.map((parametro) => (parametro as { name: string }).name).sort()).toEqual([
       'desde',
+      'estado',
       'hasta',
+      'prioridad',
     ])
   })
 
   it('registra los componentes de agenda y de los selectores de materias y aulas', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['AgendaItem', 'AgendaPropiaItem', 'MateriaConTurno', 'AulaConTurno']),
+      expect.arrayContaining([
+        'AgendaItem',
+        'AgendaPropiaItem',
+        'AgendaExamen',
+        'MateriaConTurno',
+        'AulaConTurno',
+      ]),
     )
     expect(Object.keys(doc.components?.schemas ?? {})).not.toContain('ProfesorConTurno')
   })
@@ -349,7 +481,7 @@ describe('OpenAPI de las agendas', () => {
           content: Record<string, { example?: unknown }>
         }
       ).content['application/json']?.example
-    for (const path of ['/diaria', '/propia', '/profesor', '/materias', '/aulas']) {
+    for (const path of ['/diaria', '/propia', '/profesor', '/centro', '/materias', '/aulas']) {
       expect(ejemplo(path), path).toBeDefined()
     }
   })

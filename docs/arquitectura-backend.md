@@ -42,7 +42,7 @@ src/
 │   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, auditoria, detalles (ver convenciones-backend.md)
 │   └── features/
 │       ├── turnos/ocurrencias.condiciones.ts  # motor de ocurrencias (T-30): lo consumen agendas y las features del Sprint 2
-│       ├── agendas/                          # agendas diaria, propia y de un profesor: sin tablas propias, leen ocurrencias
+│       ├── agendas/                          # agendas diaria, propia, de un profesor y del centro: sin tablas propias, leen ocurrencias y prioridades
 │       └── <dominio>/
 │           ├── <dominio>.routes.ts
 │           ├── <dominio>.controller.ts
@@ -60,7 +60,7 @@ Features de API del Sprint 1: `alumnos`, `profesores` (incluye materias asignada
 
 Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la completa su tarea dueña):
 
-- `agendas`: agenda diaria del centro, agenda propia del profesor, agenda de un profesor y los selectores de materias y aulas de la agenda (salieron de `turnos` en T-30, `/api/v1/agendas/*`). No tiene tablas propias: lee ocurrencias con el motor de `turnos`.
+- `agendas`: agenda diaria del centro, agenda propia del profesor, agenda de un profesor, agenda del centro para un rango (calendario semanal) y los selectores de materias y aulas de la agenda (salieron de `turnos` en T-30, `/api/v1/agendas/*`). No tiene tablas propias: lee ocurrencias con el motor de `turnos` y la prioridad con `leerPrioridades` de `examenes` (T-57), y muestra también las canceladas.
 - `ocurrencias`: detalle de un turno en una fecha puntual (con las acciones permitidas) y los turnos de un alumno.
 - `cancelaciones`: cancelar una o varias ocurrencias de un alumno.
 - `finalizaciones`: finalizar un turno recurrente a partir de una fecha.

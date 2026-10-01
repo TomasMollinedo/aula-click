@@ -3,13 +3,15 @@ import { AppError, NotFoundError, ValidationError } from '@/server/errors'
 import type { AulasRepository } from '@/server/features/aulas/aulas.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
+import type { PrioridadDeTurno } from '@/server/features/examenes/examenes.condiciones'
 import type { AgendasRepository, Ocurrencia } from '../agendas.repository'
 import { MENSAJE_RANGO_INVERTIDO, MENSAJE_RANGO_MAXIMO } from '../agendas.reglas'
 import { crearAgendasService } from '../agendas.service'
 
-// Las agendas (se movieron de `turnos` en T-30, verificando lo mismo que antes). Los repositories
-// se reemplazan por falsos: el de agendas devuelve ocurrencias como las arma el motor (ya
-// filtradas por el filtro que recibe) y el service filtra, ordena y pagina.
+// Las agendas (se movieron de `turnos` en T-30; T-57 las pasó a ocurrencias con estado, pago y
+// prioridad, e incluyó las canceladas). Los repositories se reemplazan por falsos: el de agendas
+// devuelve ocurrencias como las arma el motor (ya filtradas por el filtro que recibe) y las
+// prioridades como las arma `leerPrioridades`; el service filtra, ordena y pagina.
 
 // Mediodía del martes 22/09/2026 en Salta (UTC-3). Los lunes siguientes: 28/09, 05/10, 12/10…
 const HOY = '2026-09-22'
@@ -40,12 +42,35 @@ function ocurrencia(
   }
 }
 
+/** Prioridades que devuelve el repository, por `alumnoId-materiaId-fecha` (`clavePrioridad`). */
+function prioridades(
+  ...entradas: [alumnoId: number, materiaId: number, fecha: string, PrioridadDeTurno][]
+) {
+  return new Map(
+    entradas.map(([alumnoId, materiaId, fecha, prioridad]) => [
+      `${alumnoId}-${materiaId}-${fecha}`,
+      prioridad,
+    ]),
+  )
+}
+
+const examen: NonNullable<PrioridadDeTurno['examen']> = {
+  id: 5,
+  fecha: '2026-09-25',
+  tipo: 'PARCIAL',
+  materiaNombre: 'Matemática',
+  dias: 3,
+}
+
 const ruiz = { id: 7, nombre: 'Juan', apellido: 'Ruiz', busqueda: 'ruiz juan 30222333' }
 const alvarez = { id: 9, nombre: 'Bruno', apellido: 'Álvarez', busqueda: 'alvarez bruno 30444555' }
 
 function crearRepositories() {
   return {
-    repository: { leerOcurrencias: vi.fn<AgendasRepository['leerOcurrencias']>() },
+    repository: {
+      leerOcurrencias: vi.fn<AgendasRepository['leerOcurrencias']>(),
+      leerPrioridades: vi.fn<AgendasRepository['leerPrioridades']>(),
+    },
     profesoresRepository: {
       buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
       buscarConAsignaciones: vi.fn<ProfesoresRepository['buscarConAsignaciones']>(),
@@ -61,6 +86,7 @@ beforeEach(() => {
   repos = crearRepositories()
   service = crearAgendasService({ ...repos, reloj: relojFijo })
   repos.repository.leerOcurrencias.mockResolvedValue([])
+  repos.repository.leerPrioridades.mockResolvedValue(new Map())
   repos.aulasRepository.listar.mockResolvedValue([])
 })
 
@@ -113,27 +139,71 @@ describe('listarAgenda', () => {
     )
   })
 
-  it('arma cada item campo por campo (horas en HH:mm, estado ACTIVO), sin las canceladas', async () => {
+  it('arma cada ítem campo por campo (horas en HH:mm, estado, pago y prioridad), sin `busqueda`', async () => {
     repos.repository.leerOcurrencias.mockResolvedValue([
-      ocurrencia({ turnoId: 15, fecha: HOY }),
-      ocurrencia({ turnoId: 16, fecha: HOY, estado: 'CANCELADO' }),
+      ocurrencia({
+        turnoId: 15,
+        fecha: HOY,
+        pago: { estado: 'PAGADO', pagoId: 9, importeAplicado: 5000 },
+      }),
     ])
+    repos.repository.leerPrioridades.mockResolvedValue(
+      prioridades([12, 3, HOY, { prioridad: 'ALTA', examen }]),
+    )
 
-    await expect(service.listarAgenda({ page: 1, pageSize: 20 })).resolves.toEqual({
+    const pagina = await service.listarAgenda({ page: 1, pageSize: 20 })
+
+    expect(pagina).toEqual({
       data: [
         {
-          id: 15,
+          turnoId: 15,
+          fecha: HOY,
+          bloqueAgendaId: 10,
+          diaSemana: 1,
+          horaInicio: '09:00',
+          horaFin: '10:00',
           alumno: { id: 12, apellido: 'González', nombre: 'Lucía' },
           profesor: { id: 4, apellido: 'Pérez', nombre: 'Ana' },
           materia: { id: 3, nombre: 'Matemática' },
           aula: { id: 3, nombre: 'Aula 3' },
-          horaInicio: '09:00',
-          horaFin: '10:00',
-          estado: 'ACTIVO',
+          tipo: 'RECURRENTE',
+          estado: 'AGENDADO',
+          estadoPago: 'PAGADO',
+          prioridad: 'ALTA',
+          examen,
         },
       ],
       meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
     })
+    expect(JSON.stringify(pagina)).not.toContain('busqueda')
+  })
+
+  it('incluye las canceladas, con su estado y sin prioridad ni consulta de prioridad (HU-13, T-57)', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 15, fecha: HOY }),
+      ocurrencia({ turnoId: 16, fecha: HOY, alumnoId: 13, estado: 'CANCELADO' }),
+    ])
+    repos.repository.leerPrioridades.mockResolvedValue(
+      prioridades([12, 3, HOY, { prioridad: 'MEDIA' }]),
+    )
+
+    const pagina = await service.listarAgenda({ page: 1, pageSize: 20 })
+
+    expect(pagina.data).toEqual([
+      expect.objectContaining({ turnoId: 15, estado: 'AGENDADO', prioridad: 'MEDIA' }),
+      expect.objectContaining({
+        turnoId: 16,
+        estado: 'CANCELADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: null,
+        examen: null,
+      }),
+    ])
+    // Sólo se pide la prioridad de la que no está cancelada: una sola consulta, para el lote.
+    expect(repos.repository.leerPrioridades).toHaveBeenCalledTimes(1)
+    expect(repos.repository.leerPrioridades).toHaveBeenCalledWith([
+      { alumnoId: 12, materiaId: 3, fecha: HOY },
+    ])
   })
 
   it('una ocurrencia pasada del día (SIN_REGISTRAR) se sigue mostrando', async () => {
@@ -142,7 +212,7 @@ describe('listarAgenda', () => {
     ])
 
     const pagina = await service.listarAgenda({ page: 1, pageSize: 20, fecha: '2026-09-21' })
-    expect(pagina.data.map((item) => item.id)).toEqual([15])
+    expect(pagina.data.map((item) => item.turnoId)).toEqual([15])
   })
 
   it('ordena por hora, dentro de la hora por profesor (su busqueda) y por id del turno', async () => {
@@ -155,7 +225,7 @@ describe('listarAgenda', () => {
     ])
 
     const pagina = await service.listarAgenda({ page: 1, pageSize: 20 })
-    expect(pagina.data.map((item) => item.id)).toEqual([25, 22, 20, 21, 30])
+    expect(pagina.data.map((item) => item.turnoId)).toEqual([25, 22, 20, 21, 30])
   })
 
   it('pagina en memoria con calcularSkipTake y arma meta con armarMeta', async () => {
@@ -164,7 +234,7 @@ describe('listarAgenda', () => {
     )
 
     const pagina = await service.listarAgenda({ page: 2, pageSize: 2 })
-    expect(pagina.data.map((item) => item.id)).toEqual([3, 4])
+    expect(pagina.data.map((item) => item.turnoId)).toEqual([3, 4])
     expect(pagina.meta).toEqual({ page: 2, pageSize: 2, total: 5, totalPages: 3 })
   })
 
@@ -175,10 +245,10 @@ describe('listarAgenda', () => {
     ])
 
     const porAlumno = await service.listarAgenda({ page: 1, pageSize: 20, q: 'GONZ lucía' })
-    expect(porAlumno.data.map((item) => item.id)).toEqual([1, 2])
+    expect(porAlumno.data.map((item) => item.turnoId)).toEqual([1, 2])
 
     const porProfesor = await service.listarAgenda({ page: 1, pageSize: 20, q: 'ruiz' })
-    expect(porProfesor.data.map((item) => item.id)).toEqual([2])
+    expect(porProfesor.data.map((item) => item.turnoId)).toEqual([2])
 
     // Mezcladas entre alumno y profesor no coinciden (T-36).
     const mezcladas = await service.listarAgenda({ page: 1, pageSize: 20, q: 'gonzalez ruiz' })
@@ -201,7 +271,88 @@ describe('listarAgenda', () => {
       q: 'gonzalez',
       profesorId: 4,
     })
-    expect(porAlumno.data.map((item) => item.id)).toEqual([1])
+    expect(porAlumno.data.map((item) => item.turnoId)).toEqual([1])
+  })
+
+  describe('filtros por estado y prioridad (T-57)', () => {
+    beforeEach(() => {
+      repos.repository.leerOcurrencias.mockResolvedValue([
+        ocurrencia({ turnoId: 1, fecha: HOY, alumnoId: 12 }),
+        ocurrencia({ turnoId: 2, fecha: HOY, alumnoId: 13 }),
+        ocurrencia({ turnoId: 3, fecha: HOY, alumnoId: 14, estado: 'CANCELADO' }),
+        ocurrencia({ turnoId: 4, fecha: HOY, alumnoId: 15, estado: 'SIN_REGISTRAR' }),
+      ])
+      repos.repository.leerPrioridades.mockResolvedValue(
+        prioridades(
+          [12, 3, HOY, { prioridad: 'ALTA', examen }],
+          [13, 3, HOY, { prioridad: 'BAJA' }],
+          [15, 3, HOY, { prioridad: 'ALTA', examen }],
+        ),
+      )
+    })
+
+    it('`prioridad` ALTA sólo trae esas ocurrencias (y no las canceladas)', async () => {
+      const pagina = await service.listarAgenda({ page: 1, pageSize: 20, prioridad: 'ALTA' })
+
+      expect(pagina.data.map((item) => item.turnoId)).toEqual([1, 4])
+      expect(pagina.data.every((item) => item.prioridad === 'ALTA')).toBe(true)
+      expect(pagina.meta.total).toBe(2)
+    })
+
+    it('`prioridad` BAJA no trae las canceladas aunque no tengan prioridad', async () => {
+      const pagina = await service.listarAgenda({ page: 1, pageSize: 20, prioridad: 'BAJA' })
+
+      expect(pagina.data.map((item) => item.turnoId)).toEqual([2])
+    })
+
+    it('`estado` CANCELADO trae sólo las canceladas, sin pedir prioridades', async () => {
+      const pagina = await service.listarAgenda({ page: 1, pageSize: 20, estado: 'CANCELADO' })
+
+      expect(pagina.data.map((item) => item.turnoId)).toEqual([3])
+      expect(repos.repository.leerPrioridades).toHaveBeenCalledWith([])
+    })
+
+    it('`estado` SIN_REGISTRAR y `estado` AGENDADO filtran por el de la ocurrencia', async () => {
+      const sinRegistrar = await service.listarAgenda({
+        page: 1,
+        pageSize: 20,
+        estado: 'SIN_REGISTRAR',
+      })
+      const agendadas = await service.listarAgenda({ page: 1, pageSize: 20, estado: 'AGENDADO' })
+
+      expect(sinRegistrar.data.map((item) => item.turnoId)).toEqual([4])
+      expect(agendadas.data.map((item) => item.turnoId)).toEqual([1, 2])
+    })
+
+    it('`estado` y `prioridad` se combinan (los dos tienen que cumplirse)', async () => {
+      const pagina = await service.listarAgenda({
+        page: 1,
+        pageSize: 20,
+        estado: 'AGENDADO',
+        prioridad: 'ALTA',
+      })
+      const ninguna = await service.listarAgenda({
+        page: 1,
+        pageSize: 20,
+        estado: 'CANCELADO',
+        prioridad: 'ALTA',
+      })
+
+      expect(pagina.data.map((item) => item.turnoId)).toEqual([1])
+      expect(ninguna.data).toEqual([])
+    })
+
+    it('se combinan con `q` y con la paginación: el total es el de lo filtrado', async () => {
+      const pagina = await service.listarAgenda({
+        page: 2,
+        pageSize: 1,
+        prioridad: 'ALTA',
+        q: 'gonzalez',
+      })
+
+      expect(pagina.data.map((item) => item.turnoId)).toEqual([4])
+      expect(pagina.meta).toEqual({ page: 2, pageSize: 1, total: 2, totalPages: 2 })
+    })
   })
 
   it('sin turnos ese día, devuelve una página vacía', async () => {
@@ -231,6 +382,7 @@ describe('listarAgendaPropia', () => {
         fecha: MARTES,
         diaSemana: 2,
         tipo: 'SESION_UNICA',
+        alumnoId: 13,
         alumno: { id: 13, nombre: 'Lucía', apellido: 'González', busqueda: 'x' },
       }),
       ocurrencia({ turnoId: 31, fecha: LUNES }),
@@ -248,13 +400,21 @@ describe('listarAgendaPropia', () => {
     )
   })
 
-  it('arma cada ocurrencia campo por campo, sin las canceladas, en el orden del motor', async () => {
+  it('arma cada ocurrencia campo por campo, con las canceladas, en el orden del motor', async () => {
+    repos.repository.leerPrioridades.mockResolvedValue(
+      prioridades(
+        [13, 3, MARTES, { prioridad: 'ALTA', examen }],
+        [12, 3, LUNES, { prioridad: 'BAJA' }],
+      ),
+    )
+
     const agenda = await service.listarAgendaPropia({ desde: MARTES, hasta: LUNES }, actorProfesor)
 
     expect(agenda).toEqual([
       {
         turnoId: 32,
         fecha: MARTES,
+        bloqueAgendaId: 10,
         diaSemana: 2,
         horaInicio: '09:00',
         horaFin: '10:00',
@@ -262,10 +422,60 @@ describe('listarAgendaPropia', () => {
         materia: { id: 3, nombre: 'Matemática' },
         aula: { id: 3, nombre: 'Aula 3' },
         tipo: 'SESION_UNICA',
-        estado: 'ACTIVO',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: 'ALTA',
+        examen,
       },
-      expect.objectContaining({ turnoId: 31, fecha: LUNES, tipo: 'RECURRENTE' }),
+      expect.objectContaining({
+        turnoId: 31,
+        fecha: LUNES,
+        tipo: 'RECURRENTE',
+        prioridad: 'BAJA',
+        examen: null,
+      }),
+      expect.objectContaining({ turnoId: 33, estado: 'CANCELADO', prioridad: null, examen: null }),
     ])
+    expect(JSON.stringify(agenda)).not.toContain('busqueda')
+  })
+
+  it('una ocurrencia ya pagada sale con estadoPago PAGADO', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({
+        turnoId: 31,
+        fecha: LUNES,
+        pago: { estado: 'PAGADO', pagoId: 2, importeAplicado: 4000 },
+      }),
+    ])
+
+    const agenda = await service.listarAgendaPropia({ desde: LUNES }, actorProfesor)
+
+    expect(agenda).toEqual([expect.objectContaining({ turnoId: 31, estadoPago: 'PAGADO' })])
+  })
+
+  it('filtra por estado y por prioridad, sin cambiar lo que se le pide al motor', async () => {
+    repos.repository.leerPrioridades.mockResolvedValue(
+      prioridades(
+        [13, 3, MARTES, { prioridad: 'ALTA', examen }],
+        [12, 3, LUNES, { prioridad: 'BAJA' }],
+      ),
+    )
+
+    const canceladas = await service.listarAgendaPropia(
+      { desde: MARTES, hasta: LUNES, estado: 'CANCELADO' },
+      actorProfesor,
+    )
+    const altas = await service.listarAgendaPropia(
+      { desde: MARTES, hasta: LUNES, prioridad: 'ALTA' },
+      actorProfesor,
+    )
+
+    expect(canceladas.map((item) => item.turnoId)).toEqual([33])
+    expect(altas.map((item) => item.turnoId)).toEqual([32])
+    expect(repos.repository.leerOcurrencias).toHaveBeenLastCalledWith(
+      { desde: MARTES, hasta: LUNES, profesorId: 4 },
+      relojFijo,
+    )
   })
 
   it('sin hasta, un solo día', async () => {
@@ -338,6 +548,7 @@ describe('listarAgendaDeProfesor', () => {
       {
         turnoId: 90,
         fecha: LUNES,
+        bloqueAgendaId: 10,
         diaSemana: 1,
         horaInicio: '09:00',
         horaFin: '10:00',
@@ -345,10 +556,48 @@ describe('listarAgendaDeProfesor', () => {
         materia: { id: 3, nombre: 'Matemática' },
         aula: { id: 3, nombre: 'Aula 3' },
         tipo: 'RECURRENTE',
-        estado: 'ACTIVO',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: null,
+        examen: null,
       },
       expect.objectContaining({ turnoId: 90, fecha: '2026-10-05' }),
     ])
+  })
+
+  it('filtra por estado y por prioridad, y también trae las canceladas', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 90, fecha: LUNES, profesorId: 7, profesor: ruiz }),
+      ocurrencia({
+        turnoId: 90,
+        fecha: '2026-10-05',
+        profesorId: 7,
+        profesor: ruiz,
+        estado: 'CANCELADO',
+      }),
+    ])
+    repos.repository.leerPrioridades.mockResolvedValue(
+      prioridades([12, 3, LUNES, { prioridad: 'ALTA', examen }]),
+    )
+
+    const todas = await service.listarAgendaDeProfesor({ profesorId: 7, desde: LUNES })
+    const altas = await service.listarAgendaDeProfesor({
+      profesorId: 7,
+      desde: LUNES,
+      prioridad: 'ALTA',
+    })
+    const canceladas = await service.listarAgendaDeProfesor({
+      profesorId: 7,
+      desde: LUNES,
+      estado: 'CANCELADO',
+    })
+
+    expect(todas.map((item) => [item.fecha, item.estado, item.prioridad])).toEqual([
+      [LUNES, 'AGENDADO', 'ALTA'],
+      ['2026-10-05', 'CANCELADO', null],
+    ])
+    expect(altas.map((item) => item.fecha)).toEqual([LUNES])
+    expect(canceladas.map((item) => item.fecha)).toEqual(['2026-10-05'])
   })
 
   it('un profesor inactivo también se puede consultar', async () => {
@@ -403,6 +652,130 @@ describe('listarAgendaDeProfesor', () => {
 
     expect(error).toBeInstanceOf(ValidationError)
     expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_MAXIMO }])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Agenda del centro (T-57)
+// ---------------------------------------------------------------------------------------------
+
+describe('listarAgendaDelCentro', () => {
+  const LUNES = '2026-09-28'
+  const DOMINGO = '2026-10-04'
+
+  /** Una semana: dos profesores en el mismo bloque horario, una cancelada y una de otro día. */
+  beforeEach(() => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 20, fecha: LUNES, profesorId: 7, profesor: ruiz, alumnoId: 13 }),
+      ocurrencia({ turnoId: 21, fecha: LUNES, estado: 'CANCELADO', alumnoId: 14 }),
+      ocurrencia({ turnoId: 22, fecha: LUNES, alumnoId: 12 }),
+      ocurrencia({ turnoId: 23, fecha: LUNES, horaInicio: 480, horaFin: 540, alumnoId: 12 }),
+      ocurrencia({ turnoId: 24, fecha: '2026-09-29', diaSemana: 2, alumnoId: 12 }),
+    ])
+    repos.repository.leerPrioridades.mockResolvedValue(
+      prioridades(
+        [12, 3, LUNES, { prioridad: 'ALTA', examen }],
+        [13, 3, LUNES, { prioridad: 'BAJA' }],
+        [12, 3, '2026-09-29', { prioridad: 'MEDIA' }],
+      ),
+    )
+  })
+
+  it('pide al motor el rango de una semana de todos los profesores, sin profesorId', async () => {
+    await service.listarAgendaDelCentro({ desde: LUNES, hasta: DOMINGO })
+
+    expect(repos.repository.leerOcurrencias).toHaveBeenCalledWith(
+      {
+        desde: LUNES,
+        hasta: DOMINGO,
+        profesorId: undefined,
+        materiaId: undefined,
+        aulaId: undefined,
+      },
+      relojFijo,
+    )
+  })
+
+  it('devuelve un arreglo sin paginar, con el profesor, las canceladas y la prioridad', async () => {
+    const agenda = await service.listarAgendaDelCentro({ desde: LUNES, hasta: DOMINGO })
+
+    expect(agenda.map((item) => [item.fecha, item.horaInicio, item.turnoId])).toEqual([
+      [LUNES, '08:00', 23],
+      [LUNES, '09:00', 21], // Pérez, antes que Ruiz (busqueda); entre los dos de Pérez, por id
+      [LUNES, '09:00', 22],
+      [LUNES, '09:00', 20],
+      ['2026-09-29', '09:00', 24],
+    ])
+    expect(agenda[2]).toEqual(
+      expect.objectContaining({
+        profesor: { id: 4, apellido: 'Pérez', nombre: 'Ana' },
+        bloqueAgendaId: 10,
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+        prioridad: 'ALTA',
+        examen,
+      }),
+    )
+    expect(agenda[1]).toEqual(
+      expect.objectContaining({ turnoId: 21, estado: 'CANCELADO', prioridad: null, examen: null }),
+    )
+    expect(agenda[3]?.profesor).toEqual({ id: 7, apellido: 'Ruiz', nombre: 'Juan' })
+    expect(JSON.stringify(agenda)).not.toContain('busqueda')
+  })
+
+  it('pasa profesor, materia y aula al motor', async () => {
+    await service.listarAgendaDelCentro({
+      desde: LUNES,
+      hasta: DOMINGO,
+      profesorId: 7,
+      materiaId: 3,
+      aulaId: 1,
+    })
+
+    expect(repos.repository.leerOcurrencias).toHaveBeenCalledWith(
+      { desde: LUNES, hasta: DOMINGO, profesorId: 7, materiaId: 3, aulaId: 1 },
+      relojFijo,
+    )
+  })
+
+  it('filtra por estado y por prioridad', async () => {
+    const altas = await service.listarAgendaDelCentro({
+      desde: LUNES,
+      hasta: DOMINGO,
+      prioridad: 'ALTA',
+    })
+    const canceladas = await service.listarAgendaDelCentro({
+      desde: LUNES,
+      hasta: DOMINGO,
+      estado: 'CANCELADO',
+    })
+
+    expect(altas.map((item) => item.turnoId)).toEqual([23, 22])
+    expect(canceladas.map((item) => item.turnoId)).toEqual([21])
+  })
+
+  it('un rango de 31 días (el máximo) se acepta', async () => {
+    await expect(
+      service.listarAgendaDelCentro({ desde: LUNES, hasta: '2026-10-28' }),
+    ).resolves.toBeDefined()
+  })
+
+  it('un rango de más de 31 días → 400 sobre `hasta`, sin leer nada', async () => {
+    const error = await errorDe(
+      service.listarAgendaDelCentro({ desde: LUNES, hasta: '2026-10-29' }),
+    )
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_MAXIMO }])
+    expect(repos.repository.leerOcurrencias).not.toHaveBeenCalled()
+  })
+
+  it('`hasta` anterior a `desde` → 400 sobre `hasta`', async () => {
+    const error = await errorDe(service.listarAgendaDelCentro({ desde: DOMINGO, hasta: LUNES }))
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }])
+    expect(repos.repository.leerOcurrencias).not.toHaveBeenCalled()
   })
 })
 

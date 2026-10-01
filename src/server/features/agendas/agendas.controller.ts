@@ -4,6 +4,7 @@ import { profesoresRepository } from '@/server/features/profesores/profesores.re
 import type { AppEnv } from '@/server/router'
 import { agendasRepository } from './agendas.repository'
 import type {
+  listarAgendaCentroRoute,
   listarAgendaProfesorRoute,
   listarAgendaPropiaRoute,
   listarAgendaRoute,
@@ -34,6 +35,10 @@ export const listarAgendaDeProfesor: RouteHandler<
   typeof listarAgendaProfesorRoute,
   AppEnv
 > = async (c) => c.json(await agendasService.listarAgendaDeProfesor(c.req.valid('query')), 200)
+
+export const listarAgendaDelCentro: RouteHandler<typeof listarAgendaCentroRoute, AppEnv> = async (
+  c,
+) => c.json(await agendasService.listarAgendaDelCentro(c.req.valid('query')), 200)
 
 export const listarMateriasConTurno: RouteHandler<
   typeof listarMateriasConTurnoRoute,
