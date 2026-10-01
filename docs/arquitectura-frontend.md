@@ -106,17 +106,18 @@ src/
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
 │   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
-│   ├── turnos/                         # registrar turno (HU-07) y reprogramar (placeholder AccionReprogramarTurno, T-50)
-│   │   ├── turnos.types.ts, turnos.schema.ts
-│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts
-│   │   ├── api/{turnos.api.ts, turnos.keys.ts}
-│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts}
+│   ├── turnos/                         # registrar turno (HU-07) y reprogramar un turno (HU-20, T-50)
+│   │   ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts
+│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, errores-reprogramaciones.ts, formato-reprogramaciones.ts
+│   │   ├── api/{turnos.api.ts, turnos.keys.ts, reprogramaciones.api.ts}
+│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-reprogramar-turno.ts}
 │   │   └── components/
 │   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
 │   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
 │   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx); la confirmación abre el detalle del turno
 │   │       │   (`?detalle=&fecha=`) que le llega por `renderDetalle`
-│   │       └── AccionReprogramarTurno.tsx # slot del pie del detalle (placeholder, T-50)
+│   │       └── AccionReprogramarTurno.tsx, ReprogramarTurnoDialog.tsx # reprogramar: reutiliza la búsqueda (FiltrosDisponibilidad con
+│   │           materiaFija, HorasDelBloque con unaSola); al reprogramar abre el detalle con el turnoId de la API y la fecha nueva
 │   ├── agendas/                        # las tres agendas: diaria (HU-09), propia (HU-10) y de la ficha del profesor (HU-02)
 │   │   ├── agendas.types.ts, agenda-propia.ts (rango, agrupado y params de la URL), filtros-agenda.ts, modo-agenda.ts
 │   │   ├── api/{agendas.api.ts, agendas.keys.ts}                # /api/v1/agendas/{diaria,propia,profesor}

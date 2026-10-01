@@ -1,6 +1,7 @@
 'use client'
 
 import { Field } from '@/components/ui/field'
+import { Input } from '@/components/ui/input'
 import {
   Select,
   SelectContent,
@@ -33,14 +34,24 @@ export const FILTROS_VACIOS: FiltrosBusqueda = {
 type FiltrosDisponibilidadProps = {
   filtros: FiltrosBusqueda
   onCambio: (filtros: FiltrosBusqueda) => void
+  /**
+   * La materia ya está decidida (reprogramar un turno): se muestra su nombre, sin selector. Quien
+   * lo usa pone el mismo id en `filtros.materiaId`.
+   */
+  materiaFija?: { id: number; nombre: string }
 }
 
 /**
  * Paso 2 (filtros): materia (obligatoria), día y profesor (opcionales y combinables). Son selects:
  * la búsqueda se dispara al cambiarlos. El profesor se habilita con la materia y se limpia si
- * cambia la materia (un profesor de otra materia daría `[]`).
+ * cambia la materia (un profesor de otra materia daría `[]`). Con `materiaFija` la materia no se
+ * elige: se muestra su nombre.
  */
-export function FiltrosDisponibilidad({ filtros, onCambio }: FiltrosDisponibilidadProps) {
+export function FiltrosDisponibilidad({
+  filtros,
+  onCambio,
+  materiaFija,
+}: FiltrosDisponibilidadProps) {
   const materias = useMateriasSelector()
   const profesores = useProfesores(
     { materiaId: filtros.materiaId ?? undefined, estado: 'ACTIVO', pageSize: MAX_PROFESORES },
@@ -51,32 +62,36 @@ export function FiltrosDisponibilidad({ filtros, onCambio }: FiltrosDisponibilid
 
   return (
     <div className="grid gap-4 sm:grid-cols-3">
-      <Field label="Materia" htmlFor="filtro-materia" required>
-        <Select
-          value={filtros.materiaId === null ? '' : String(filtros.materiaId)}
-          onValueChange={(v) => onCambio({ ...filtros, materiaId: Number(v), profesorId: null })}
-          disabled={materias.isLoading || materias.isError}
-        >
-          <SelectTrigger id="filtro-materia" className="w-full" aria-required>
-            <SelectValue
-              placeholder={
-                materias.isLoading
-                  ? 'Cargando materias…'
-                  : materias.isError
-                    ? 'No se pudieron cargar las materias'
-                    : 'Elegí una materia'
-              }
-            />
-          </SelectTrigger>
-          <SelectContent>
-            {materias.data?.map((materia) => (
-              <SelectItem key={materia.id} value={String(materia.id)}>
-                {materia.nombre}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        {materias.data?.length === 0 && (
+      <Field label="Materia" htmlFor="filtro-materia" required={!materiaFija}>
+        {materiaFija ? (
+          <Input id="filtro-materia" value={materiaFija.nombre} readOnly />
+        ) : (
+          <Select
+            value={filtros.materiaId === null ? '' : String(filtros.materiaId)}
+            onValueChange={(v) => onCambio({ ...filtros, materiaId: Number(v), profesorId: null })}
+            disabled={materias.isLoading || materias.isError}
+          >
+            <SelectTrigger id="filtro-materia" className="w-full" aria-required>
+              <SelectValue
+                placeholder={
+                  materias.isLoading
+                    ? 'Cargando materias…'
+                    : materias.isError
+                      ? 'No se pudieron cargar las materias'
+                      : 'Elegí una materia'
+                }
+              />
+            </SelectTrigger>
+            <SelectContent>
+              {materias.data?.map((materia) => (
+                <SelectItem key={materia.id} value={String(materia.id)}>
+                  {materia.nombre}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+        {!materiaFija && materias.data?.length === 0 && (
           <p className="text-muted-foreground text-xs">No hay materias activas.</p>
         )}
       </Field>

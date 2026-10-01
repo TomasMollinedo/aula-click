@@ -23,6 +23,8 @@ type HorasDelBloqueProps = {
   avisos?: string[]
   /** Error de la API sobre las horas (`bloqueIds`). */
   error?: string
+  /** Se elige una sola hora (reprogramar): tildar una destilda la anterior. */
+  unaSola?: boolean
 }
 
 /**
@@ -38,9 +40,16 @@ export function HorasDelBloque({
   actualizando = false,
   avisos = [],
   error,
+  unaSola = false,
 }: HorasDelBloqueProps) {
   const alternar = (bloqueId: number, tildar: boolean) =>
-    onCambio(tildar ? [...tildadas, bloqueId] : tildadas.filter((id) => id !== bloqueId))
+    onCambio(
+      !tildar
+        ? tildadas.filter((id) => id !== bloqueId)
+        : unaSola
+          ? [bloqueId]
+          : [...tildadas, bloqueId],
+    )
 
   return (
     <div className="space-y-3">
