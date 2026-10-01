@@ -381,7 +381,74 @@ Una cancelación sólo afecta a esa fecha: el resto de la serie sigue agendado y
 
 ## Finalizaciones
 
-A completar por T-47.
+HU-14 (T-47). Finalizar un turno recurrente (o un tramo) desde una fecha. Reglas en `dominio.md` → Finalización.
+
+| Endpoint                            | Roles           | Qué hace                                                                                                           |
+| ----------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/finalizaciones/previa` | `MESA_ENTRADAS` | Qué se libera si se finaliza desde esa fecha, los turnos pagados que lo impiden y los tramos posteriores. 200      |
+| `POST /api/v1/finalizaciones`       | `MESA_ENTRADAS` | Finaliza el turno desde esa fecha. 201 con `{ turnoId, cantidad, desde, hasta }`; 400; 404; 409 (`TURNOS_PAGADOS`) |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**Query de `GET /finalizaciones/previa`:** `turnoId` (entero mayor a 0) y `fechaDesde` (`YYYY-MM-DD`), los dos obligatorios.
+
+**Body de `POST /finalizaciones`:**
+
+```json
+{
+  "turnoId": 41,
+  "fechaDesde": "2026-10-19",
+  "motivo": "CANCELACION_ALUMNO",
+  "detalle": "El alumno deja de venir"
+}
+```
+
+- `turnoId`: el turno (o tramo) `RECURRENTE` desde cuyo detalle se opera. Se finaliza sólo ese tramo.
+- `fechaDesde`: la primera fecha que se libera. De hoy en adelante, en el día de la semana de la serie, **posterior** a `fechaInicio` y no posterior a `fechaFin` (si la serie tiene fin). Es siempre una fecha de la serie.
+- `motivo` y `detalle`: las mismas reglas que en Cancelaciones (`detalle` opcional, hasta 500 caracteres; `""`, espacios o `null` = sin detalle; **obligatorio si `motivo = OTRO`**: 400 en `["detalle"]`).
+
+**Respuesta 200 de la previa:**
+
+```json
+{
+  "cantidad": 7,
+  "desde": "2026-10-19",
+  "hasta": "2026-11-30",
+  "pagadas": [],
+  "ultimaFechaPagada": null,
+  "fechaDesdeMinima": null,
+  "otrosTramos": [{ "turnoId": 58, "fechaInicio": "2026-12-14", "fechaFin": null }]
+}
+```
+
+- `cantidad`: turnos **no cancelados** que se liberan, de `desde` a `hasta` (los cancelados ya están libres). `null` si la serie no tiene fin.
+- `desde`: igual a `fechaDesde`. `hasta`: la última ocurrencia de la serie (no la `fechaFin` guardada, si no cae en una fecha de la serie); `null` si la serie no tiene fin. Con `hasta` el mensaje es "Se liberan 7 turnos, del 19/10 al 30/11"; con `null`, "Se liberan todos los turnos desde el 19/10".
+- `pagadas`: `[{ fecha, horaInicio, horaFin, importe }]`, los turnos pagados desde `fechaDesde`, por fecha (`importe` = lo cobrado). **Si hay alguno, no se puede finalizar desde esa fecha.**
+- `ultimaFechaPagada`: la fecha del último pagado; `null` si no hay pagados.
+- `fechaDesdeMinima`: la primera `fechaDesde` que se puede elegir (la ocurrencia siguiente a la última pagada). `null` si no hay pagados, o si los pagados llegan hasta el final de la serie: en ese caso (`ultimaFechaPagada` con valor y `fechaDesdeMinima` `null`) el turno no se puede finalizar.
+- `otrosTramos`: `[{ turnoId, fechaInicio, fechaFin }]`, los tramos `RECURRENTE` del mismo alumno, materia y hora que empiezan después de este y no están finalizados (`fechaFin` `null` = sin fin). No se finalizan con este pedido: cada uno, desde su propio detalle.
+
+**Respuesta 201 del POST:** `{ "turnoId": 41, "cantidad": 7, "desde": "2026-10-19", "hasta": "2026-11-30" }`, con el mismo significado de `cantidad`, `desde` y `hasta` que en la previa.
+
+**Errores**, en orden (el primero que se cumple gana). La previa aplica los mismos, salvo el último: los pagados van en la respuesta y no son un error.
+
+| Status | Código           | Mensaje                                                                                                 | Cuándo                                                                               |
+| ------ | ---------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 400    | `VALIDACION`     | (el de cada campo)                                                                                      | Formato del query o del body; `detalle` obligatorio con `OTRO`                       |
+| 404    | `NO_ENCONTRADO`  | "Turno no encontrado"                                                                                   | El turno no existe                                                                   |
+| 409    | `CONFLICTO`      | "Sólo se puede finalizar un turno recurrente"                                                           | Es una sesión única                                                                  |
+| 409    | `CONFLICTO`      | "El turno ya no está vigente: no se puede finalizar"                                                    | No está `ACTIVO` o su `fechaFin` es anterior a hoy                                   |
+| 409    | `CONFLICTO`      | "El turno ya fue finalizado"                                                                            | Ya tiene una finalización (también si otra finalización entró al mismo tiempo)       |
+| 400    | `VALIDACION`     | "La fecha no puede ser anterior a hoy"                                                                  | `fechaDesde` anterior a hoy. `details` en `["fechaDesde"]`, como los tres que siguen |
+| 400    | `VALIDACION`     | "La fecha debe caer en lunes" (el día de la serie)                                                      | `fechaDesde` en otro día de la semana                                                |
+| 400    | `VALIDACION`     | "Elegí una fecha posterior al inicio del turno (05/10). Para liberar sólo esa fecha, cancelá el turno." | `fechaDesde` no es posterior a `fechaInicio`                                         |
+| 400    | `VALIDACION`     | "La fecha es posterior al fin del turno (30/11)"                                                        | `fechaDesde` posterior a `fechaFin`                                                  |
+| 409    | `TURNOS_PAGADOS` | "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (16/11)"          | Hay pagados desde `fechaDesde` y queda alguna fecha posterior (`fechaDesdeMinima`)   |
+| 409    | `TURNOS_PAGADOS` | "Los turnos pagados llegan hasta el final de la serie (30/11): no se puede finalizar"                   | Hay pagados hasta la última fecha de la serie (`fechaDesdeMinima: null`)             |
+
+La fecha entre paréntesis va en formato `DD/MM`. La forma de `details` de `TURNOS_PAGADOS` está en Errores.
+
+Finalizar **no modifica** `fechaFin` del turno: `GET /turnos/{id}` y el detalle de la ocurrencia la siguen mostrando, junto con la finalización. Desde `fechaDesde` la serie deja de aparecer en las agendas, en los turnos del alumno y en la ocupación.
 
 ## Reprogramaciones
 
@@ -626,6 +693,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `MATERIA_NO_ASIGNADA`    | "La materia no está asignada al profesor" (o su asignación está dada de baja), al registrar un turno. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
+| 409    | `TURNOS_PAGADOS`         | Finalizar un turno recurrente, si hay turnos pagados desde `fechaDesde` (no se finaliza): "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (DD/MM)" o, si llegan hasta el final de la serie, "Los turnos pagados llegan hasta el final de la serie (DD/MM): no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaPagada", "fechaDesdeMinima", "pagadas": [{ "fecha", "horaInicio", "horaFin", "importe" }] }`; `fechaDesdeMinima` es la primera fecha que se puede elegir, o `null` si no queda ninguna; `pagadas` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 
