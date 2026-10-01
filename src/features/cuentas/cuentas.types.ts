@@ -24,43 +24,51 @@ export type OcurrenciaDeCuenta = {
   importe: number | null
 }
 
-/** Un pago del historial del alumno. El comprobante se abre con `pagoId`. */
-export type PagoDelHistorial = {
-  pagoId: number
-  numeroComprobante: number
-  fechaPago: string
-  /** Cantidad de turnos pagados. */
-  cantidad: number
-  total: number
-}
-
-/** `GET /cuentas/alumnos/{alumnoId}`. */
+/**
+ * `GET /cuentas/alumnos/{alumnoId}`. Una sección que **no aplica** al período pedido llega `null`
+ * (y `[]` si aplica y no hay nada): qué parte del período le toca a cada una lo decide la API.
+ */
 export type CuentaDelAlumno = {
-  /** Suma de los importes de `adeudados` (los `null` no suman). */
+  /** Suma de los `adeudados` con todos los filtros (los `null` no suman). Los próximos nunca suman. */
   totalAdeudado: number
-  /** Pagos con `fechaPago` del día 1 del mes de hoy a hoy. */
-  pagadoDelMes: number
   /** Anteriores a hoy, sin registrar e impagas: de la más antigua a la más reciente. */
-  adeudados: OcurrenciaDeCuenta[]
-  /** Agendadas e impagas de hoy a hoy + 56 días, en el mismo orden. No suman a la deuda. */
-  proximos: OcurrenciaDeCuenta[]
-  /** Todos los pagos, sin paginar, del más reciente al más antiguo. */
-  pagos: PagoDelHistorial[]
+  adeudados: OcurrenciaDeCuenta[] | null
+  /** Agendadas e impagas de hoy a `limiteCobro`, en el mismo orden. No suman a la deuda. */
+  proximos: OcurrenciaDeCuenta[] | null
+  /** Última fecha que se puede cobrar por adelantado (la del tope de `POST /pagos`). */
+  limiteCobro: string
 }
 
-/** Un adeudado de la vista global: la ocurrencia con su alumno. */
-export type AdeudadoGlobal = OcurrenciaDeCuenta & {
+/** Una fila de las vistas globales (adeudados y próximos): la ocurrencia con su alumno. */
+export type OcurrenciaDeCuentaGlobal = OcurrenciaDeCuenta & {
   alumno: { id: number; nombre: string; apellido: string; dni: string }
 }
 
 /**
  * `GET /cuentas/adeudados`: la página y `totalAdeudado` de **todos** los adeudados del filtro, junto
- * a `data` y `meta` (no dentro de `meta`, T-70).
+ * a `data` y `meta` (no dentro de `meta`, T-70). Con `aplica: false` va vacía y en 0.
  */
-export type AdeudadosGlobal = PaginatedResponse<AdeudadoGlobal> & { totalAdeudado: number }
+export type AdeudadosGlobal = PaginatedResponse<OcurrenciaDeCuentaGlobal> & {
+  totalAdeudado: number
+  aplica: boolean
+}
 
-/** Query de `GET /cuentas/adeudados`. Sin `pageSize`: se usa el de la API. */
-export type ListarAdeudadosParams = {
+/** `GET /cuentas/proximos`: la página, sin total (los próximos no son deuda). */
+export type ProximosGlobal = PaginatedResponse<OcurrenciaDeCuentaGlobal> & {
+  aplica: boolean
+  limiteCobro: string
+}
+
+/** Los filtros comunes a los tres endpoints, como van en el query: sin los vacíos. */
+export type FiltrosCuentaParams = {
+  desde?: string
+  hasta?: string
+  materiaId?: number
+  profesorId?: number
+}
+
+/** Query de `GET /cuentas/adeudados` y `/cuentas/proximos`. Sin `pageSize`: se usa el de la API. */
+export type ListarGlobalParams = FiltrosCuentaParams & {
   alumnoId?: number
   page: number
 }

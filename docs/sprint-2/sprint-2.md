@@ -870,6 +870,34 @@ El texto de arriba queda como se escribió; lo que sigue lo corrige (ver "Ajuste
 - **`sumarImportes`.** La suma en centavos pasó a `utils/moneda.ts` y la usan `resumenACobrar` (`pagos`, sin cambiar su comportamiento) y `resumenSeleccion` (`cuentas`) (decisión T-74).
 - **Página temporal.** Se eliminaron `app/mesa/prueba-pagos/` y `features/prueba-pagos/` de T-52.
 
+**Actualización (ajustes de la PO, 01/10)**
+
+El alcance y la actualización de arriba quedan como se escribieron; lo que sigue los corrige (ver "Ajustes de la PO (01/10)" al final y las decisiones T-85 a T-89). **Los criterios de aceptación los reescribe la PO.**
+
+- **Misma estructura en las dos vistas.** Total, filtros, barra de selección, "Turnos adeudados" y "Próximos turnos". En la vista global las dos tablas llevan la columna del alumno (con el enlace a su ficha) y cada una tiene su paginación (`GET /cuentas/proximos`, `use-proximos.ts`).
+- **Filtros en la URL.** Período (`desde`, `hasta`), materia y profesor en las dos vistas, más el alumno en la global: `FiltrosCuenta` con `filtros-cuenta.ts` (puro) y `use-filtros-cuenta.ts`. Ficha: `?tab=pagos&desde&hasta&materiaId&profesorId`; global: `?alumnoId&desde&hasta&materiaId&profesorId&pageAdeudados&pageProximos` (el `?page=` anterior deja de leerse). Al cambiar de pestaña en la ficha, los filtros se van solos. "Limpiar filtros" deja la vista por defecto. Las materias del filtro son todas, también las dadas de baja.
+- **Secciones que no aplican.** Una sección que la API marca como que no aplica al período (`null` en la ficha, `aplica: false` en la global) no se muestra, ni título ni vacío; una que aplica y está vacía muestra "Sin turnos adeudados en el período" / "Sin próximos turnos en el período".
+- **Total.** "Total adeudado" sin período y "Total adeudado del período" con `desde` o `hasta`; debajo, los filtros activos ("Del 01/09/2026 al 30/09/2026 · Matemática · Prof. Ana Gómez"). El importe es el de la API.
+- **Tope de cobro.** Si el período pedido pasa `limiteCobro` (o empieza después), aviso "Los próximos turnos se pueden cobrar hasta el 26/11/2026", con la fecha de la API.
+- **Período inválido.** Un "Hasta" anterior al "Desde" no se corrige en el cliente: el 400 de la API se muestra junto al campo "Hasta".
+- **Selección.** Ficha: filtrar es podar (lo que el filtro saca de la vista sale de la selección). Global: sólo con alumno filtrado, una sola para las dos tablas (adeudados y próximos se cobran juntos), se conserva al paginar cualquiera de las dos y se vacía cuando cambia cualquier filtro. Mientras se ven filas de un filtro anterior no se puede tildar ni cobrar.
+- **Se sacan** "Pagado este mes" y el historial "Pagos registrados" (`HistorialPagos`, `hrefComprobante` de `rutas-cuentas.ts`). El comprobante sigue accesible desde el éxito del diálogo de cobro (T-52). El punto 1 del alcance y el vacío "Sin pagos registrados" ya no aplican.
+- **Tipos.** `AdeudadoGlobal` pasa a `OcurrenciaDeCuentaGlobal` (el nombre del contrato: la usan adeudados y próximos).
+- **API.** El mensaje del 400 del período pasó a "La fecha hasta no puede ser anterior a la fecha desde" (sin backticks: se muestra tal cual junto al campo).
+
+**Correcciones de la PO a la pantalla (01/10)**
+
+- **Filtros en una fila.** Controles compactos (`CalendarioFecha` con `compacto`: fecha sin el día de la semana); en pantallas anchas entran todos en una línea, con "Limpiar filtros" al final, en rojo cuando hay algo que limpiar. En pantallas angostas se reparten en columnas y el botón va en una fila propia.
+- **Leyenda del alumno.** Sólo en la vista global, bajo el filtro de alumno y mientras no hay uno elegido: "Elegí un alumno para realizar varios pagos a la vez".
+- **Importe.** En las dos vistas se ve como el precio por hora del listado de materias (verde, grande, semibold; "Sin precio" como etiqueta).
+- **Calendario.** El botón que deja la fecha vacía ("Sin fecha de inicio", "Sin fecha de fin") tiene borde, color e ícono. Vale para todo el que use `CalendarioFecha` con `textoVaciar` (también el alta de turnos).
+- **Barra de selección fija.** Queda arriba al scrollear las listas, en las dos vistas, para registrar el pago de lo tildado sin volver al principio.
+- **Pago de una fila.** El botón de cada fila es el azul y dice "Registrar pago único".
+- **"Seleccionar todos los adeudados" en la vista global**, con un alumno filtrado: tilda los adeudados de todas las páginas, con los filtros activos (decisión T-90).
+- **Limpiar filtros reutilizable.** El botón es `LimpiarFiltros` de `components/ui/`, con el contorno más grueso, para que lo usen las demás pantallas con filtros.
+- **Total a pagar.** En la barra de selección, el total de lo tildado va grande y en negrita ("Total a pagar · 8 turnos seleccionados" y debajo el importe), para que se lea con la barra fija.
+- **Tabla.** Fecha y horario comparten columna y hay menos margen entre columnas, para que el importe y el botón de la fila entren sin scroll horizontal en un escritorio.
+
 ---
 
 ## T-55 · [Back] HU-17 · API de exámenes del alumno

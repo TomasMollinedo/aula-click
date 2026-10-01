@@ -85,7 +85,7 @@ describe('período', () => {
       expect(json.error.details).toEqual([
         expect.objectContaining({
           path: ['hasta'],
-          message: '`hasta` no puede ser anterior a `desde`',
+          message: 'La fecha hasta no puede ser anterior a la fecha desde',
         }),
       ])
       expect(alumnosRepository.buscarPorId).not.toHaveBeenCalled()

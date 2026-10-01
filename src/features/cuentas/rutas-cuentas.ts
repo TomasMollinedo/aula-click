@@ -1,14 +1,7 @@
 // URLs a las que enlaza `cuentas`. La API de cuentas es solo de mesa de entradas (responde 403 a
-// cualquier otro rol), igual que la de pagos, así que el segmento es fijo: no hay otro rol que
-// reuse estos componentes con su propia `rutaBase`.
-
-/**
- * `/mesa/pagos/31/comprobante`: el comprobante de T-52, con el id del pago (`pagoId`), no con el
- * número de comprobante. La ruta vive en `app/(documentos)/mesa/`, sin el layout del segmento.
- */
-export function hrefComprobante(pagoId: number): string {
-  return `/mesa/pagos/${pagoId}/comprobante`
-}
+// cualquier otro rol), así que el segmento es fijo: no hay otro rol que reuse estos componentes con
+// su propia `rutaBase`. El comprobante de un pago ya no se enlaza desde acá (no hay historial): se
+// abre desde el éxito del diálogo de cobro, que es de `pagos`.
 
 /** `/mesa/alumnos/12?tab=pagos`: la pestaña "Pagos" de la ficha (`AlumnoDetalle` lee `?tab=`). */
 export function hrefFichaAlumno(alumnoId: number): string {

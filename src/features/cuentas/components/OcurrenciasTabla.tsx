@@ -17,9 +17,10 @@ import { fechaConDia } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 
 import { type FilaDeCuenta, claveOcurrencia } from '../a-cobrar'
-import { textoImporte, textoOcurrencia } from '../formato-cuentas'
+import { textoOcurrencia } from '../formato-cuentas'
 import { hrefFichaAlumno } from '../rutas-cuentas'
 import { type Seleccion, estaSeleccionada } from '../seleccion'
+import { ImporteDeCuenta } from './ImporteDeCuenta'
 
 type OcurrenciasTablaProps = {
   filas: readonly FilaDeCuenta[]
@@ -32,16 +33,24 @@ type OcurrenciasTablaProps = {
   /** Con selección: columna de casillas. Sin ella, solo la acción por fila. */
   seleccion?: Seleccion
   onAlternar?: (fila: FilaDeCuenta) => void
-  /** "Registrar pago" de la fila: cobra solo ese turno y no toca la selección. */
+  /** "Registrar pago único" de la fila: cobra solo ese turno y no toca la selección. */
   onCobrar: (fila: FilaDeCuenta, boton: HTMLButtonElement) => void
-  /** Página anterior mientras llega la nueva (`keepPreviousData`). */
-  atenuada?: boolean
+  /**
+   * Las filas son de un filtro o una página anterior (`isPlaceholderData`): se atenúan y no se
+   * pueden tildar ni cobrar hasta que lleguen las actuales.
+   */
+  enEspera?: boolean
 }
 
 /**
  * Los adeudados o los próximos de una cuenta. No calcula nada: fecha, horario, estado e importe
  * son los de la API. Scrollea en horizontal dentro de su contenedor en pantallas angostas.
+ *
+ * Columnas compactas (`CELDA`: menos margen entre columnas; fecha y horario en una sola), para que
+ * el importe destacado y la acción de la fila entren sin scroll en un escritorio.
  */
+const CELDA = 'px-3 first:pl-6 last:pr-6'
+
 export function OcurrenciasTabla({
   filas,
   etiqueta,
@@ -50,27 +59,26 @@ export function OcurrenciasTabla({
   seleccion,
   onAlternar,
   onCobrar,
-  atenuada = false,
+  enEspera = false,
 }: OcurrenciasTablaProps) {
   const conCasillas = seleccion !== undefined && onAlternar !== undefined
 
   return (
-    <Table aria-label={etiqueta} className={cn(atenuada && 'opacity-60')} aria-busy={atenuada}>
+    <Table aria-label={etiqueta} className={cn(enEspera && 'opacity-60')} aria-busy={enEspera}>
       <TableHeader>
         <TableRow>
           {conCasillas && (
-            <TableHead className="w-10 pr-0">
+            <TableHead className={cn(CELDA, 'w-10 pr-0')}>
               <span className="sr-only">Seleccionar</span>
             </TableHead>
           )}
-          {conAlumno && <TableHead>Alumno</TableHead>}
-          <TableHead>Fecha</TableHead>
-          <TableHead>Horario</TableHead>
-          <TableHead>Materia</TableHead>
-          <TableHead>Profesor</TableHead>
-          {conEstado && <TableHead>Estado</TableHead>}
-          <TableHead className="text-right">Importe</TableHead>
-          <TableHead>
+          {conAlumno && <TableHead className={CELDA}>Alumno</TableHead>}
+          <TableHead className={CELDA}>Fecha y horario</TableHead>
+          <TableHead className={CELDA}>Materia</TableHead>
+          <TableHead className={CELDA}>Profesor</TableHead>
+          {conEstado && <TableHead className={CELDA}>Estado</TableHead>}
+          <TableHead className={cn(CELDA, 'text-right')}>Importe</TableHead>
+          <TableHead className={CELDA}>
             <span className="sr-only">Acciones</span>
           </TableHead>
         </TableRow>
@@ -79,22 +87,23 @@ export function OcurrenciasTabla({
         {filas.map((fila) => {
           const turno = textoOcurrencia(fila)
           const accion = conAlumno
-            ? `Registrar pago del turno de ${textoOcurrencia(fila, true)}`
-            : `Registrar pago del turno del ${turno}`
+            ? `Registrar pago único del turno de ${textoOcurrencia(fila, true)}`
+            : `Registrar pago único del turno del ${turno}`
           const tildada = conCasillas && estaSeleccionada(seleccion, fila)
           return (
             <TableRow key={claveOcurrencia(fila)} data-state={tildada ? 'selected' : undefined}>
               {conCasillas && (
-                <TableCell className="pr-0">
+                <TableCell className={cn(CELDA, 'pr-0')}>
                   <Checkbox
                     checked={tildada}
                     onCheckedChange={() => onAlternar(fila)}
+                    disabled={enEspera}
                     aria-label={`Seleccionar el turno del ${turno}`}
                   />
                 </TableCell>
               )}
               {conAlumno && 'alumno' in fila && (
-                <TableCell>
+                <TableCell className={CELDA}>
                   <Link
                     href={hrefFichaAlumno(fila.alumno.id)}
                     className="text-cobalto font-medium whitespace-nowrap underline-offset-4 hover:underline"
@@ -106,37 +115,34 @@ export function OcurrenciasTabla({
                   </p>
                 </TableCell>
               )}
-              <TableCell className="whitespace-nowrap">{fechaConDia(fila.fecha)}</TableCell>
-              <TableCell className="whitespace-nowrap tabular-nums">
-                {rangoHoras(fila.horaInicio, fila.horaFin)}
+              <TableCell className={cn(CELDA, 'whitespace-nowrap')}>
+                <p className="first-letter:uppercase">{fechaConDia(fila.fecha)}</p>
+                <p className="text-muted-foreground text-xs tabular-nums">
+                  {rangoHoras(fila.horaInicio, fila.horaFin)}
+                </p>
               </TableCell>
-              <TableCell>{fila.materia.nombre}</TableCell>
-              <TableCell className="whitespace-nowrap">
+              <TableCell className={CELDA}>{fila.materia.nombre}</TableCell>
+              <TableCell className={CELDA}>
                 {fila.profesor.nombre} {fila.profesor.apellido}
               </TableCell>
               {conEstado && (
-                <TableCell>
+                <TableCell className={CELDA}>
                   <EstadoTurnoBadge estado={fila.estado} />
                 </TableCell>
               )}
-              <TableCell
-                className={cn(
-                  'text-right whitespace-nowrap',
-                  fila.importe === null ? 'text-muted-foreground' : 'tabular-nums',
-                )}
-              >
-                {textoImporte(fila.importe)}
+              <TableCell className={cn(CELDA, 'text-right whitespace-nowrap')}>
+                <ImporteDeCuenta importe={fila.importe} />
               </TableCell>
-              <TableCell className="text-right">
+              <TableCell className={cn(CELDA, 'text-right')}>
                 <Button
                   type="button"
                   size="sm"
-                  variant="outline"
                   onClick={(e) => onCobrar(fila, e.currentTarget)}
+                  disabled={enEspera}
                   aria-label={accion}
                 >
                   <Banknote />
-                  Registrar pago
+                  Registrar pago único
                 </Button>
               </TableCell>
             </TableRow>

@@ -111,6 +111,30 @@ describe('podar', () => {
     const sel = alternar(SELECCION_VACIA, PROXIMO_05)
     expect(podar(sel, MOSTRADA)).toBe(sel)
   })
+
+  it('filtrar es podar: lo que el filtro saca de la vista sale y no vuelve al quitar el filtro', () => {
+    const sel = seleccionarTodos(SELECCION_VACIA, MOSTRADA)
+    // Filtro por materia: de la cuenta solo se ve el próximo de Física.
+    const soloFisica = MOSTRADA.filter((o) => o.materia.id === PROXIMO_07.materia.id)
+    const filtrada = podar(sel, soloFisica)
+    expect([...filtrada.values()]).toEqual([aCobrar(PROXIMO_07)])
+
+    // Se quita el filtro: vuelven las cuatro filas, pero tildada queda solo la que se veía.
+    const sinFiltro = podar(filtrada, MOSTRADA)
+    expect(sinFiltro).toBe(filtrada)
+    expect(sinFiltro.size).toBe(1)
+  })
+
+  it('una sección que no aplica al período (llega `null`) deja la selección sin sus filas', () => {
+    const sel = seleccionarTodos(SELECCION_VACIA, MOSTRADA)
+    // Período pasado: `proximos: null`, así que solo se ven los adeudados.
+    const podada = podar(sel, CUENTA.adeudados)
+    expect([...podada.values()]).toEqual(CUENTA.adeudados.map(aCobrar))
+  })
+
+  it('con la lista vacía queda vacía', () => {
+    expect(podar(seleccionarTodos(SELECCION_VACIA, MOSTRADA), []).size).toBe(0)
+  })
 })
 
 describe('ordenarComoSeMuestran', () => {

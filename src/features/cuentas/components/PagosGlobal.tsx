@@ -1,24 +1,35 @@
 'use client'
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
-import { usePathname, useRouter, useSearchParams } from 'next/navigation'
-import { AlertCircle, CircleCheck, RotateCw, Wallet, X } from 'lucide-react'
+import { type ReactNode, type Ref, useEffect, useMemo, useRef, useState } from 'react'
+import { AlertCircle, RotateCw, X } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { EmptyState } from '@/components/ui/empty-state'
 import { PaginationControls } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useAlumno } from '@/features/alumnos/hooks/use-alumno'
+import { useToast } from '@/hooks/use-toast'
+import type { PaginatedResponse } from '@/types'
 import type { SolicitudRegistrarPago } from '@/types/pago'
+import { cn } from '@/utils/cn'
 
-import { aCobrar } from '../a-cobrar'
+import { type FilaDeCuenta, aCobrar } from '../a-cobrar'
+import type { OcurrenciaDeCuentaGlobal } from '../cuentas.types'
 import { interpretarErrorCuenta } from '../errores-cuentas'
+import {
+  type SeccionDeCuenta,
+  aParams,
+  aParamsGlobal,
+  claveDeFiltros,
+  hayFiltros,
+} from '../filtros-cuenta'
+import { avisoDelTope, etiquetaTotal, textoFiltrosActivos, textoSinFilas } from '../formato-cuentas'
 import { useAdeudados } from '../hooks/use-adeudados'
 import { type AperturaDePago, useDialogoDePago } from '../hooks/use-dialogo-de-pago'
-import { hrefFichaAlumno } from '../rutas-cuentas'
+import { useFiltrosCuenta } from '../hooks/use-filtros-cuenta'
+import { useNombresDeFiltros } from '../hooks/use-nombres-de-filtros'
+import { useProximos } from '../hooks/use-proximos'
+import { useTodosLosAdeudados } from '../hooks/use-todos-los-adeudados'
 import {
   SELECCION_VACIA,
   type Seleccion,
@@ -27,10 +38,13 @@ import {
   quitar,
   quitarTodos,
   resumenSeleccion,
+  seleccionarTodos,
 } from '../seleccion'
 import { BarraSeleccion } from './BarraSeleccion'
 import { FiltroAlumno } from './FiltroAlumno'
+import { FiltrosCuenta } from './FiltrosCuenta'
 import { OcurrenciasTabla } from './OcurrenciasTabla'
+import { SeccionOcurrencias, SinFilas } from './SeccionOcurrencias'
 import { TotalDestacado } from './TotalDestacado'
 
 export type PagosGlobalProps = {
@@ -41,65 +55,84 @@ export type PagosGlobalProps = {
   renderRegistrarPago: (pago: SolicitudRegistrarPago) => ReactNode
 }
 
-/** Un entero >= 1 del query, o `null` si no viene o no es válido. */
-function enteroPositivo(valor: string | null): number | null {
-  const numero = Number(valor)
-  return valor !== null && Number.isInteger(numero) && numero >= 1 ? numero : null
-}
+const FILAS_VACIAS: readonly FilaDeCuenta[] = []
 
 /**
- * Vista global de la deuda (`/mesa/pagos`, HU-16): total adeudado del filtro, adeudados paginados y
- * filtro por alumno. El alumno y la página van en la URL (`?alumnoId=12&page=2`, con
- * `router.replace`); un valor inválido se ignora (alumno) o se toma como 1 (página).
+ * Vista global de la deuda (`/mesa/pagos`, HU-16), con la misma estructura que la ficha: total
+ * adeudado del filtro, filtros (alumno, período, materia y profesor), y "Turnos adeudados" y
+ * "Próximos turnos", cada tabla con su paginación. Todo va en la URL
+ * (`?alumnoId=&desde=&hasta=&materiaId=&profesorId=&pageAdeudados=&pageProximos=`, con
+ * `router.replace`). Una sección con `aplica: false` no se muestra.
  *
- * - Sin filtro, se cobra de a un turno (la acción de cada fila, con el alumno de la fila).
- * - Con filtro, además, casillas y barra de selección. La selección se conserva entre páginas y
- *   se limpia al cambiar o quitar el filtro. No se poda contra la página (solo está la actual): al
- *   cerrar el diálogo, si los adeudados se volvieron a pedir mientras estaba abierto (cambió
- *   `dataUpdatedAt`) o se están volviendo a pedir (`isFetching`: registrar invalida sin esperar el
- *   refetch, así que el éxito se puede cerrar antes de que termine), hubo un pago o un 409 y se
- *   sacan las ocurrencias de esa solicitud (`quitar`); si no, se canceló y queda igual.
- * - Si al cobrar la última fila de la última página la página queda fuera de rango, pasa a la
- *   última que exista.
+ * - Sin alumno filtrado, se cobra de a un turno (la acción de cada fila, con el alumno de la fila).
+ * - Con alumno filtrado, además, casillas en las dos tablas y una barra de selección: adeudados y
+ *   próximos se pueden cobrar juntos, y "Seleccionar todos los adeudados" tilda los de todas las
+ *   páginas (los pide a la cuenta del alumno). La selección se conserva al paginar cualquiera de las dos y
+ *   se vacía cuando cambia **cualquier** filtro. No se poda contra la página (solo está la actual):
+ *   al cerrar el diálogo, si alguna de las dos listas se volvió a pedir mientras estaba abierto
+ *   (cambió su `dataUpdatedAt`) o se está volviendo a pedir (`isFetching`: registrar invalida sin
+ *   esperar el refetch), hubo un pago o un 409 y se sacan las ocurrencias de esa solicitud
+ *   (`quitar`); si no, se canceló y queda igual.
+ * - Mientras una tabla muestra filas de un filtro o una página anterior (`isPlaceholderData`), no
+ *   se puede tildar ni cobrar en ella, ni registrar el pago de la selección.
+ * - Si al cobrar la última fila de la última página una tabla queda fuera de rango, pasa a su
+ *   última página.
  */
 export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
-  const searchParams = useSearchParams()
-  const router = useRouter()
-  const pathname = usePathname()
+  const { filtros, paginas, cambiar, cambiarPagina, limpiar } = useFiltrosCuenta()
+  const { alumnoId } = filtros
 
-  const alumnoId = enteroPositivo(searchParams.get('alumnoId'))
-  const page = enteroPositivo(searchParams.get('page')) ?? 1
+  const adeudados = useAdeudados(aParamsGlobal(filtros, paginas.adeudados))
+  const proximos = useProximos(aParamsGlobal(filtros, paginas.proximos))
 
-  const irA = useCallback(
-    (filtro: { alumnoId: number | null; page: number }) => {
-      const params = new URLSearchParams()
-      if (filtro.alumnoId !== null) params.set('alumnoId', String(filtro.alumnoId))
-      if (filtro.page > 1) params.set('page', String(filtro.page))
-      const qs = params.toString()
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
-    },
-    [router, pathname],
+  const filas = useMemo(
+    () => [...(adeudados.data?.data ?? FILAS_VACIAS), ...(proximos.data?.data ?? FILAS_VACIAS)],
+    [adeudados.data, proximos.data],
   )
+  const nombres = useNombresDeFiltros(filtros, filas)
 
-  const query = useAdeudados({ alumnoId: alumnoId ?? undefined, page })
-  const alumnoQuery = useAlumno(alumnoId ?? 0)
-  const alumno = alumnoId !== null ? alumnoQuery.data : undefined
-  const nombreAlumno = alumno ? `${alumno.nombre} ${alumno.apellido}` : null
-
-  // La selección es del filtro: se limpia al cambiarlo o quitarlo, también con Atrás (ajuste del
-  // estado durante el render, sin un efecto).
-  const [marcada, setMarcada] = useState<Seleccion>(SELECCION_VACIA)
-  const [filtroDeLaSeleccion, setFiltroDeLaSeleccion] = useState(alumnoId)
-  if (filtroDeLaSeleccion !== alumnoId) {
-    setFiltroDeLaSeleccion(alumnoId)
-    setMarcada(SELECCION_VACIA)
+  // La selección es de un filtro: se vacía cuando cambia cualquiera de ellos, también con Atrás
+  // (ajuste del estado durante el render, sin un efecto). Paginar no la toca.
+  const clave = claveDeFiltros(filtros)
+  const [seleccion, setSeleccion] = useState<Seleccion>(SELECCION_VACIA)
+  const [claveDeLaSeleccion, setClaveDeLaSeleccion] = useState(clave)
+  if (claveDeLaSeleccion !== clave) {
+    setClaveDeLaSeleccion(clave)
+    setSeleccion(SELECCION_VACIA)
   }
-  const resumen = useMemo(() => resumenSeleccion(marcada), [marcada])
+  const resumen = useMemo(() => resumenSeleccion(seleccion), [seleccion])
+
+  // "Seleccionar todos los adeudados" (con alumno filtrado): los de todas las páginas, no solo los
+  // de la que se ve. Si entran en la página actual se toman de ahí; si no, se piden a la cuenta del
+  // alumno, con los mismos filtros. Si el filtro cambió mientras llegaban, no se tildan.
+  const toast = useToast()
+  const todosLosAdeudados = useTodosLosAdeudados()
+  const claveActual = useRef(clave)
+  useEffect(() => {
+    claveActual.current = clave
+  })
+  const seleccionarTodosLosAdeudados = async () => {
+    if (alumnoId === null) return
+    const pedida = clave
+    const pagina = adeudados.isPlaceholderData ? undefined : adeudados.data
+    try {
+      const todos =
+        pagina && pagina.meta.totalPages <= 1
+          ? pagina.data
+          : await todosLosAdeudados.traer(alumnoId, aParams(filtros))
+      if (claveActual.current === pedida) {
+        setSeleccion((actual) => seleccionarTodos(actual, todos))
+      }
+    } catch {
+      toast.error('No se pudieron seleccionar todos los adeudados. Intentá de nuevo.')
+    }
+  }
 
   // Se leen en el render (no solo dentro de `alCerrar`): TanStack Query re-renderiza solo por las
   // propiedades leídas al renderizar, y sin eso el cierre vería valores viejos.
-  const { dataUpdatedAt, isFetching } = query
-  const actualizadoAlAbrir = useRef(0)
+  const actualizado = { adeudados: adeudados.dataUpdatedAt, proximos: proximos.dataUpdatedAt }
+  const pidiendo = adeudados.isFetching || proximos.isFetching
+  const actualizadoAlAbrir = useRef(actualizado)
   const {
     abrir: abrirDialogo,
     refugioRef,
@@ -107,210 +140,298 @@ export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
   } = useDialogoDePago<HTMLHeadingElement>({
     renderRegistrarPago,
     alCerrar: ({ ocurrencias }) => {
-      // `isFetching`: el éxito se ve antes de que termine el refetch de la invalidación (el
+      // `pidiendo`: el éxito se ve antes de que termine el refetch de la invalidación (el
       // `useRegistrarPago` no la espera), así que cerrarlo enseguida todavía no cambió los datos.
-      if (dataUpdatedAt !== actualizadoAlAbrir.current || isFetching) {
-        setMarcada((actual) => quitar(actual, ocurrencias))
+      const alAbrir = actualizadoAlAbrir.current
+      if (
+        pidiendo ||
+        actualizado.adeudados !== alAbrir.adeudados ||
+        actualizado.proximos !== alAbrir.proximos
+      ) {
+        setSeleccion((actual) => quitar(actual, ocurrencias))
       }
     },
   })
   const abrir = (solicitud: AperturaDePago, boton: HTMLElement) => {
-    actualizadoAlAbrir.current = dataUpdatedAt
+    actualizadoAlAbrir.current = actualizado
     abrirDialogo(solicitud, boton)
   }
 
-  // Página fuera de rango (se cobró la última fila de la última página, o una URL vieja).
-  const totalPages = query.isPlaceholderData ? undefined : query.data?.meta.totalPages
-  useEffect(() => {
-    if (totalPages === undefined) return
-    const ultima = Math.max(1, totalPages)
-    if (page > ultima) irA({ alumnoId, page: ultima })
-  }, [totalPages, page, alumnoId, irA])
+  // Página fuera de rango (se cobró la última fila de la última página, o una URL vieja): cada
+  // tabla se corrige por separado.
+  useCorregirPagina(adeudados, paginas.adeudados, (p) => cambiarPagina('adeudados', p))
+  useCorregirPagina(proximos, paginas.proximos, (p) => cambiarPagina('proximos', p))
 
-  const conFiltro = alumnoId !== null
-  const quitarFiltro = () => irA({ alumnoId: null, page: 1 })
+  const conAlumno = alumnoId !== null
+  const enEspera = adeudados.isPlaceholderData || proximos.isPlaceholderData
+  // Un error de cualquiera de las dos lecturas ocupa el lugar de las dos secciones (un filtro
+  // inválido o un alumno inexistente las hace fallar a las dos por lo mismo).
+  const error =
+    adeudados.isError || proximos.isError
+      ? interpretarErrorCuenta(adeudados.error ?? proximos.error)
+      : null
+  const hayFilas = (adeudados.data?.meta.total ?? 0) > 0 || (proximos.data?.meta.total ?? 0) > 0
+  const conBarra = conAlumno && hayFilas
+  // El refugio del foco es el título de la primera sección que se ve.
+  const seVenAdeudados = adeudados.data?.aplica !== false
+
+  const tabla = (
+    etiqueta: string,
+    datos: readonly OcurrenciaDeCuentaGlobal[],
+    seccion: SeccionDeCuenta,
+    enEsperaDeLaTabla: boolean,
+  ) => (
+    <OcurrenciasTabla
+      etiqueta={etiqueta}
+      filas={datos}
+      conAlumno
+      conEstado={seccion === 'adeudados'}
+      seleccion={conAlumno ? seleccion : undefined}
+      onAlternar={
+        conAlumno ? (fila) => setSeleccion((actual) => alternar(actual, fila)) : undefined
+      }
+      onCobrar={(fila, boton) =>
+        abrir(
+          {
+            alumnoId: 'alumno' in fila ? fila.alumno.id : (alumnoId ?? 0),
+            ocurrencias: [aCobrar(fila)],
+          },
+          boton,
+        )
+      }
+      enEspera={enEsperaDeLaTabla}
+    />
+  )
 
   return (
     <div className="space-y-6">
-      <Card className="gap-6">
-        <FiltroAlumno
-          alumnoId={alumnoId}
-          alumno={alumno}
-          noEncontrado={interpretarErrorCuenta(query.error).tipo === 'noEncontrado'}
-          onElegir={(id) => irA({ alumnoId: id, page: 1 })}
-          onQuitar={quitarFiltro}
-        />
-        {query.data ? (
+      {adeudados.data ? (
+        <Card>
           <TotalDestacado
-            etiqueta={
-              !conFiltro
-                ? 'Total adeudado'
-                : nombreAlumno
-                  ? `Total adeudado de ${nombreAlumno}`
-                  : 'Total adeudado del alumno'
-            }
-            importe={query.data.totalAdeudado}
+            etiqueta={etiquetaTotal(filtros)}
+            importe={adeudados.data.totalAdeudado}
+            detalle={textoFiltrosActivos({ ...filtros, ...nombres })}
+            className={cn(adeudados.isPlaceholderData && 'opacity-60')}
           />
-        ) : (
-          query.isPending && (
-            <div className="space-y-2">
-              <Skeleton className="h-3 w-28" />
-              <Skeleton className="h-8 w-40" />
-            </div>
-          )
-        )}
-      </Card>
+        </Card>
+      ) : (
+        adeudados.isPending && (
+          <Card className="gap-2">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-8 w-40" />
+          </Card>
+        )
+      )}
 
-      <Card className="gap-0 overflow-hidden p-0">
-        <div className="flex flex-col">
-          <h2
-            ref={refugioRef}
-            tabIndex={-1}
-            className="px-6 pt-6 pb-4 text-base font-semibold outline-none"
-          >
-            Turnos adeudados
-          </h2>
-          {conFiltro && query.data && query.data.meta.total > 0 && (
-            <BarraSeleccion
-              className="border-border border-y px-6 py-4"
-              resumen={resumen}
-              onQuitar={() => setMarcada(quitarTodos())}
-              onRegistrar={(boton) =>
-                alumnoId !== null &&
-                abrir({ alumnoId, ocurrencias: ordenarPorFecha(marcada) }, boton)
-              }
+      <Card>
+        <FiltrosCuenta
+          filtros={filtros}
+          nombres={nombres}
+          onCambiar={cambiar}
+          onLimpiar={limpiar}
+          puedeLimpiar={hayFiltros(filtros)}
+          errores={error?.tipo === 'filtros' ? error.campos : undefined}
+          errorGeneral={error?.tipo === 'filtros' ? error.mensaje : null}
+          renderAlumno={(id) => (
+            <FiltroAlumno
+              id={id}
+              value={alumnoId}
+              nombre={nombres.alumno}
+              noEncontrado={error?.tipo === 'noEncontrado'}
+              onChange={(nuevo) => cambiar({ alumnoId: nuevo })}
             />
           )}
-        </div>
-
-        {query.isPending ? (
-          <div className="space-y-2 px-6 pb-6" aria-busy aria-label="Cargando los adeudados">
-            {[0, 1, 2, 3].map((i) => (
-              <Skeleton key={i} className="h-12 w-full" />
-            ))}
-          </div>
-        ) : query.isError ? (
-          <ErrorAdeudados
-            error={interpretarErrorCuenta(query.error)}
-            conFiltro={conFiltro}
-            onQuitarFiltro={quitarFiltro}
-            onReintentar={() => query.refetch()}
-          />
-        ) : query.data.data.length === 0 && query.data.meta.total > 0 ? (
-          // Página fuera de rango: el efecto de arriba ya la está corrigiendo.
-          <div className="px-6 pb-6" aria-busy>
-            <Skeleton className="h-12 w-full" />
-          </div>
-        ) : query.data.meta.total === 0 ? (
-          conFiltro ? (
-            <EmptyState
-              icon={CircleCheck}
-              title={
-                nombreAlumno
-                  ? `${nombreAlumno} no tiene turnos adeudados`
-                  : 'El alumno no tiene turnos adeudados'
-              }
-              description="Los próximos turnos se cobran desde su cuenta."
-              className="py-10"
-            >
-              <Button asChild variant="outline">
-                <Link href={hrefFichaAlumno(alumnoId)}>
-                  <Wallet />
-                  Ver cuenta del alumno
-                </Link>
-              </Button>
-            </EmptyState>
-          ) : (
-            <EmptyState icon={CircleCheck} title="No hay turnos adeudados" className="py-10" />
-          )
-        ) : (
-          <>
-            <OcurrenciasTabla
-              etiqueta="Turnos adeudados"
-              filas={query.data.data}
-              conAlumno
-              conEstado
-              seleccion={conFiltro ? marcada : undefined}
-              onAlternar={
-                conFiltro ? (fila) => setMarcada((actual) => alternar(actual, fila)) : undefined
-              }
-              onCobrar={(fila, boton) =>
-                abrir(
-                  {
-                    alumnoId: 'alumno' in fila ? fila.alumno.id : (alumnoId ?? 0),
-                    ocurrencias: [aCobrar(fila)],
-                  },
-                  boton,
-                )
-              }
-              atenuada={query.isPlaceholderData}
-            />
-            <PieDePagina
-              page={page}
-              meta={query.data.meta}
-              onPageChange={(p) => irA({ alumnoId, page: p })}
-            />
-          </>
-        )}
+        />
       </Card>
+
+      {error ? (
+        // El error de los filtros ya está junto a ellos.
+        error.tipo !== 'filtros' && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription className="text-destructive flex flex-wrap items-center gap-3">
+              {error.mensaje}
+              {error.reintentar && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => {
+                    if (adeudados.isError) adeudados.refetch()
+                    if (proximos.isError) proximos.refetch()
+                  }}
+                >
+                  <RotateCw />
+                  Reintentar
+                </Button>
+              )}
+              {error.tipo === 'noEncontrado' && conAlumno && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  onClick={() => cambiar({ alumnoId: null })}
+                >
+                  <X />
+                  Quitar el filtro de alumno
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )
+      ) : (
+        // Sin `overflow` en la tarjeta: la barra queda fija al scrollear (ver `BarraSeleccion`).
+        <Card className="gap-0 p-0">
+          {conBarra && (
+            <BarraSeleccion
+              className="border-border border-b px-6 py-4"
+              resumen={resumen}
+              onSeleccionarTodos={
+                adeudados.data?.aplica ? () => void seleccionarTodosLosAdeudados() : undefined
+              }
+              seleccionarTodosDeshabilitado={
+                adeudados.data?.meta.total === 0 || todosLosAdeudados.cargando
+              }
+              onQuitar={() => setSeleccion(quitarTodos())}
+              onRegistrar={(boton) =>
+                alumnoId !== null &&
+                abrir({ alumnoId, ocurrencias: ordenarPorFecha(seleccion) }, boton)
+              }
+              enEspera={enEspera}
+            />
+          )}
+
+          <div className={cn('overflow-hidden rounded-b-2xl', !conBarra && 'rounded-t-2xl')}>
+            <SeccionGlobal
+              id="pagos-adeudados"
+              titulo="Turnos adeudados"
+              tituloRef={seVenAdeudados ? refugioRef : undefined}
+              query={adeudados}
+              page={paginas.adeudados}
+              onPageChange={(p) => cambiarPagina('adeudados', p)}
+              textoVacio={textoSinFilas('adeudados', filtros)}
+              renderTabla={(datos, espera) => tabla('Turnos adeudados', datos, 'adeudados', espera)}
+            />
+
+            <SeccionGlobal
+              id="pagos-proximos"
+              titulo="Próximos turnos"
+              tituloRef={seVenAdeudados ? undefined : refugioRef}
+              query={proximos}
+              page={paginas.proximos}
+              onPageChange={(p) => cambiarPagina('proximos', p)}
+              textoVacio={textoSinFilas('proximos', filtros)}
+              aviso={
+                proximos.data?.aplica ? avisoDelTope(filtros, proximos.data.limiteCobro) : null
+              }
+              className={cn(seVenAdeudados && 'border-border border-t')}
+              renderTabla={(datos, espera) => tabla('Próximos turnos', datos, 'proximos', espera)}
+            />
+          </div>
+        </Card>
+      )}
 
       {dialogo}
     </div>
   )
 }
 
-function ErrorAdeudados({
-  error,
-  conFiltro,
-  onQuitarFiltro,
-  onReintentar,
-}: {
-  error: ReturnType<typeof interpretarErrorCuenta>
-  conFiltro: boolean
-  onQuitarFiltro: () => void
-  onReintentar: () => void
-}) {
-  return (
-    <div className="px-6 pb-6">
-      <Alert variant="destructive">
-        <AlertCircle className="size-4" />
-        <AlertDescription className="text-destructive flex flex-wrap items-center gap-3">
-          {error.mensaje}
-          {error.reintentar && (
-            <Button type="button" size="sm" variant="outline" onClick={onReintentar}>
-              <RotateCw />
-              Reintentar
-            </Button>
-          )}
-          {!error.reintentar && conFiltro && (
-            <Button type="button" size="sm" variant="outline" onClick={onQuitarFiltro}>
-              <X />
-              Quitar filtro
-            </Button>
-          )}
-        </AlertDescription>
-      </Alert>
-    </div>
-  )
+/** Lo que `SeccionGlobal` mira de `useAdeudados` o `useProximos`. */
+type ConsultaDeSeccion = {
+  data: (PaginatedResponse<OcurrenciaDeCuentaGlobal> & { aplica: boolean }) | undefined
+  isPending: boolean
+  isPlaceholderData: boolean
 }
 
-function PieDePagina({
+/**
+ * Si la página pedida quedó después de la última (y los datos son los de esa página, no los de
+ * placeholder), pasa a la última que exista.
+ */
+function useCorregirPagina(
+  query: ConsultaDeSeccion,
+  page: number,
+  onCorregir: (page: number) => void,
+) {
+  const totalPages = query.isPlaceholderData ? undefined : query.data?.meta.totalPages
+  const corregir = useRef(onCorregir)
+  useEffect(() => {
+    corregir.current = onCorregir
+  })
+  useEffect(() => {
+    if (totalPages === undefined) return
+    const ultima = Math.max(1, totalPages)
+    if (page > ultima) corregir.current(ultima)
+  }, [totalPages, page])
+}
+
+/**
+ * Una sección de la vista global con su tabla paginada. Si la API dice que no aplica al período
+ * (`aplica: false`), no se renderiza: ni título ni vacío.
+ */
+function SeccionGlobal({
+  id,
+  titulo,
+  tituloRef,
+  query,
   page,
-  meta,
   onPageChange,
+  textoVacio,
+  aviso,
+  className,
+  renderTabla,
 }: {
+  id: string
+  titulo: string
+  tituloRef?: Ref<HTMLHeadingElement>
+  query: ConsultaDeSeccion
   page: number
-  meta: { page: number; pageSize: number; total: number; totalPages: number }
   onPageChange: (page: number) => void
+  textoVacio: string
+  aviso?: string | null
+  className?: string
+  renderTabla: (filas: readonly OcurrenciaDeCuentaGlobal[], enEspera: boolean) => ReactNode
 }) {
+  const { data } = query
+  if (data && !data.aplica) return null
+
   return (
-    <div className="border-border flex flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <p className="text-muted-foreground text-sm">
-        Mostrando {(meta.page - 1) * meta.pageSize + 1}–
-        {Math.min(meta.page * meta.pageSize, meta.total)} de {meta.total}{' '}
-        {meta.total === 1 ? 'turno' : 'turnos'}
-      </p>
-      <PaginationControls page={page} totalPages={meta.totalPages} onPageChange={onPageChange} />
-    </div>
+    <SeccionOcurrencias
+      id={id}
+      titulo={titulo}
+      tituloRef={tituloRef}
+      aviso={aviso}
+      className={className}
+    >
+      {!data ? (
+        <div className="space-y-2 px-6 pb-6" aria-busy aria-label={`Cargando: ${titulo}`}>
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-12 w-full" />
+          ))}
+        </div>
+      ) : data.meta.total === 0 ? (
+        <SinFilas>{textoVacio}</SinFilas>
+      ) : data.data.length === 0 ? (
+        // Página fuera de rango: `useCorregirPagina` ya la está corrigiendo.
+        <div className="px-6 pb-6" aria-busy>
+          <Skeleton className="h-12 w-full" />
+        </div>
+      ) : (
+        <>
+          {renderTabla(data.data, query.isPlaceholderData)}
+          <div className="border-border flex flex-col gap-3 border-t px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-muted-foreground text-sm">
+              Mostrando {(data.meta.page - 1) * data.meta.pageSize + 1}–
+              {Math.min(data.meta.page * data.meta.pageSize, data.meta.total)} de {data.meta.total}{' '}
+              {data.meta.total === 1 ? 'turno' : 'turnos'}
+            </p>
+            <PaginationControls
+              page={page}
+              totalPages={data.meta.totalPages}
+              onPageChange={onPageChange}
+            />
+          </div>
+        </>
+      )}
+    </SeccionOcurrencias>
   )
 }

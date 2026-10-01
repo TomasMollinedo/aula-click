@@ -2,7 +2,7 @@
 
 import { format, parseISO } from 'date-fns'
 import { es } from 'date-fns/locale/es'
-import { CalendarDays, ChevronLeft, ChevronRight } from 'lucide-react'
+import { CalendarDays, CalendarX, ChevronLeft, ChevronRight } from 'lucide-react'
 import { type KeyboardEvent, type Ref, useEffect, useId, useRef, useState } from 'react'
 
 import { Button } from '@/components/ui/button'
@@ -34,6 +34,11 @@ type CalendarioFechaProps = RestriccionFechas & {
   placeholder?: string
   /** Texto del botón que deja el campo vacío (por ejemplo, "Sin fecha de fin"). Sin él, no se ofrece. */
   textoVaciar?: string
+  /**
+   * Para una fila de filtros: botón más bajo y la fecha sin el día de la semana (`30/09/2026`). El
+   * calendario que se abre es el mismo.
+   */
+  compacto?: boolean
   disabled?: boolean
   'aria-invalid'?: boolean
   'aria-describedby'?: string
@@ -55,6 +60,7 @@ function CalendarioFecha({
   diaSemana,
   placeholder = 'Elegí una fecha',
   textoVaciar,
+  compacto = false,
   disabled = false,
   'aria-invalid': ariaInvalid,
   'aria-describedby': ariaDescribedby,
@@ -135,7 +141,9 @@ function CalendarioFecha({
 
   const semanas = semanasDelMes(mes)
   const hayAnterior = min === undefined || sumarMeses(mes, -1) >= inicioDeMes(min)
-  const textoValor = value ? format(parseISO(value), 'EEEE dd/MM/yyyy', { locale: es }) : null
+  const textoValor = value
+    ? format(parseISO(value), compacto ? 'dd/MM/yyyy' : 'EEEE dd/MM/yyyy', { locale: es })
+    : null
 
   return (
     <div ref={contenedor} className="relative">
@@ -148,7 +156,7 @@ function CalendarioFecha({
         id={id}
         type="button"
         variant="outline"
-        size="lg"
+        size={compacto ? 'default' : 'lg'}
         disabled={disabled}
         onClick={() => (abierto ? cerrar() : abrir())}
         aria-haspopup="dialog"
@@ -157,10 +165,11 @@ function CalendarioFecha({
         aria-describedby={ariaDescribedby}
         className={cn(
           'aria-invalid:border-destructive w-full justify-between font-normal',
+          compacto && 'rounded-lg px-3',
           !textoValor && 'text-muted-foreground',
         )}
       >
-        <span className="first-letter:uppercase">{textoValor ?? placeholder}</span>
+        <span className="truncate first-letter:uppercase">{textoValor ?? placeholder}</span>
         <CalendarDays className="text-muted-foreground" aria-hidden />
       </Button>
 
@@ -250,13 +259,15 @@ function CalendarioFecha({
 
           {textoVaciar && (
             <div className="border-border mt-2 border-t pt-2">
+              {/* Con borde y color: como texto suelto bajo la grilla no se llegaba a ver. */}
               <Button
                 type="button"
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="w-full"
+                className="border-cobalto/40 text-cobalto hover:bg-cobalto/10 hover:border-cobalto w-full font-semibold"
                 onClick={() => elegir('')}
               >
+                <CalendarX />
                 {textoVaciar}
               </Button>
             </div>

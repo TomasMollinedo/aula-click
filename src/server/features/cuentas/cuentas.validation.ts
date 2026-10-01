@@ -20,7 +20,7 @@ export const alumnoIdParamsSchema = z.object({
   }),
 })
 
-export const MENSAJE_RANGO_INVERTIDO = '`hasta` no puede ser anterior a `desde`'
+export const MENSAJE_RANGO_INVERTIDO = 'La fecha hasta no puede ser anterior a la fecha desde'
 
 /**
  * Filtros comunes de los tres endpoints: período (cada extremo opcional, sin tope de días),

@@ -8,11 +8,16 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { SolicitudRegistrarPago } from '@/types/pago'
+import { cn } from '@/utils/cn'
 
-import { aCobrar } from '../a-cobrar'
+import { type FilaDeCuenta, aCobrar } from '../a-cobrar'
 import { interpretarErrorCuenta } from '../errores-cuentas'
+import { type FiltrosCuenta as Filtros, aParams, hayFiltros } from '../filtros-cuenta'
+import { avisoDelTope, etiquetaTotal, textoFiltrosActivos, textoSinFilas } from '../formato-cuentas'
 import { useCuentaDelAlumno } from '../hooks/use-cuenta-del-alumno'
 import { useDialogoDePago } from '../hooks/use-dialogo-de-pago'
+import { useFiltrosCuenta } from '../hooks/use-filtros-cuenta'
+import { useNombresDeFiltros } from '../hooks/use-nombres-de-filtros'
 import {
   SELECCION_VACIA,
   type Seleccion,
@@ -24,8 +29,9 @@ import {
   seleccionarTodos,
 } from '../seleccion'
 import { BarraSeleccion } from './BarraSeleccion'
-import { HistorialPagos } from './HistorialPagos'
+import { FiltrosCuenta } from './FiltrosCuenta'
 import { OcurrenciasTabla } from './OcurrenciasTabla'
+import { SeccionOcurrencias, SinFilas } from './SeccionOcurrencias'
 import { TotalDestacado } from './TotalDestacado'
 
 export type PagosDelAlumnoProps = {
@@ -38,24 +44,44 @@ export type PagosDelAlumnoProps = {
 }
 
 /**
- * Pestaña "Pagos" de la ficha del alumno (HU-16): total adeudado y pagado del mes, turnos adeudados
- * y próximos con una sola selección para cobrarlos juntos, e historial de pagos. Importes y totales
- * los manda la API; el cliente solo suma lo tildado (`resumenSeleccion`).
+ * Pestaña "Pagos" de la ficha del alumno (HU-16): total adeudado, filtros (período, materia y
+ * profesor, en la URL junto a `?tab=pagos`), y turnos adeudados y próximos con una sola selección
+ * para cobrarlos juntos. Importes, totales y qué sección aplica al período los manda la API: una
+ * sección que llega `null` no se muestra; el cliente solo suma lo tildado (`resumenSeleccion`).
  *
- * La selección se poda en cada render contra la cuenta actual (lo cobrado o cancelado desaparece de
- * ella) y se guarda podada al cerrar el diálogo, que recibe su propia copia al abrirse
- * (`useDialogoDePago`).
+ * **Filtrar es podar:** la selección se poda contra la cuenta que se ve (lo cobrado, lo cancelado
+ * y lo que un filtro saca de la vista salen de ella, porque no se cobra lo que no se ve), pero solo
+ * con datos reales. Mientras llega la cuenta de un filtro nuevo se sigue viendo la anterior
+ * (`isPlaceholderData`), atenuada y sin poder tildar ni cobrar.
  */
 export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumnoProps) {
-  const query = useCuentaDelAlumno(alumnoId)
-  const [marcada, setMarcada] = useState<Seleccion>(SELECCION_VACIA)
+  const { filtros: deLaUrl, cambiar, limpiar } = useFiltrosCuenta()
+  // Los de la ficha: sin el alumno (es el de la ficha) ni páginas.
+  const { desde, hasta, materiaId, profesorId } = deLaUrl
+  const filtros = useMemo<Filtros>(
+    () => ({ desde, hasta, materiaId, profesorId }),
+    [desde, hasta, materiaId, profesorId],
+  )
+
+  const query = useCuentaDelAlumno(alumnoId, aParams(filtros))
+  const cuenta = query.data
+  const enEspera = query.isPlaceholderData
 
   // Adeudados y después próximos, cada uno en el orden de la API: así se muestran y así se cobran.
-  const mostrada = useMemo(
-    () => (query.data ? [...query.data.adeudados, ...query.data.proximos] : []),
-    [query.data],
+  const mostrada = useMemo<FilaDeCuenta[]>(
+    () => (cuenta ? [...(cuenta.adeudados ?? []), ...(cuenta.proximos ?? [])] : []),
+    [cuenta],
   )
-  const seleccion = useMemo(() => podar(marcada, mostrada), [marcada, mostrada])
+  const nombres = useNombresDeFiltros(filtros, mostrada)
+
+  // La poda se guarda (ajuste del estado durante el render, sin un efecto): si después se saca el
+  // filtro, lo que había salido de la vista no vuelve tildado. `podar` devuelve la misma selección
+  // si no cambió, así que no hay un render de más.
+  const [seleccion, setSeleccion] = useState<Seleccion>(SELECCION_VACIA)
+  if (cuenta && !enEspera) {
+    const podada = podar(seleccion, mostrada)
+    if (podada !== seleccion) setSeleccion(podada)
+  }
   const resumen = useMemo(() => resumenSeleccion(seleccion), [seleccion])
 
   const {
@@ -64,146 +90,153 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
     dialogo,
   } = useDialogoDePago<HTMLHeadingElement>({
     renderRegistrarPago,
-    alCerrar: () => setMarcada((actual) => podar(actual, mostrada)),
+    // Nada que ajustar al cerrar: lo cobrado desaparece de la cuenta y la poda lo saca.
+    alCerrar: () => {},
   })
 
-  if (query.isPending) return <PagosDelAlumnoCargando />
+  const error = query.isError ? interpretarErrorCuenta(query.error) : null
+  const alternarFila = (fila: FilaDeCuenta) => setSeleccion((actual) => alternar(actual, fila))
+  const cobrarFila = (fila: FilaDeCuenta, boton: HTMLButtonElement) =>
+    abrirDialogo({ alumnoId, ocurrencias: [aCobrar(fila)] }, boton)
 
-  if (query.isError) {
-    const { mensaje, reintentar } = interpretarErrorCuenta(query.error)
-    return (
-      <Alert variant="destructive">
-        <AlertCircle className="size-4" />
-        <AlertDescription className="text-destructive flex flex-wrap items-center gap-3">
-          {mensaje}
-          {reintentar && (
-            <Button type="button" size="sm" variant="outline" onClick={() => query.refetch()}>
-              <RotateCw />
-              Reintentar
-            </Button>
-          )}
-        </AlertDescription>
-      </Alert>
-    )
-  }
-
-  const cuenta = query.data
   return (
     <div className="space-y-6">
-      <Card className="grid gap-6 sm:grid-cols-2">
-        <TotalDestacado etiqueta="Total adeudado" importe={cuenta.totalAdeudado} />
-        <TotalDestacado etiqueta="Pagado este mes" importe={cuenta.pagadoDelMes} />
-      </Card>
+      {cuenta ? (
+        <Card>
+          <TotalDestacado
+            etiqueta={etiquetaTotal(filtros)}
+            importe={cuenta.totalAdeudado}
+            detalle={textoFiltrosActivos({ ...filtros, ...nombres, alumno: null })}
+            className={cn(enEspera && 'opacity-60')}
+          />
+        </Card>
+      ) : (
+        query.isPending && (
+          <Card className="gap-2">
+            <Skeleton className="h-3 w-28" />
+            <Skeleton className="h-8 w-40" />
+          </Card>
+        )
+      )}
 
-      <Card className="gap-0 overflow-hidden p-0">
-        <BarraSeleccion
-          className="border-border border-b px-6 py-4"
-          resumen={resumen}
-          onSeleccionarTodos={() =>
-            setMarcada((actual) => seleccionarTodos(podar(actual, mostrada), cuenta.adeudados))
-          }
-          seleccionarTodosDeshabilitado={cuenta.adeudados.length === 0}
-          onQuitar={() => setMarcada(quitarTodos())}
-          onRegistrar={(boton) =>
-            abrirDialogo(
-              { alumnoId, ocurrencias: ordenarComoSeMuestran(seleccion, mostrada) },
-              boton,
-            )
-          }
+      <Card>
+        <FiltrosCuenta
+          filtros={filtros}
+          nombres={nombres}
+          onCambiar={cambiar}
+          onLimpiar={limpiar}
+          puedeLimpiar={hayFiltros(filtros)}
+          errores={error?.tipo === 'filtros' ? error.campos : undefined}
+          errorGeneral={error?.tipo === 'filtros' ? error.mensaje : null}
         />
-
-        <section aria-labelledby="cuenta-adeudados">
-          <h2
-            id="cuenta-adeudados"
-            ref={refugioRef}
-            tabIndex={-1}
-            className="px-6 pt-6 pb-3 text-base font-semibold outline-none"
-          >
-            Turnos adeudados
-          </h2>
-          {cuenta.adeudados.length === 0 ? (
-            <SinFilas>Sin turnos adeudados</SinFilas>
-          ) : (
-            <OcurrenciasTabla
-              etiqueta="Turnos adeudados"
-              filas={cuenta.adeudados}
-              conEstado
-              seleccion={seleccion}
-              onAlternar={(fila) => setMarcada((actual) => alternar(podar(actual, mostrada), fila))}
-              onCobrar={(fila, boton) =>
-                abrirDialogo({ alumnoId, ocurrencias: [aCobrar(fila)] }, boton)
-              }
-            />
-          )}
-        </section>
-
-        <section aria-labelledby="cuenta-proximos" className="border-border border-t">
-          <h2 id="cuenta-proximos" className="px-6 pt-6 pb-3 text-base font-semibold">
-            Próximos turnos
-          </h2>
-          {cuenta.proximos.length === 0 ? (
-            <SinFilas>Sin próximos turnos para cobrar</SinFilas>
-          ) : (
-            <OcurrenciasTabla
-              etiqueta="Próximos turnos"
-              filas={cuenta.proximos}
-              seleccion={seleccion}
-              onAlternar={(fila) => setMarcada((actual) => alternar(podar(actual, mostrada), fila))}
-              onCobrar={(fila, boton) =>
-                abrirDialogo({ alumnoId, ocurrencias: [aCobrar(fila)] }, boton)
-              }
-            />
-          )}
-        </section>
       </Card>
 
-      <Card className="gap-0 overflow-hidden p-0">
-        <section aria-labelledby="cuenta-pagos">
-          <h2 id="cuenta-pagos" className="px-6 pt-6 pb-3 text-base font-semibold">
-            Pagos registrados
-          </h2>
-          {cuenta.pagos.length === 0 ? (
-            <SinFilas>Sin pagos registrados</SinFilas>
-          ) : (
-            <HistorialPagos pagos={cuenta.pagos} />
-          )}
-        </section>
-      </Card>
+      {query.isPending ? (
+        <ListasCargando />
+      ) : error ? (
+        // El error de los filtros ya está junto a ellos.
+        error.tipo !== 'filtros' && (
+          <Alert variant="destructive">
+            <AlertCircle className="size-4" />
+            <AlertDescription className="text-destructive flex flex-wrap items-center gap-3">
+              {error.mensaje}
+              {error.reintentar && (
+                <Button type="button" size="sm" variant="outline" onClick={() => query.refetch()}>
+                  <RotateCw />
+                  Reintentar
+                </Button>
+              )}
+            </AlertDescription>
+          </Alert>
+        )
+      ) : (
+        cuenta && (
+          // Sin `overflow` en la tarjeta: la barra queda fija al scrollear (ver `BarraSeleccion`).
+          <Card className="gap-0 p-0">
+            <BarraSeleccion
+              className="border-border border-b px-6 py-4"
+              resumen={resumen}
+              onSeleccionarTodos={
+                cuenta.adeudados
+                  ? () => setSeleccion((actual) => seleccionarTodos(actual, cuenta.adeudados ?? []))
+                  : undefined
+              }
+              seleccionarTodosDeshabilitado={cuenta.adeudados?.length === 0}
+              onQuitar={() => setSeleccion(quitarTodos())}
+              onRegistrar={(boton) =>
+                abrirDialogo(
+                  { alumnoId, ocurrencias: ordenarComoSeMuestran(seleccion, mostrada) },
+                  boton,
+                )
+              }
+              enEspera={enEspera}
+            />
+
+            <div className="overflow-hidden rounded-b-2xl">
+              {cuenta.adeudados && (
+                <SeccionOcurrencias
+                  id="cuenta-adeudados"
+                  titulo="Turnos adeudados"
+                  tituloRef={refugioRef}
+                >
+                  {cuenta.adeudados.length === 0 ? (
+                    <SinFilas>{textoSinFilas('adeudados', filtros)}</SinFilas>
+                  ) : (
+                    <OcurrenciasTabla
+                      etiqueta="Turnos adeudados"
+                      filas={cuenta.adeudados}
+                      conEstado
+                      seleccion={seleccion}
+                      onAlternar={alternarFila}
+                      onCobrar={cobrarFila}
+                      enEspera={enEspera}
+                    />
+                  )}
+                </SeccionOcurrencias>
+              )}
+
+              {cuenta.proximos && (
+                <SeccionOcurrencias
+                  id="cuenta-proximos"
+                  titulo="Próximos turnos"
+                  // El refugio del foco es el título de la primera sección que se ve.
+                  tituloRef={cuenta.adeudados ? undefined : refugioRef}
+                  aviso={avisoDelTope(filtros, cuenta.limiteCobro)}
+                  className={cn(cuenta.adeudados && 'border-border border-t')}
+                >
+                  {cuenta.proximos.length === 0 ? (
+                    <SinFilas>{textoSinFilas('proximos', filtros)}</SinFilas>
+                  ) : (
+                    <OcurrenciasTabla
+                      etiqueta="Próximos turnos"
+                      filas={cuenta.proximos}
+                      seleccion={seleccion}
+                      onAlternar={alternarFila}
+                      onCobrar={cobrarFila}
+                      enEspera={enEspera}
+                    />
+                  )}
+                </SeccionOcurrencias>
+              )}
+            </div>
+          </Card>
+        )
+      )}
 
       {dialogo}
     </div>
   )
 }
 
-function SinFilas({ children }: { children: ReactNode }) {
-  return <p className="text-muted-foreground px-6 pb-6 text-sm">{children}</p>
-}
-
-/** La forma de la pantalla mientras llega la cuenta. */
-function PagosDelAlumnoCargando() {
+/** La forma de las listas mientras llega la cuenta por primera vez. */
+function ListasCargando() {
   return (
-    <div className="space-y-6" aria-busy aria-label="Cargando los pagos del alumno">
-      <Card className="grid gap-6 sm:grid-cols-2">
-        {[0, 1].map((i) => (
-          <div key={i} className="space-y-2">
-            <Skeleton className="h-3 w-28" />
-            <Skeleton className="h-8 w-40" />
-          </div>
-        ))}
-      </Card>
-      <Card className="gap-3">
-        <Skeleton className="h-9 w-full" />
-        <Skeleton className="mt-3 h-5 w-40" />
-        {[0, 1, 2].map((i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
-      </Card>
-      <Card className="gap-3">
-        <Skeleton className="h-5 w-40" />
-        {[0, 1].map((i) => (
-          <Skeleton key={i} className="h-10 w-full" />
-        ))}
-      </Card>
-    </div>
+    <Card className="gap-3" aria-busy aria-label="Cargando los pagos del alumno">
+      <Skeleton className="h-9 w-full" />
+      <Skeleton className="mt-3 h-5 w-40" />
+      {[0, 1, 2].map((i) => (
+        <Skeleton key={i} className="h-10 w-full" />
+      ))}
+    </Card>
   )
 }

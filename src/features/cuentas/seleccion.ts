@@ -7,12 +7,14 @@ import { aCobrar, claveOcurrencia, type FilaDeCuenta } from './a-cobrar'
 // sirve directo como estado de React. El valor es la copia de la fila (`aCobrar`) tomada al tildarla:
 // si la fila desaparece (otro la cobró, o se cambió de página) la selección conserva lo que se vio.
 //
-// - En la ficha es una sola selección para adeudados y próximos (se pueden cobrar juntos). Después
-//   de cada refetch se poda contra las dos listas (`podar`) y el diálogo la recibe en el orden en
-//   que se muestra (`ordenarComoSeMuestran`).
-// - En la vista global (con alumno filtrado) vive entre páginas: **no se poda contra la página**,
-//   porque lo tildado en otra página no está en la actual, y se ordena con `ordenarPorFecha`, el
-//   mismo orden de la API. Al cerrar el diálogo se usa `quitar` (ver su JSDoc).
+// - En la ficha es una sola selección para adeudados y próximos (se pueden cobrar juntos). Se poda
+//   contra las dos listas que se ven (`podar`), con datos reales: sale lo cobrado, lo cancelado y
+//   también lo que un filtro saca de la vista (**filtrar es podar**: no se cobra lo que no se ve).
+//   El diálogo la recibe en el orden en que se muestra (`ordenarComoSeMuestran`).
+// - En la vista global (con alumno filtrado) es una sola para las dos tablas y vive entre las
+//   páginas de cualquiera de ellas: **no se poda contra la página**, porque lo tildado en otra
+//   página no está en la actual, y se ordena con `ordenarPorFecha`, el mismo orden de la API. Se
+//   vacía cuando cambia cualquier filtro, y al cerrar el diálogo se usa `quitar` (ver su JSDoc).
 
 /** Clave (`claveOcurrencia`) → la copia de la ocurrencia tildada. */
 export type Seleccion = ReadonlyMap<string, OcurrenciaACobrar>
@@ -52,11 +54,11 @@ export function seleccionarTodos(sel: Seleccion, filas: readonly FilaDeCuenta[])
  * si no había ninguna, para no provocar un render de más.
  *
  * Es el cierre del diálogo en la vista global, donde no se puede podar (solo está la página
- * actual): si los adeudados se volvieron a pedir mientras el diálogo estaba abierto (cambió el
- * `dataUpdatedAt` de `useAdeudados`) o se están volviendo a pedir al cerrarlo (`isFetching`),
- * hubo un pago o un 409 y se sacan las ocurrencias de **esa
- * solicitud**; si no, se canceló y la selección no cambia. Así la acción de una fila no borra lo
- * demás tildado.
+ * actual de cada tabla): si los adeudados o los próximos se volvieron a pedir mientras el diálogo
+ * estaba abierto (cambió el `dataUpdatedAt` de `useAdeudados` o de `useProximos`) o se están
+ * volviendo a pedir al cerrarlo (`isFetching`), hubo un pago o un 409 y se sacan las ocurrencias
+ * de **esa solicitud**; si no, se canceló y la selección no cambia. Así la acción de una fila no
+ * borra lo demás tildado.
  *
  * Caso borde aceptado: con `staleTime` de 60 s y `refetchOnWindowFocus`, un refetch por foco
  * mientras el diálogo está abierto y después se cancela también saca esa solicitud de la
@@ -76,8 +78,10 @@ export function quitarTodos(): Seleccion {
 }
 
 /**
- * Deja solo lo que sigue en la lista actual (lo cobrado o cancelado desaparece de la cuenta).
- * Devuelve la misma selección si no cambió, para no provocar un render de más.
+ * Deja solo lo que sigue en la lista que se ve: lo cobrado o cancelado desaparece de la cuenta, y
+ * lo que un filtro saca de la vista también sale (si después se quita el filtro, no vuelve
+ * tildado). Devuelve la misma selección si no cambió, para no provocar un render de más: la ficha
+ * la guarda como estado durante el render.
  */
 export function podar(sel: Seleccion, vigentes: readonly Ocurrencia[]): Seleccion {
   const claves = new Set(vigentes.map(claveOcurrencia))

@@ -1,12 +1,12 @@
 import type { OcurrenciaACobrar } from '@/types/pago'
 
-import type { AdeudadoGlobal, OcurrenciaDeCuenta } from './cuentas.types'
+import type { OcurrenciaDeCuentaGlobal, OcurrenciaDeCuenta } from './cuentas.types'
 
 // Lo que `cuentas` le pasa al diálogo de cobro de `pagos` (`renderRegistrarPago`). Los importes son
 // los que mandó la API (T-53): acá no se calcula nada.
 
 /** Una fila de la cuenta del alumno o de la vista global. */
-export type FilaDeCuenta = OcurrenciaDeCuenta | AdeudadoGlobal
+export type FilaDeCuenta = OcurrenciaDeCuenta | OcurrenciaDeCuentaGlobal
 
 /**
  * La fila como `OcurrenciaACobrar`: solo le saca `estado` (y `alumno`, en la vista global), sin
