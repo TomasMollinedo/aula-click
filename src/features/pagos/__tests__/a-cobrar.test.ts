@@ -4,8 +4,8 @@ import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 
 import { aCobrarDesdeDetalle, resumenACobrar } from '../a-cobrar'
 
-// Detalle de `types/ocurrencia.ts` (T-44): `aCobrarDesdeDetalle` usa solo turnoId, fecha, horario,
-// materia y profesor.
+// Detalle de `types/ocurrencia.ts`: `aCobrarDesdeDetalle` usa solo turnoId, fecha, horario,
+// materia, profesor y pago.
 const DETALLE: OcurrenciaDetalle = {
   turnoId: 41,
   fecha: '2026-10-05',
@@ -21,6 +21,7 @@ const DETALLE: OcurrenciaDetalle = {
   temas: null,
   serie: { fechaInicio: '2026-09-28', fechaFin: null, finalizacion: null },
   cancelacion: null,
+  pago: { estado: 'PENDIENTE', importeVigente: 8000 },
   prioridad: 'BAJA',
   examen: null,
   acciones: {
@@ -45,14 +46,38 @@ const A_COBRAR = {
 }
 
 describe('aCobrarDesdeDetalle', () => {
-  // TODO integración detalle (prompt 2): `OcurrenciaDetalle` ya no trae `pago`; hasta que el detalle
-  // tenga de dónde sacar el importe, sale siempre `null`. Vuelven los dos casos de abajo.
-  it('provisorio: copia la ocurrencia (turnoId + fecha, definición B) sin importe', () => {
-    expect(aCobrarDesdeDetalle(DETALLE)).toEqual({ ...A_COBRAR, importe: null })
+  it('pendiente: el importe es el vigente que manda la API', () => {
+    expect(aCobrarDesdeDetalle(DETALLE)).toEqual({ ...A_COBRAR, importe: 8000 })
   })
 
-  it.todo('pendiente: el importe es el vigente que manda la API')
-  it.todo('pagado: sin importe (no se ofrece un precio)')
+  it('pendiente y la materia no tiene precio: sin importe', () => {
+    const sinPrecio: OcurrenciaDetalle = {
+      ...DETALLE,
+      pago: { estado: 'PENDIENTE', importeVigente: null },
+    }
+    expect(aCobrarDesdeDetalle(sinPrecio)).toEqual({ ...A_COBRAR, importe: null })
+  })
+
+  it('pagado: sin importe (no se ofrece un precio)', () => {
+    const pagado: OcurrenciaDetalle = {
+      ...DETALLE,
+      pago: {
+        estado: 'PAGADO',
+        pagoId: 29,
+        numeroComprobante: 1020,
+        importe: 7500,
+        formaPago: { id: 1, nombre: 'Efectivo' },
+        fechaPago: '2026-10-01',
+        registradoPor: { id: 'usr_mesa', nombre: 'Ana', apellido: 'Pérez' },
+        registradoEl: '2026-10-01T13:00:00.000Z',
+      },
+    }
+    expect(aCobrarDesdeDetalle(pagado)).toEqual({ ...A_COBRAR, importe: null })
+  })
+
+  it('sin `pago` (el profesor no lo recibe): sin importe', () => {
+    expect(aCobrarDesdeDetalle({ ...DETALLE, pago: null })).toEqual({ ...A_COBRAR, importe: null })
+  })
 })
 
 describe('resumenACobrar', () => {

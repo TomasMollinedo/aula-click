@@ -3,16 +3,18 @@ import type { OcurrenciaACobrar } from '@/types/pago'
 import { sumarImportes } from '@/utils/moneda'
 
 // Lo que se ofrece cobrar en el diálogo (HU-15). Los importes los manda la API a quien abre el
-// diálogo: el detalle del turno con `pago.importeVigente` (T-43) y `cuentas` con los de sus
-// adeudados y próximos (T-53). La única cuenta que hace el cliente es sumarlos para el resumen; el
-// total real sale de la respuesta del `POST`.
+// diálogo: el detalle del turno con `pago.importeVigente` (`GET /ocurrencias/{turnoId}/{fecha}`) y
+// `cuentas` con los de sus adeudados y próximos (T-53). La única cuenta que hace el cliente es
+// sumarlos para el resumen; el total real sale de la respuesta del `POST`.
 
 /**
  * La ocurrencia del detalle del turno como `OcurrenciaACobrar`. Es el único lugar de `pagos` que
- * conoce la forma de `OcurrenciaDetalle`: usa solo lo mínimo.
+ * conoce la forma de `OcurrenciaDetalle`: usa solo lo mínimo. El importe es el vigente si el pago
+ * está `PENDIENTE`; si ya está pagada (o no hay `pago`: el profesor), `null`. La API la rechaza
+ * igual, y el botón que abre el diálogo no se muestra.
  */
 export function aCobrarDesdeDetalle(ocurrencia: OcurrenciaDetalle): OcurrenciaACobrar {
-  const { turnoId, fecha, horaInicio, horaFin, materia, profesor } = ocurrencia
+  const { turnoId, fecha, horaInicio, horaFin, materia, profesor, pago } = ocurrencia
   return {
     turnoId,
     fecha,
@@ -20,10 +22,7 @@ export function aCobrarDesdeDetalle(ocurrencia: OcurrenciaDetalle): OcurrenciaAC
     horaFin,
     materia: { id: materia.id, nombre: materia.nombre },
     profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
-    // TODO integración detalle (prompt 2): `OcurrenciaDetalle` (T-44) ya no trae `pago`, así que el
-    // detalle no tiene de dónde sacar el importe. Antes: el vigente si el pago estaba `PENDIENTE` y
-    // `null` si ya estaba pagada. Provisorio: siempre `null` (el diálogo lo muestra sin importe).
-    importe: null,
+    importe: pago?.estado === 'PENDIENTE' ? pago.importeVigente : null,
   }
 }
 

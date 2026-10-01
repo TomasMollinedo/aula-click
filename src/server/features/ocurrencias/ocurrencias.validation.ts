@@ -1,7 +1,7 @@
 import { z } from '@hono/zod-openapi'
 import { PRIORIDADES } from '@/server/features/examenes/examenes.condiciones'
 import { TIPOS_TURNO } from '@/server/features/turnos/ocurrencias.condiciones'
-import { auditoriaSchema } from '@/server/shared/auditoria'
+import { auditoriaSchema, usuarioAuditoriaSchema } from '@/server/shared/auditoria'
 import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 
 // Valores de enums que ningún `*.condiciones.ts` publica como array (a diferencia de
@@ -9,6 +9,8 @@ import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 // un repository (lo prohíbe ESLint). `ESTADOS_OCURRENCIA` es el de `turnos.reglas.ts` (definición
 // F: sólo estos tres, distinto del `Turno.estado` de `ESTADOS_TURNO`, que es ACTIVO/CANCELADO).
 const ESTADOS_OCURRENCIA = ['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR'] as const
+/** Los de `Ocurrencia.pago.estado` (`EstadoPagoOcurrencia` del motor). */
+const ESTADOS_PAGO = ['PENDIENTE', 'PAGADO'] as const
 const MOTIVOS_CANCELACION = [
   'CANCELACION_ALUMNO',
   'CANCELACION_PROFESOR',
@@ -20,9 +22,6 @@ const TIPOS_EXAMEN = ['PARCIAL', 'FINAL', 'RECUPERATORIO', 'TRABAJO_PRACTICO', '
 // Schemas Zod de `ocurrencias` (T-43). Son la fuente del OpenAPI. Sin reglas de negocio: los
 // defaults y el rango máximo de `GET /ocurrencias` los decide el service (`ocurrencias.reglas.ts`),
 // igual que el resto de las agendas.
-//
-// El campo `pago` que pide el ticket original no está: no hay hoy una fuente de datos de `Pago`
-// de la que traerlo (decisión explícita, no un olvido — ver `ocurrencias.reglas.ts`).
 
 // ---------------------------------------------------------------------------------------------
 // GET /ocurrencias/{turnoId}/{fecha}
@@ -47,6 +46,10 @@ const accionCancelarSchema = z
   .object({
     visible: z.boolean(),
     habilitada: z.boolean(),
+    motivo: z.string().optional().openapi({
+      description: 'Por qué está deshabilitada. Sólo viene con `visible` y sin `habilitada`',
+      example: 'El turno está pagado: no se puede cancelar',
+    }),
   })
   .openapi('AccionCancelar')
 
@@ -88,6 +91,39 @@ const cancelacionSchema = z
   })
   .openapi('Cancelacion')
 
+const pagoPendienteSchema = z
+  .object({
+    estado: z.literal('PENDIENTE'),
+    importeVigente: z.number().nullable().openapi({
+      description:
+        'Precio por hora vigente de la materia, en pesos: lo que se cobraría hoy. `null` si la materia no tiene precio',
+      example: 8000,
+    }),
+  })
+  .openapi('PagoDeOcurrenciaPendiente')
+
+const pagoHechoSchema = z
+  .object({
+    estado: z.literal('PAGADO'),
+    pagoId: z.number().int().openapi({ description: 'Id del pago (`GET /pagos/{id}`)' }),
+    numeroComprobante: z.number().int(),
+    importe: z.number().openapi({
+      description: 'Importe aplicado al pagar (no cambia si después cambia el precio)',
+      example: 8000,
+    }),
+    formaPago: z.object({ id: z.number().int(), nombre: z.string() }),
+    fechaPago: fechaISO,
+    registradoPor: usuarioAuditoriaSchema,
+    registradoEl: z.iso.datetime().openapi({
+      description: 'Instante del registro, ISO 8601 en UTC',
+      example: '2026-10-05T14:30:00.000Z',
+    }),
+  })
+  .openapi('PagoDeOcurrenciaPagado')
+
+/** El pago de la ocurrencia: pendiente con lo que costaría, o pagado con los datos de su pago. */
+const pagoSchema = z.discriminatedUnion('estado', [pagoPendienteSchema, pagoHechoSchema])
+
 const examenQueDeterminaSchema = z
   .object({
     id: z.number().int(),
@@ -120,6 +156,9 @@ export const ocurrenciaDetalleSchema = z
     observaciones: z.string().nullable(),
     temas: z.string().nullable(),
     cancelacion: cancelacionSchema.nullable(),
+    pago: pagoSchema.nullable().openapi({
+      description: '`null` para el rol `PROFESOR`, que no ve pagos',
+    }),
     prioridad: z
       .enum(PRIORIDADES)
       .nullable()
@@ -174,6 +213,9 @@ export const ocurrenciaDelAlumnoItemSchema = z
     materia: z.object({ id: z.number().int(), nombre: z.string() }),
     tipo: z.enum(TIPOS_TURNO),
     estado: z.enum(ESTADOS_OCURRENCIA),
+    estadoPago: z.enum(ESTADOS_PAGO).openapi({
+      description: 'Una cancelada viene `PENDIENTE`: nunca se cobró',
+    }),
     prioridad: z
       .enum(PRIORIDADES)
       .nullable()

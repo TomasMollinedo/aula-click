@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { ValidationError } from '@/server/errors'
+import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelaciones.condiciones'
+import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
 import {
   ACCIONES_SIN_PERMISO,
   DIAS_ADELANTE_POR_DEFECTO,
@@ -12,7 +14,7 @@ import {
 } from '../ocurrencias.reglas'
 
 // Reglas puras de `ocurrencias` (T-43): la ventana de `GET /ocurrencias` y las acciones permitidas
-// sobre una ocurrencia. Sin pago (a pedido explícito): `cancelar` y `registrarPago` no lo miran.
+// sobre una ocurrencia, que miran su estado, su pago y, para cobrar, el tope de `POST /pagos`.
 
 /** Ejecuta `accion`, que debe lanzar, y devuelve el error. */
 function errorDe(accion: () => unknown): unknown {
@@ -72,19 +74,26 @@ describe('validarRangoOcurrencias', () => {
 })
 
 // ---------------------------------------------------------------------------------------------
-// calcularAcciones (T-43): sin mirar pago, a pedido explícito.
+// calcularAcciones (T-43): con el pago de la ocurrencia y el tope de cobro.
 // ---------------------------------------------------------------------------------------------
 
-/** Una ocurrencia mínima para `calcularAcciones`, con los campos que le importan. */
+/**
+ * Una ocurrencia mínima para `calcularAcciones`, con los campos que le importan. Por defecto, de
+ * hoy y con el pago pendiente.
+ */
 function ocurrencia(datos: {
   estado: 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR'
   tipo: 'SESION_UNICA' | 'RECURRENTE'
+  fecha?: string
+  pago?: 'PENDIENTE' | 'PAGADO'
   fechaFin?: string | null
   finEfectivo?: string | null
 }) {
   return {
+    fecha: datos.fecha ?? HOY,
     estado: datos.estado,
     tipo: datos.tipo,
+    pago: { estado: datos.pago ?? 'PENDIENTE' },
     serie: { fechaFin: datos.fechaFin ?? null, finEfectivo: datos.finEfectivo ?? null },
   }
 }
@@ -165,10 +174,78 @@ describe('calcularAcciones', () => {
     expect(acciones.finalizar).toEqual({ visible: false })
   })
 
-  it('no mira el pago: `cancelar` y `registrarPago` no dependen de él (decisión explícita)', () => {
-    // `calcularAcciones` no recibe `pago` en absoluto: si tomara alguno de más, esto no compilaría.
-    const acciones = calcularAcciones(ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA' }), HOY)
-    expect(acciones.cancelar).toEqual({ visible: true, habilitada: true })
+  it('agendada y pagada: cancelar visible y deshabilitada con el motivo de `cancelaciones`; sin registrarPago', () => {
+    const acciones = calcularAcciones(
+      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE', pago: 'PAGADO' }),
+      HOY,
+    )
+    expect(acciones).toEqual({
+      cancelar: { visible: true, habilitada: false, motivo: MENSAJES_NO_CANCELABLE.PAGADO },
+      // Finalizar no mira el pago de esta ocurrencia; una pagada se reprograma (el pago la acompaña).
+      finalizar: { visible: true },
+      reprogramar: { visible: true },
+      registrarPago: { visible: false },
+    })
+    expect(acciones.cancelar.motivo).toBe('El turno está pagado: no se puede cancelar')
+  })
+
+  it('agendada y pendiente: cancelar habilitada, sin `motivo`', () => {
+    const { cancelar } = calcularAcciones(
+      ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA' }),
+      HOY,
+    )
+    expect(cancelar).toEqual({ visible: true, habilitada: true })
+    expect('motivo' in cancelar).toBe(false)
+  })
+
+  it('pasada y pagada: ni cancelar (ya pasó) ni registrarPago (ya está pagada)', () => {
+    const acciones = calcularAcciones(
+      ocurrencia({
+        estado: 'SIN_REGISTRAR',
+        tipo: 'SESION_UNICA',
+        fecha: '2026-09-15',
+        pago: 'PAGADO',
+      }),
+      HOY,
+    )
+    expect(acciones.cancelar).toEqual({ visible: false, habilitada: false })
+    expect(acciones.registrarPago).toEqual({ visible: false })
+  })
+
+  describe('registrarPago y el tope de cobro (el de `POST /pagos`, decisión T-60)', () => {
+    const registrarPago = (fecha: string, estado: 'AGENDADO' | 'SIN_REGISTRAR' = 'AGENDADO') =>
+      calcularAcciones(ocurrencia({ estado, tipo: 'RECURRENTE', fecha }), HOY).registrarPago
+
+    it('el tope es el de `pagos`: hoy + 56 días', () => {
+      expect(limiteDeCobro(HOY)).toBe('2026-11-17')
+    })
+
+    it('futura hasta el tope, incluido: visible', () => {
+      expect(registrarPago('2026-11-16')).toEqual({ visible: true })
+      expect(registrarPago(limiteDeCobro(HOY))).toEqual({ visible: true })
+    })
+
+    it('futura después del tope: no visible (la API la rechazaría con FUERA_DE_RANGO)', () => {
+      expect(registrarPago('2026-11-18')).toEqual({ visible: false })
+      expect(registrarPago('2027-03-01')).toEqual({ visible: false })
+    })
+
+    it('las pasadas no tienen tope: una deuda vieja se cobra', () => {
+      expect(registrarPago('2025-01-06', 'SIN_REGISTRAR')).toEqual({ visible: true })
+    })
+
+    it('fuera del tope, cancelar y reprogramar no cambian: sólo deja de ofrecerse el cobro', () => {
+      const acciones = calcularAcciones(
+        ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA', fecha: '2026-12-01' }),
+        HOY,
+      )
+      expect(acciones).toEqual({
+        cancelar: { visible: true, habilitada: true },
+        finalizar: { visible: false },
+        reprogramar: { visible: true },
+        registrarPago: { visible: false },
+      })
+    })
   })
 })
 
