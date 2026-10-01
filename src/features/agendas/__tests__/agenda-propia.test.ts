@@ -23,6 +23,7 @@ const DOMINGO = '2026-10-04'
 const turno = (turnoId: number, fecha: string, horaInicio = '09:00'): AgendaPropiaItem => ({
   turnoId,
   fecha,
+  bloqueAgendaId: 8,
   diaSemana: 1,
   horaInicio,
   horaFin: '10:00',
@@ -30,7 +31,10 @@ const turno = (turnoId: number, fecha: string, horaInicio = '09:00'): AgendaProp
   materia: { id: 3, nombre: 'Matemática' },
   aula: { id: 3, nombre: 'Aula 3' },
   tipo: 'RECURRENTE',
-  estado: 'ACTIVO',
+  estado: 'AGENDADO',
+  estadoPago: 'PENDIENTE',
+  prioridad: null,
+  examen: null,
 })
 
 describe('parsearVista', () => {
