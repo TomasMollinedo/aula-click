@@ -28,7 +28,7 @@ type AgendaConModoProps = {
  * turno abierto desde la URL y el lugar para las acciones del encabezado. Los filtros de estado y
  * prioridad (HU-18) viven en la URL (`useFiltrosAgenda`) y valen en los dos modos: en la lista van
  * a la derecha de la navegación por fecha, dentro de su tarjeta (`AgendaDiariaListado`,
- * `AgendaPorRango`); en el calendario todavía no se muestran (lo decide T-59). La lista
+ * `AgendaPorRango`); en el calendario, en la cabecera de su tarjeta (`CalendarioSemanal`). La lista
  * y el calendario se montan de a uno, así el que no se ve no pide datos.
  */
 export function AgendaConModo({

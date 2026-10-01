@@ -1,5 +1,6 @@
 import type {
   AgendaListadoParams,
+  CalendarioParams,
   AgendaProfesorParams,
   AgendaPropiaParams,
 } from '../agendas.types'
@@ -14,4 +15,6 @@ export const agendasKeys = {
   propia: (params: AgendaPropiaParams) => [...agendasKeys.propias(), params] as const,
   profesores: () => [...agendasKeys.all, 'profesor'] as const,
   profesor: (params: AgendaProfesorParams) => [...agendasKeys.profesores(), params] as const,
+  calendarios: () => [...agendasKeys.all, 'calendario'] as const,
+  calendario: (params: CalendarioParams) => [...agendasKeys.calendarios(), params] as const,
 }

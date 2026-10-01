@@ -52,6 +52,34 @@ export type OrigenAgenda =
   { tipo: 'centro' } | { tipo: 'profesor'; profesorId: number } | { tipo: 'propia' }
 
 // ---------------------------------------------------------------------------------------------
+// Calendario semanal (`GET /agendas/centro`, `/agendas/profesor` y `/agendas/propia`)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Ocurrencia que muestra el calendario: la del centro trae el `profesor` de su bloque; las de un
+ * profesor ("Mi agenda" y la ficha) no, porque son todas del mismo.
+ */
+export type CalendarioItem = AgendaOcurrencia & { profesor?: Persona }
+
+/** Rango pedido a `GET /agendas/centro` (obligatorio, hasta 31 días) con sus filtros. */
+export type AgendaCentroParams = FiltrosEstadoPrioridadParams & {
+  desde: string
+  hasta: string
+  profesorId?: number
+}
+
+/**
+ * Lo que identifica un pedido del calendario: de dónde salen los turnos, la semana y los filtros que
+ * viajan a la API. `profesorId` solo lo usa el centro; en las otras dos el profesor ya está fijo.
+ */
+export type CalendarioParams = FiltrosEstadoPrioridadParams & {
+  origen: OrigenAgenda
+  desde: string
+  hasta: string
+  profesorId?: number
+}
+
+// ---------------------------------------------------------------------------------------------
 // Agenda diaria (`GET /agendas/diaria`)
 // ---------------------------------------------------------------------------------------------
 
