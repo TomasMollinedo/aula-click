@@ -20,6 +20,13 @@ export type TipoOcurrencia = 'RECURRENTE' | 'SESION_UNICA'
 /** Lo calcula la API. La UI lo muestra como "Agendado", "Cancelado" y "Sin registrado". */
 export type EstadoOcurrencia = 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR'
 
+/**
+ * Estado de pago de una ocurrencia. No está en `OcurrenciaDetalle` ni `OcurrenciaDeAlumno` (T-43 no
+ * lo expone ahí todavía), pero las agendas (T-57) sí lo traen del motor directo, así que el tipo
+ * sigue acá para que `agendas.types.ts` lo use.
+ */
+export type EstadoPagoOcurrencia = 'PENDIENTE' | 'PAGADO'
+
 /** La calcula la API a partir de los exámenes del alumno (HU-18); `null` en una cancelada. */
 export type PrioridadOcurrencia = 'ALTA' | 'MEDIA' | 'BAJA'
 
