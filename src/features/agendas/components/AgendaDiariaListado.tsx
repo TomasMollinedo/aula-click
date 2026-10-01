@@ -18,6 +18,8 @@ import { AgendaConModo } from './AgendaConModo'
 import { AgendaTable } from './AgendaTable'
 import { CalendarioSemanal } from './CalendarioSemanal'
 import { FiltroProfesorAgenda } from './FiltroProfesorAgenda'
+import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
+import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
 import { NavegacionFecha } from './NavegacionFecha'
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/
@@ -108,7 +110,11 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
             onActual={irAHoy}
             onCambiarFecha={setFecha}
           />
-          <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
+          <div className="flex flex-wrap items-center gap-2">
+            <FiltrosEstadoPrioridad />
+            <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
+            <LimpiarFiltrosAgenda conProfesor />
+          </div>
         </div>
 
         {query.isError ? (

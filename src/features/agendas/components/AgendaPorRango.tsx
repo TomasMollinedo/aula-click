@@ -17,6 +17,8 @@ import {
 } from '../agenda-propia'
 import type { AgendaPropiaItem } from '../agendas.types'
 import { AgendaPropiaTable, type TextosVacioAgenda } from './AgendaPropiaTable'
+import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
+import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
 import { NavegacionFecha } from './NavegacionFecha'
 import { SelectorVistaAgenda } from './SelectorVistaAgenda'
 
@@ -86,7 +88,11 @@ export function AgendaPorRango({
           onCambiarFecha={(nueva) => onCambiar({ fecha: nueva })}
           textos={textos}
         />
-        <SelectorVistaAgenda value={vista} onChange={(nueva) => onCambiar({ vista: nueva })} />
+        <div className="flex flex-wrap items-center gap-2">
+          <FiltrosEstadoPrioridad />
+          <LimpiarFiltrosAgenda />
+          <SelectorVistaAgenda value={vista} onChange={(nueva) => onCambiar({ vista: nueva })} />
+        </div>
       </div>
 
       {query.isError ? (
