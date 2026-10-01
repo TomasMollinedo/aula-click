@@ -18,7 +18,7 @@ import { Field } from '@/components/ui/field'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import { useToast } from '@/hooks/use-toast'
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
-import { nombreDiaSemana } from '@/utils/dias-semana'
+import { diaSemanaDeFecha, nombreDiaSemana } from '@/utils/dias-semana'
 
 import {
   type ErrorReprogramacion,
@@ -202,7 +202,7 @@ function ContenidoReprogramar({ ocurrencia, onCerrar }: Omit<ReprogramarTurnoDia
     )
   }
 
-  const actual = `${nombreDiaSemana(ocurrencia.diaSemana)} ${textoHorario(ocurrencia.horaInicio, ocurrencia.horaFin)}`
+  const actual = `${nombreDiaSemana(diaSemanaDeFecha(ocurrencia.fecha))} ${textoHorario(ocurrencia.horaInicio, ocurrencia.horaFin)}`
   const rechazoVisible =
     rechazo &&
     (rechazo.tipo === 'volverABuscar' ? { ...rechazo, tipo: 'general' as const } : rechazo)
