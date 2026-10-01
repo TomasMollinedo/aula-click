@@ -1,6 +1,40 @@
 import { describe, expect, it } from 'vitest'
 
-import { FILTROS_VACIOS, leerFiltros, paramsConFiltros } from '../filtros-agenda'
+import {
+  FILTROS_VACIOS,
+  hayFiltrosActivos,
+  leerFiltros,
+  paramsConFiltros,
+  paramsDeEstadoYPrioridad,
+} from '../filtros-agenda'
+
+describe('hayFiltrosActivos', () => {
+  it('sin filtros es false', () => {
+    expect(hayFiltrosActivos(FILTROS_VACIOS)).toBe(false)
+  })
+
+  it.each([{ profesorId: 7 }, { estado: 'CANCELADO' as const }, { prioridad: 'ALTA' as const }])(
+    'con %o es true',
+    (filtro) => {
+      expect(hayFiltrosActivos({ ...FILTROS_VACIOS, ...filtro })).toBe(true)
+    },
+  )
+})
+
+describe('paramsDeEstadoYPrioridad', () => {
+  it('lo vacío no se manda a la API', () => {
+    expect(paramsDeEstadoYPrioridad(FILTROS_VACIOS)).toEqual({
+      estado: undefined,
+      prioridad: undefined,
+    })
+  })
+
+  it('manda estado y prioridad, y deja afuera el profesor', () => {
+    expect(
+      paramsDeEstadoYPrioridad({ profesorId: 7, estado: 'SIN_REGISTRAR', prioridad: 'MEDIA' }),
+    ).toEqual({ estado: 'SIN_REGISTRAR', prioridad: 'MEDIA' })
+  })
+})
 
 describe('leerFiltros', () => {
   it('sin parámetros no hay filtros', () => {

@@ -3,7 +3,9 @@
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 import type { ApiError } from '@/utils/fetch-json'
 
+import { hayFiltrosActivos, paramsDeEstadoYPrioridad } from '../filtros-agenda'
 import { useAgendaProfesor } from '../hooks/use-agenda-profesor'
+import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useRangoAgendaEnUrl } from '../hooks/use-rango-agenda-en-url'
 import { AgendaConModo } from './AgendaConModo'
 import { AgendaPorRango } from './AgendaPorRango'
@@ -54,7 +56,8 @@ export function AgendaProfesorListado({ profesorId, renderDetalle }: AgendaProfe
 // Sola en un componente para que sus pedidos solo se hagan en el modo "Lista".
 function ListaAgendaProfesor({ profesorId }: { profesorId: number }) {
   const { vista, fecha, rango, hoy, cambiar } = useRangoAgendaEnUrl({ vistaPorDefecto: 'semana' })
-  const query = useAgendaProfesor({ profesorId, ...rango })
+  const { filtros } = useFiltrosAgenda()
+  const query = useAgendaProfesor({ profesorId, ...rango, ...paramsDeEstadoYPrioridad(filtros) })
 
   return (
     <AgendaPorRango
@@ -65,6 +68,8 @@ function ListaAgendaProfesor({ profesorId }: { profesorId: number }) {
       query={query}
       mensajeError={mensajeError}
       textosVacio={TEXTOS_VACIO}
+      mostrarPago
+      hayFiltros={hayFiltrosActivos(filtros)}
     />
   )
 }

@@ -6,9 +6,16 @@ import type {
   AgendaProfesorParams,
   AgendaPropiaItem,
   AgendaPropiaParams,
+  FiltrosEstadoPrioridadParams,
 } from '../agendas.types'
 
 const BASE = '/api/v1/agendas'
+
+// `estado` y `prioridad` los aceptan las cuatro agendas y se combinan con los demás filtros.
+function agregarFiltros(searchParams: URLSearchParams, params: FiltrosEstadoPrioridadParams) {
+  if (params.estado) searchParams.set('estado', params.estado)
+  if (params.prioridad) searchParams.set('prioridad', params.prioridad)
+}
 
 /** Agenda diaria del centro, paginada (HU-09). */
 export function listarAgenda(params: AgendaListadoParams): Promise<AgendaListadoResponse> {
@@ -17,6 +24,7 @@ export function listarAgenda(params: AgendaListadoParams): Promise<AgendaListado
   if (params.page != null) searchParams.set('page', String(params.page))
   if (params.pageSize != null) searchParams.set('pageSize', String(params.pageSize))
   if (params.profesorId != null) searchParams.set('profesorId', String(params.profesorId))
+  agregarFiltros(searchParams, params)
 
   const qs = searchParams.toString()
   return fetchJson<AgendaListadoResponse>(qs ? `${BASE}/diaria?${qs}` : `${BASE}/diaria`)
@@ -30,6 +38,7 @@ export function listarAgendaPropia(params: AgendaPropiaParams): Promise<AgendaPr
   const searchParams = new URLSearchParams()
   if (params.desde) searchParams.set('desde', params.desde)
   if (params.hasta) searchParams.set('hasta', params.hasta)
+  agregarFiltros(searchParams, params)
 
   const qs = searchParams.toString()
   return fetchJson<AgendaPropiaItem[]>(qs ? `${BASE}/propia?${qs}` : `${BASE}/propia`)
@@ -41,6 +50,7 @@ export function listarAgendaProfesor(params: AgendaProfesorParams): Promise<Agen
   searchParams.set('profesorId', String(params.profesorId))
   if (params.desde) searchParams.set('desde', params.desde)
   if (params.hasta) searchParams.set('hasta', params.hasta)
+  agregarFiltros(searchParams, params)
 
   return fetchJson<AgendaPropiaItem[]>(`${BASE}/profesor?${searchParams.toString()}`)
 }

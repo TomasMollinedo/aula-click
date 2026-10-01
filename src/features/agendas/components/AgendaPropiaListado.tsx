@@ -3,7 +3,9 @@
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 import type { ApiError } from '@/utils/fetch-json'
 
+import { hayFiltrosActivos, paramsDeEstadoYPrioridad } from '../filtros-agenda'
 import { useAgendaPropia } from '../hooks/use-agenda-propia'
+import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useRangoAgendaEnUrl } from '../hooks/use-rango-agenda-en-url'
 import { AgendaConModo } from './AgendaConModo'
 import { AgendaPorRango } from './AgendaPorRango'
@@ -47,7 +49,8 @@ export function AgendaPropiaListado({ renderDetalle }: AgendaPropiaListadoProps)
 // Sola en un componente para que sus pedidos solo se hagan en el modo "Lista".
 function ListaAgendaPropia() {
   const { vista, fecha, rango, hoy, cambiar } = useRangoAgendaEnUrl({ vistaPorDefecto: 'dia' })
-  const query = useAgendaPropia(rango)
+  const { filtros } = useFiltrosAgenda()
+  const query = useAgendaPropia({ ...rango, ...paramsDeEstadoYPrioridad(filtros) })
 
   return (
     <AgendaPorRango
@@ -57,6 +60,7 @@ function ListaAgendaPropia() {
       onCambiar={cambiar}
       query={query}
       mensajeError={mensajeError}
+      hayFiltros={hayFiltrosActivos(filtros)}
     />
   )
 }
