@@ -11,12 +11,15 @@ import { PaginationControls } from '@/components/ui/pagination'
 import type { FiltrosAgenda } from '@/types/agenda'
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 
+import { hayFiltrosActivos, paramsDeEstadoYPrioridad } from '../filtros-agenda'
 import { useAgenda } from '../hooks/use-agenda'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { AgendaConModo } from './AgendaConModo'
 import { AgendaTable } from './AgendaTable'
 import { CalendarioSemanal } from './CalendarioSemanal'
 import { FiltroProfesorAgenda } from './FiltroProfesorAgenda'
+import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
+import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
 import { NavegacionFecha } from './NavegacionFecha'
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/
@@ -76,7 +79,13 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
     cambiarFiltros({ profesorId: nuevoProfesorId })
   const setPage = (nuevaPagina: number) => actualizarUrl({ page: nuevaPagina })
 
-  const query = useAgenda({ fecha, profesorId: profesorId ?? undefined, page, pageSize: 20 })
+  const query = useAgenda({
+    fecha,
+    profesorId: profesorId ?? undefined,
+    ...paramsDeEstadoYPrioridad(filtros),
+    page,
+    pageSize: 20,
+  })
   const meta = query.data?.meta
 
   return (
@@ -101,7 +110,11 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
             onActual={irAHoy}
             onCambiarFecha={setFecha}
           />
-          <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
+          <div className="flex flex-wrap items-center gap-2">
+            <FiltrosEstadoPrioridad />
+            <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
+            <LimpiarFiltrosAgenda conProfesor />
+          </div>
         </div>
 
         {query.isError ? (
@@ -120,7 +133,7 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
             data={query.data?.data}
             isLoading={query.isLoading}
             isFetching={query.isFetching}
-            hayFiltroProfesor={profesorId != null}
+            hayFiltros={hayFiltrosActivos(filtros)}
           />
         )}
 

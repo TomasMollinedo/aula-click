@@ -1,15 +1,48 @@
 import type { PaginatedResponse } from '@/types'
+import type {
+  EstadoOcurrencia,
+  EstadoPagoOcurrencia,
+  PrioridadOcurrencia,
+  TipoOcurrencia,
+} from '@/types/ocurrencia'
 
 // Tipos de la API de agendas (`/api/v1/agendas/*`, docs/contrato-api.md → Agendas), escritos a mano
 // (D-07). Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`. Día de la semana: entero ISO
-// (1 = lunes). Los campos nuevos del Sprint 2 (estado, pago, prioridad) los suma T-58.
-
-export type TipoTurno = 'RECURRENTE' | 'SESION_UNICA'
-
-/** La UI muestra `ACTIVO` como "Agendado": es el texto de la pantalla, no otro valor. */
-export type EstadoTurno = 'ACTIVO' | 'CANCELADO'
+// (1 = lunes).
 
 type Referencia = { id: number; nombre: string }
+type Persona = { id: number; apellido: string; nombre: string }
+
+/**
+ * Una **ocurrencia** de un turno en una fecha, tal como la devuelven las cuatro agendas (T-57,
+ * docs/contrato-api.md → La ocurrencia de una agenda): en un recurrente `turnoId` se repite entre
+ * fechas, así que la identidad es `turnoId` + `fecha` y es lo que abre el detalle. `estado`,
+ * `estadoPago` y `prioridad` los calcula la API; las canceladas vienen sin prioridad ni examen.
+ */
+export type AgendaOcurrencia = {
+  turnoId: number
+  fecha: string
+  /** Con `fecha`, identifica la clase: lo usa el calendario para agrupar. */
+  bloqueAgendaId: number
+  diaSemana: number
+  horaInicio: string
+  horaFin: string
+  alumno: Persona
+  materia: Referencia
+  aula: Referencia
+  tipo: TipoOcurrencia
+  estado: EstadoOcurrencia
+  estadoPago: EstadoPagoOcurrencia
+  prioridad: PrioridadOcurrencia | null
+  /** El examen que determina la prioridad, si lo hay. */
+  examen: { id: number; fecha: string; tipo: string; materiaNombre: string; dias: number } | null
+}
+
+/** Filtros de estado y prioridad que aceptan las cuatro agendas (combinables con los demás). */
+export type FiltrosEstadoPrioridadParams = {
+  estado?: EstadoOcurrencia
+  prioridad?: PrioridadOcurrencia
+}
 
 /**
  * De dónde salen los turnos de una agenda: el centro entero (mesa de entradas), un profesor
@@ -22,19 +55,10 @@ export type OrigenAgenda =
 // Agenda diaria (`GET /agendas/diaria`)
 // ---------------------------------------------------------------------------------------------
 
-/** Ítem de `GET /api/v1/agendas/diaria`. */
-export type AgendaItem = {
-  id: number
-  alumno: { id: number; apellido: string; nombre: string }
-  profesor: { id: number; apellido: string; nombre: string }
-  materia: { id: number; nombre: string }
-  aula: { id: number; nombre: string }
-  horaInicio: string
-  horaFin: string
-  estado: EstadoTurno
-}
+/** Ítem de `GET /api/v1/agendas/diaria`: la ocurrencia con el profesor del bloque. */
+export type AgendaItem = AgendaOcurrencia & { profesor: Persona }
 
-export type AgendaListadoParams = {
+export type AgendaListadoParams = FiltrosEstadoPrioridadParams & {
   /** `YYYY-MM-DD`. Sin ella, la API usa la fecha de hoy (zona del negocio). */
   fecha?: string
   page?: number
@@ -50,25 +74,13 @@ export type AgendaListadoResponse = PaginatedResponse<AgendaItem>
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Una **ocurrencia** de un turno en una fecha (docs/contrato-api.md → Agendas): en un recurrente,
- * `turnoId` se repite entre fechas, así que la clave de la fila es `turnoId` + `fecha`. Sin
- * profesor: son todos del profesor de la sesión (o del profesor pedido).
+ * Ítem de `GET /agendas/propia` y de `GET /agendas/profesor`: la ocurrencia sin profesor, porque
+ * son todos del profesor de la sesión (o del profesor pedido).
  */
-export type AgendaPropiaItem = {
-  turnoId: number
-  fecha: string
-  diaSemana: number
-  horaInicio: string
-  horaFin: string
-  alumno: { id: number; apellido: string; nombre: string }
-  materia: Referencia
-  aula: Referencia
-  tipo: TipoTurno
-  estado: EstadoTurno
-}
+export type AgendaPropiaItem = AgendaOcurrencia
 
 /** Rango pedido, extremos incluidos. Sin `desde`, la API usa hoy; sin `hasta`, el mismo `desde`. */
-export type AgendaPropiaParams = {
+export type AgendaPropiaParams = FiltrosEstadoPrioridadParams & {
   desde?: string
   hasta?: string
 }

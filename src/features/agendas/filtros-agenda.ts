@@ -13,6 +13,19 @@ export const PRIORIDADES_FILTRO: readonly PrioridadOcurrencia[] = ['ALTA', 'MEDI
 
 export const FILTROS_VACIOS: FiltrosAgenda = { profesorId: null, estado: null, prioridad: null }
 
+/** `true` si hay algún filtro puesto (para el mensaje de "sin resultados" de las listas). */
+export function hayFiltrosActivos(filtros: FiltrosAgenda): boolean {
+  return filtros.profesorId !== null || filtros.estado !== null || filtros.prioridad !== null
+}
+
+/** Los filtros de estado y prioridad como parámetros de la API (lo vacío no se manda). */
+export function paramsDeEstadoYPrioridad(filtros: FiltrosAgenda): {
+  estado?: EstadoOcurrencia
+  prioridad?: PrioridadOcurrencia
+} {
+  return { estado: filtros.estado ?? undefined, prioridad: filtros.prioridad ?? undefined }
+}
+
 /** Un valor inválido (o ausente) es "sin filtro": la URL nunca rompe la pantalla. */
 export function leerFiltros(params: URLSearchParams): FiltrosAgenda {
   const profesorId = Number(params.get('profesorId'))

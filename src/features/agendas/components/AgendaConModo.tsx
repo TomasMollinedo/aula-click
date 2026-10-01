@@ -6,6 +6,7 @@ import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url
 import type { FiltrosAgenda } from '@/types/agenda'
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 
+import { DetalleAgendaProvider } from '../hooks/use-detalle-agenda'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useModoAgenda } from '../hooks/use-modo-agenda'
 import { SelectorModoAgenda } from './SelectorModoAgenda'
@@ -23,9 +24,12 @@ type AgendaConModoProps = {
 
 /**
  * Lo que comparten las tres agendas (diaria, de un profesor y "Mi agenda"): el selector
- * "Calendario / Lista" cuyo modo va en la URL y por defecto es la lista (HU-19), el detalle del turno
- * abierto desde la URL y el lugar para las acciones del encabezado. La lista y el calendario se
- * montan de a uno, así el que no se ve no pide datos.
+ * "Calendario / Lista" cuyo modo va en la URL y por defecto es la lista (HU-19), el detalle del
+ * turno abierto desde la URL y el lugar para las acciones del encabezado. Los filtros de estado y
+ * prioridad (HU-18) viven en la URL (`useFiltrosAgenda`) y valen en los dos modos: en la lista van
+ * a la derecha de la navegación por fecha, dentro de su tarjeta (`AgendaDiariaListado`,
+ * `AgendaPorRango`); en el calendario todavía no se muestran (lo decide T-59). La lista
+ * y el calendario se montan de a uno, así el que no se ve no pide datos.
  */
 export function AgendaConModo({
   children,
@@ -37,18 +41,24 @@ export function AgendaConModo({
   const { filtros } = useFiltrosAgenda()
   // En una agenda `?fecha=` es también el día o la semana que se está viendo: al cerrar el detalle
   // se conserva.
-  const { detalle, cerrar } = useDetalleEnUrl({ fechaEsDeLaPantalla: true })
+  const { detalle, hrefDetalle, marcarAbiertoConLink, cerrar } = useDetalleEnUrl({
+    fechaEsDeLaPantalla: true,
+  })
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-end gap-3">
-        {acciones}
-        <SelectorModoAgenda value={modo} onChange={cambiarModo} />
+    <DetalleAgendaProvider value={{ hrefDetalle, marcarAbiertoConLink }}>
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-end gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            {acciones}
+            <SelectorModoAgenda value={modo} onChange={cambiarModo} />
+          </div>
+        </div>
+
+        {modo === 'calendario' ? renderCalendario(filtros) : children}
+
+        {detalle && renderDetalle({ ...detalle, onCerrar: cerrar })}
       </div>
-
-      {modo === 'calendario' ? renderCalendario(filtros) : children}
-
-      {detalle && renderDetalle({ ...detalle, onCerrar: cerrar })}
-    </div>
+    </DetalleAgendaProvider>
   )
 }

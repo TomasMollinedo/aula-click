@@ -17,6 +17,8 @@ import {
 } from '../agenda-propia'
 import type { AgendaPropiaItem } from '../agendas.types'
 import { AgendaPropiaTable, type TextosVacioAgenda } from './AgendaPropiaTable'
+import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
+import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
 import { NavegacionFecha } from './NavegacionFecha'
 import { SelectorVistaAgenda } from './SelectorVistaAgenda'
 
@@ -40,12 +42,17 @@ type AgendaPorRangoProps = {
   mensajeError: (error: ApiError | null) => string
   /** Textos del estado vacío de la tabla; por defecto, los de "Mi agenda". */
   textosVacio?: TextosVacioAgenda
+  /** Agrega la columna del estado de pago (mesa de entradas; el profesor no la ve). */
+  mostrarPago?: boolean
+  /** Hay un filtro de estado o prioridad puesto, para el mensaje del estado vacío. */
+  hayFiltros?: boolean
 }
 
 /**
- * Agenda por día o por semana, de sólo lectura: navegación entre rangos, selector de vista, tabla
- * agrupada por fecha, error y pie con el total. Es controlada: no conoce el endpoint ni la URL. La
- * usan "Mi agenda" (HU-10, T-26) y la agenda de la ficha del profesor (HU-02).
+ * Agenda por día o por semana: navegación entre rangos, selector de vista, tabla agrupada por fecha
+ * (con prioridad, estado y, si se pide, pago; un clic abre el detalle), error y pie con el total. Es
+ * controlada: no conoce el endpoint ni la URL. La usan "Mi agenda" (HU-10, T-26) y la agenda de la
+ * ficha del profesor (HU-02).
  */
 export function AgendaPorRango({
   vista,
@@ -55,6 +62,8 @@ export function AgendaPorRango({
   query,
   mensajeError,
   textosVacio,
+  mostrarPago,
+  hayFiltros,
 }: AgendaPorRangoProps) {
   const dias = useMemo(() => agruparPorFecha(query.data ?? []), [query.data])
   const total = query.data?.length ?? 0
@@ -79,7 +88,11 @@ export function AgendaPorRango({
           onCambiarFecha={(nueva) => onCambiar({ fecha: nueva })}
           textos={textos}
         />
-        <SelectorVistaAgenda value={vista} onChange={(nueva) => onCambiar({ vista: nueva })} />
+        <div className="flex flex-wrap items-center gap-2">
+          <FiltrosEstadoPrioridad />
+          <LimpiarFiltrosAgenda />
+          <SelectorVistaAgenda value={vista} onChange={(nueva) => onCambiar({ vista: nueva })} />
+        </div>
       </div>
 
       {query.isError ? (
@@ -103,6 +116,8 @@ export function AgendaPorRango({
           isFetching={query.isFetching}
           vista={vista}
           textosVacio={textosVacio}
+          mostrarPago={mostrarPago}
+          hayFiltros={hayFiltros}
         />
       )}
 

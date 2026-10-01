@@ -50,7 +50,7 @@ Respuesta:
 ```
 
 - `totalPages` es 0 cuando no hay resultados.
-- Se pagina todo listado de entidades, incluida la agenda diaria (decisión T-35). **No** se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown), un horario semanal completo (bloques de un profesor) ni la agenda de un profesor (`/agendas/propia` y `/agendas/profesor`), acotada por su rango de fechas (decisión T-43): esos devuelven un arreglo.
+- Se pagina todo listado de entidades, incluida la agenda diaria (decisión T-35). **No** se paginan los selectores de catálogo (por ejemplo materias activas para un dropdown), un horario semanal completo (bloques de un profesor) ni la agenda de un profesor ni la del centro (`/agendas/propia`, `/agendas/profesor` y `/agendas/centro`), acotadas por su rango de fechas (decisiones T-43 y T-68): esos devuelven un arreglo.
 - En el frontend, el tipo de la respuesta es `PaginatedResponse<T>` de `src/types/index.ts`, que debe coincidir exactamente con esta forma.
 
 ## Selectores de catálogo
@@ -198,57 +198,85 @@ Todos los endpoints son de `MESA_ENTRADAS`. En `turnos` quedan la disponibilidad
 | `GET /api/v1/turnos/materias`        | `GET /api/v1/agendas/materias` | `MESA_ENTRADAS` |
 | `GET /api/v1/turnos/aulas`           | `GET /api/v1/agendas/aulas`    | `MESA_ENTRADAS` |
 
-Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backend.md` → Ocurrencias). Por ahora no muestran las canceladas ni las posteriores al fin efectivo de una serie finalizada; mostrar las canceladas, la prioridad y el pago es T-57.
+Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backend.md` → Ocurrencias) y **muestran todas, también las canceladas** (HU-13, T-57: se siguen viendo con su estado; antes de T-57 no salían). Una ocurrencia posterior al fin efectivo de una serie finalizada no existe y no sale.
+
+### La ocurrencia de una agenda
+
+Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurrencias con **los mismos campos**; `diaria` y `centro` suman el `profesor` del bloque (en las de un solo profesor es el de la consulta y no viaja):
+
+```json
+{
+  "turnoId": 31,
+  "fecha": "2026-09-28",
+  "bloqueAgendaId": 8,
+  "diaSemana": 1,
+  "horaInicio": "09:00",
+  "horaFin": "10:00",
+  "alumno": { "id": 12, "apellido": "González", "nombre": "Lucía" },
+  "profesor": { "id": 3, "apellido": "Pérez", "nombre": "Ana" },
+  "materia": { "id": 3, "nombre": "Matemática" },
+  "aula": { "id": 3, "nombre": "Aula 3" },
+  "tipo": "RECURRENTE",
+  "estado": "AGENDADO",
+  "estadoPago": "PENDIENTE",
+  "prioridad": "ALTA",
+  "examen": {
+    "id": 5,
+    "fecha": "2026-10-02",
+    "tipo": "PARCIAL",
+    "materiaNombre": "Matemática",
+    "dias": 4
+  }
+}
+```
+
+- La ocurrencia se identifica por `turnoId` + `fecha` (`turnoId` se repite en un recurrente): es el identificador de `GET /api/v1/ocurrencias/{turnoId}/{fecha}`. `bloqueAgendaId` identifica la clase junto con `fecha`: dos ocurrencias con la misma `fecha` y el mismo `bloqueAgendaId` son la misma clase, y agruparlas es presentación (lo hace el cliente).
+- `estado`: `AGENDADO`, `SIN_REGISTRAR` (pasada, sin asistencia: HU-22 es del próximo sprint) o `CANCELADO` (definición F). La UI muestra `AGENDADO` como "Agendado".
+- `estadoPago`: `PAGADO` si la ocurrencia tiene un pago aplicado, si no `PENDIENTE` (una cancelada nunca se cobró: `PENDIENTE`).
+- `prioridad` (`ALTA`, `MEDIA`, `BAJA`) y `examen` (el que la determina, T-31): `null` en una ocurrencia **cancelada**; `examen` también es `null` si no hay un examen próximo. Es la misma regla que el detalle y las ocurrencias del alumno.
+- **No hay `fechaOriginal` ni `reprogramada`**: un turno reprogramado es un turno más, en su fecha y bloque nuevos (definiciones A y B). Tampoco hay `id` ni el `estado: "ACTIVO"` de antes: `estado` es el de la ocurrencia y el id es `turnoId`.
+- **Filtros `estado` y `prioridad`**, opcionales y combinables entre sí y con los demás filtros de cada agenda. `prioridad` deja afuera las canceladas (no tienen). Valores inválidos: 400 `VALIDACION`.
 
 ### Agenda diaria
 
-**`GET /api/v1/agendas/diaria?fecha&page&pageSize&materiaId&aulaId&profesorId&q`** (rol `MESA_ENTRADAS`): los turnos de una fecha (sin `fecha`, hoy), paginados (decisión T-35).
+**`GET /api/v1/agendas/diaria?fecha&page&pageSize&materiaId&aulaId&profesorId&estado&prioridad&q`** (rol `MESA_ENTRADAS`): las ocurrencias de una fecha (sin `fecha`, hoy), paginadas (decisión T-35).
 
-- Filtros: `materiaId`, `aulaId`, `profesorId` (vista personal de ese profesor, T-42) y `q` (T-36: todas las palabras en el nombre del alumno o todas en el del profesor; con `profesorId`, sólo en el del alumno).
+- Filtros: `materiaId`, `aulaId`, `profesorId` (vista personal de ese profesor, T-42), `estado`, `prioridad` y `q` (T-36: todas las palabras en el nombre del alumno o todas en el del profesor; con `profesorId`, sólo en el del alumno). El total de `meta` es el de lo filtrado.
 - Orden: hora de inicio, dentro de la hora por profesor (apellido y nombre) y por id del turno.
-- Ítem: `{ "id", "alumno": { "id", "apellido", "nombre" }, "profesor": { "id", "apellido", "nombre" }, "materia": { "id", "nombre" }, "aula": { "id", "nombre" }, "horaInicio", "horaFin", "estado" }` (`estado` siempre `ACTIVO`). `id` es el del turno.
-- Errores: 400 `VALIDACION` (fecha, ids, `q` de más de 100 caracteres, paginación); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+- Ítem: el de "La ocurrencia de una agenda", con `profesor`.
+- Errores: 400 `VALIDACION` (fecha, ids, `estado`, `prioridad`, `q` de más de 100 caracteres, paginación); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
 ### Selectores de la agenda
 
-**`GET /api/v1/agendas/materias?fecha?`** y **`GET /api/v1/agendas/aulas?fecha?`** (rol `MESA_ENTRADAS`, selectores con filtros): las materias o las aulas con al menos una ocurrencia no cancelada en `fecha` (`YYYY-MM-DD`; sin ella, hoy), `[{ "id", "nombre" }]`, sin paginar y ordenadas por nombre. No filtran por el estado de la materia o del aula: con una fecha pasada traen también una hoy `INACTIVO` si tuvo turno ese día. 400 si `fecha` es inválida.
+**`GET /api/v1/agendas/materias?fecha?`** y **`GET /api/v1/agendas/aulas?fecha?`** (rol `MESA_ENTRADAS`, selectores con filtros): las materias o las aulas con al menos una ocurrencia no cancelada en `fecha` (`YYYY-MM-DD`; sin ella, hoy), `[{ "id", "nombre" }]`, sin paginar y ordenadas por nombre. No filtran por el estado de la materia o del aula: con una fecha pasada traen también una hoy `INACTIVO` si tuvo turno ese día. Siguen igual que antes de T-57: no consideran las canceladas. 400 si `fecha` es inválida.
 
 ### Agenda propia del profesor
 
-**`GET /api/v1/agendas/propia?desde&hasta`** (rol `PROFESOR`, sólo lectura): los turnos del profesor **de la sesión** para un día o un rango. El profesor sale de la sesión, **nunca de un parámetro**: no hay forma de pedir la agenda de otro, y un `profesorId` en el query se ignora.
+**`GET /api/v1/agendas/propia?desde&hasta&estado&prioridad`** (rol `PROFESOR`, sólo lectura): los turnos del profesor **de la sesión** para un día o un rango. El profesor sale de la sesión, **nunca de un parámetro**: no hay forma de pedir la agenda de otro, y un `profesorId` en el query se ignora.
 
 - `desde` (`YYYY-MM-DD`, opcional): primer día. Sin `desde`, hoy. `hasta` (opcional): último día, incluido; sin `hasta`, el mismo día que `desde` (la vista por día). Se admiten fechas pasadas.
 - Devuelve un **arreglo sin paginar** (decisión T-43), ordenado por fecha y, dentro del día, por hora de inicio e id del turno.
-- Cada ítem es una **ocurrencia**, no un turno: un recurrente aparece una vez por cada fecha del rango que cae en el día de su bloque, así que `turnoId` se repite. La ocurrencia se identifica por `turnoId` + `fecha`; `turnoId` es el id que usa `GET /api/v1/turnos/{turnoId}`.
-
-  ```json
-  [
-    {
-      "turnoId": 31,
-      "fecha": "2026-09-28",
-      "diaSemana": 1,
-      "horaInicio": "09:00",
-      "horaFin": "10:00",
-      "alumno": { "id": 12, "apellido": "González", "nombre": "Lucía" },
-      "materia": { "id": 3, "nombre": "Matemática" },
-      "aula": { "id": 3, "nombre": "Aula 3" },
-      "tipo": "RECURRENTE",
-      "estado": "ACTIVO"
-    }
-  ]
-  ```
-
-- Las ocurrencias canceladas no salen (mostrarlas es T-57), ni las posteriores al fin efectivo de una serie finalizada; `estado` es siempre `ACTIVO`, que la UI muestra como "Agendado".
-- Errores: 400 `VALIDACION` si una fecha tiene formato inválido, si `hasta` es anterior a `desde` o si el rango supera los **31 días** (`details` sobre `hasta`); 404 `NO_ENCONTRADO` si el usuario de la sesión no tiene ficha de profesor; 403 para cualquier rol que no sea `PROFESOR`.
+- Cada ítem es una **ocurrencia**, no un turno: un recurrente aparece una vez por cada fecha del rango que cae en el día de su bloque, así que `turnoId` se repite. Es el de "La ocurrencia de una agenda", **sin `profesor`**.
+- Errores: 400 `VALIDACION` si una fecha tiene formato inválido, si `hasta` es anterior a `desde`, si el rango supera los **31 días** (`details` sobre `hasta`) o si `estado` o `prioridad` no son válidos; 404 `NO_ENCONTRADO` si el usuario de la sesión no tiene ficha de profesor; 403 para cualquier rol que no sea `PROFESOR`.
 
 ### Agenda de un profesor (mesa de entradas)
 
-**`GET /api/v1/agendas/profesor?profesorId&desde&hasta`** (rol `MESA_ENTRADAS`, sólo lectura; decisión T-44): la agenda de cualquier profesor para un día o un rango, para la vista semanal de la ficha del profesor (HU-02).
+**`GET /api/v1/agendas/profesor?profesorId&desde&hasta&estado&prioridad`** (rol `MESA_ENTRADAS`, sólo lectura; decisión T-44): la agenda de cualquier profesor para un día o un rango, para la vista semanal de la ficha del profesor (HU-02).
 
-- `profesorId` (obligatorio): el profesor. `desde` y `hasta` funcionan igual que en la agenda propia (mismos defaults y mismo tope de 31 días).
-- La respuesta tiene **exactamente la forma de "Agenda propia del profesor"** (arreglo sin paginar de ocurrencias `turnoId` + `fecha`, mismo orden, sin las canceladas y sin datos del profesor): el frontend reutiliza el mismo tipo.
+- `profesorId` (obligatorio): el profesor. `desde`, `hasta`, `estado` y `prioridad` funcionan igual que en la agenda propia (mismos defaults y mismo tope de 31 días).
+- La respuesta tiene **exactamente la forma de "Agenda propia del profesor"** (arreglo sin paginar de ocurrencias `turnoId` + `fecha`, mismo orden, con las canceladas y sin `profesor`): el frontend reutiliza el mismo tipo.
 - Un profesor **inactivo** también se puede consultar: sus turnos históricos siguen existiendo.
 - Errores: 400 `VALIDACION` por los mismos motivos que la agenda propia y además si `profesorId` falta o no es un entero positivo; 404 `NO_ENCONTRADO` si el profesor no existe (se decide antes que el rango); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+
+### Agenda del centro (mesa de entradas)
+
+**`GET /api/v1/agendas/centro?desde&hasta&profesorId?&materiaId?&aulaId?&estado?&prioridad?`** (rol `MESA_ENTRADAS`, sólo lectura; T-57, decisión T-68): las ocurrencias de **todos los profesores** en un rango, para el calendario semanal de la agenda del centro (HU-19).
+
+- `desde` y `hasta` (`YYYY-MM-DD`, extremos incluidos) son **obligatorios**. El rango no puede superar los **31 días** ni estar invertido (400 `VALIDACION` sobre `hasta`).
+- Filtros opcionales y combinables: `profesorId`, `materiaId`, `aulaId`, `estado` y `prioridad`. Un `profesorId` que no existe no es 404: devuelve un arreglo vacío.
+- Devuelve un **arreglo sin paginar**, ordenado por fecha, hora de inicio, profesor (apellido y nombre) e id del turno. Ítem: el de "La ocurrencia de una agenda", con `profesor`. Incluye las canceladas.
+- **Agrupar por clase (`fecha` + `bloqueAgendaId`) lo hace el cliente**: la API no devuelve clases.
+- Errores: 400 `VALIDACION` si falta `desde` o `hasta`, si una fecha o un id es inválido, si `estado` o `prioridad` no son válidos, si `hasta` es anterior a `desde` o si el rango supera los 31 días; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
 ## Ocurrencias
 
@@ -381,7 +409,74 @@ Una cancelación sólo afecta a esa fecha: el resto de la serie sigue agendado y
 
 ## Finalizaciones
 
-A completar por T-47.
+HU-14 (T-47). Finalizar un turno recurrente (o un tramo) desde una fecha. Reglas en `dominio.md` → Finalización.
+
+| Endpoint                            | Roles           | Qué hace                                                                                                           |
+| ----------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `GET /api/v1/finalizaciones/previa` | `MESA_ENTRADAS` | Qué se libera si se finaliza desde esa fecha, los turnos pagados que lo impiden y los tramos posteriores. 200      |
+| `POST /api/v1/finalizaciones`       | `MESA_ENTRADAS` | Finaliza el turno desde esa fecha. 201 con `{ turnoId, cantidad, desde, hasta }`; 400; 404; 409 (`TURNOS_PAGADOS`) |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**Query de `GET /finalizaciones/previa`:** `turnoId` (entero mayor a 0) y `fechaDesde` (`YYYY-MM-DD`), los dos obligatorios.
+
+**Body de `POST /finalizaciones`:**
+
+```json
+{
+  "turnoId": 41,
+  "fechaDesde": "2026-10-19",
+  "motivo": "CANCELACION_ALUMNO",
+  "detalle": "El alumno deja de venir"
+}
+```
+
+- `turnoId`: el turno (o tramo) `RECURRENTE` desde cuyo detalle se opera. Se finaliza sólo ese tramo.
+- `fechaDesde`: la primera fecha que se libera. De hoy en adelante, en el día de la semana de la serie, **posterior** a `fechaInicio` y no posterior a `fechaFin` (si la serie tiene fin). Es siempre una fecha de la serie.
+- `motivo` y `detalle`: las mismas reglas que en Cancelaciones (`detalle` opcional, hasta 500 caracteres; `""`, espacios o `null` = sin detalle; **obligatorio si `motivo = OTRO`**: 400 en `["detalle"]`).
+
+**Respuesta 200 de la previa:**
+
+```json
+{
+  "cantidad": 7,
+  "desde": "2026-10-19",
+  "hasta": "2026-11-30",
+  "pagadas": [],
+  "ultimaFechaPagada": null,
+  "fechaDesdeMinima": null,
+  "otrosTramos": [{ "turnoId": 58, "fechaInicio": "2026-12-14", "fechaFin": null }]
+}
+```
+
+- `cantidad`: turnos **no cancelados** que se liberan, de `desde` a `hasta` (los cancelados ya están libres). `null` si la serie no tiene fin.
+- `desde`: igual a `fechaDesde`. `hasta`: la última ocurrencia de la serie (no la `fechaFin` guardada, si no cae en una fecha de la serie); `null` si la serie no tiene fin. Con `hasta` el mensaje es "Se liberan 7 turnos, del 19/10 al 30/11"; con `null`, "Se liberan todos los turnos desde el 19/10".
+- `pagadas`: `[{ fecha, horaInicio, horaFin, importe }]`, los turnos pagados desde `fechaDesde`, por fecha (`importe` = lo cobrado). **Si hay alguno, no se puede finalizar desde esa fecha.**
+- `ultimaFechaPagada`: la fecha del último pagado; `null` si no hay pagados.
+- `fechaDesdeMinima`: la primera `fechaDesde` que se puede elegir (la ocurrencia siguiente a la última pagada). `null` si no hay pagados, o si los pagados llegan hasta el final de la serie: en ese caso (`ultimaFechaPagada` con valor y `fechaDesdeMinima` `null`) el turno no se puede finalizar.
+- `otrosTramos`: `[{ turnoId, fechaInicio, fechaFin }]`, los tramos `RECURRENTE` del mismo alumno, materia y hora que empiezan después de este y no están finalizados (`fechaFin` `null` = sin fin). No se finalizan con este pedido: cada uno, desde su propio detalle.
+
+**Respuesta 201 del POST:** `{ "turnoId": 41, "cantidad": 7, "desde": "2026-10-19", "hasta": "2026-11-30" }`, con el mismo significado de `cantidad`, `desde` y `hasta` que en la previa.
+
+**Errores**, en orden (el primero que se cumple gana). La previa aplica los mismos, salvo el último: los pagados van en la respuesta y no son un error.
+
+| Status | Código           | Mensaje                                                                                                 | Cuándo                                                                               |
+| ------ | ---------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
+| 400    | `VALIDACION`     | (el de cada campo)                                                                                      | Formato del query o del body; `detalle` obligatorio con `OTRO`                       |
+| 404    | `NO_ENCONTRADO`  | "Turno no encontrado"                                                                                   | El turno no existe                                                                   |
+| 409    | `CONFLICTO`      | "Sólo se puede finalizar un turno recurrente"                                                           | Es una sesión única                                                                  |
+| 409    | `CONFLICTO`      | "El turno ya no está vigente: no se puede finalizar"                                                    | No está `ACTIVO` o su `fechaFin` es anterior a hoy                                   |
+| 409    | `CONFLICTO`      | "El turno ya fue finalizado"                                                                            | Ya tiene una finalización (también si otra finalización entró al mismo tiempo)       |
+| 400    | `VALIDACION`     | "La fecha no puede ser anterior a hoy"                                                                  | `fechaDesde` anterior a hoy. `details` en `["fechaDesde"]`, como los tres que siguen |
+| 400    | `VALIDACION`     | "La fecha debe caer en lunes" (el día de la serie)                                                      | `fechaDesde` en otro día de la semana                                                |
+| 400    | `VALIDACION`     | "Elegí una fecha posterior al inicio del turno (05/10). Para liberar sólo esa fecha, cancelá el turno." | `fechaDesde` no es posterior a `fechaInicio`                                         |
+| 400    | `VALIDACION`     | "La fecha es posterior al fin del turno (30/11)"                                                        | `fechaDesde` posterior a `fechaFin`                                                  |
+| 409    | `TURNOS_PAGADOS` | "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (16/11)"          | Hay pagados desde `fechaDesde` y queda alguna fecha posterior (`fechaDesdeMinima`)   |
+| 409    | `TURNOS_PAGADOS` | "Los turnos pagados llegan hasta el final de la serie (30/11): no se puede finalizar"                   | Hay pagados hasta la última fecha de la serie (`fechaDesdeMinima: null`)             |
+
+La fecha entre paréntesis va en formato `DD/MM`. La forma de `details` de `TURNOS_PAGADOS` está en Errores.
+
+Finalizar **no modifica** `fechaFin` del turno: `GET /turnos/{id}` y el detalle de la ocurrencia la siguen mostrando, junto con la finalización. Desde `fechaDesde` la serie deja de aparecer en las agendas, en los turnos del alumno y en la ocupación.
 
 ## Reprogramaciones
 
@@ -555,7 +650,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                     |
 | `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (`/agendas/propia` y `/agendas/profesor`). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                                                            |
+| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (`/agendas/propia` y `/agendas/profesor`; en `/agendas/centro` son obligatorios). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                     |
 | `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 
 ## Recursos individuales
@@ -626,6 +721,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `MATERIA_NO_ASIGNADA`    | "La materia no está asignada al profesor" (o su asignación está dada de baja), al registrar un turno. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
+| 409    | `TURNOS_PAGADOS`         | Finalizar un turno recurrente, si hay turnos pagados desde `fechaDesde` (no se finaliza): "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (DD/MM)" o, si llegan hasta el final de la serie, "Los turnos pagados llegan hasta el final de la serie (DD/MM): no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaPagada", "fechaDesdeMinima", "pagadas": [{ "fecha", "horaInicio", "horaFin", "importe" }] }`; `fechaDesdeMinima` es la primera fecha que se puede elegir, o `null` si no queda ninguna; `pagadas` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 

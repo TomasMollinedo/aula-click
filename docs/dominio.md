@@ -124,7 +124,19 @@ HU-13 (T-45). Cancelar registra una `CancelacionTurno` por ocurrencia (`turnoId`
 
 ## Finalización
 
-A completar por T-47.
+HU-14 (T-47). Finalizar un turno recurrente es darlo por terminado desde una fecha: registra una `FinalizacionRecurrencia` (`turnoId` único, `fechaDesde`, motivo, detalle y quién la hizo). Lo hace mesa de entradas, desde el detalle del turno.
+
+- **Qué se puede finalizar:** un turno `RECURRENTE`, vigente y sin finalización previa. **Vigente**, acá, es `ACTIVO` con `fechaFin` nula o de hoy en adelante: el mismo criterio con el que el detalle ofrece "Finalizar" (decisión T-75). Una sesión única no se finaliza: se cancela.
+- **Desde qué fecha (`fechaDesde`):** de hoy en adelante, en el día de la semana de la serie, posterior a su `fechaInicio` y no posterior a su `fechaFin`. Es siempre una fecha de la serie y es la primera que se libera. Para liberar sólo la primera fecha de un turno, se cancela.
+- **`fechaFin` no se modifica** (definición C, decisión T-48): el **fin efectivo** pasa a ser el día anterior a `fechaDesde` y lo aplica el motor de ocurrencias. Desde `fechaDesde` la serie no aparece en las agendas ni en los turnos del alumno, su lugar queda libre y deja de contar como turno vigente (no bloquea la baja del profesor, de la materia ni del bloque). El turno conserva su rango original junto con el motivo del fin anticipado.
+- **Las ocurrencias anteriores a `fechaDesde` no cambian:** siguen con su estado, su pago y su cancelación.
+- **Turnos pagados** (definición D): en este sprint no se anulan pagos, así que si alguna ocurrencia desde `fechaDesde` está pagada, **no se finaliza**. La API informa cuáles son (fecha, horario e importe), la última fecha pagada y la primera fecha que sí se puede elegir (la ocurrencia siguiente a la última pagada). Si los pagados llegan hasta la última fecha de la serie, no hay fecha posible y el turno no se puede finalizar.
+- **Una fecha reprogramada no se libera:** al reprogramar una fecha de la serie, esa fecha pasa a ser una `SESION_UNICA` aparte (definición A). Finalizar la serie no la toca; si hay que liberarla, se cancela.
+- **Tramos** (definición C): los tramos de una serie no están vinculados entre sí, así que se finaliza **sólo el tramo desde cuyo detalle se opera**. La previa avisa si el alumno tiene tramos posteriores de la misma materia y la misma hora (la misma fila del horario) sin finalizar, para que el usuario los finalice también, cada uno desde su detalle.
+- **Reprogramación posterior** (T-49): si se reprograma una fecha de un turno ya finalizado y la serie se parte, la finalización pasa al tramo nuevo, que es el que termina en `fechaDesde`.
+- **Motivo y detalle:** las mismas reglas que la cancelación (HU-13): motivo obligatorio (`CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`) y detalle libre de hasta 500 caracteres, **obligatorio con `OTRO`**.
+- **No se deshace** una finalización, y un turno se finaliza una sola vez.
+- **Concurrencia:** la finalización se serializa con un pago, una cancelación y una reprogramación del mismo alumno con `alumno` `FOR UPDATE` (`bloquearAlumno`, decisión T-78): con el lock tomado se vuelve a leer y a validar todo antes de escribir.
 
 ## Reprogramación
 
