@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorHandler } from '@/server/errors'
 import { createRouter } from '@/server/router'
+import { contarPaginas, metadato } from '@/server/shared/__tests__/pdf-inspeccion'
 import { tableroRoutes } from '../tablero.routes'
 
 // Contrato HTTP del tablero (T-61): validación de Zod, auth y OpenAPI. Sin base ni variables de
@@ -218,5 +219,88 @@ describe('OpenAPI', () => {
       required: ['disponible'],
       additionalProperties: false,
     })
+  })
+})
+
+describe('GET /tablero/pdf', { timeout: 30_000 }, () => {
+  const pedirPdf = (query = '?desde=2020-01-06&hasta=2020-01-12') =>
+    app.request(`/api/v1/tablero/pdf${query}`)
+
+  it('con GERENTE → 200 con el PDF y los headers del contrato común', async () => {
+    const res = await pedirPdf()
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/pdf')
+    expect(res.headers.get('content-disposition')).toBe(
+      `inline; filename="tablero-2020-01-06_2020-01-12.pdf"; filename*=UTF-8''tablero-2020-01-06_2020-01-12.pdf`,
+    )
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    const pdf = Buffer.from(await res.arrayBuffer())
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(contarPaginas(pdf)).toBe(1)
+    // 06/01/2020 es lunes y 12/01/2020, domingo.
+    expect(metadato(pdf, 'Title')).toBe('Tablero semanal')
+  })
+
+  it('el período llega tal cual a las lecturas, igual que en el JSON', async () => {
+    await pedirPdf()
+
+    const periodo = { desde: '2020-01-06', hasta: '2020-01-12' }
+    expect(repository.ocurrenciasDelPeriodo.mock.calls[0]?.[0]).toEqual(periodo)
+    expect(repository.totalCobrado).toHaveBeenCalledExactlyOnceWith(periodo)
+  })
+
+  it('sin sesión → 401 JSON, sin lecturas', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    const res = await pedirPdf()
+
+    expect(res.status).toBe(401)
+    expect((await res.json()).error.code).toBe('NO_AUTENTICADO')
+    ningunaLectura()
+  })
+
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'ALUMNO'])('con %s → 403 JSON', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+    const res = await pedirPdf()
+
+    expect(res.status).toBe(403)
+    expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    ningunaLectura()
+  })
+
+  it.each([
+    ['sin `desde`', '?hasta=2020-01-12', 'desde'],
+    ['sin `hasta`', '?desde=2020-01-06', 'hasta'],
+    ['`hasta` anterior a `desde`', '?desde=2020-01-12&hasta=2020-01-06', 'hasta'],
+    ['más de 366 días', '?desde=2028-01-01&hasta=2029-01-01', 'hasta'],
+  ])('%s → 400 JSON sobre el campo', async (_caso, query, campo) => {
+    const res = await pedirPdf(query)
+
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error.code).toBe('VALIDACION')
+    expect(json.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: [campo] })]),
+    )
+    ningunaLectura()
+  })
+
+  it('el OpenAPI declara el 200 como application/pdf binario y los errores como JSON', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    const get = doc.paths?.['/api/v1/tablero/pdf']?.get
+
+    expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '400', '401', '403'])
+    const ok = get?.responses?.['200']
+    const contenido = ok && 'content' in ok ? ok.content : undefined
+    expect(contenido?.['application/pdf']?.schema).toMatchObject({
+      type: 'string',
+      format: 'binary',
+    })
+    for (const codigo of ['400', '401', '403']) {
+      const respuesta = get?.responses?.[codigo]
+      const json = respuesta && 'content' in respuesta ? respuesta.content : undefined
+      expect(json?.['application/json']?.example).toBeDefined()
+    }
   })
 })

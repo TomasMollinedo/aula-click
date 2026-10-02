@@ -21,6 +21,7 @@ import {
 import { usePeriodoEnUrl } from '../hooks/use-periodo-en-url'
 import { useTablero } from '../hooks/use-tablero'
 import type { Tablero } from '../tablero.types'
+import { BotonPdfTablero } from './BotonPdfTablero'
 import { GraficoDona, ItemLeyenda } from './GraficoDona'
 import { SelectorPeriodo } from './SelectorPeriodo'
 import { TarjetaIndicador, ValorIndicador } from './TarjetaIndicador'
@@ -42,12 +43,16 @@ export function TableroPantalla() {
 
   return (
     <div className="space-y-6">
-      <SelectorPeriodo
-        periodo={periodo}
-        onElegir={elegir}
-        onCambiarRango={cambiarRango}
-        errores={error?.tipo === 'periodo' ? error.campos : undefined}
-      />
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <SelectorPeriodo
+          periodo={periodo}
+          onElegir={elegir}
+          onCambiarRango={cambiarRango}
+          errores={error?.tipo === 'periodo' ? error.campos : undefined}
+        />
+        {/* El PDF es del período que se ve; con uno inválido (400) la API no lo puede armar. */}
+        <BotonPdfTablero periodo={error?.tipo === 'periodo' ? null : periodo} />
+      </div>
 
       {error ? (
         // El error del período ya está junto a sus campos; si no se pudo ubicar, queda el general.

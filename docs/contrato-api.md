@@ -923,6 +923,11 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
 - **`pagos.totalAdeudado` es la deuda a la fecha (`hoy`), no la del período**: no cambia al cambiar `desde` y `hasta`, y coincide con el `totalAdeudado` de `GET /cuentas/adeudados` sin filtros (misma implementación, ver Cuentas).
 - **Porcentajes:** número JSON de 0 a 100 redondeado a **un decimal** (1 de 3 → `33.3`), sin `%`; `0` si la base es 0. No se ajustan para que sumen 100 (tres tercios dan 99.9). Los importes van en pesos como número JSON, sin formato.
 
+**`GET /api/v1/tablero/pdf?desde&hasta`** (rol `GERENTE`, decisión T-130): el tablero del período como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismo query, mismas reglas y mismos errores 400, 401 y 403 que `GET /tablero`, y los mismos indicadores (sale del mismo cálculo, no hay un segundo).
+
+- **Contenido:** una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), los alumnos nuevos y, al final, las materias y los profesores con más turnos en barras. No lleva los indicadores que dependen de la asistencia (`turnos.asistio`, `turnos.noAsistio` ni `alumnos.atendidos`), igual que la pantalla.
+- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` (`tablero-2026-09-28_2026-10-04.pdf`).
+
 ## Centro
 
 Los datos del centro (HU-11, HU-15, T-64): son los que el backend pone en el encabezado de los documentos PDF (ver [Documentos PDF](#documentos-pdf)). El frontend no los pide para eso, pero los endpoints son parte del contrato. Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
@@ -955,8 +960,9 @@ Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que de
 | Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf` | `MESA_ENTRADAS`, `PROFESOR` |
 | Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`        | `MESA_ENTRADAS`             |
 | Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`   | `MESA_ENTRADAS`             |
+| Tablero del gerente   | `GET /tablero/pdf?desde&hasta`           | `GERENTE`                   |
 
-Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias y Agendas.
+Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Agendas y Tablero.
 
 - **200** con el cuerpo binario del PDF y estos headers:
 

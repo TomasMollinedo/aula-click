@@ -1,4 +1,4 @@
-import { createRoute } from '@hono/zod-openapi'
+import { createRoute, z } from '@hono/zod-openapi'
 import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
@@ -47,7 +47,32 @@ export const obtenerTableroRoute = createRoute({
   },
 })
 
-export const tableroRoutes = createRouter().openapi(
-  obtenerTableroRoute,
-  tableroController.obtenerTablero,
-)
+export const obtenerTableroPdfRoute = createRoute({
+  method: 'get',
+  path: '/pdf',
+  tags: ['Tablero'],
+  summary: 'Indicadores del centro en un período, en PDF',
+  description:
+    'El tablero como documento oficial en PDF (A4), con los mismos indicadores y el mismo período que `GET /tablero` (mismo query, mismas reglas y mismos errores 400). Se abre en el visor del navegador (`Content-Disposition: inline`, archivo `tablero-<desde>_<hasta>.pdf`) y no se guarda en caché (`Cache-Control: no-store`). "Emitido por" es el usuario de la sesión y la fecha de emisión, la del servidor en la hora del negocio. Los errores responden JSON, como el resto de la API.',
+  middleware: [requireAuth(), requireRole('GERENTE')] as const,
+  request: { query: tableroQuerySchema },
+  responses: {
+    200: {
+      description: 'El PDF del tablero',
+      content: { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): falta `desde` o `hasta`, una fecha inválida, `hasta` anterior a `desde` o un período de más de 366 días (`details` sobre `hasta`)',
+      ejemploErrorPeriodo,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)', ejemploErrorSinSesion),
+    403: respuestaError(
+      'El rol no es gerente o el usuario está inhabilitado',
+      ejemploErrorSinPermiso,
+    ),
+  },
+})
+
+export const tableroRoutes = createRouter()
+  .openapi(obtenerTableroRoute, tableroController.obtenerTablero)
+  .openapi(obtenerTableroPdfRoute, tableroController.obtenerTableroPdf)
