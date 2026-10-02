@@ -16,7 +16,7 @@ import { ConfirmarEstadoProfesor } from './ConfirmarEstadoProfesor'
 import { FiltroEstadoProfesores } from './FiltroEstadoProfesores'
 import { FiltroMateriaProfesores } from './FiltroMateriaProfesores'
 import { ProfesorEditar } from './ProfesorEditar'
-import { ProfesoresTable } from './ProfesoresTable'
+import { ProfesoresGrid } from './ProfesoresGrid'
 import { SinResultados } from './SinResultados'
 
 const ESTADOS_VALIDOS: EstadoFiltro[] = ['ACTIVO', 'INACTIVO', 'TODOS']
@@ -135,7 +135,7 @@ export function ProfesoresListado({ rutaBase }: ProfesoresListadoProps) {
           </Alert>
         </div>
       ) : (
-        <ProfesoresTable
+        <ProfesoresGrid
           rutaBase={rutaBase}
           hrefEditar={hrefEditar}
           onEditar={() => {
