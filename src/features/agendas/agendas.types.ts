@@ -47,9 +47,12 @@ export type AgendaOcurrencia = {
  */
 export type CupoClase = { ocupados: number; capacidad: number }
 
-/** Filtros de estado y prioridad que aceptan las cuatro agendas (combinables con los demás). */
+/**
+ * Filtros de cancelados y prioridad que aceptan las cuatro agendas (combinables con los demás). Sin
+ * `incluirCancelados`, la API trae solo las agendadas y las sin registrar.
+ */
 export type FiltrosEstadoPrioridadParams = {
-  estado?: EstadoOcurrencia
+  incluirCancelados?: boolean
   prioridad?: PrioridadOcurrencia
 }
 

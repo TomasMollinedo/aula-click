@@ -5,7 +5,7 @@ import {
   hayFiltrosActivos,
   leerFiltros,
   paramsConFiltros,
-  paramsDeEstadoYPrioridad,
+  paramsDeCanceladosYPrioridad,
 } from '../filtros-agenda'
 
 describe('hayFiltrosActivos', () => {
@@ -13,7 +13,7 @@ describe('hayFiltrosActivos', () => {
     expect(hayFiltrosActivos(FILTROS_VACIOS)).toBe(false)
   })
 
-  it.each([{ profesorId: 7 }, { estado: 'CANCELADO' as const }, { prioridad: 'ALTA' as const }])(
+  it.each([{ profesorId: 7 }, { incluirCancelados: true }, { prioridad: 'ALTA' as const }])(
     'con %o es true',
     (filtro) => {
       expect(hayFiltrosActivos({ ...FILTROS_VACIOS, ...filtro })).toBe(true)
@@ -21,18 +21,18 @@ describe('hayFiltrosActivos', () => {
   )
 })
 
-describe('paramsDeEstadoYPrioridad', () => {
+describe('paramsDeCanceladosYPrioridad', () => {
   it('lo vacío no se manda a la API', () => {
-    expect(paramsDeEstadoYPrioridad(FILTROS_VACIOS)).toEqual({
-      estado: undefined,
+    expect(paramsDeCanceladosYPrioridad(FILTROS_VACIOS)).toEqual({
+      incluirCancelados: undefined,
       prioridad: undefined,
     })
   })
 
-  it('manda estado y prioridad, y deja afuera el profesor', () => {
+  it('manda cancelados y prioridad, y deja afuera el profesor', () => {
     expect(
-      paramsDeEstadoYPrioridad({ profesorId: 7, estado: 'SIN_REGISTRAR', prioridad: 'MEDIA' }),
-    ).toEqual({ estado: 'SIN_REGISTRAR', prioridad: 'MEDIA' })
+      paramsDeCanceladosYPrioridad({ profesorId: 7, incluirCancelados: true, prioridad: 'MEDIA' }),
+    ).toEqual({ incluirCancelados: true, prioridad: 'MEDIA' })
   })
 })
 
@@ -41,18 +41,18 @@ describe('leerFiltros', () => {
     expect(leerFiltros(new URLSearchParams())).toEqual(FILTROS_VACIOS)
   })
 
-  it('lee profesor, estado y prioridad', () => {
+  it('lee profesor, cancelados y prioridad', () => {
     expect(
-      leerFiltros(new URLSearchParams('profesorId=7&estado=CANCELADO&prioridad=ALTA')),
-    ).toEqual({ profesorId: 7, estado: 'CANCELADO', prioridad: 'ALTA' })
+      leerFiltros(new URLSearchParams('profesorId=7&incluirCancelados=true&prioridad=ALTA')),
+    ).toEqual({ profesorId: 7, incluirCancelados: true, prioridad: 'ALTA' })
   })
 
   it.each(['abc', '0', '-3', '1.5'])('un profesorId inválido (%s) es sin filtro', (valor) => {
     expect(leerFiltros(new URLSearchParams({ profesorId: valor })).profesorId).toBeNull()
   })
 
-  it('un estado o una prioridad desconocidos son sin filtro', () => {
-    expect(leerFiltros(new URLSearchParams('estado=ACTIVO&prioridad=URGENTE'))).toEqual(
+  it('cancelados o prioridad desconocidos son sin filtro', () => {
+    expect(leerFiltros(new URLSearchParams('incluirCancelados=si&prioridad=URGENTE'))).toEqual(
       FILTROS_VACIOS,
     )
   })
@@ -62,7 +62,7 @@ describe('paramsConFiltros', () => {
   it('escribe los filtros, conserva los demás parámetros y vuelve a la página 1', () => {
     const params = paramsConFiltros(new URLSearchParams('fecha=2026-10-12&page=3'), {
       profesorId: 7,
-      estado: null,
+      incluirCancelados: false,
       prioridad: 'MEDIA',
     })
 
@@ -71,8 +71,8 @@ describe('paramsConFiltros', () => {
 
   it('un filtro vacío se saca de la URL', () => {
     const params = paramsConFiltros(
-      new URLSearchParams('estado=CANCELADO&profesorId=7&vista=semana'),
-      { profesorId: null, estado: null, prioridad: null },
+      new URLSearchParams('incluirCancelados=true&profesorId=7&vista=semana'),
+      { profesorId: null, incluirCancelados: false, prioridad: null },
     )
 
     expect(params.toString()).toBe('vista=semana')

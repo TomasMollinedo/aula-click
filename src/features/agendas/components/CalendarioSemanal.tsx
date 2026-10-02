@@ -31,7 +31,7 @@ import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useSemanaEnUrl } from '../hooks/use-semana-en-url'
 import { CalendarioGrilla } from './CalendarioGrilla'
 import { FiltroProfesorAgenda } from './FiltroProfesorAgenda'
-import { FiltroEstado, FiltroPrioridad } from './FiltrosEstadoPrioridad'
+import { FiltroCancelados, FiltroPrioridad } from './FiltrosCanceladosPrioridad'
 import { FiltroAlumno, FiltroAula, FiltroMateria } from './FiltrosGrillaCalendario'
 import { NavegacionFecha } from './NavegacionFecha'
 
@@ -111,7 +111,7 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
           onLimpiar={() => {
             setFiltrosGrilla(FILTROS_GRILLA_VACIOS)
             cambiarFiltros({
-              estado: null,
+              incluirCancelados: false,
               prioridad: null,
               ...(esCentro ? { profesorId: null } : {}),
             })
@@ -141,7 +141,7 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
             value={filtrosGrilla.aula}
             onChange={(aula) => setFiltrosGrilla((actuales) => ({ ...actuales, aula }))}
           />
-          <FiltroEstado />
+          <FiltroCancelados />
         </BarraFiltros>
       </div>
 

@@ -186,6 +186,14 @@ export function cantidadCancelados(clase: ClaseCalendario): number {
   return clase.turnos.filter((turno) => turno.estado === 'CANCELADO').length
 }
 
+/** Cuántos turnos de la clase tienen prioridad alta y cuántos media (los cancelados no tienen). */
+export function cantidadPorPrioridad(clase: ClaseCalendario): { alta: number; media: number } {
+  return {
+    alta: clase.turnos.filter((turno) => turno.prioridad === 'ALTA').length,
+    media: clase.turnos.filter((turno) => turno.prioridad === 'MEDIA').length,
+  }
+}
+
 /**
  * Los filtros que valen en el origen: el de profesor solo lo tiene el centro. En las agendas de un
  * profesor (la ficha y "Mi agenda") ese profesor ya está fijado, y un `?profesorId=` en la URL no
@@ -207,7 +215,7 @@ export function paramsDelCalendario(
     desde: rango.desde,
     hasta: rango.hasta,
     profesorId: efectivos.profesorId ?? undefined,
-    estado: efectivos.estado ?? undefined,
+    incluirCancelados: efectivos.incluirCancelados || undefined,
     prioridad: efectivos.prioridad ?? undefined,
   }
 }

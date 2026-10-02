@@ -11,9 +11,9 @@ import type {
 
 const BASE = '/api/v1/agendas'
 
-// `estado` y `prioridad` los aceptan las cuatro agendas y se combinan con los demás filtros.
+// `incluirCancelados` y `prioridad` los aceptan las cuatro agendas y se combinan con los demás filtros.
 function agregarFiltros(searchParams: URLSearchParams, params: FiltrosEstadoPrioridadParams) {
-  if (params.estado) searchParams.set('estado', params.estado)
+  if (params.incluirCancelados) searchParams.set('incluirCancelados', 'true')
   if (params.prioridad) searchParams.set('prioridad', params.prioridad)
 }
 

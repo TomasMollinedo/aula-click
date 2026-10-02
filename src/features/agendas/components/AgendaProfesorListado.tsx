@@ -3,7 +3,7 @@
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 import type { ApiError } from '@/utils/fetch-json'
 
-import { hayFiltrosActivos, paramsDeEstadoYPrioridad } from '../filtros-agenda'
+import { hayFiltrosActivos, paramsDeCanceladosYPrioridad } from '../filtros-agenda'
 import { useAgendaProfesor } from '../hooks/use-agenda-profesor'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useRangoAgendaEnUrl } from '../hooks/use-rango-agenda-en-url'
@@ -58,7 +58,11 @@ export function AgendaProfesorListado({ profesorId, renderDetalle }: AgendaProfe
 function ListaAgendaProfesor({ profesorId }: { profesorId: number }) {
   const { vista, fecha, rango, hoy, cambiar } = useRangoAgendaEnUrl({ vistaPorDefecto: 'semana' })
   const { filtros } = useFiltrosAgenda()
-  const query = useAgendaProfesor({ profesorId, ...rango, ...paramsDeEstadoYPrioridad(filtros) })
+  const query = useAgendaProfesor({
+    profesorId,
+    ...rango,
+    ...paramsDeCanceladosYPrioridad(filtros),
+  })
 
   return (
     <AgendaPorRango

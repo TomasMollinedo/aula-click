@@ -14,7 +14,7 @@ type AgendaDiariaPantallaProps = Parameters<typeof AgendaDiariaListado>[0]
 export function AgendaDiariaPantalla(props: AgendaDiariaPantallaProps) {
   return (
     <div className="relative space-y-8">
-      <PageHeader title="Agenda diaria" description="Turnos agendados en todo el centro" />
+      <PageHeader title="Agenda" description="Turnos agendados en todo el centro" />
       <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
         <AgendaDiariaListado {...props} />
       </Suspense>

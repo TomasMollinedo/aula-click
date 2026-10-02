@@ -4,7 +4,7 @@ import { BarraFiltros } from '@/components/ui/barra-filtros'
 
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { FiltroProfesorAgenda } from './FiltroProfesorAgenda'
-import { FiltroEstado, FiltroPrioridad } from './FiltrosEstadoPrioridad'
+import { FiltroCancelados, FiltroPrioridad } from './FiltrosCanceladosPrioridad'
 
 // Pocos campos no llenan el ancho de la tarjeta: tienen un tope y el botón va al final de la fila.
 const GRILLA = {
@@ -34,7 +34,7 @@ type BarraFiltrosAgendaProps = {
 export function BarraFiltrosAgenda({ conProfesor = false }: BarraFiltrosAgendaProps) {
   const { filtros, cambiar } = useFiltrosAgenda()
   const hayFiltros =
-    filtros.estado !== null ||
+    filtros.incluirCancelados ||
     filtros.prioridad !== null ||
     (conProfesor && filtros.profesorId !== null)
 
@@ -42,11 +42,15 @@ export function BarraFiltrosAgenda({ conProfesor = false }: BarraFiltrosAgendaPr
     <BarraFiltros
       hayFiltros={hayFiltros}
       onLimpiar={() =>
-        cambiar({ estado: null, prioridad: null, ...(conProfesor ? { profesorId: null } : {}) })
+        cambiar({
+          incluirCancelados: false,
+          prioridad: null,
+          ...(conProfesor ? { profesorId: null } : {}),
+        })
       }
       {...(conProfesor ? GRILLA.conProfesor : GRILLA.sinProfesor)}
     >
-      <FiltroEstado />
+      <FiltroCancelados />
       <FiltroPrioridad />
       {conProfesor && (
         <FiltroProfesorAgenda

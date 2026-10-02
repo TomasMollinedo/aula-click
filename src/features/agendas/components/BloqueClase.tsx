@@ -5,12 +5,13 @@ import Link from 'next/link'
 import { ChevronDown, UserRound } from 'lucide-react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
-import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
+import { PrioridadContador, PrioridadIndicador } from '@/components/turno/prioridad-indicador'
 import { cn } from '@/utils/cn'
 
 import type { CalendarioItem } from '../agendas.types'
 import {
   cantidadCancelados,
+  cantidadPorPrioridad,
   type ClaseCalendario,
   disponibilidadDeClase,
   type NivelDeCupo,
@@ -59,6 +60,7 @@ export function BloqueClase({
   const idPanel = useId()
   const cantidad = clase.turnos.length
   const cancelados = cantidadCancelados(clase)
+  const prioridades = cantidadPorPrioridad(clase)
   const todosCancelados = cancelados === cantidad
   const materias = clase.materias.map((materia) => materia.nombre).join(' · ')
   const disponibilidad = disponibilidadDeClase(clase.cupo)
@@ -119,6 +121,9 @@ export function BloqueClase({
             </>
           )}
           <span className="shrink-0 font-medium">{clase.aula.nombre}</span>
+          {/* Cuántos turnos de la clase tienen prioridad alta y media: solo el número. */}
+          <PrioridadContador prioridad="ALTA" cantidad={prioridades.alta} className="ml-1" />
+          <PrioridadContador prioridad="MEDIA" cantidad={prioridades.media} />
         </span>
 
         <span className="mt-1 flex flex-col gap-1" title={AYUDA_CAPACIDAD}>
