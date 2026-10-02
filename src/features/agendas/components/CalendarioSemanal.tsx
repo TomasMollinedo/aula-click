@@ -47,11 +47,18 @@ export type CalendarioSemanalProps = {
 }
 
 // Las columnas de la barra de filtros: seis campos con el profesor (el calendario del centro) y
-// cinco sin él. Entran en una fila, con "Limpiar filtros" al final, recién en pantallas anchas (`xl`).
+// cinco sin él. Desde `lg` entran en una sola fila, con "Limpiar filtros" al final: los selectores
+// de buscador (profesor, alumno, materia) se reparten el ancho; prioridad y aula tienen opciones
+// cortas y van angostos, y estado y el botón toman lo que necesita su contenido. Desde los 1700px
+// esa fila comparte renglón con la navegación por fecha (`FILA_CON_NAVEGACION`).
 const COLUMNAS = {
-  conProfesor: 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]',
-  sinProfesor: 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]',
+  conProfesor: 'sm:grid-cols-2 lg:gap-2 lg:grid-cols-[repeat(3,minmax(0,1fr))_8rem_8rem_auto_auto]',
+  sinProfesor: 'sm:grid-cols-2 lg:gap-2 lg:grid-cols-[repeat(2,minmax(0,1fr))_8rem_8rem_auto_auto]',
 }
+
+// En pantallas muy anchas la navegación por fecha y los filtros van en el mismo renglón: los
+// controles se alinean por abajo (la navegación no tiene label) y los filtros toman el resto.
+const FILA_CON_NAVEGACION = 'min-[1700px]:flex-row min-[1700px]:items-end'
 
 function mensajeError(origen: OrigenAgenda, error: ApiError | null): string {
   if (error?.status === 403) return 'No tenés permiso para ver esta agenda'
@@ -89,9 +96,9 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
 
   return (
     <Card className="gap-0 overflow-hidden p-0">
-      {/* La navegación por fecha y, debajo, los filtros. Orden: profesor, alumno, materia,
-          prioridad, aula, estado. */}
-      <div className="border-border space-y-4 border-b p-6">
+      {/* La navegación por fecha y, a su lado o debajo según el ancho, los filtros. Orden: profesor,
+          alumno, materia, prioridad, aula, estado. */}
+      <div className={`border-border flex flex-col gap-4 border-b p-6 ${FILA_CON_NAVEGACION}`}>
         <NavegacionFecha
           fecha={fecha}
           esActual={esRangoActual('semana', fecha, hoy)}
@@ -116,8 +123,9 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
               ...(esCentro ? { profesorId: null } : {}),
             })
           }}
-          limpiarEnFila="xl"
-          className={esCentro ? COLUMNAS.conProfesor : COLUMNAS.sinProfesor}
+          limpiarEnFila="lg"
+          limpiarSoloIcono
+          className={`min-w-0 min-[1700px]:flex-1 ${esCentro ? COLUMNAS.conProfesor : COLUMNAS.sinProfesor}`}
         >
           {esCentro && (
             <FiltroProfesorAgenda

@@ -39,7 +39,7 @@ export function FiltroCancelados() {
           checked={filtros.incluirCancelados}
           onCheckedChange={(marcado) => cambiar({ incluirCancelados: marcado === true })}
         />
-        <Label htmlFor={id} className="font-normal">
+        <Label htmlFor={id} className="font-normal whitespace-nowrap">
           Incluir cancelados
         </Label>
       </div>
