@@ -17,8 +17,7 @@ import {
 } from '../agenda-propia'
 import type { AgendaPropiaItem } from '../agendas.types'
 import { AgendaPropiaTable, type TextosVacioAgenda } from './AgendaPropiaTable'
-import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
-import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
+import { BarraFiltrosAgenda } from './BarraFiltrosAgenda'
 import { NavegacionFecha } from './NavegacionFecha'
 import { SelectorVistaAgenda } from './SelectorVistaAgenda'
 
@@ -49,10 +48,11 @@ type AgendaPorRangoProps = {
 }
 
 /**
- * Agenda por día o por semana: navegación entre rangos, selector de vista, tabla agrupada por fecha
- * (con prioridad, estado y, si se pide, pago; un clic abre el detalle), error y pie con el total. Es
- * controlada: no conoce el endpoint ni la URL. La usan "Mi agenda" (HU-10, T-26) y la agenda de la
- * ficha del profesor (HU-02).
+ * Agenda por día o por semana: navegación entre rangos, selector de vista, filtros
+ * (`BarraFiltrosAgenda`, que los lee de la URL), tabla agrupada por fecha (con prioridad, estado y,
+ * si se pide, pago; un clic abre el detalle), error y pie con el total. El rango es controlado: no
+ * conoce el endpoint ni sus parámetros. La usan "Mi agenda" (HU-10, T-26) y la agenda de la ficha
+ * del profesor (HU-02).
  */
 export function AgendaPorRango({
   vista,
@@ -78,21 +78,20 @@ export function AgendaPorRango({
 
   return (
     <Card className="gap-0 overflow-hidden p-0">
-      <div className="border-border flex flex-col gap-4 border-b p-6 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-        <NavegacionFecha
-          fecha={fecha}
-          esActual={esRangoActual(vista, fecha, hoy)}
-          onAnterior={() => onCambiar({ fecha: moverRango(vista, fecha, -1) })}
-          onSiguiente={() => onCambiar({ fecha: moverRango(vista, fecha, 1) })}
-          onActual={() => onCambiar({ fecha: hoy })}
-          onCambiarFecha={(nueva) => onCambiar({ fecha: nueva })}
-          textos={textos}
-        />
-        <div className="flex flex-wrap items-center gap-2">
-          <FiltrosEstadoPrioridad />
-          <LimpiarFiltrosAgenda />
+      <div className="border-border space-y-4 border-b p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <NavegacionFecha
+            fecha={fecha}
+            esActual={esRangoActual(vista, fecha, hoy)}
+            onAnterior={() => onCambiar({ fecha: moverRango(vista, fecha, -1) })}
+            onSiguiente={() => onCambiar({ fecha: moverRango(vista, fecha, 1) })}
+            onActual={() => onCambiar({ fecha: hoy })}
+            onCambiarFecha={(nueva) => onCambiar({ fecha: nueva })}
+            textos={textos}
+          />
           <SelectorVistaAgenda value={vista} onChange={(nueva) => onCambiar({ vista: nueva })} />
         </div>
+        <BarraFiltrosAgenda />
       </div>
 
       {query.isError ? (

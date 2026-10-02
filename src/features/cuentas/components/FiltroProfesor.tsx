@@ -1,8 +1,7 @@
 'use client'
 
+import { ComboboxBuscador, useComboboxBuscador } from '@/components/ui/combobox-buscador'
 import { useProfesores } from '@/features/profesores/hooks/use-profesores'
-
-import { ComboboxBuscador, useComboboxBuscador } from './ComboboxBuscador'
 
 type FiltroProfesorProps = {
   id: string

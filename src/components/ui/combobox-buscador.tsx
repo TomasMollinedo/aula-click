@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Check, ChevronsUpDown } from 'lucide-react'
 
+import { claseControlFiltro } from '@/components/ui/barra-filtros'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -71,7 +72,8 @@ type ComboboxBuscadorProps = {
 /**
  * Selector con buscador para filtrar por una entidad que no entra en una lista (alumnos,
  * profesores): un botón con lo elegido y un menú con el buscador y los resultados. Es solo la UI:
- * no pide nada; quien lo usa trae las opciones con el hook de su feature.
+ * no pide nada; quien lo usa trae las opciones con el hook de su feature (o, si ya las tiene todas,
+ * las filtra con `SelectBuscable`). El botón es el control compacto de una `BarraFiltros`.
  *
  * Teclado: Enter o Espacio abren y el foco va al buscador; se escribe; Enter elige el primer
  * resultado, o Flecha abajo pasa a la lista (flechas para recorrerla, Enter elige, y Flecha arriba
@@ -122,8 +124,8 @@ export function ComboboxBuscador({
           aria-invalid={ariaInvalid}
           aria-describedby={ariaDescribedby}
           className={cn(
-            'aria-invalid:border-destructive w-full justify-between rounded-lg px-3 font-normal',
-            valor === null && 'text-muted-foreground',
+            'aria-invalid:border-destructive',
+            claseControlFiltro(valor === null),
             className,
           )}
         >
