@@ -6,9 +6,10 @@ import * as centroController from './centro.controller'
 import { ejemploCentro } from './centro.ejemplos'
 import { centroSchema } from './centro.validation'
 
-// Contrato HTTP de `centro` (T-64, HU-11 · HU-15): los datos y el logo para el encabezado de los
-// documentos oficiales (turno, agenda, comprobante, T-60). Sin tabla: son constantes del backend
-// (definición G de las PO), por eso no hay 404 ni 400 en ninguno de los dos.
+// Contrato HTTP de `centro` (T-64, HU-11 · HU-15): los datos y el logo del centro. El encabezado de
+// los documentos PDF lo arma el backend con estos mismos datos (`encabezadoDeDocumento`): el
+// frontend no los pide para eso, pero los endpoints son parte del contrato. Sin tabla: son
+// constantes del backend (definición G de las PO), por eso no hay 404 ni 400 en ninguno de los dos.
 
 const tags = ['Centro']
 const ROLES = ['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'] as const
@@ -33,7 +34,7 @@ export const obtenerCentroRoute = createRoute({
   tags,
   summary: 'Datos del centro',
   description:
-    'Nombre, dirección y teléfono del centro, para el encabezado de los documentos oficiales. Constantes del backend: no hay pantalla para editarlos ni tabla donde guardarlos (definición G).',
+    'Nombre, dirección y teléfono del centro: los mismos datos que el backend pone en el encabezado de los documentos PDF. Constantes del backend: no hay pantalla para editarlos ni tabla donde guardarlos (definición G).',
   middleware: [requireAuth(), requireRole(...ROLES)] as const,
   responses: {
     200: {
@@ -50,7 +51,7 @@ export const obtenerLogoRoute = createRoute({
   tags,
   summary: 'Logo del centro',
   description:
-    'La imagen del logo, para el encabezado de los documentos oficiales. Se lee del archivo de la feature, con un `Cache-Control` largo (sin pantalla para reemplazarlo).',
+    'La imagen del logo del centro (el encabezado de los documentos PDF usa su versión vectorial, `centro.logo-pdf.tsx`, que se mantiene en sincronía). Se lee del archivo de la feature, con un `Cache-Control` largo (sin pantalla para reemplazarlo).',
   middleware: [requireAuth(), requireRole(...ROLES)] as const,
   responses: {
     200: {

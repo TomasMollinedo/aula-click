@@ -26,4 +26,5 @@ Checklist (resumen; la fuente es `docs/arquitectura-backend.md`):
 - Cada endpoint: `createRoute()` con schemas Zod de entrada y todos sus status codes, errores declarados con `ErrorResponseSchema` y rol con `requireAuth()` + `requireRole(...)`.
 - Fechas, paginación, búsqueda y validaciones comunes salen de `src/server/shared/`. Ya existe: usarlo siempre; no reimplementar.
 - Un test por service, con el repository mockeado: camino feliz + un caso por cada error que lanza.
+- Los documentos oficiales son PDF que arma la API (`@react-pdf/renderer`): plantilla `<feature>.pdf.tsx` en la feature dueña de los datos y primitivas en `src/server/shared/pdf/`, sin contexto ni hooks de React. Leer `docs/arquitectura-backend.md` → Documentos PDF antes de agregar uno.
 - Si cambia el contrato con el frontend, actualizar `docs/contrato-api.md` en el mismo cambio.

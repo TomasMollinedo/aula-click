@@ -24,10 +24,7 @@ export function SidebarNav({ label, links }: { label: string; links: SidebarLink
       </p>
       <ul className="space-y-1">
         {links.map((link) => {
-          // `/imprimir` es una hoja aparte (T-60), no una sub-pantalla de la sección: una ruta
-          // como `/mesa/turnos/289/imprimir` no debe resaltar "Registrar turno" sólo porque
-          // empieza con `/mesa/turnos`.
-          const activo = pathname.startsWith(link.href) && !pathname.endsWith('/imprimir')
+          const activo = pathname.startsWith(link.href)
           return (
             <li key={link.href}>
               <Link

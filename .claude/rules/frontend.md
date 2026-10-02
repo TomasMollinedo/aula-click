@@ -24,9 +24,9 @@ Checklist (resumen; la fuente es `docs/arquitectura-frontend.md`):
 - Todo lo de una entidad va en `src/features/<entidad>/`. Feature de UI nueva: `/nueva-feature-ui <plural> <singular>`, con `src/features/alumnos/` como modelo.
 - `app/` solo enruta y compone. `components/` es UI sin entidad y no importa de `features/`. De otra feature solo se usan sus hooks (`features/<otra>/hooks/*`).
 - Nada del frontend importa `@/server`, `@/lib`, `@/config` ni `@/generated`.
-- Todo pedido a `/api/v1` pasa por `fetchJson`, dentro de `features/<entidad>/api/`. Los componentes usan los hooks de TanStack Query de su feature, tipados con `ApiError`. Login, logout y sesión, solo con el `authClient` de `features/auth/`.
+- Todo pedido a `/api/v1` pasa por `fetchJson`, dentro de `features/<entidad>/api/`. Única excepción: los `href` de los documentos PDF (`rutas-documentos.ts`, `rutas-pagos.ts`), que son enlaces `<a target="_blank" rel="noopener noreferrer">` y no pedidos; el front no arma documentos ni usa `window.print()`. Los componentes usan los hooks de TanStack Query de su feature, tipados con `ApiError`. Login, logout y sesión, solo con el `authClient` de `features/auth/`.
 - Los componentes que piden datos son Client Components. Ningún Server Component hace `fetch` a `/api/v1`.
-- Cada rol vive bajo su segmento de URL (`/mesa`, `/profesor`, `/gerente`, `/portal`). La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/` y compone componentes de la feature; no se usan route groups (los documentos imprimibles son rutas `/…/imprimir` dentro del segmento, T-110).
+- Cada rol vive bajo su segmento de URL (`/mesa`, `/profesor`, `/gerente`, `/portal`). La pantalla de una entidad para un rol va en `app/<segmento>/<entidad>/` y compone componentes de la feature; no se usan route groups.
 - `components/` no importa de `features/`: lo que depende de una feature (por ejemplo `UserMenu` en el Header) le llega por props desde el layout del segmento.
 - El rol que ve la UI solo muestra u oculta cosas. Cada componente con datos maneja 401/403/404 con su propia UI.
 - Las fechas de calendario son strings `YYYY-MM-DD`: nunca `new Date('YYYY-MM-DD')`. Prioridad, vigencia, capacidad y solapamientos los calcula la API, no el frontend.

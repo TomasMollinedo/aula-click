@@ -921,7 +921,7 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
 
 ## Centro
 
-Los datos del centro para el encabezado de los documentos oficiales (turno, agenda, comprobante — HU-11, HU-15, T-60). Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
+Los datos del centro (HU-11, HU-15, T-64): son los que el backend pone en el encabezado de los documentos PDF (ver [Documentos PDF](#documentos-pdf)). El frontend no los pide para eso, pero los endpoints son parte del contrato. Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
 
 **`GET /api/v1/centro`**: `{ "nombre", "direccion", "telefono" }`, los tres `string`. `nombre` es el de la organización que emite los documentos (Nexo Académico), no el del sistema (Aula Click).
 
@@ -939,7 +939,7 @@ Los datos del centro para el encabezado de los documentos oficiales (turno, agen
 
 - Errores: los mismos 401/403 que el endpoint anterior.
 
-Los documentos PDF no piden estos endpoints: el backend arma el encabezado con los mismos datos y el mismo logo (ver Documentos PDF).
+Los documentos PDF no piden estos endpoints: el backend arma el encabezado con los mismos datos y con el logo en su versión vectorial, que se mantiene en sincronía con este archivo (ver Documentos PDF).
 
 ## Documentos PDF
 
@@ -965,7 +965,7 @@ Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su s
 
 - **Nombre del archivo:** en ASCII, sin tildes ni espacios, en minúsculas y con guiones (`comprobante-1024.pdf`); el guion bajo sólo separa las dos fechas de un rango (`…-2026-10-01_2026-10-31.pdf`). Los nombres de persona van como apellido y nombre. Cada endpoint dice cuál es el suyo.
 - **Encabezado del documento:** logo, nombre, dirección y teléfono del centro (los de [Centro](#centro)); **"Emitido por"** es el usuario de la sesión que pide el PDF (nombre y apellido) y la **fecha de emisión** es el instante del servidor, en la zona horaria del negocio, como `dd/MM/yyyy HH:mm`.
-- **Metadatos del PDF:** el título es el del documento con su referencia ("Comprobante de pago N° 1024"), el autor es el centro y el idioma, `es`.
+- **Metadatos del PDF:** el título es el del documento con su referencia ("Comprobante de pago N° 1024"); el autor, el creador y el productor son el centro; el idioma, `es`.
 - **Errores: JSON**, con el formato y los códigos de [Errores](#errores) (400 `VALIDACION`, 401 `NO_AUTENTICADO`, 403 `SIN_PERMISO`, 404 `NO_ENCONTRADO`), como el resto de la API. Comportamiento conocido: como el enlace se abre en una pestaña nueva, ante un error (por ejemplo, un 401 con la sesión vencida) esa pestaña muestra el JSON; no hay páginas de error HTML.
 - En el OpenAPI, el 200 se declara como `application/pdf` con `type: string, format: binary`.
 

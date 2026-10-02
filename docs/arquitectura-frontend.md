@@ -71,7 +71,6 @@ src/
 │   │   ├── turnos/page.tsx              # registrar turno; compone el detalle del turno (renderDetalle)
 │   │   ├── agenda/page.tsx              # "Agenda" (HU-09, T-24); compone el detalle y el PDF
 │   │   ├── pagos/page.tsx               # vista global de pagos y deuda (HU-16); compone RegistrarPagoDialog
-│   │   ├── pagos/[pagoId]/imprimir/page.tsx   # hoja del comprobante (/mesa/pagos/<id>/imprimir): compone ComprobantePago
 │   │   └── _componentes/                # composición de mesa: detalle-turno.tsx (el detalle con sus acciones) y
 │   │                                    # ficha-alumno.tsx (las 4 pestañas de la ficha). Ver "Acciones sobre una ocurrencia"
 │   ├── profesor/                       # rol PROFESOR → /profesor/...
@@ -100,7 +99,6 @@ src/
 │   │   ├── codigos-error.ts            # codes del contrato que el frontend reconoce
 │   │   ├── interpretar-error-login.ts  # único lugar que decide el mensaje de un login fallido
 │   │   ├── sesion-expirada.ts          # los motivos en la URL de /login, compartidos con providers.tsx
-│   │   ├── hooks/use-nombre-sesion.ts  # nombre y apellido de la sesión: el "Emitido por" de un documento
 │   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
 │   ├── aulas/                          # mínima, solo de lectura: aulas libres para un horario
 │   │   ├── aulas.types.ts, api/{aulas.api.ts, aulas.keys.ts}
@@ -144,15 +142,14 @@ src/
 │   ├── pagos/                          # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52)
 │   │   ├── pagos.types.ts, pagos.schema.ts   # schema del formulario, parsearMonto y armarRegistrarPago (el body)
 │   │   ├── a-cobrar.ts                 # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar
-│   │   ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts   # textos; errores del POST en lo que muestra el diálogo; URL del comprobante
+│   │   ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts   # textos; errores del POST en lo que muestra el diálogo; URL del PDF del comprobante
 │   │   ├── api/{pagos.api.ts, pagos.keys.ts}
-│   │   ├── hooks/{use-registrar-pago.ts, use-comprobante.ts, use-invalidar-pagos.ts}
+│   │   ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts}
 │   │   └── components/
 │   │       ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar → éxito o rechazo
 │   │       │                           #   (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
 │   │       ├── AccionRegistrarPago.tsx # slot del pie del detalle del turno
-│   │       ├── EnlaceComprobante.tsx   # "Ver comprobante" de un turno pagado (slot renderComprobante del detalle)
-│   │       └── ComprobantePago.tsx     # la hoja del comprobante (ver Documentos imprimibles)
+│   │       └── EnlaceComprobante.tsx   # "Ver comprobante" de un turno pagado (slot renderComprobante del detalle); enlaza al PDF
 │   ├── cuentas/                        # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
 │   │   ├── cuentas.types.ts, a-cobrar.ts   # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
 │   │   ├── filtros-cuenta.ts           # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
@@ -187,7 +184,9 @@ src/
 │   │   ├── hooks/{use-examenes.ts, use-materias-examen.ts, use-crear-examen.ts, use-editar-examen.ts, use-eliminar-examen.ts,
 │   │   │   use-refrescar-por-examen.ts, use-invalidar-examenes.ts}  # una mutación invalida exámenes, ocurrencias y agendas (la prioridad)
 │   │   └── components/{ExamenesDelAlumno, ExamenDialog, ConfirmarEliminarExamen}.tsx  # alta y edición en un Dialog sin URL propia; editar y eliminar según `administrable` de la API
-│   ├── documentos/                     # AccionPdfTurno, BotonPdfTurno y BotonPdfAgenda (placeholders, T-60); sin datos propios: sin keys
+│   ├── documentos/                     # los enlaces a los PDF de la API (ver Documentos PDF); sin datos propios: sin api/, keys ni hooks
+│   │   ├── rutas-documentos.ts         # hrefPdfTurno, hrefPdfTurnosAlumno y hrefPdfAgenda: las URLs, con su test
+│   │   └── components/{AccionPdfTurno, AccionPdfTurnosAlumno, BotonPdfAgenda}.tsx
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
@@ -260,7 +259,7 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 - El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que, si el rol de la sesión no es el del segmento, muestra "No tiene permiso para acceder a esta sección" con un enlace a la pantalla de inicio del propio rol en lugar del contenido (HU-21): es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
 - **Acciones de escritura según el segmento.** Si dos roles ven la misma entidad pero solo uno escribe (materias: el gerente administra el catálogo y mesa de entradas lo lee, HU-12), la página de cada segmento se lo dice a la feature con una prop (`puedeEscribir`, por defecto `false`), igual que `rutaBase`. La feature no lee la sesión: `SegmentoDeRol` ya garantiza que en `/gerente` solo se ve el contenido con rol `GERENTE`. Sin permiso tampoco se montan los formularios que abriría la URL (`?editar=` se saca con `router.replace`) ni existen las rutas del alta en ese segmento. Es ayuda visual: lo que decide es el 403 de la API, que se muestra igual.
 - La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `ALUMNO` no tiene segmento todavía: para él la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlo a un 404.
-- No se usan route groups: ni para separar roles ni para los documentos imprimibles, que son rutas `/…/imprimir` dentro de su segmento (ver Documentos imprimibles; decisión T-110).
+- No se usan route groups.
 
 ## Layout: Sidebar
 
@@ -274,71 +273,19 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx`, `profesor-sidebar.tsx` y `gerente-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
 - **Menú de usuario** (avatar, nombre, rol y un menú con "Cerrar sesión"): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` por props, armado en el layout del segmento.
 
-## Documentos imprimibles
+## Documentos PDF
 
-Patrón común para los documentos oficiales que se guardan como PDF desde el diálogo de impresión del navegador, en A4 y sin el sidebar ni los botones de la app. Hay uno solo (decisión T-110): el comprobante de pago, el detalle del turno, la agenda diaria y los turnos del alumno son **hojas `/…/imprimir`**.
+Los documentos oficiales (el comprobante de pago, el detalle de un turno, los turnos de un alumno y la agenda diaria de un profesor) **los arma la API** en PDF, en A4 y con el encabezado del centro (decisión T-121; cómo se generan, en `docs/arquitectura-backend.md` → Documentos PDF). El frontend no dibuja ningún documento: solo enlaza al endpoint `GET /api/v1/…/pdf`, y el navegador lo abre en su visor.
 
-- **Datos y logo del centro: los da la API** (T-64), precargados y sin pantalla para editarlos (HU-11). El front no tiene constantes del centro ni el logo en `public/`.
-  - **`features/centro/`**: `useCentro()` pide `GET /api/v1/centro` (nombre, dirección y teléfono) con `staleTime: Infinity`, porque casi no cambian.
-  - El logo (isotipo de Nexo Académico en `cobalto` y el azul del `sidebar`) se muestra con `<img src="/api/v1/centro/logo?v=…">` (misma sesión, sin fetch propio). La API lo manda con un `Cache-Control` de una semana: si se reemplaza el archivo, se sube `v` en `LOGO_CENTRO` (`DocumentoOficial.tsx`) para que el navegador no siga mostrando el anterior.
-- **La ruta.** Cada hoja es una página `imprimir/page.tsx` dentro del segmento de su rol, con la misma ruta de lo que imprime: `app/mesa/turnos/[turnoId]/imprimir`, `app/mesa/agenda/imprimir`, `app/mesa/alumnos/[alumnoId]/turnos/imprimir` y `app/mesa/pagos/[pagoId]/imprimir` (el comprobante). Queda bajo el layout del segmento: el `proxy.ts` y `SegmentoDeRol` la protegen como al resto, y se ve dentro del `AppShell`. No se usan route groups. `sidebar-nav.tsx` no resalta ninguna sección en una ruta que termina en `/imprimir`.
-- **`app/impresion.css`** (importado una sola vez en `app/layout.tsx`): fija `@page { size: A4 }` con márgenes y, en `@media print`:
-  - oculta todo lo marcado con `data-no-imprimir` (el Sidebar del `AppShell` y los botones de la hoja), así en la vista previa solo queda el documento;
-  - fuerza `print-color-adjust: exact` en `[data-documento-oficial]` (el `<article>` de `DocumentoOficial`), para que las tarjetas de las secciones y las filas alternadas de las tablas salgan aunque el diálogo tenga apagados los gráficos de fondo;
-  - devuelve el `AppShell` (`data-app-shell`) al flujo normal, para que el documento se parta en hojas, y le saca el relleno de abajo, que si no agrega una hoja en blanco al final;
-  - para las tablas largas (`data-tabla-impresa`): el encabezado se repite en cada hoja y una fila no se parte; lo marcado con `data-no-partir` (el cierre: totales y pie) no se parte ni queda solo en la última hoja. Estas reglas están acotadas a esos atributos.
-- **`components/impresion/`** (solo presentación; no importa de `features/`):
-  - `DocumentoOficial({ titulo, referencia?, emitidoPor, centro, onLogoListo, children })`: el encabezado común (logo, nombre, dirección y teléfono del centro, quién emite y la fecha y hora de emisión del navegador, con `date-fns`), el título y, a su derecha, la `referencia` que identifica al documento (el número del comprobante). El que firma la hoja es el centro (Nexo Académico): el nombre del sistema (Aula Click) no aparece. Colores: `cobalto` para la línea bajo el encabezado y las etiquetas (las de `Campo`, los encabezados de las tablas y el total del comprobante), y el azul del `sidebar` para el nombre del centro, el título y la referencia, los dos tonos del logo. Recibe `centro` por props: `useCentro()` lo llama quien arma el documento. `onLogoListo` se llama en el `onLoad`/`onError` del logo.
-  - `campo-impreso.tsx`: `SeccionImpresa`, `Campos` y `Campo` (la tarjeta con etiquetas en `cobalto`) y `BotonVolverImprimir`.
-  - `tabla-impresa.tsx`: `TablaImpresa`, `EncabezadosImpresos`, `EncabezadoImpreso`, `FilaImpresa`, `CeldaImpresa` y `CierreImpreso`, para una tabla que puede ocupar varias hojas (el comprobante: hasta 200 turnos).
-  - `volver.ts`: `tieneHistorialPropio`, puro y con su test.
-- **"Emitido por"** es quien imprime: el usuario de la sesión (`useNombreSesion()` de `features/auth/hooks/`, o `authClient.useSession()` en la página). Quién cargó el dato, si importa, va en el cuerpo del documento (el comprobante: "Registrado por … el …", decisión T-111).
-- **Se imprime sola.** `hooks/use-imprimir.ts`: `useImprimirCuandoEsteListo(listo: boolean)` llama a `window.print()` una sola vez, apenas `listo` pasa a `true`. `listo` incluye los datos del documento, los del centro, la sesión y que el logo haya terminado de cargar, para que no salga un encabezado sin logo. Si los datos del centro no llegan, la hoja muestra el error y no imprime: un documento oficial sin encabezado no sirve.
-- **Se abre en una pestaña nueva** (`<a target="_blank" rel="noopener noreferrer">`), así la pantalla desde la que se abrió queda como estaba (el detalle abierto, el diálogo de cobro). El enlace lo dice ("se abre en otra pestaña").
-- **`BotonVolverImprimir({ rutaRespaldo = '/mesa', children })`**, arriba de la hoja y marcado con `data-no-imprimir`: cancelar el diálogo del navegador deja a la persona en la hoja, y "Volver" es la salida.
-  - Si la pestaña tiene una pantalla anterior de la app, `router.back()`.
-  - Si no (la pestaña nueva, o la URL pegada), intenta cerrarla con `window.close()` y, si el navegador no la deja cerrar, `router.replace(rutaRespaldo)`.
-  - Lo decide `tieneHistorialPropio({ longitud, indice })` con `history.length` y, si el navegador la tiene, la posición de la Navigation API (`navigation.currentEntry.index`), que cuenta solo las entradas de este sitio.
-  - `children` son las acciones propias de la hoja, a la derecha: el comprobante pone "Imprimir", deshabilitado hasta que el documento está listo, para volver a imprimir si se canceló el diálogo.
-- **Quién arma el documento.** La página solo compone. Si el documento es de una feature, vive en ella y la página lo monta: el modelo es `features/pagos/components/ComprobantePago.tsx` (carga, id inválido sin llamar a la API, 404 y 403 sin reintentos, error del centro con "Reintentar", "Imprimir"). Las hojas de T-60 arman el documento en la propia página, con los hooks de las features.
-
-  ```tsx
-  'use client'
-
-  export function ComprobantePago({ pagoId, rutaRespaldo }: Props) {
-    const comprobante = useComprobante(pagoId) // hook de la feature
-    const centro = useCentro()
-    const emitidoPor = useNombreSesion()
-    const [logoListo, setLogoListo] = useState(false)
-
-    const listo = !!comprobante.data && !!centro.data && emitidoPor !== null && logoListo
-    useImprimirCuandoEsteListo(listo)
-
-    return (
-      <>
-        <BotonVolverImprimir rutaRespaldo={rutaRespaldo}>
-          <Button size="sm" onClick={() => window.print()} disabled={!listo}>
-            Imprimir
-          </Button>
-        </BotonVolverImprimir>
-        {comprobante.data && centro.data && emitidoPor !== null && (
-          <DocumentoOficial
-            titulo="Comprobante de pago"
-            referencia={textoNumero(comprobante.data.numeroComprobante)}
-            emitidoPor={emitidoPor}
-            centro={centro.data}
-            onLogoListo={() => setLogoListo(true)}
-          >
-            {/* SeccionImpresa + Campos, TablaImpresa y CierreImpreso */}
-          </DocumentoOficial>
-        )}
-      </>
-    )
-  }
-  ```
-
-- **Para sumar un documento:** una carpeta `imprimir/` con su `page.tsx` bajo la ruta de lo que imprime, dentro del segmento; `DocumentoOficial` con `useCentro` y `useImprimirCuandoEsteListo`; `BotonVolverImprimir` arriba, con su `rutaRespaldo`; y un enlace `target="_blank"` desde la pantalla que lo ofrece.
-- No se agrega ninguna dependencia nueva: se usa el diálogo de impresión nativo del navegador (`window.print()`), no una librería de generación de PDF.
+- **Un enlace, no un pedido.** Cada botón es un `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">`. La pestaña nueva deja la pantalla de origen como estaba (el detalle abierto, el diálogo de cobro), el visor del navegador muestra el PDF sin diálogo de impresión ni pantalla intermedia de la app, y la descarga sale con el nombre que manda la API (`Content-Disposition`). El enlace lo dice ("abre el PDF en otra pestaña", para lectores de pantalla).
+- **Excepción a `fetchJson`.** Estas URLs son enlaces, no pedidos: no pasan por `fetchJson` ni por una query key, y no hay hooks ni `api/` para los documentos. El resto de `/api/v1` sigue pasando por `fetchJson`.
+- **Dónde se arman las URLs.** Un solo lugar por dominio, con funciones puras y test:
+  - `features/documentos/rutas-documentos.ts`: `hrefPdfTurno`, `hrefPdfTurnosAlumno` y `hrefPdfAgenda` (este devuelve `null` sin profesor elegido: la agenda de todo el centro no tiene PDF);
+  - `features/pagos/rutas-pagos.ts`: `hrefComprobante(pagoId)`, con el id del pago y no con el número de comprobante.
+- **Los enlaces.** `features/documentos/components/` tiene `AccionPdfTurno` (encabezado del detalle del turno), `AccionPdfTurnosAlumno` (ficha del alumno) y `BotonPdfAgenda` (agenda diaria). El comprobante lo enlazan `EnlaceComprobante` (detalle de un turno pagado), el diálogo de cobro (`RegistrarPagoDialog`, "Ver comprobante") y `TurnosRechazados` (el pago que ya cubría un turno).
+- **Lo que manda cada enlace es lo que se ve.** El PDF tiene que coincidir con la pantalla desde la que se pide: la ficha del alumno manda el mismo rango y el mismo estado que la lista, o `seleccion` si hay turnos tildados (la selección tiene prioridad sobre el estado); la agenda manda el día, el profesor y los filtros puestos. La API decide el resto: el frontend no calcula nada del documento.
+- **Errores.** Un error (sesión vencida, 403, 404) llega como el JSON de siempre, que el navegador muestra en la pestaña nueva: el enlace no puede interceptarlo. Es un comportamiento conocido.
+- **Para sumar un documento:** el endpoint `…/pdf` en el backend (ver `docs/arquitectura-backend.md`); una función `hrefPdf…` en `rutas-documentos.ts` (o `rutas-<entidad>.ts` de la feature dueña, si el documento es de otra feature), con su test; y el `<a target="_blank" rel="noopener noreferrer">` en la pantalla que lo ofrece, dentro de un `Button asChild`. No se agrega una página `/imprimir`, ni `window.print()`, ni una librería de PDF en el cliente.
 
 ## Acciones sobre una ocurrencia: slots compuestos desde `app/`
 
@@ -432,7 +379,7 @@ Una pantalla que necesita un alta de otra entidad y volver con lo creado (regist
 ## Llamadas a la API: `fetchJson` y `ApiError`
 
 - `src/utils/fetch-json.ts` es el **único** lugar que interpreta la respuesta de error de la API (`{ error: { code, message, details? } }`) y la convierte en un `ApiError` con `status`, `code` y `details`.
-- Cada `<entidad>.api.ts` llama a `fetchJson<T>(...)` en lugar de repetir el parseo. No hay `fetch` directo en componentes, hooks ni páginas, ni `fetch` a otros orígenes.
+- Cada `<entidad>.api.ts` llama a `fetchJson<T>(...)` en lugar de repetir el parseo. No hay `fetch` directo en componentes, hooks ni páginas, ni `fetch` a otros orígenes. Única excepción: los `href` de los documentos PDF (`rutas-documentos.ts`, `rutas-pagos.ts`), que son enlaces y no pedidos (ver Documentos PDF).
 - Los hooks se tipan con el error: `useQuery<TData, ApiError>(...)` y `useMutation<TData, ApiError, TVariables>(...)`, para tener `error.status` y `error.code` sin cast.
 - Las query keys salen solo de `<entidad>.keys.ts`. Una mutación invalida las keys de su entidad. Si además cambia datos que cachea otra feature, la invalida con un hook que esa feature expone (por ejemplo `useInvalidarAulas` de `features/aulas/hooks/`, que usan las mutaciones de bloques, o `useInvalidarMaterias`, que tienen que usar las de asignar y quitar materias a un profesor: el detalle de la materia lista sus profesores; o `useInvalidarHorarioDe` de `features/profesores/hooks/use-invalidar-horario.ts`, que recibe el profesor al invocarla y usa el alta de turnos porque el horario muestra la ocupación, T-33; las mutaciones de bloques usan `useInvalidarHorario(profesorId)`, que es la misma con el profesor fijo), no importando sus keys: de otra feature solo se usan sus hooks. Cada feature de datos tiene el suyo (`useInvalidarAgendas`, `useInvalidarOcurrencias`, `useInvalidarCancelaciones`, `useInvalidarFinalizaciones`, `useInvalidarPagos`, `useInvalidarCuentas`, `useInvalidarExamenes`): una mutación que cambia una ocurrencia invalida, además de lo suyo, las agendas, las ocurrencias y las cuentas que la muestran (el alta de turnos ya invalida agendas y ocurrencias).
 - Una feature mínima que solo expone un selector a otras (`aulas`) tiene `types`, `api/`, `keys` y el hook; no necesita tabla ni formulario (no se crea con `/nueva-feature-ui`). Una feature completa también puede exponer el suyo: `materias` tiene su pantalla y además `useMateriasSelector`, que consume el filtro por materia de profesores. Si el selector depende de lo elegido en el formulario (aulas libres para un día y horario), los parámetros van en la key y la query queda deshabilitada (`enabled`) hasta que estén completos. Si el hook conserva la lista anterior mientras llega la nueva (`keepPreviousData`), el formulario arma las opciones solo con los datos del horario actual (descarta los de `isPlaceholderData`): mientras tanto el selector queda deshabilitado y Guardar también, porque lo elegido puede ya no estar disponible.
@@ -558,4 +505,4 @@ Accesibilidad: el color nunca es el único canal (siempre está la palabra, y el
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `finalizaciones` (`finalizaciones.schema.ts`: fecha, motivo y detalle; `errores-api.ts`: los errores de la previa y del POST, incluido `TURNOS_PAGADOS`; `formato-finalizaciones.ts`: el resumen de la previa, los avisos de pagados y de tramos y el mensaje de éxito), las de `pagos` (`pagos.schema.ts`: el formulario, `parsearMonto` y el body del `POST`; `a-cobrar.ts`: la ocurrencia del detalle a cobrar y el resumen; `formato-pagos.ts`: los textos del diálogo y del comprobante, incluido quién registró el pago; `errores-pagos.ts`: los errores del `POST` en lo que muestra el diálogo), las de `cuentas` (`a-cobrar.ts`: la fila a cobrar y la clave de la ocurrencia; `filtros-cuenta.ts`: los filtros y las páginas en la URL; `seleccion.ts`: la selección, su poda, su orden y su resumen; `formato-cuentas.ts`: los textos del total, los filtros activos, el aviso del tope y los vacíos; `errores-cuentas.ts`: los errores de lectura y el 400 del período por campo), las de `examenes` (`examenes.schema.ts`: el formulario y los bodies del alta y de la edición parcial; `errores-api.ts`: los errores del alta y la edición, incluido `EXAMEN_PENDIENTE`; `formato-examenes.ts`: los días que faltan, la trazabilidad con el rol y el aviso de fecha pasada), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen), `components/impresion/volver.ts` (si la pestaña de una hoja tiene adónde volver) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`, `moneda.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `finalizaciones` (`finalizaciones.schema.ts`: fecha, motivo y detalle; `errores-api.ts`: los errores de la previa y del POST, incluido `TURNOS_PAGADOS`; `formato-finalizaciones.ts`: el resumen de la previa, los avisos de pagados y de tramos y el mensaje de éxito), las de `pagos` (`pagos.schema.ts`: el formulario, `parsearMonto` y el body del `POST`; `a-cobrar.ts`: la ocurrencia del detalle a cobrar y el resumen; `formato-pagos.ts`: los textos del diálogo y del comprobante, incluido quién registró el pago; `errores-pagos.ts`: los errores del `POST` en lo que muestra el diálogo), las de `cuentas` (`a-cobrar.ts`: la fila a cobrar y la clave de la ocurrencia; `filtros-cuenta.ts`: los filtros y las páginas en la URL; `seleccion.ts`: la selección, su poda, su orden y su resumen; `formato-cuentas.ts`: los textos del total, los filtros activos, el aviso del tope y los vacíos; `errores-cuentas.ts`: los errores de lectura y el 400 del período por campo), las de `examenes` (`examenes.schema.ts`: el formulario y los bodies del alta y de la edición parcial; `errores-api.ts`: los errores del alta y la edición, incluido `EXAMEN_PENDIENTE`; `formato-examenes.ts`: los días que faltan, la trazabilidad con el rol y el aviso de fecha pasada), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen), `features/documentos/rutas-documentos.ts` (las URLs de los PDF) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`, `moneda.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.

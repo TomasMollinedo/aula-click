@@ -45,7 +45,7 @@ describe(
       ['src/server/shared/pdf/x.tsx', '../../features/centro/centro.condiciones'],
       ['src/server/shared/pdf/x.tsx', '@/lib/prisma'],
       ['src/server/shared/pdf/x.tsx', '@/config/env'],
-      ['src/server/shared/pdf/x.tsx', '@/components/impresion/DocumentoOficial'],
+      ['src/server/shared/pdf/x.tsx', '@/components/ui/button'],
     ])('desde %s, importar %s da error', async (filePath, ruta) => {
       expect(await erroresDeImport(filePath, importar(ruta))).toHaveLength(1)
     })

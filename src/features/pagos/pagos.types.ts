@@ -1,11 +1,6 @@
-import type { UsuarioAuditoria } from '@/types'
-
 // Tipos de lo que la API de pagos recibe y devuelve (docs/contrato-api.md → Pagos y Errores,
 // T-51). Los importes son números en pesos, con hasta dos decimales: los calcula la API y la UI
 // solo los muestra. Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`.
-
-type Persona = { id: number; nombre: string; apellido: string }
-type Referencia = { id: number; nombre: string }
 
 /** Body de `POST /pagos`. La forma de pago no viaja: es "Efectivo" (única en este sprint). */
 export type RegistrarPago = {
@@ -28,37 +23,6 @@ export type PagoRegistrado = {
   montoRecibido: number
   /** `montoRecibido - total`. */
   vuelto: number
-}
-
-/** Una ocurrencia pagada, con los datos **actuales** de su turno y el importe que se cobró. */
-export type TurnoComprobante = {
-  turnoId: number
-  fecha: string
-  horaInicio: string
-  horaFin: string
-  materia: Referencia
-  profesor: Persona
-  importe: number
-}
-
-/** Respuesta de `GET /pagos/{id}`: los datos del comprobante. */
-export type Comprobante = {
-  id: number
-  numeroComprobante: number
-  fechaPago: string
-  alumno: Persona & { dni: string }
-  /** Ordenados por fecha, hora de inicio y turno. */
-  turnos: TurnoComprobante[]
-  total: number
-  /** `null` solo en un pago anterior a que el monto recibido fuera obligatorio. */
-  montoRecibido: number | null
-  /** `montoRecibido - total`, o `null` sin monto recibido. */
-  vuelto: number | null
-  formaPago: Referencia
-  observaciones: string | null
-  registradoPor: UsuarioAuditoria
-  /** Instante ISO 8601 en UTC. */
-  registradoEl: string
 }
 
 /** Por qué no se puede cobrar una ocurrencia (409 `TURNOS_NO_COBRABLES`), en el orden en que se evalúan. */

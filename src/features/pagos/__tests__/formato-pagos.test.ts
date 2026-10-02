@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  fechaDocumento,
   textoCantidad,
   textoConfirmacion,
   textoExito,
@@ -9,7 +8,6 @@ import {
   textoImporte,
   textoNumero,
   textoNumeroComprobante,
-  textoRegistradoPor,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
@@ -28,15 +26,9 @@ describe('textos del resumen', () => {
 })
 
 describe('textos del comprobante', () => {
-  it('número, fecha de pago y quién registró, con el instante en hora local', () => {
+  it('número del comprobante', () => {
     expect(textoNumero(1024)).toBe('N° 1024')
     expect(textoNumeroComprobante(1024)).toBe('Comprobante N° 1024')
-    expect(fechaDocumento('2026-10-05')).toBe('05/10/2026')
-    // Armado en hora local: el test no depende de la zona horaria de la máquina.
-    const instante = new Date(2026, 9, 5, 14, 30).toISOString()
-    expect(textoRegistradoPor({ nombre: 'Ana', apellido: 'Pérez' }, instante)).toBe(
-      'Registrado por Ana Pérez el 05/10/2026 14:30',
-    )
   })
 })
 
