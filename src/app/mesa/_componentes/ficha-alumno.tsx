@@ -5,6 +5,7 @@ import { Suspense } from 'react'
 import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
 import { AccionCancelarVarios } from '@/features/cancelaciones/components/AccionCancelarVarios'
 import { PagosDelAlumno } from '@/features/cuentas/components/PagosDelAlumno'
+import { AccionPdfTurnosAlumno } from '@/features/documentos/components/AccionPdfTurnosAlumno'
 import { ExamenesDelAlumno } from '@/features/examenes/components/ExamenesDelAlumno'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import { TurnosDelAlumno } from '@/features/ocurrencias/components/TurnosDelAlumno'
@@ -39,6 +40,9 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
           <TurnosDelAlumno
             alumnoId={alumno.id}
             renderAccionesSeleccion={(seleccion) => <AccionCancelarVarios {...seleccion} />}
+            renderPdf={({ alumnoId, desde, hasta }) => (
+              <AccionPdfTurnosAlumno alumnoId={alumnoId} desde={desde} hasta={hasta} />
+            )}
           />
         )}
         renderExamenes={(alumno) => <ExamenesDelAlumno alumnoId={alumno.id} rol="MESA_ENTRADAS" />}

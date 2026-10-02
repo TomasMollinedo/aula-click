@@ -53,7 +53,7 @@ export const ejemploListadoItem = {
 
 export const ejemploListado = {
   data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan', dni: '30123456' }],
-  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+  meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
 } satisfies AlumnosListado
 
 export const ejemploDeProfesorItem = {
@@ -78,7 +78,7 @@ export const ejemploMisAlumnos = {
       ],
     },
   ],
-  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+  meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
 } satisfies AlumnosDeProfesorListado
 
 export const ejemploDetalle = {

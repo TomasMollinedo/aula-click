@@ -41,7 +41,7 @@ function respuestaError(description: string, examples?: Record<string, unknown>)
 }
 
 const ERROR_400_FECHA =
-  '`fechaDesde` anterior a hoy, en otro día de la semana que la serie, no posterior a su inicio o posterior a su fin (en `["fechaDesde"]`)'
+  '`fechaDesde` anterior a hoy, en otro día de la semana que la serie, no posterior al primer inicio de esa hora o posterior a su último fin (en `["fechaDesde"]`)'
 const ERROR_409_TURNO =
   'El turno no es recurrente, ya no está vigente o ya fue finalizado (CONFLICTO)'
 
@@ -51,7 +51,7 @@ export const previaFinalizacionRoute = createRoute({
   tags,
   summary: 'Previa de la finalización de un turno recurrente',
   description:
-    'Qué se libera si el turno (o tramo) se finaliza desde `fechaDesde`: cantidad y rango, los turnos pagados desde esa fecha (que impiden finalizar) y los tramos posteriores del mismo alumno, materia y hora. Aplica las mismas validaciones que `POST /finalizaciones`, salvo los pagados, que acá no son un error.',
+    'Qué se libera si la hora del turno se finaliza desde `fechaDesde`, en todos los tramos de su serie: cantidad y rango, los turnos pagados desde esa fecha (que impiden finalizar) y las otras horas de la serie que siguen agendadas (`otrasHoras`). Aplica las mismas validaciones que `POST /finalizaciones`, salvo los pagados, que acá no son un error.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: previaFinalizacionQuerySchema },
   responses: {
@@ -73,7 +73,7 @@ export const finalizarTurnoRoute = createRoute({
   tags,
   summary: 'Finalizar un turno recurrente',
   description:
-    'Finaliza el turno (o tramo) desde `fechaDesde`: registra una `FinalizacionRecurrencia` y **no modifica** `Turno.fechaFin`. Desde esa fecha la serie deja de aparecer en las agendas y su lugar queda libre; las ocurrencias anteriores no cambian. Si hay turnos pagados desde `fechaDesde`, no se finaliza.',
+    'Finaliza la hora del turno desde `fechaDesde`, en todos los tramos de su serie: registra una `FinalizacionRecurrencia` en cada tramo con fechas desde ahí y **no modifica** `Turno.fechaFin`. Las otras horas de la serie no se finalizan. Desde esa fecha la hora deja de aparecer en las agendas y su lugar queda libre; las ocurrencias anteriores no cambian. Si hay turnos pagados desde `fechaDesde`, no se finaliza.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: {
     body: {

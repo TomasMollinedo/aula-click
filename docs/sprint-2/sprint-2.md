@@ -556,7 +556,7 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 - Una ocurrencia pagada muestra "Cancelar" deshabilitado con "El turno está pagado: no se puede cancelar".
 - Las acciones permitidas salen siempre de la API.
 
-**Actualización (PR de pagos, T-52/T-54).** El `pago` del detalle, el `estadoPago` de la lista y las acciones que dependen del pago se completaron en el PR de pagos, con `pagos` ya disponible (decisiones T-103 a T-105): `ocurrencias` (reglas, service, repository, validation, routes, ejemplos y tests) y `contrato-api.md` → Ocurrencias. Una diferencia con el alcance de arriba: "Registrar pago" tampoco se ofrece en una ocurrencia posterior al tope de cobro (hoy + 56 días), y el profesor recibe `pago: null`.
+**Actualización (PR de pagos, T-52/T-54).** El `pago` del detalle, el `estadoPago` de la lista y las acciones que dependen del pago se completaron en el PR de pagos, con `pagos` ya disponible (decisiones T-106 a T-108): `ocurrencias` (reglas, service, repository, validation, routes, ejemplos y tests) y `contrato-api.md` → Ocurrencias. Una diferencia con el alcance de arriba: "Registrar pago" tampoco se ofrece en una ocurrencia posterior al tope de cobro (hoy + 56 días), y el profesor recibe `pago: null`.
 
 ---
 
@@ -580,7 +580,7 @@ Todas las acciones del sprint se hacen desde el detalle de un turno en una fecha
 - Desde la agenda y desde la ficha del alumno se abre el mismo detalle, con sus datos y las acciones que manda la API.
 - La pantalla no decide ninguna regla: sólo usa `acciones` y `cancelable`.
 
-**Actualización (PR de pagos, T-52/T-54).** El mismo PR sumó lo del pago a esta tarea (decisiones T-103 y T-106): `src/types/ocurrencia.ts` (`pago`, `estadoPago`), la sección "Pago" de `OcurrenciaDetalle` con el slot `renderComprobante`, la columna "Pago" de `TurnosDelAlumno`, y `renderComprobante` en `app/mesa/_componentes/detalle-turno.tsx`.
+**Actualización (PR de pagos, T-52/T-54).** El mismo PR sumó lo del pago a esta tarea (decisiones T-106 y T-109): `src/types/ocurrencia.ts` (`pago`, `estadoPago`), la sección "Pago" de `OcurrenciaDetalle` con el slot `renderComprobante`, la columna "Pago" de `TurnosDelAlumno`, y `renderComprobante` en `app/mesa/_componentes/detalle-turno.tsx`.
 
 ---
 
@@ -792,14 +792,14 @@ Anular un pago (definición D): pasa al próximo sprint.
 
 **Actualización (T-52 UI)**
 
-- **Importes antes de pagar.** `POST /pagos` no tiene previa y `OcurrenciaDeAlumno` no trae importe. Quien abre el diálogo le pasa los importes con dos tipos compartidos de `src/types/pago.ts`: `OcurrenciaACobrar` (la ocurrencia `(turnoId, fecha)` con horario, materia, profesor e `importe`, que es `null` si la materia no tiene precio) y `SolicitudRegistrarPago` (`{ alumnoId, ocurrencias, onCerrar }`, las props de `RegistrarPagoDialog` y el argumento de `renderRegistrarPago`). El detalle arma la ocurrencia con `pago.importeVigente` (el `pago` de `GET /ocurrencias/{turnoId}/{fecha}`, decisión T-103; `aCobrarDesdeDetalle`) y `cuentas`, con los importes de T-53. El cliente solo suma esos importes para el resumen; cantidad, total y vuelto del éxito salen de la respuesta. Quien abre guarda su copia de `ocurrencias` y deja el diálogo montado hasta `onCerrar`, porque registrar invalida lo que lo abrió (decisión T-80).
+- **Importes antes de pagar.** `POST /pagos` no tiene previa y `OcurrenciaDeAlumno` no trae importe. Quien abre el diálogo le pasa los importes con dos tipos compartidos de `src/types/pago.ts`: `OcurrenciaACobrar` (la ocurrencia `(turnoId, fecha)` con horario, materia, profesor e `importe`, que es `null` si la materia no tiene precio) y `SolicitudRegistrarPago` (`{ alumnoId, ocurrencias, onCerrar }`, las props de `RegistrarPagoDialog` y el argumento de `renderRegistrarPago`). El detalle arma la ocurrencia con `pago.importeVigente` (el `pago` de `GET /ocurrencias/{turnoId}/{fecha}`, decisión T-106; `aCobrarDesdeDetalle`) y `cuentas`, con los importes de T-53. El cliente solo suma esos importes para el resumen; cantidad, total y vuelto del éxito salen de la respuesta. Quien abre guarda su copia de `ocurrencias` y deja el diálogo montado hasta `onCerrar`, porque registrar invalida lo que lo abrió (decisión T-80).
 - **Comprobante.** La ruta es `app/(documentos)/mesa/pagos/[pagoId]/comprobante/page.tsx` (URL `/mesa/pagos/<id>/comprobante`), en el route group `(documentos)`, cuyo layout solo monta `SegmentoDeRol`: misma URL, sin el `AppShell` de `app/mesa/layout.tsx`. Reemplaza a `app/mesa/pagos/[pagoId]/comprobante/page.tsx` del punto 3, que habría quedado con el Sidebar. T-60 suma ahí sus `/…/imprimir` (`arquitectura-frontend.md` → Documentos imprimibles).
 - **Pendiente.** La verificación en A4 depende de T-64: sin `GET /centro`, el comprobante muestra "No se pudieron cargar los datos del centro" y no imprime. El recorrido real desde el detalle del turno depende de T-44: hoy `OcurrenciaDetalle` es un placeholder que no llama a `renderAcciones`, así que se verificó con una página temporal, con ocurrencias reales y un `OcurrenciaDetalle` armado a mano.
 - **Página temporal eliminada (T-54).** `app/mesa/prueba-pagos/` y `features/prueba-pagos/` se borraron en T-54: el diálogo ya se abre de verdad desde `cuentas` (ficha y `/mesa/pagos`). El recorrido desde el detalle del turno se verifica con T-44.
 
 **Actualización (integración con el detalle del turno)**
 
-Con T-43/T-44 mergeadas, el mismo PR completó el pago en el detalle (decisiones T-103 a T-106):
+Con T-43/T-44 mergeadas, el mismo PR completó el pago en el detalle (decisiones T-106 a T-109):
 
 - **API.** `GET /ocurrencias/{turnoId}/{fecha}` trae `pago` (pendiente con `importeVigente`, pagado con los datos de su pago; `null` para el profesor) y `GET /ocurrencias?alumnoId`, `estadoPago`. "Cancelar" viene deshabilitado con su motivo en un turno pagado, y "Registrar pago" sólo se ofrece si el turno no está cancelado, está pendiente y no pasa el tope de cobro (hoy + 56 días).
 - **Detalle.** Sección "Pago" con el estado y, si está pagado, importe, forma de pago, fecha, número de comprobante, quién lo registró y "Ver comprobante". La pestaña "Turnos" suma la columna "Pago".
@@ -912,7 +912,7 @@ El alcance y la actualización de arriba quedan como se escribieron; lo que sigu
 
 **Actualización (integración con el detalle del turno)**
 
-Corrige "Pago de una fila" de arriba y el punto 2 del alcance ("sin filtro, cobro de a uno") (decisión T-106):
+Corrige "Pago de una fila" de arriba y el punto 2 del alcance ("sin filtro, cobro de a uno") (decisión T-109):
 
 - **La acción de cada fila es "Ver detalle"**, en las dos vistas: abre el detalle del turno (el mismo de las agendas y de la pestaña "Turnos"), y el pago de un solo turno se registra desde ahí. También se puede cancelar o reprogramar desde ese detalle.
 - **No cambian** las casillas, "Seleccionar todos los adeudados", "Quitar selección" ni el "Registrar pago" de la selección, que cobra varios turnos sin pasar por el detalle. En la vista global sin alumno filtrado, el cobro de a uno es por el detalle.

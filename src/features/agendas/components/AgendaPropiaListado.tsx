@@ -32,6 +32,7 @@ type AgendaPropiaListadoProps = {
 export function AgendaPropiaListado({ renderDetalle }: AgendaPropiaListadoProps) {
   return (
     <AgendaConModo
+      enEncabezado="titulo"
       renderDetalle={renderDetalle}
       renderCalendario={(filtros) => (
         <CalendarioSemanal

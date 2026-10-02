@@ -19,6 +19,7 @@ export const ejemploAgendaDiaria = {
       tipo: 'RECURRENTE',
       estado: 'AGENDADO',
       estadoPago: 'PENDIENTE',
+      cupo: { ocupados: 2, capacidad: 4 },
       prioridad: 'ALTA',
       examen: {
         id: 5,
@@ -42,11 +43,12 @@ export const ejemploAgendaDiaria = {
       tipo: 'SESION_UNICA',
       estado: 'CANCELADO',
       estadoPago: 'PENDIENTE',
+      cupo: { ocupados: 2, capacidad: 4 },
       prioridad: null,
       examen: null,
     },
   ],
-  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+  meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
 } satisfies AgendaListado
 
 // Una semana de la agenda propia: el recurrente de los lunes 9–10 (ya pagado el primero, con
@@ -65,6 +67,7 @@ export const ejemploAgendaPropia = [
     tipo: 'RECURRENTE',
     estado: 'AGENDADO',
     estadoPago: 'PAGADO',
+    cupo: { ocupados: 2, capacidad: 4 },
     prioridad: 'ALTA',
     examen: {
       id: 5,
@@ -87,6 +90,7 @@ export const ejemploAgendaPropia = [
     tipo: 'SESION_UNICA',
     estado: 'AGENDADO',
     estadoPago: 'PENDIENTE',
+    cupo: { ocupados: 2, capacidad: 4 },
     prioridad: 'BAJA',
     examen: null,
   },
@@ -109,6 +113,7 @@ export const ejemploAgendaCentro = [
     tipo: 'RECURRENTE',
     estado: 'AGENDADO',
     estadoPago: 'PENDIENTE',
+    cupo: { ocupados: 2, capacidad: 4 },
     prioridad: 'MEDIA',
     examen: {
       id: 6,
@@ -132,6 +137,7 @@ export const ejemploAgendaCentro = [
     tipo: 'SESION_UNICA',
     estado: 'CANCELADO',
     estadoPago: 'PENDIENTE',
+    cupo: { ocupados: 2, capacidad: 4 },
     prioridad: null,
     examen: null,
   },

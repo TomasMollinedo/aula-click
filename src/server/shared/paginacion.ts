@@ -1,6 +1,6 @@
 import { z } from '@hono/zod-openapi'
 
-const PAGE_SIZE_DEFAULT = 20
+const PAGE_SIZE_DEFAULT = 10
 const PAGE_SIZE_MAX = 100
 
 // Enteros positivos que llegan como string en el query (`?page=2`).
@@ -10,7 +10,7 @@ const enteroQuery = z.coerce
   .min(1, { error: 'Debe ser mayor o igual a 1' })
 
 /**
- * Query de paginación: `page` (entero >= 1, default 1) y `pageSize` (entero 1..100, default 20).
+ * Query de paginación: `page` (entero >= 1, default 1) y `pageSize` (entero 1..100, default 10).
  * Entrada: strings del query. Salida: `{ page: number; pageSize: number }`.
  * Un `pageSize` mayor a 100 se rechaza (400), no se recorta.
  * Las features lo extienden con `.extend({ q, estado, ... })`.

@@ -6,6 +6,7 @@ import {
   ETIQUETA_PRIORIDAD,
   mostrarPrioridad,
   textoDiasHastaExamen,
+  textoExamenCorto,
   textoExamenPrioridad,
 } from '../indicadores-turno'
 
@@ -57,6 +58,16 @@ describe('textoDiasHastaExamen', () => {
     [21, 'en 21 días'],
   ])('%i → %s', (dias, texto) => {
     expect(textoDiasHastaExamen(dias)).toBe(texto)
+  })
+})
+
+describe('textoExamenCorto', () => {
+  it.each([
+    [5, 'Examen 15/10 · en 5 días'],
+    [1, 'Examen 15/10 · en 1 día'],
+    [0, 'Examen 15/10 · el mismo día'],
+  ])('con %i días: %s', (dias, texto) => {
+    expect(textoExamenCorto({ materiaNombre: 'Matemática', fecha: '2026-10-15', dias })).toBe(texto)
   })
 })
 

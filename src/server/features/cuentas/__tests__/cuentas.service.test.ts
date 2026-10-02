@@ -42,7 +42,7 @@ function adeudado(parcial: {
       tipo: 'RECURRENTE',
       estado: parcial.estado ?? 'SIN_REGISTRAR',
       pago: { estado: 'PENDIENTE' },
-      serie: { fechaInicio: '2026-09-07', fechaFin: null, finEfectivo: null },
+      serie: { serieId: null, fechaInicio: '2026-09-07', fechaFin: null, finEfectivo: null },
       alumno: { id: alumnoId, nombre: `Alumno${alumnoId}`, apellido: 'Paz', busqueda: 'paz' },
       profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez', busqueda: 'gomez ana' },
       materia: { id: 2, nombre: 'Matemática' },

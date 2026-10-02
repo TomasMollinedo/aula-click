@@ -1,11 +1,11 @@
 // Cómo se ve una agenda: como calendario semanal o como lista (HU-19). El modo vive en la URL
-// (`?modo=calendario`) y no se recuerda entre visitas. Funciones puras (el hook está en
+// (`?modo=lista`) y no se recuerda entre visitas. Funciones puras (el hook está en
 // `use-modo-agenda`).
 
 export type ModoAgenda = 'calendario' | 'lista'
 
-/** Quien entra a una agenda ve la lista, como antes del calendario. */
-export const MODO_POR_DEFECTO: ModoAgenda = 'lista'
+/** Quien entra a una agenda ve el calendario semanal; la lista se elige con el selector. */
+export const MODO_POR_DEFECTO: ModoAgenda = 'calendario'
 
 /** Lo que trae la URL puede ser cualquier cosa (o nada): un valor desconocido es el modo por defecto. */
 export function parsearModo(valor: string | null | undefined): ModoAgenda {

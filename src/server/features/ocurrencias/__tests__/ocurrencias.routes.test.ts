@@ -11,6 +11,7 @@ const { repository, profesoresRepository, getSession } = vi.hoisted(() => ({
   repository: {
     buscarOcurrencia: vi.fn(),
     buscarDatosAdicionales: vi.fn(),
+    leerFilasDeLaHora: vi.fn(),
     buscarFinalizacion: vi.fn(),
     buscarPago: vi.fn(),
     leerOcurrenciasDelAlumno: vi.fn(),
@@ -43,7 +44,7 @@ const OCURRENCIA = {
   tipo: 'RECURRENTE',
   estado: 'AGENDADO',
   pago: { estado: 'PENDIENTE' },
-  serie: { fechaInicio: '2099-01-05', fechaFin: null, finEfectivo: null },
+  serie: { serieId: null, fechaInicio: '2099-01-05', fechaFin: null, finEfectivo: null },
   alumno: { id: 12, nombre: 'Lucía', apellido: 'González', busqueda: 'gonzalez lucia 40123456' },
   profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez', busqueda: 'perez ana 30111222' },
   materia: { id: 3, nombre: 'Matemática' },
@@ -76,6 +77,9 @@ beforeEach(() => {
   vi.clearAllMocks()
   getSession.mockResolvedValue(sesion())
   repository.buscarDatosAdicionales.mockResolvedValue(DATOS_ADICIONALES)
+  repository.leerFilasDeLaHora.mockResolvedValue([
+    { turnoId: 31, fechaFin: null, finalizadaDesde: null },
+  ])
   repository.buscarFinalizacion.mockResolvedValue(null)
   repository.leerPrioridades.mockResolvedValue(new Map())
   repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
@@ -240,7 +244,7 @@ describe('GET /ocurrencias', () => {
     ['sin alumnoId', ''],
     ['alumnoId inválido', '?alumnoId=abc'],
     ['hasta anterior a desde', '?alumnoId=12&desde=2026-09-22&hasta=2026-09-21'],
-    ['rango fuera de la ventana', '?alumnoId=12&desde=2026-01-01&hasta=2026-01-02'],
+    ['rango fuera de la ventana', '?alumnoId=12&desde=2025-12-01&hasta=2025-12-31'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
     const res = await pedir(query)
     expect(res.status).toBe(400)

@@ -13,7 +13,7 @@ type AgendaDiariaPantallaProps = Parameters<typeof AgendaDiariaListado>[0]
 // botón del PDF los compone `app/` (`renderDetalle`, `renderPdf`).
 export function AgendaDiariaPantalla(props: AgendaDiariaPantallaProps) {
   return (
-    <div className="space-y-8">
+    <div className="relative space-y-8">
       <PageHeader title="Agenda diaria" description="Turnos agendados en todo el centro" />
       <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
         <AgendaDiariaListado {...props} />

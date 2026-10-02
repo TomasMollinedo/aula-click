@@ -1,5 +1,8 @@
 'use client'
 
+import { Printer } from 'lucide-react'
+
+import { Button } from '@/components/ui/button'
 import type { FiltrosAgenda } from '@/types/agenda'
 
 export type BotonPdfAgendaProps = {
@@ -8,8 +11,31 @@ export type BotonPdfAgendaProps = {
   filtros: FiltrosAgenda
 }
 
-/** PLACEHOLDER de T-35, lo completa T-60: "Generar PDF" de la agenda diaria, en su encabezado. */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- placeholder: las props ya son las definitivas
-export function BotonPdfAgenda(_props: BotonPdfAgendaProps) {
-  return null
+/**
+ * "Generar PDF" de la agenda diaria (HU-11, T-60), en su encabezado: abre la hoja de impresión en
+ * una pestaña nueva, con la fecha y los filtros tal cual están en la URL, así la agenda que estaba
+ * abierta queda intacta en la pestaña original (cancelar o cerrar el diálogo de imprimir del
+ * navegador no se puede detectar: no hay forma de "volver sola"). No pide datos: la hoja (`app/
+ * mesa/agenda/imprimir`) trae todas las filas del día con el hook de la agenda, no sólo la página
+ * visible.
+ *
+ * Sólo se muestra con un profesor elegido en el filtro: la agenda de todo el centro en un día
+ * puede tener demasiados turnos para una sola hoja (decisión explícita, no está en el ticket
+ * original). El PDF de un turno puntual sigue disponible siempre desde su detalle.
+ */
+export function BotonPdfAgenda({ fecha, filtros }: BotonPdfAgendaProps) {
+  if (filtros.profesorId == null) return null
+
+  const searchParams = new URLSearchParams({ fecha, profesorId: String(filtros.profesorId) })
+  if (filtros.estado) searchParams.set('estado', filtros.estado)
+  if (filtros.prioridad) searchParams.set('prioridad', filtros.prioridad)
+
+  return (
+    <Button type="button" variant="accent" asChild>
+      <a href={`/mesa/agenda/imprimir?${searchParams}`} target="_blank" rel="noopener noreferrer">
+        <Printer />
+        Generar PDF
+      </a>
+    </Button>
+  )
 }

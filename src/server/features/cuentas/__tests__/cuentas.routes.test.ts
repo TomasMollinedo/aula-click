@@ -228,7 +228,7 @@ describe('GET /cuentas/adeudados', () => {
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       data: [],
-      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+      meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
       totalAdeudado: 0,
       aplica: false,
     })
@@ -311,7 +311,7 @@ describe('GET /cuentas/proximos', () => {
     const json = await res.json()
     expect(json).toMatchObject({
       data: [],
-      meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 },
+      meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
       aplica: false,
     })
     expect(json).not.toHaveProperty('totalAdeudado')

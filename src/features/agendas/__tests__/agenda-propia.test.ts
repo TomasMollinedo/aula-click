@@ -35,6 +35,7 @@ const turno = (turnoId: number, fecha: string, horaInicio = '09:00'): AgendaProp
   estadoPago: 'PENDIENTE',
   prioridad: null,
   examen: null,
+  cupo: { ocupados: 1, capacidad: 4 },
 })
 
 describe('parsearVista', () => {

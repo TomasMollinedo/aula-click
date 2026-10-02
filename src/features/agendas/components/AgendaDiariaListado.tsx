@@ -84,12 +84,12 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
     profesorId: profesorId ?? undefined,
     ...paramsDeEstadoYPrioridad(filtros),
     page,
-    pageSize: 20,
   })
   const meta = query.data?.meta
 
   return (
     <AgendaConModo
+      enEncabezado="titulo"
       renderDetalle={renderDetalle}
       renderCalendario={(filtrosDelCalendario) => (
         <CalendarioSemanal

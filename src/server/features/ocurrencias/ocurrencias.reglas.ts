@@ -1,7 +1,6 @@
 import { ValidationError } from '@/server/errors'
 import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelaciones.condiciones'
 import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
-import { fechaADate } from '@/server/shared/fechas'
 import type {
   EstadoOcurrencia,
   EstadoPagoOcurrencia,
@@ -13,31 +12,18 @@ import type {
 // feature no se repite acá: el mensaje de "pagado" es el de `cancelaciones` y el tope de cobro, el
 // de `pagos`.
 
-/** Días hacia atrás y hacia adelante del rango por defecto de `GET /ocurrencias` (T-43). */
-export const DIAS_ATRAS_POR_DEFECTO = 30
-export const DIAS_ADELANTE_POR_DEFECTO = 56
-
 export const MENSAJE_RANGO_INVERTIDO = '`hasta` no puede ser anterior a `desde`'
-export const MENSAJE_FUERA_DE_VENTANA = `El rango no puede exceder ${DIAS_ATRAS_POR_DEFECTO} días atrás ni ${DIAS_ADELANTE_POR_DEFECTO} días adelante de hoy`
-
-const MS_POR_DIA = 24 * 60 * 60 * 1000
-
-function sumarDias(fecha: string, dias: number): string {
-  const fecha2 = new Date(fechaADate(fecha).getTime() + dias * MS_POR_DIA)
-  return fecha2.toISOString().slice(0, 10)
-}
+export const MENSAJE_FUERA_DE_VENTANA = 'El rango tiene que estar dentro del año en curso'
 
 /**
- * Ventana permitida de `GET /ocurrencias` (definición del ticket: "por defecto desde 30 días
- * atrás hasta 8 semanas adelante, rango máximo acotado, como las agendas"): los valores por
- * defecto son también los bordes de la ventana — no hay un tercer número de tope escrito en
- * ningún lado, así que se toma la ventana descripta como el máximo permitido.
+ * Ventana permitida de `GET /ocurrencias` (T-43, acotada al año en curso por T-66: antes era un
+ * rango relativo a hoy, 30 días atrás / 56 adelante): cualquier fecha entre el 1 de enero y el 31
+ * de diciembre del año de `fechaHoy`. Los valores por defecto (sin `desde`/`hasta`) son también los
+ * bordes de la ventana, como antes.
  */
 export function ventanaOcurrencias(fechaHoy: string): { desde: string; hasta: string } {
-  return {
-    desde: sumarDias(fechaHoy, -DIAS_ATRAS_POR_DEFECTO),
-    hasta: sumarDias(fechaHoy, DIAS_ADELANTE_POR_DEFECTO),
-  }
+  const anio = fechaHoy.slice(0, 4)
+  return { desde: `${anio}-01-01`, hasta: `${anio}-12-31` }
 }
 
 /**
@@ -59,24 +45,30 @@ export function validarRangoOcurrencias(desde: string, hasta: string, fechaHoy: 
   }
 }
 
-/** Datos de la serie que necesita `calcularAcciones`, sin el resto de la `Ocurrencia`. */
-export type SerieParaAcciones = {
+/**
+ * Una fila de la serie del turno que es de su **misma hora** (`serieId` y `bloqueAgendaId`,
+ * decisión T-103): el propio turno y sus otros tramos. Es el conjunto sobre el que actúa
+ * "Finalizar" (decisión T-104). Sin el resto de la fila: sólo lo que mira `calcularAcciones`.
+ */
+export type FilaDeLaHora = {
+  /** La guardada (finalizar no la modifica); `null` = sin fin. */
   fechaFin: string | null
-  finEfectivo: string | null
+  /** Tiene una `FinalizacionRecurrencia`. */
+  finalizada: boolean
+}
+
+/** Alguna fila de la hora tiene finalización: la hora ya se finalizó, desde cualquier tramo. */
+function estaFinalizada(filas: readonly FilaDeLaHora[]): boolean {
+  return filas.some((fila) => fila.finalizada)
 }
 
 /**
- * La serie ya tiene una `FinalizacionRecurrencia` aplicada: su fin efectivo quedó por debajo de
- * `fechaFin` (`finEfectivo` la única cuenta que los distingue — T-30). Sin finalización, son
- * iguales (los dos `null`, o los dos la misma fecha).
+ * La hora sigue vigente si alguna de sus filas no tiene `fechaFin` o no pasó todavía: el mismo
+ * criterio con el que `POST /finalizaciones` acepta el pedido (decisión T-75), así que si el botón
+ * se ve, el POST no rechaza por "no vigente".
  */
-function estaFinalizada(serie: SerieParaAcciones): boolean {
-  return serie.finEfectivo !== serie.fechaFin
-}
-
-/** Una serie recurrente sigue vigente si no tiene fin efectivo o si ese fin no pasó todavía. */
-function estaVigente(serie: SerieParaAcciones, fechaHoy: string): boolean {
-  return serie.finEfectivo === null || serie.finEfectivo >= fechaHoy
+function estaVigente(filas: readonly FilaDeLaHora[], fechaHoy: string): boolean {
+  return filas.some((fila) => fila.fechaFin === null || fila.fechaFin >= fechaHoy)
 }
 
 export type AccionSimple = { visible: boolean }
@@ -103,7 +95,6 @@ export type OcurrenciaParaAcciones = {
   fecha: string
   estado: EstadoOcurrencia
   tipo: TipoTurno
-  serie: SerieParaAcciones
   pago: { estado: EstadoPagoOcurrencia }
 }
 
@@ -113,15 +104,22 @@ export type OcurrenciaParaAcciones = {
  *   pasada y no cancelada es `SIN_REGISTRAR`, nunca `AGENDADO` — `estadoDeOcurrencia` en
  *   `turnos.reglas.ts`). Si además está pagada, se muestra deshabilitada con el `motivo` con el que
  *   `POST /cancelaciones` la rechazaría (definición D: un turno pagado no se cancela).
- * - `finalizar` (HU-14): recurrente, vigente y sin una finalización ya aplicada. No mira el pago de
- *   esta ocurrencia: las pagadas de la serie se validan al finalizar (409 `TURNOS_PAGADOS`).
+ * - `finalizar` (HU-14): recurrente, con su hora vigente y sin finalizar. Se mira el conjunto de
+ *   `filasDeLaHora` (todos los tramos de esa hora en su serie), no sólo la fila de la ocurrencia:
+ *   un tramo anterior de una hora ya finalizada en un tramo posterior no la ofrece, y la otra hora
+ *   de la misma serie sí. Sin filas (quien llama no la necesita), no visible. No mira el pago de
+ *   esta ocurrencia: las pagadas de la hora se validan al finalizar (409 `TURNOS_PAGADOS`).
  * - `reprogramar` (HU-20): agendada. Una pagada se reprograma igual: el pago acompaña al turno.
  * - `registrarPago` (HU-15): no cancelada, pago `PENDIENTE` y fecha dentro del tope de cobro
  *   (`limiteDeCobro(hoy)`, el de `POST /pagos`; las pasadas no tienen tope), así no se ofrece algo
  *   que la API rechaza con `FUERA_DE_RANGO`. Una materia sin precio sí lo muestra: decide el 409
  *   `SIN_PRECIO` del cobro.
  */
-export function calcularAcciones(ocurrencia: OcurrenciaParaAcciones, fechaHoy: string): Acciones {
+export function calcularAcciones(
+  ocurrencia: OcurrenciaParaAcciones,
+  filasDeLaHora: readonly FilaDeLaHora[],
+  fechaHoy: string,
+): Acciones {
   const agendada = ocurrencia.estado === 'AGENDADO'
   const pagada = ocurrencia.pago.estado === 'PAGADO'
   return {
@@ -133,8 +131,8 @@ export function calcularAcciones(ocurrencia: OcurrenciaParaAcciones, fechaHoy: s
     finalizar: {
       visible:
         ocurrencia.tipo === 'RECURRENTE' &&
-        estaVigente(ocurrencia.serie, fechaHoy) &&
-        !estaFinalizada(ocurrencia.serie),
+        estaVigente(filasDeLaHora, fechaHoy) &&
+        !estaFinalizada(filasDeLaHora),
     },
     reprogramar: { visible: agendada },
     registrarPago: {

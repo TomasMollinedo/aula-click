@@ -1,10 +1,12 @@
 import { vi } from 'vitest'
+import { ConflictError } from '@/server/errors'
 import { sumarDias } from '@/server/shared/fechas'
 import type { FinalizacionesRepository } from '../finalizaciones.repository'
-import type {
-  OcurrenciaDeLaSerie,
-  SnapshotFinalizacion,
-  TurnoAFinalizar,
+import {
+  MENSAJE_YA_FINALIZADO,
+  type FilaDeSerie,
+  type OcurrenciaDeLaSerie,
+  type SnapshotFinalizacion,
 } from '../finalizaciones.reglas'
 
 // `finalizacionesRepository` en memoria para los tests del service (T-47), con el patrón de la
@@ -13,21 +15,26 @@ import type {
 // ese momento y ejecuta el `verificar` real que le pasa el service. Si `verificar` lanza, no se
 // escribe nada.
 
-/** Un turno con las ocurrencias que devolvería el motor (por fecha; las reglas sólo usan las de `fechaDesde` en adelante). */
-export type TurnoEnBase = TurnoAFinalizar & {
-  materiaId: number
-  bloqueAgendaId: number
-  ocurrencias: OcurrenciaDeLaSerie[]
-}
+/**
+ * Una fila `turno` con las ocurrencias que devolvería el motor si no estuviera finalizada (por
+ * fecha): el snapshot las corta en su fin efectivo y desde `fechaDesde`.
+ */
+export type TurnoEnBase = FilaDeSerie & { ocurrencias: OcurrenciaDeLaSerie[] }
 
-/** Ocurrencias semanales `AGENDADO` y pendientes de 9 a 10, de `desde` a `hasta` (incluidas). */
-export function semanales(desde: string, hasta: string): OcurrenciaDeLaSerie[] {
+/** Ocurrencias semanales `AGENDADO` y pendientes de una hora, de `desde` a `hasta` (incluidas). */
+export function semanales(
+  desde: string,
+  hasta: string,
+  turnoId = 41,
+  horaInicio = 540,
+): OcurrenciaDeLaSerie[] {
   const ocurrencias: OcurrenciaDeLaSerie[] = []
   for (let fecha = desde; fecha <= hasta; fecha = sumarDias(fecha, 7)) {
     ocurrencias.push({
+      turnoId,
       fecha,
-      horaInicio: 540,
-      horaFin: 600,
+      horaInicio,
+      horaFin: horaInicio + 60,
       estado: 'AGENDADO',
       pago: { estado: 'PENDIENTE' },
     })
@@ -42,29 +49,42 @@ export function crearFinalizacionesEnMemoria(turnos: TurnoEnBase[]) {
     { fechaDesde: string; motivo: string; detalle: string | null; createdById: string }
   >()
 
-  const finalizado = (turno: TurnoEnBase) => turno.tieneFinalizacion || finalizaciones.has(turno.id)
+  const finalizadaDesde = (turno: TurnoEnBase) =>
+    finalizaciones.get(turno.turnoId)?.fechaDesde ?? turno.finalizadaDesde
 
   /** Como `leerSnapshot` del repository: estado al momento de leer. */
   function leer(turnoId: number, fechaDesde: string): SnapshotFinalizacion {
-    const turno = turnos.find((t) => t.id === turnoId)
-    if (!turno) return { turno: null, ocurrencias: [], otrosTramos: [] }
-    const { materiaId, bloqueAgendaId, ocurrencias, ...datos } = turno
+    const pedido = turnos.find((t) => t.turnoId === turnoId)
+    if (!pedido) return { turno: null, filas: [], ocurrencias: [] }
+    // Como `leerFilasDeLaSerie`: los `RECURRENTE` `ACTIVO` de su serie; sin `serieId`, sólo él.
+    const deLaSerie = turnos.filter(
+      (t) =>
+        t.tipo === 'RECURRENTE' &&
+        t.activo &&
+        (pedido.serieId === null ? t === pedido : t.serieId === pedido.serieId),
+    )
+    const aFila = ({ ocurrencias, ...fila }: TurnoEnBase): FilaDeSerie => {
+      void ocurrencias
+      return fila
+    }
     return {
-      turno: { ...datos, tieneFinalizacion: finalizado(turno) },
-      ocurrencias: ocurrencias.map((o) => ({ ...o, pago: { ...o.pago } })),
-      otrosTramos: turnos
-        .filter(
-          (t) =>
-            t.tipo === 'RECURRENTE' &&
-            t.activo &&
-            t.alumnoId === turno.alumnoId &&
-            t.materiaId === materiaId &&
-            t.bloqueAgendaId === bloqueAgendaId &&
-            t.fechaInicio > turno.fechaInicio &&
-            !finalizado(t) &&
-            (t.fechaFin === null || t.fechaFin >= fechaDesde),
-        )
-        .map((t) => ({ turnoId: t.id, fechaInicio: t.fechaInicio, fechaFin: t.fechaFin })),
+      turno: { ...aFila(pedido), finalizadaDesde: finalizadaDesde(pedido) },
+      filas: deLaSerie.map((t) => ({ ...aFila(t), finalizadaDesde: finalizadaDesde(t) })),
+      // Como el motor: desde `fechaDesde`, dentro del fin efectivo y por fecha, hora y turno.
+      ocurrencias: deLaSerie
+        .flatMap((t) => {
+          const corte = finalizadaDesde(t)
+          return t.ocurrencias.filter(
+            (o) => o.fecha >= fechaDesde && (corte === null || o.fecha < corte),
+          )
+        })
+        .map((o) => ({ ...o, pago: { ...o.pago } }))
+        .sort(
+          (a, b) =>
+            (a.fecha < b.fecha ? -1 : a.fecha > b.fecha ? 1 : 0) ||
+            a.horaInicio - b.horaInicio ||
+            a.turnoId - b.turnoId,
+        ),
     }
   }
 
@@ -75,12 +95,18 @@ export function crearFinalizacionesEnMemoria(turnos: TurnoEnBase[]) {
       // Cede el turno entre la lectura y la escritura: sin la cola, otra escritura se colaría acá.
       await new Promise((resolver) => setTimeout(resolver, 0))
       const plan = verificar(snapshot)
-      finalizaciones.set(entrada.turnoId, {
-        fechaDesde: entrada.fechaDesde,
-        motivo: entrada.motivo,
-        detalle: entrada.detalle,
-        createdById: actor.userId,
-      })
+      // El único de `turno_id` (P2002): todo o nada.
+      if (plan.turnoIds.some((id) => finalizaciones.has(id))) {
+        throw new ConflictError(MENSAJE_YA_FINALIZADO)
+      }
+      for (const turnoId of plan.turnoIds) {
+        finalizaciones.set(turnoId, {
+          fechaDesde: entrada.fechaDesde,
+          motivo: entrada.motivo,
+          detalle: entrada.detalle,
+          createdById: actor.userId,
+        })
+      }
       return plan
     })
     cola = ejecucion.catch(() => undefined)
@@ -94,7 +120,7 @@ export function crearFinalizacionesEnMemoria(turnos: TurnoEnBase[]) {
   /** Otra escritura del mismo alumno, en la misma cola que las finalizaciones. */
   function encolar(cambio: (turno: TurnoEnBase) => void, turnoId: number) {
     cola = cola.then(() => {
-      const turno = turnos.find((t) => t.id === turnoId)
+      const turno = turnos.find((t) => t.turnoId === turnoId)
       if (turno) cambio(turno)
     })
     return cola
@@ -111,6 +137,7 @@ export function crearFinalizacionesEnMemoria(turnos: TurnoEnBase[]) {
   const pasarASesionUnica = (turnoId: number) =>
     encolar((turno) => {
       turno.tipo = 'SESION_UNICA'
+      turno.serieId = null
     }, turnoId)
 
   return { repository: { leerSnapshot, finalizar }, finalizaciones, pagar, pasarASesionUnica }

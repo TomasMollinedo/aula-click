@@ -168,10 +168,11 @@ export function planificarReprogramacion(
 
   if (!hayAnterior && !haySiguiente) {
     // Su única fecha: no queda ninguna ocurrencia en el original, se edita como sesión única. Su
-    // finalización ya no tiene sentido (y podría cortar la fecha movida): se borra.
+    // finalización ya no tiene sentido (y podría cortar la fecha movida): se borra. Una sesión
+    // única no es parte de una serie: pierde el `serieId` (decisión T-103).
     return {
       ...sinCambios,
-      original: { tipo: 'SESION_UNICA', ...editaLaFecha },
+      original: { tipo: 'SESION_UNICA', ...editaLaFecha, serieId: null },
       borrarFinalizacion: turno.tieneFinalizacion,
     }
   }
@@ -184,10 +185,12 @@ export function planificarReprogramacion(
     return { ...sinCambios, original: { fechaFin: anterior }, sesionNueva: true }
   }
   // En el medio: original hasta la anterior, tramo nuevo desde la siguiente hasta el fin original.
+  // El tramo sigue en la serie del original (hereda su `serieId`, decisión T-103); la finalización,
+  // si hay, pasa a él: es la fila de esa hora que tiene fechas desde `fechaDesde` (T-104).
   return {
     ...sinCambios,
     original: { fechaFin: anterior },
-    tramoNuevo: { fechaInicio: siguiente, fechaFin: serie.fechaFin },
+    tramoNuevo: { fechaInicio: siguiente, fechaFin: serie.fechaFin, serieId: serie.serieId },
     sesionNueva: true,
     finalizacionAlTramo: turno.tieneFinalizacion,
     reapuntarPosterioresAlTramo: true,

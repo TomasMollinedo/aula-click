@@ -4,6 +4,7 @@ import { cn } from '@/utils/cn'
 import {
   ETIQUETA_PRIORIDAD,
   mostrarPrioridad,
+  textoExamenCorto,
   textoExamenPrioridad,
   type ExamenPrioridad,
   type Prioridad,
@@ -19,8 +20,9 @@ import {
 // - `punto`: punto + palabra, sin franja (listas compactas, el calendario).
 // - `detalle`: punto + palabra + el examen escrito. Es la única variante que muestra Baja.
 //
-// En `fila` y `punto`, si hay examen, la palabra es un botón con tooltip: se abre con el mouse y con
-// el foco del teclado. El color nunca es el único canal: siempre está la palabra.
+// En `fila` y `punto`, si hay examen, se lee al lado de la palabra (fecha y días que faltan) y la
+// palabra es un botón con tooltip que trae el examen completo (materia incluida): se abre con el
+// mouse y con el foco del teclado. El color nunca es el único canal: siempre está la palabra.
 
 const COLOR_PRIORIDAD: Record<Prioridad, string> = {
   ALTA: 'bg-prioridad-alta ring-1 ring-tinta/20',
@@ -73,7 +75,10 @@ export function PrioridadIndicador({
   const marca = <Marca prioridad={prioridad} className="text-xs" />
 
   return (
-    <span data-slot="prioridad-indicador" className={cn('inline-flex', className)}>
+    <span
+      data-slot="prioridad-indicador"
+      className={cn('inline-flex flex-wrap items-center gap-x-2 gap-y-0.5', className)}
+    >
       {variante === 'fila' && (
         <span
           aria-hidden
@@ -97,6 +102,11 @@ export function PrioridadIndicador({
         </TooltipProvider>
       ) : (
         marca
+      )}
+      {examen && (
+        <span data-slot="prioridad-examen" className="text-muted-foreground text-xs">
+          {textoExamenCorto(examen)}
+        </span>
       )}
     </span>
   )

@@ -453,6 +453,12 @@ export type PedidoReserva = {
   observaciones: string | null
   temas: string | null
   asignarDondeHayLugar: boolean
+  /**
+   * Id de la serie de este alta (decisión T-103), generado por quien llama (las reglas son puras):
+   * lo llevan todas las filas de un `RECURRENTE`, de todas sus horas y todos sus tramos. En una
+   * sesión única se ignora (queda `null`).
+   */
+  serieId: string
 }
 
 function detalleSuperpuesto(turno: TurnoDelAlumno) {
@@ -513,7 +519,8 @@ function mensajeHora(
  * 5. Alguna hora con fechas llenas y sin `asignarDondeHayLugar` (o en una sesión única) → 409
  *    `BLOQUE_LLENO` con el detalle por hora.
  * 6. Si no: un turno por tramo de cada hora (sin conflictos, un tramo = todo el pedido) y el
- *    resumen de las fechas sin turno.
+ *    resumen de las fechas sin turno. Todas las filas de un `RECURRENTE` llevan el `serieId` del
+ *    pedido (decisión T-103).
  */
 export function planificarReserva(snapshot: SnapshotReserva, pedido: PedidoReserva): PlanReserva {
   const { bloqueIds, tipo, fechaInicio } = pedido
@@ -611,6 +618,7 @@ export function planificarReserva(snapshot: SnapshotReserva, pedido: PedidoReser
       fechaFin: tipo === 'SESION_UNICA' ? tramo.fechaInicio : tramo.fechaFin,
       observaciones: pedido.observaciones,
       temas: pedido.temas,
+      serieId: tipo === 'RECURRENTE' ? pedido.serieId : null,
     })),
   )
   const fechasSinTurno: FechasSinTurno[] = horas

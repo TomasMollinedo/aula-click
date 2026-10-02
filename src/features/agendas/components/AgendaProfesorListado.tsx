@@ -39,6 +39,7 @@ type AgendaProfesorListadoProps = {
 export function AgendaProfesorListado({ profesorId, renderDetalle }: AgendaProfesorListadoProps) {
   return (
     <AgendaConModo
+      enEncabezado="pestanas"
       renderDetalle={renderDetalle}
       renderCalendario={(filtros) => (
         <CalendarioSemanal

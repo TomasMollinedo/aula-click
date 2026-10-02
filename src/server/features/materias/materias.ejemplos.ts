@@ -35,7 +35,7 @@ export const ejemploListado = {
     { id: 7, nombre: 'Latín', estado: 'INACTIVO', precioHora: null, sinPrecio: true },
     ejemploListadoItem,
   ],
-  meta: { page: 1, pageSize: 20, total: 3, totalPages: 1 },
+  meta: { page: 1, pageSize: 10, total: 3, totalPages: 1 },
 } satisfies MateriasListado
 
 export const ejemploSelector = [

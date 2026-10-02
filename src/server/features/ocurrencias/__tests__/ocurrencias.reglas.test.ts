@@ -4,13 +4,12 @@ import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelac
 import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
 import {
   ACCIONES_SIN_PERMISO,
-  DIAS_ADELANTE_POR_DEFECTO,
-  DIAS_ATRAS_POR_DEFECTO,
   MENSAJE_FUERA_DE_VENTANA,
   MENSAJE_RANGO_INVERTIDO,
   calcularAcciones,
   validarRangoOcurrencias,
   ventanaOcurrencias,
+  type FilaDeLaHora,
 } from '../ocurrencias.reglas'
 
 // Reglas puras de `ocurrencias` (T-43): la ventana de `GET /ocurrencias` y las acciones permitidas
@@ -29,17 +28,22 @@ function errorDe(accion: () => unknown): unknown {
 const HOY = '2026-09-22'
 
 describe('ventanaOcurrencias', () => {
-  it('30 días atrás y 8 semanas (56 días) adelante de hoy', () => {
+  it('el año en curso completo, del 1 de enero al 31 de diciembre', () => {
     expect(ventanaOcurrencias(HOY)).toEqual({
-      desde: '2026-08-23',
-      hasta: '2026-11-17',
+      desde: '2026-01-01',
+      hasta: '2026-12-31',
     })
+  })
+
+  it('el mismo año para cualquier fecha de ese año, incluidos sus bordes', () => {
+    expect(ventanaOcurrencias('2026-01-01')).toEqual({ desde: '2026-01-01', hasta: '2026-12-31' })
+    expect(ventanaOcurrencias('2026-12-31')).toEqual({ desde: '2026-01-01', hasta: '2026-12-31' })
   })
 })
 
 describe('validarRangoOcurrencias', () => {
-  it('acepta el rango por defecto y cualquier sub-rango dentro de la ventana', () => {
-    expect(() => validarRangoOcurrencias('2026-08-23', '2026-11-17', HOY)).not.toThrow()
+  it('acepta el rango por defecto y cualquier sub-rango dentro del año en curso', () => {
+    expect(() => validarRangoOcurrencias('2026-01-01', '2026-12-31', HOY)).not.toThrow()
     expect(() => validarRangoOcurrencias(HOY, HOY, HOY)).not.toThrow()
   })
 
@@ -51,25 +55,20 @@ describe('validarRangoOcurrencias', () => {
     ])
   })
 
-  it('`desde` anterior a la ventana: 400 sobre `hasta`', () => {
-    const error = errorDe(() => validarRangoOcurrencias('2026-08-22', HOY, HOY))
+  it('`desde` del año anterior: 400 sobre `hasta`', () => {
+    const error = errorDe(() => validarRangoOcurrencias('2025-12-31', HOY, HOY))
     expect(error).toBeInstanceOf(ValidationError)
     expect((error as ValidationError).details).toEqual([
       { path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA },
     ])
   })
 
-  it('`hasta` posterior a la ventana: 400 sobre `hasta`', () => {
-    const error = errorDe(() => validarRangoOcurrencias(HOY, '2026-11-18', HOY))
+  it('`hasta` del año siguiente: 400 sobre `hasta`', () => {
+    const error = errorDe(() => validarRangoOcurrencias(HOY, '2027-01-01', HOY))
     expect(error).toBeInstanceOf(ValidationError)
     expect((error as ValidationError).details).toEqual([
       { path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA },
     ])
-  })
-
-  it('los valores por defecto son también los bordes de la ventana', () => {
-    expect(DIAS_ATRAS_POR_DEFECTO).toBe(30)
-    expect(DIAS_ADELANTE_POR_DEFECTO).toBe(56)
   })
 })
 
@@ -86,21 +85,27 @@ function ocurrencia(datos: {
   tipo: 'SESION_UNICA' | 'RECURRENTE'
   fecha?: string
   pago?: 'PENDIENTE' | 'PAGADO'
-  fechaFin?: string | null
-  finEfectivo?: string | null
 }) {
   return {
     fecha: datos.fecha ?? HOY,
     estado: datos.estado,
     tipo: datos.tipo,
     pago: { estado: datos.pago ?? 'PENDIENTE' },
-    serie: { fechaFin: datos.fechaFin ?? null, finEfectivo: datos.finEfectivo ?? null },
   }
+}
+
+/** Una fila de la hora (un tramo): sin fin y sin finalizar, salvo que se indique. */
+function fila(datos: Partial<FilaDeLaHora> = {}): FilaDeLaHora {
+  return { fechaFin: null, finalizada: false, ...datos }
 }
 
 describe('calcularAcciones', () => {
   it('agendada, sesión única: cancelar y reprogramar habilitados, finalizar no visible', () => {
-    const acciones = calcularAcciones(ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA' }), HOY)
+    const acciones = calcularAcciones(
+      ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA' }),
+      [],
+      HOY,
+    )
     expect(acciones).toEqual({
       cancelar: { visible: true, habilitada: true },
       finalizar: { visible: false },
@@ -111,7 +116,8 @@ describe('calcularAcciones', () => {
 
   it('agendada, recurrente vigente y sin finalizar: las cuatro visibles', () => {
     const acciones = calcularAcciones(
-      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE', fechaFin: null, finEfectivo: null }),
+      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE' }),
+      [fila()],
       HOY,
     )
     expect(acciones).toEqual({
@@ -125,6 +131,7 @@ describe('calcularAcciones', () => {
   it('pasada (SIN_REGISTRAR): cancelar y reprogramar no visibles; registrarPago sigue visible', () => {
     const acciones = calcularAcciones(
       ocurrencia({ estado: 'SIN_REGISTRAR', tipo: 'SESION_UNICA' }),
+      [],
       HOY,
     )
     expect(acciones).toEqual({
@@ -138,6 +145,7 @@ describe('calcularAcciones', () => {
   it('cancelada: cancelar, reprogramar y registrarPago no visibles', () => {
     const acciones = calcularAcciones(
       ocurrencia({ estado: 'CANCELADO', tipo: 'SESION_UNICA' }),
+      [],
       HOY,
     )
     expect(acciones).toEqual({
@@ -148,40 +156,74 @@ describe('calcularAcciones', () => {
     })
   })
 
-  it('recurrente con una finalización ya aplicada (finEfectivo < fechaFin): finalizar no visible', () => {
+  it('recurrente con una finalización en su fila: finalizar no visible', () => {
     const acciones = calcularAcciones(
-      ocurrencia({
-        estado: 'AGENDADO',
-        tipo: 'RECURRENTE',
-        fechaFin: '2026-12-31',
-        finEfectivo: '2026-10-05',
-      }),
+      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE' }),
+      [fila({ fechaFin: '2026-12-31', finalizada: true })],
       HOY,
     )
     expect(acciones.finalizar).toEqual({ visible: false })
   })
 
-  it('recurrente no vigente (fin efectivo ya pasó): finalizar no visible', () => {
+  it('recurrente no vigente (la fechaFin de su única fila ya pasó): finalizar no visible', () => {
     const acciones = calcularAcciones(
-      ocurrencia({
-        estado: 'SIN_REGISTRAR',
-        tipo: 'RECURRENTE',
-        fechaFin: '2026-09-01',
-        finEfectivo: '2026-09-01',
-      }),
+      ocurrencia({ estado: 'SIN_REGISTRAR', tipo: 'RECURRENTE' }),
+      [fila({ fechaFin: '2026-09-01' })],
       HOY,
     )
     expect(acciones.finalizar).toEqual({ visible: false })
+  })
+
+  it('una fila que termina hoy sigue vigente (mismo criterio que el POST, T-75)', () => {
+    const acciones = calcularAcciones(
+      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE' }),
+      [fila({ fechaFin: HOY })],
+      HOY,
+    )
+    expect(acciones.finalizar).toEqual({ visible: true })
+  })
+
+  it('tramo anterior de una hora finalizada en un tramo posterior: finalizar no visible', () => {
+    // Las filas de la hora: el tramo de la ocurrencia (sin finalización propia) y el posterior,
+    // que es el que lleva la `FinalizacionRecurrencia`.
+    const acciones = calcularAcciones(
+      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE' }),
+      [fila({ fechaFin: '2026-10-19' }), fila({ fechaFin: '2026-11-30', finalizada: true })],
+      HOY,
+    )
+    expect(acciones.finalizar).toEqual({ visible: false })
+  })
+
+  it('la otra hora de la serie (sus filas no tienen finalización): finalizar visible', () => {
+    // A `calcularAcciones` sólo le llegan las filas de la hora de la ocurrencia: la finalización
+    // de la hora de 9 no está entre las de la hora de 10.
+    const acciones = calcularAcciones(
+      ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE' }),
+      [fila({ fechaFin: '2026-10-19' }), fila({ fechaFin: '2026-11-30' })],
+      HOY,
+    )
+    expect(acciones.finalizar).toEqual({ visible: true })
+  })
+
+  it('tramo anterior ya terminado de una hora con un tramo posterior vigente: finalizar visible', () => {
+    const acciones = calcularAcciones(
+      ocurrencia({ estado: 'SIN_REGISTRAR', tipo: 'RECURRENTE' }),
+      [fila({ fechaFin: '2026-09-01' }), fila({ fechaFin: null })],
+      HOY,
+    )
+    expect(acciones.finalizar).toEqual({ visible: true })
   })
 
   it('agendada y pagada: cancelar visible y deshabilitada con el motivo de `cancelaciones`; sin registrarPago', () => {
     const acciones = calcularAcciones(
       ocurrencia({ estado: 'AGENDADO', tipo: 'RECURRENTE', pago: 'PAGADO' }),
+      [fila()],
       HOY,
     )
     expect(acciones).toEqual({
       cancelar: { visible: true, habilitada: false, motivo: MENSAJES_NO_CANCELABLE.PAGADO },
-      // Finalizar no mira el pago de esta ocurrencia; una pagada se reprograma (el pago la acompaña).
+      // Finalizar mira las filas de la hora, no el pago de esta ocurrencia; una pagada se
+      // reprograma (el pago la acompaña).
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: false },
@@ -192,6 +234,7 @@ describe('calcularAcciones', () => {
   it('agendada y pendiente: cancelar habilitada, sin `motivo`', () => {
     const { cancelar } = calcularAcciones(
       ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA' }),
+      [],
       HOY,
     )
     expect(cancelar).toEqual({ visible: true, habilitada: true })
@@ -206,6 +249,7 @@ describe('calcularAcciones', () => {
         fecha: '2026-09-15',
         pago: 'PAGADO',
       }),
+      [],
       HOY,
     )
     expect(acciones.cancelar).toEqual({ visible: false, habilitada: false })
@@ -214,7 +258,8 @@ describe('calcularAcciones', () => {
 
   describe('registrarPago y el tope de cobro (el de `POST /pagos`, decisión T-60)', () => {
     const registrarPago = (fecha: string, estado: 'AGENDADO' | 'SIN_REGISTRAR' = 'AGENDADO') =>
-      calcularAcciones(ocurrencia({ estado, tipo: 'RECURRENTE', fecha }), HOY).registrarPago
+      calcularAcciones(ocurrencia({ estado, tipo: 'RECURRENTE', fecha }), [fila()], HOY)
+        .registrarPago
 
     it('el tope es el de `pagos`: hoy + 56 días', () => {
       expect(limiteDeCobro(HOY)).toBe('2026-11-17')
@@ -237,6 +282,7 @@ describe('calcularAcciones', () => {
     it('fuera del tope, cancelar y reprogramar no cambian: sólo deja de ofrecerse el cobro', () => {
       const acciones = calcularAcciones(
         ocurrencia({ estado: 'AGENDADO', tipo: 'SESION_UNICA', fecha: '2026-12-01' }),
+        [],
         HOY,
       )
       expect(acciones).toEqual({

@@ -21,6 +21,8 @@ export type TurnoDePrueba = {
   bloqueAgendaId: number
   alumnoId?: number
   materiaId?: number
+  /** La serie del alta (decisión T-103). Sin dato, `null`. */
+  serieId?: string | null
   tipo?: 'RECURRENTE' | 'SESION_UNICA'
   estado?: 'ACTIVO' | 'CANCELADO'
   fechaInicio: string
@@ -103,6 +105,7 @@ export function crearTurnosEnMemoria(bloques: BloqueDePrueba[], turnos: TurnoDeP
           bloqueAgendaId: turno.bloqueAgendaId,
           alumnoId,
           materiaId,
+          serieId: turno.serieId ?? null,
           tipo:
             turno.tipo ?? (turno.fechaFin === turno.fechaInicio ? 'SESION_UNICA' : 'RECURRENTE'),
           estado: turno.estado ?? 'ACTIVO',

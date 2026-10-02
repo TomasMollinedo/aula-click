@@ -63,6 +63,9 @@ function armar() {
   })
 }
 
+/** La serie del recurrente 50 (decisión T-103). */
+const SERIE = '11111111-1111-4111-8111-111111111111'
+
 beforeEach(() => {
   turnos = [
     {
@@ -77,6 +80,7 @@ beforeEach(() => {
       id: 50, // recurrente de los lunes, del 05/10 al 02/11
       bloqueAgendaId: 10,
       tipo: 'RECURRENTE',
+      serieId: SERIE,
       fechaInicio: '2026-10-05',
       fechaFin: '2026-11-02',
       observaciones: 'Viene con tarea',
@@ -186,6 +190,10 @@ describe('reprogramar: recurrente', () => {
         temas: 'Integrales',
       })
     }
+    // El tramo hereda el `serieId` del original; la sesión única queda fuera de la serie.
+    expect(enTabla(50)?.serieId).toBe(SERIE)
+    expect(enTabla(100)?.serieId).toBe(SERIE)
+    expect(enTabla(101)?.serieId).toBeNull()
     // Los creados llevan a quien reprograma como creador; el original queda con su modificación.
     expect(memoria.auditoria.get(100)).toEqual({ createdById: 'usr_mesa', updatedById: 'usr_mesa' })
     expect(memoria.auditoria.get(101)).toEqual({ createdById: 'usr_mesa', updatedById: 'usr_mesa' })
@@ -253,6 +261,8 @@ describe('reprogramar: recurrente', () => {
       { id: 100, tipo: 'SESION_UNICA', bloque: 30, desde: '2026-10-08', hasta: '2026-10-08' },
     ])
     expect(turnoId).toBe(100)
+    expect(enTabla(50)?.serieId).toBe(SERIE)
+    expect(enTabla(100)?.serieId).toBeNull()
     // Sus cancelaciones y pagos no se mueven.
     expect(enTabla(50)?.cancelaciones).toEqual([{ fecha: '2026-10-19' }])
     expect(enTabla(50)?.pagos).toHaveLength(1)
@@ -268,6 +278,17 @@ describe('reprogramar: recurrente', () => {
       { id: 50, tipo: 'RECURRENTE', bloque: 10, desde: '2026-10-05', hasta: '2026-10-26' },
       { id: 100, tipo: 'SESION_UNICA', bloque: 30, desde: '2026-11-05', hasta: '2026-11-05' },
     ])
+    expect(enTabla(50)?.serieId).toBe(SERIE)
+    expect(enTabla(100)?.serieId).toBeNull()
+  })
+
+  it('un original sin serieId (anterior a la columna): el tramo nuevo también queda en null', async () => {
+    const original = enTabla(50)
+    if (original) original.serieId = null
+
+    await service.reprogramar(enElMedio(), actor)
+
+    expect(enTabla(100)).toMatchObject({ tipo: 'RECURRENTE', serieId: null })
   })
 
   it('última antes del fin efectivo (por una finalización): sin tramo nuevo y la finalización queda', async () => {
@@ -291,6 +312,7 @@ describe('reprogramar: recurrente', () => {
       id: 70,
       bloqueAgendaId: 10,
       tipo: 'RECURRENTE',
+      serieId: SERIE,
       fechaInicio: '2026-10-12',
       fechaFin: '2026-10-12',
       pagos: [{ fecha: '2026-10-12', pagoId: 9, importe: 8000 }],
@@ -311,6 +333,8 @@ describe('reprogramar: recurrente', () => {
     })
     // Una finalización no tiene sentido en una sesión única (y cortaría la fecha movida).
     expect(enTabla(70)?.finalizadaDesde).toBeUndefined()
+    // Y deja de ser parte de la serie.
+    expect(enTabla(70)?.serieId).toBeNull()
   })
 
   it('a otro profesor: el texto del cambio nombra a los dos', async () => {

@@ -3,6 +3,7 @@ import { AppError, ForbiddenError, NotFoundError, ValidationError } from '@/serv
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import type {
+  FilaDeSerie,
   Finalizacion,
   Ocurrencia,
   OcurrenciasRepository,
@@ -34,11 +35,30 @@ function ocurrencia(
     tipo: 'RECURRENTE',
     estado: 'AGENDADO',
     pago: { estado: 'PENDIENTE' },
-    serie: { fechaInicio: datos.fecha, fechaFin: null, finEfectivo: null },
+    serie: { serieId: null, fechaInicio: datos.fecha, fechaFin: null, finEfectivo: null },
     alumno: { id: 12, nombre: 'Lucía', apellido: 'González', busqueda: 'gonzalez lucia 40123456' },
     profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez', busqueda: 'perez ana 30111222' },
     materia: { id: 3, nombre: 'Matemática' },
     aula: { id: 3, nombre: 'Aula 3' },
+    ...datos,
+  }
+}
+
+/** Una fila de la hora del turno 31 (un tramo), como la lee `leerFilasDeLaSerie` del motor. */
+function filaDeLaHora(datos: Partial<FilaDeSerie> = {}): FilaDeSerie {
+  return {
+    turnoId: 31,
+    serieId: null,
+    bloqueAgendaId: 10,
+    alumnoId: 12,
+    tipo: 'RECURRENTE',
+    activo: true,
+    fechaInicio: '2026-03-02',
+    fechaFin: null,
+    diaSemana: 1,
+    horaInicio: 540,
+    horaFin: 600,
+    finalizadaDesde: null,
     ...datos,
   }
 }
@@ -72,6 +92,7 @@ function crearRepositories() {
     repository: {
       buscarOcurrencia: vi.fn<OcurrenciasRepository['buscarOcurrencia']>(),
       buscarDatosAdicionales: vi.fn<OcurrenciasRepository['buscarDatosAdicionales']>(),
+      leerFilasDeLaHora: vi.fn<OcurrenciasRepository['leerFilasDeLaHora']>(),
       buscarFinalizacion: vi.fn<OcurrenciasRepository['buscarFinalizacion']>(),
       buscarPago: vi.fn<OcurrenciasRepository['buscarPago']>(),
       leerOcurrenciasDelAlumno: vi.fn<OcurrenciasRepository['leerOcurrenciasDelAlumno']>(),
@@ -91,6 +112,7 @@ beforeEach(() => {
   repos = crearRepositories()
   service = crearOcurrenciasService({ ...repos, reloj: relojFijo })
   repos.repository.buscarDatosAdicionales.mockResolvedValue(DATOS_ADICIONALES)
+  repos.repository.leerFilasDeLaHora.mockResolvedValue([filaDeLaHora()])
   repos.repository.buscarFinalizacion.mockResolvedValue(null)
   repos.repository.leerPrioridades.mockResolvedValue(new Map())
   repos.profesoresRepository.buscarIdPorUsuario.mockImplementation(async (usuarioId) =>
@@ -228,6 +250,8 @@ describe('obtenerDetalle', () => {
     expect(detalle.acciones.registrarPago).toEqual({ visible: false })
     // Una pagada se reprograma: el pago acompaña al turno (HU-20).
     expect(detalle.acciones.reprogramar).toEqual({ visible: true })
+    // Finalizar sale de las filas de la hora (vigente y sin finalizar), no del pago.
+    expect(detalle.acciones.finalizar).toEqual({ visible: true })
   })
 
   it('pagada y después cambió el precio de la materia: `importe` sigue siendo el que se cobró', async () => {
@@ -288,13 +312,15 @@ describe('obtenerDetalle', () => {
     expect(JSON.stringify(detalle)).not.toContain('busqueda')
   })
 
-  it('sesión única: no pide la finalización (no aplica)', async () => {
+  it('sesión única: no pide las filas de la hora ni la finalización (no aplica)', async () => {
     repos.repository.buscarOcurrencia.mockResolvedValue(
       ocurrencia({ turnoId: 31, fecha: HOY, tipo: 'SESION_UNICA' }),
     )
 
     const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(repos.repository.leerFilasDeLaHora).not.toHaveBeenCalled()
     expect(repos.repository.buscarFinalizacion).not.toHaveBeenCalled()
+    expect(detalle.acciones.finalizar).toEqual({ visible: false })
     expect(detalle.serie.finalizacion).toBeNull()
   })
 
@@ -311,14 +337,71 @@ describe('obtenerDetalle', () => {
         turnoId: 31,
         fecha: HOY,
         tipo: 'RECURRENTE',
-        serie: { fechaInicio: '2026-03-02', fechaFin: null, finEfectivo: '2026-10-05' },
+        serie: {
+          serieId: null,
+          fechaInicio: '2026-03-02',
+          fechaFin: null,
+          finEfectivo: '2026-10-05',
+        },
       }),
     )
+    repos.repository.leerFilasDeLaHora.mockResolvedValue([
+      filaDeLaHora({ finalizadaDesde: '2026-10-06' }),
+    ])
     repos.repository.buscarFinalizacion.mockResolvedValue(finalizacion)
 
     const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(repos.repository.buscarFinalizacion).toHaveBeenCalledWith([31])
     expect(detalle.serie.finalizacion).toEqual(finalizacion)
     expect(detalle.acciones.finalizar).toEqual({ visible: false })
+  })
+
+  it('recurrente sin finalizar: no pide la finalización y ofrece finalizar', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(repos.repository.leerFilasDeLaHora).toHaveBeenCalledWith(31)
+    expect(repos.repository.buscarFinalizacion).not.toHaveBeenCalled()
+    expect(detalle.serie.finalizacion).toBeNull()
+    expect(detalle.acciones.finalizar).toEqual({ visible: true })
+  })
+
+  it('tramo anterior de una hora finalizada en un tramo posterior: muestra esa finalización y no ofrece finalizar', async () => {
+    const finalizacion: Finalizacion = {
+      fechaDesde: '2026-11-16',
+      motivo: 'CANCELACION_ALUMNO',
+      detalle: null,
+      createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
+      createdAt: '2026-10-01T12:00:00.000Z',
+    }
+    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    // La hora del turno 31 tiene dos tramos; la finalización está registrada en el posterior (58).
+    repos.repository.leerFilasDeLaHora.mockResolvedValue([
+      filaDeLaHora({ fechaFin: '2026-10-19' }),
+      filaDeLaHora({ turnoId: 58, fechaInicio: '2026-11-02', finalizadaDesde: '2026-11-16' }),
+    ])
+    repos.repository.buscarFinalizacion.mockResolvedValue(finalizacion)
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(repos.repository.buscarFinalizacion).toHaveBeenCalledWith([58])
+    expect(detalle.serie.finalizacion).toEqual(finalizacion)
+    expect(detalle.acciones.finalizar).toEqual({ visible: false })
+  })
+
+  it('la otra hora de la serie: sus filas no tienen finalización → ofrece finalizar', async () => {
+    // El repository sólo devuelve las filas de la hora del turno pedido (acá, la de 10): la
+    // finalización de la hora de 9 de la misma serie no entra.
+    repos.repository.buscarOcurrencia.mockResolvedValue(
+      ocurrencia({ turnoId: 42, fecha: HOY, bloqueAgendaId: 11, horaInicio: 600, horaFin: 660 }),
+    )
+    repos.repository.leerFilasDeLaHora.mockResolvedValue([
+      filaDeLaHora({ turnoId: 42, bloqueAgendaId: 11, horaInicio: 600, horaFin: 660 }),
+    ])
+
+    const detalle = await service.obtenerDetalle(42, HOY, actorMesa)
+    expect(repos.repository.leerFilasDeLaHora).toHaveBeenCalledWith(42)
+    expect(detalle.serie.finalizacion).toBeNull()
+    expect(detalle.acciones.finalizar).toEqual({ visible: true })
   })
 
   it('cancelada: resuelve quién canceló (el motor sólo trae el id) y no pide prioridad', async () => {
@@ -416,11 +499,11 @@ describe('listarDelAlumno', () => {
     repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
   })
 
-  it('sin desde/hasta, usa la ventana por defecto (30 días atrás, 56 adelante)', async () => {
+  it('sin desde/hasta, usa la ventana por defecto (el año en curso completo)', async () => {
     await service.listarDelAlumno({ alumnoId: 12 })
 
     expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledWith(
-      { desde: '2026-08-23', hasta: '2026-11-17', alumnoId: 12 },
+      { desde: '2026-01-01', hasta: '2026-12-31', alumnoId: 12 },
       relojFijo,
     )
   })
@@ -445,7 +528,7 @@ describe('listarDelAlumno', () => {
 
   it('un rango fuera de la ventana → 400 sobre `hasta`', async () => {
     const error = await errorDe(
-      service.listarDelAlumno({ alumnoId: 12, desde: '2026-08-01', hasta: '2026-09-30' }),
+      service.listarDelAlumno({ alumnoId: 12, desde: '2025-08-01', hasta: '2025-09-30' }),
     )
     expect(error).toBeInstanceOf(ValidationError)
     expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA }])

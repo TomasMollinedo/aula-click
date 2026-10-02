@@ -623,6 +623,8 @@ async function crear(azar: Azar) {
     observaciones: string | null
     temas: string | null
     estado: 'ACTIVO' | 'CANCELADO'
+    // La serie del alta (decisión T-103): la comparten las horas y los tramos de un recurrente.
+    serieId: string | null
   }
   const turnosData: TurnoNuevo[] = []
 
@@ -702,12 +704,15 @@ async function crear(azar: Azar) {
         // "Temas a trabajar" (HU-08): obligatorio en sesión única, opcional en recurrente.
         temas: tipo === 'SESION_UNICA' ? azar.de(TEMAS) : azar.chance(0.4) ? azar.de(TEMAS) : null,
         estado: cancelado ? 'CANCELADO' : 'ACTIVO',
+        // Cada recurrente es su propia serie (el seed crea clases de una sola hora).
+        serieId: tipo === 'RECURRENTE' ? randomUUID() : null,
       })
     }
   }
   // Un recurrente guardado en "tramos" (T-37/T-29): un segundo Turno RECURRENTE del mismo
   // alumno y bloque, dos semanas después de que termina el primero, como si "Asignar igual"
-  // hubiera saltado un tramo de fechas llenas en el medio (HU-08).
+  // hubiera saltado un tramo de fechas llenas en el medio (HU-08). Comparte el `serieId` del
+  // primero: son la misma serie, y finalizar esa hora actúa sobre los dos (decisión T-104).
   const primerTramo = turnosData.find(
     (t) => t.tipo === 'RECURRENTE' && t.fechaFin !== null && t.estado === 'ACTIVO',
   )
@@ -749,6 +754,7 @@ async function crear(azar: Azar) {
           observaciones: 'Segundo tramo del mismo recurrente (dato de demo, T-29).',
           temas: azar.chance(0.4) ? azar.de(TEMAS) : null,
           estado: 'ACTIVO',
+          serieId: primerTramo.serieId,
         })
         segundoTramoAgregado = true
       }
@@ -768,6 +774,7 @@ async function crear(azar: Azar) {
       observaciones: true,
       temas: true,
       estado: true,
+      serieId: true,
     },
   })
   const activosOrdenados = turnosCreados
@@ -915,7 +922,8 @@ async function crear(azar: Azar) {
   // 2b. Recurrente reprogramado en una fecha: la serie se parte en tramos. El original termina en
   //     la ocurrencia anterior, un tramo nuevo sigue desde la siguiente y la fecha movida pasa a
   //     ser una SESION_UNICA en el destino. No hay cancelaciones ni pagos que volver a apuntar:
-  //     se elige un turno futuro sin ninguno.
+  //     se elige un turno futuro sin ninguno. El tramo nuevo hereda el `serieId` del original y
+  //     la sesión única queda fuera de la serie (decisión T-103).
   let recurrenteReprogramado = false
   const recurrente = futuros.find(
     (t) =>
@@ -943,6 +951,7 @@ async function crear(azar: Azar) {
           ...copia,
           bloqueAgendaId: recurrente.bloqueAgendaId,
           tipo: 'RECURRENTE',
+          serieId: recurrente.serieId,
           fechaInicio: fechaADate(sumarDias(movida, 7)),
           fechaFin: recurrente.fechaFin,
           ...auditoriaModificador,
@@ -953,6 +962,7 @@ async function crear(azar: Azar) {
           ...copia,
           bloqueAgendaId: destino.bloque.id,
           tipo: 'SESION_UNICA',
+          serieId: null,
           fechaInicio: fechaADate(destino.fecha),
           fechaFin: fechaADate(destino.fecha),
           // "Temas a trabajar" es obligatorio en una sesión única (HU-08).
