@@ -1,6 +1,12 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
-  <rect width="64" height="64" rx="12" fill="#ddaf69"/>
-  <g transform="translate(14,14) scale(1.5)" fill="white" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M4.037 4.688a.495.495 0 0 1 .651-.651l16 6.5a.5.5 0 0 1-.063.947l-6.124 1.58a2 2 0 0 0-1.438 1.435l-1.579 6.126a.5.5 0 0 1-.947.063z"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="3 7 114 91" role="img">
+  <title>Nexo Académico</title>
+  <!-- Libro abierto (azul del sidebar) -->
+  <g fill="none" stroke="#1a1e33" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M60 94 C46 86 27 83 7 84 V30" stroke-width="5"/>
+    <path d="M60 94 C74 86 93 83 113 84 V30" stroke-width="5"/>
+    <path d="M55 86 C43 80 29 77 15 77 V24" stroke-width="3"/>
+    <path d="M65 86 C77 80 91 77 105 77 V24" stroke-width="3"/>
   </g>
+  <!-- N que sube en flecha (cobalto), recortada en blanco sobre las hojas -->
+  <path d="M100.2 21.69 L75.24 33.9 L81.9 38.34 L61.23 69.34 L36.5 10 L24 10 L24 70 L36 64 L36 40 L58.77 94.66 L91.88 44.99 L98.54 49.43 Z" fill="#3552cc" stroke="#ffffff" stroke-width="3" stroke-linejoin="miter" paint-order="stroke"/>
 </svg>

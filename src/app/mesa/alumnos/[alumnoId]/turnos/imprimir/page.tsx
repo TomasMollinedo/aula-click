@@ -105,7 +105,7 @@ export default function ImprimirTurnosAlumnoPage({
           </p>
           <p className="text-black/70">DNI {alumno.data.dni}</p>
           {desde && hasta && (
-            <p className="text-dorado mt-1 text-xs font-bold tracking-wide uppercase">
+            <p className="text-cobalto mt-1 text-xs font-bold tracking-wide uppercase">
               {fechaCorta(desde)} – {fechaCorta(hasta)}
               {seleccion && ` · Selección (${turnosAImprimir.length})`}
               {!seleccion && estado && ` · Estado: ${ESTADO_TURNO[estado].etiqueta}`}
@@ -118,23 +118,23 @@ export default function ImprimirTurnosAlumnoPage({
         ) : (
           <table className="mt-5 w-full border-collapse text-sm">
             <thead>
-              <tr className="border-dorado/50 border-b-2 text-left">
-                <th className="text-dorado py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
+              <tr className="border-cobalto/40 border-b-2 text-left">
+                <th className="text-cobalto py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
                   Fecha
                 </th>
-                <th className="text-dorado py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
+                <th className="text-cobalto py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
                   Horario
                 </th>
-                <th className="text-dorado py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
+                <th className="text-cobalto py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
                   Materia
                 </th>
-                <th className="text-dorado py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
+                <th className="text-cobalto py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
                   Profesor
                 </th>
-                <th className="text-dorado py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
+                <th className="text-cobalto py-2 pr-3 text-[11px] font-bold tracking-wide uppercase">
                   Estado
                 </th>
-                <th className="text-dorado py-2 text-[11px] font-bold tracking-wide uppercase">
+                <th className="text-cobalto py-2 text-[11px] font-bold tracking-wide uppercase">
                   Prioridad
                 </th>
               </tr>
