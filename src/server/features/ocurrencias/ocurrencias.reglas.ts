@@ -45,6 +45,31 @@ export function validarRangoOcurrencias(desde: string, hasta: string, fechaHoy: 
   }
 }
 
+/** La clave de una ocurrencia en `seleccion`: `turnoId:fecha` (`'31:2026-09-28'`). */
+export function claveDeSeleccion(turno: { turnoId: number; fecha: string }): string {
+  return `${turno.turnoId}:${turno.fecha}`
+}
+
+/**
+ * Qué turnos van en el PDF de los turnos de un alumno (T-67). Con `seleccion` (las tildadas en la
+ * lista), sólo esas y se ignora `estado`: una selección explícita ya dice qué imprimir; una clave
+ * que no está entre los turnos (otro rango, otro alumno) no agrega nada. Sin `seleccion`, los del
+ * `estado` pedido, o todos si no se pidió ninguno. Conserva el orden que recibe.
+ */
+export function filtrarParaDocumento<
+  T extends { turnoId: number; fecha: string; estado: EstadoOcurrencia },
+>(
+  turnos: readonly T[],
+  { seleccion, estado }: { seleccion?: readonly string[]; estado?: EstadoOcurrencia },
+): T[] {
+  if (seleccion) {
+    const claves = new Set(seleccion)
+    return turnos.filter((turno) => claves.has(claveDeSeleccion(turno)))
+  }
+  if (estado) return turnos.filter((turno) => turno.estado === estado)
+  return [...turnos]
+}
+
 /**
  * Una fila de la serie del turno que es de su **misma hora** (`serieId` y `bloqueAgendaId`,
  * decisión T-103): el propio turno y sus otros tramos. Es el conjunto sobre el que actúa

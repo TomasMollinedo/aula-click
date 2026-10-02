@@ -1,9 +1,14 @@
 import type { RouteHandler } from '@hono/zod-openapi'
 import { aulasRepository } from '@/server/features/aulas/aulas.repository'
+import { encabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
 import { profesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { AppEnv } from '@/server/router'
+import { respuestaPdf } from '@/server/shared/pdf/respuesta'
+import { nombreArchivoAgenda } from './agendas.documentos'
+import { renderizarAgendaPdf } from './agendas.pdf'
 import { agendasRepository } from './agendas.repository'
 import type {
+  agendaPdfRoute,
   listarAgendaCentroRoute,
   listarAgendaProfesorRoute,
   listarAgendaPropiaRoute,
@@ -26,6 +31,14 @@ const agendasService = crearAgendasService({
 
 export const listarAgenda: RouteHandler<typeof listarAgendaRoute, AppEnv> = async (c) =>
   c.json(await agendasService.listarAgenda(c.req.valid('query')), 200)
+
+/** La agenda diaria de un profesor en PDF: todas las filas del día, sin paginar. */
+export const agendaPdf: RouteHandler<typeof agendaPdfRoute, AppEnv> = async (c) => {
+  const documento = await agendasService.agendaParaDocumento(c.req.valid('query'))
+  const pdf = await renderizarAgendaPdf({ documento, ...encabezadoDeDocumento(c.get('user')) })
+  const { cuerpo, headers } = respuestaPdf(pdf, nombreArchivoAgenda(documento))
+  return c.body(cuerpo, 200, headers)
+}
 
 // El profesor sale del Actor de la sesión: nunca de un parámetro (HU-10).
 export const listarAgendaPropia: RouteHandler<typeof listarAgendaPropiaRoute, AppEnv> = async (c) =>

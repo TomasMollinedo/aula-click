@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorHandler } from '@/server/errors'
 import { createRouter } from '@/server/router'
+import { contarPaginas, metadato } from '@/server/shared/__tests__/pdf-inspeccion'
 import { agendasRoutes } from '../agendas.routes'
 
 // Contrato HTTP de las agendas (se movieron de `/turnos/*` a `/agendas/*` en T-30, con el mismo
@@ -9,7 +10,11 @@ import { agendasRoutes } from '../agendas.routes'
 
 const { repository, profesoresRepository, aulasRepository, getSession } = vi.hoisted(() => ({
   repository: { leerOcurrencias: vi.fn(), leerPrioridades: vi.fn(), leerCupos: vi.fn() },
-  profesoresRepository: { buscarIdPorUsuario: vi.fn(), buscarConAsignaciones: vi.fn() },
+  profesoresRepository: {
+    buscarIdPorUsuario: vi.fn(),
+    buscarConAsignaciones: vi.fn(),
+    buscarPorId: vi.fn(),
+  },
   aulasRepository: { listar: vi.fn() },
   getSession: vi.fn(),
 }))
@@ -62,7 +67,10 @@ function pedir(path: string) {
 function sesion(role = 'MESA_ENTRADAS') {
   return {
     headers: new Headers(),
-    response: { user: { id: 'usr_mesa', role, estado: 'ACTIVO' }, session: { id: 's-1' } },
+    response: {
+      user: { id: 'usr_mesa', role, estado: 'ACTIVO', name: 'Laura', apellido: 'Gómez' },
+      session: { id: 's-1' },
+    },
   }
 }
 
@@ -80,6 +88,103 @@ beforeEach(() => {
       new Map(clases.map((c) => [`${c.bloqueAgendaId}|${c.fecha}`, { ocupados: 1, capacidad: 4 }])),
   )
   aulasRepository.listar.mockResolvedValue([])
+})
+
+// ---------------------------------------------------------------------------------------------
+// PDF de la agenda diaria de un profesor
+// ---------------------------------------------------------------------------------------------
+
+describe('GET /agendas/diaria/pdf', { timeout: 30_000 }, () => {
+  beforeEach(() => {
+    profesoresRepository.buscarPorId.mockResolvedValue({ id: 3, nombre: 'Ana', apellido: 'Pérez' })
+  })
+
+  it('200 con el PDF de la agenda y los headers del contrato común', async () => {
+    repository.leerOcurrencias.mockResolvedValue([OCURRENCIA])
+
+    const res = await pedir('/diaria/pdf?fecha=2099-01-05&profesorId=3')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/pdf')
+    expect(res.headers.get('content-disposition')).toBe(
+      `inline; filename="agenda-2099-01-05-perez-ana.pdf"; filename*=UTF-8''agenda-2099-01-05-perez-ana.pdf`,
+    )
+    expect(res.headers.get('cache-control')).toBe('no-store')
+    expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+    const pdf = Buffer.from(await res.arrayBuffer())
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(contarPaginas(pdf)).toBe(1)
+    expect(metadato(pdf, 'Title')).toBe('Agenda')
+  })
+
+  it('al service sólo le llegan la fecha, el profesor, los cancelados y la prioridad', async () => {
+    const res = await pedir(
+      '/diaria/pdf?fecha=2099-01-05&profesorId=3&incluirCancelados=true&prioridad=ALTA&q=lucia&materiaId=2&aulaId=1&page=2&pageSize=1',
+    )
+
+    expect(res.status).toBe(200)
+    // Ni `materiaId` ni `aulaId` llegan al motor, y sin `q` ni paginación no se pierde ninguna fila.
+    expect(repository.leerOcurrencias).toHaveBeenCalledExactlyOnceWith(
+      {
+        desde: '2099-01-05',
+        hasta: '2099-01-05',
+        materiaId: undefined,
+        aulaId: undefined,
+        profesorId: 3,
+      },
+      undefined,
+    )
+  })
+
+  it('sin turnos ese día responde 200 igual (el documento lo dice)', async () => {
+    const res = await pedir('/diaria/pdf?fecha=2099-01-05&profesorId=3')
+    expect(res.status).toBe(200)
+    expect(repository.leerCupos).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['sin profesorId', 'fecha=2099-01-05', 'profesorId'],
+    ['profesorId inválido', 'profesorId=abc', 'profesorId'],
+    ['profesorId 0', 'profesorId=0', 'profesorId'],
+    ['fecha inexistente', 'profesorId=3&fecha=2099-02-30', 'fecha'],
+    ['incluirCancelados inválido', 'profesorId=3&incluirCancelados=si', 'incluirCancelados'],
+    ['prioridad inválida', 'profesorId=3&prioridad=URGENTE', 'prioridad'],
+  ])('%s → 400 VALIDACION en `%s`, en JSON', async (_caso, query, campo) => {
+    const res = await pedir(`/diaria/pdf?${query}`)
+
+    expect(res.status).toBe(400)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    const { error } = await res.json()
+    expect(error.code).toBe('VALIDACION')
+    expect(error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: [campo] })]),
+    )
+    expect(profesoresRepository.buscarPorId).not.toHaveBeenCalled()
+  })
+
+  it('un profesor inexistente → 404 NO_ENCONTRADO, en JSON', async () => {
+    profesoresRepository.buscarPorId.mockResolvedValue(null)
+    const res = await pedir('/diaria/pdf?profesorId=99')
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
+    expect(repository.leerOcurrencias).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    const res = await pedir('/diaria/pdf?profesorId=3')
+    expect(res.status).toBe(401)
+    expect((await res.json()).error.code).toBe('NO_AUTENTICADO')
+  })
+
+  it.each(['PROFESOR', 'GERENTE', 'ALUMNO'])('con el rol %s → 403', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+    const res = await pedir('/diaria/pdf?profesorId=3')
+    expect(res.status).toBe(403)
+    expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    expect(profesoresRepository.buscarPorId).not.toHaveBeenCalled()
+  })
 })
 
 // ---------------------------------------------------------------------------------------------

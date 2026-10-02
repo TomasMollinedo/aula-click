@@ -1,12 +1,15 @@
 import { AppError, ForbiddenError, NotFoundError } from '@/server/errors'
+import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
+import type { TurnosDelAlumnoDocumento } from './ocurrencias.documentos'
 import type { Ocurrencia, OcurrenciasRepository, PrioridadDeTurno } from './ocurrencias.repository'
 import {
   ACCIONES_SIN_PERMISO,
   calcularAcciones,
+  filtrarParaDocumento,
   validarRangoOcurrencias,
   ventanaOcurrencias,
 } from './ocurrencias.reglas'
@@ -15,6 +18,7 @@ import type {
   OcurrenciaDetalle,
   OcurrenciasDelAlumnoListado,
   OcurrenciasDelAlumnoQuery,
+  TurnosDelAlumnoPdfQuery,
 } from './ocurrencias.validation'
 
 // Reglas de `ocurrencias`. No conoce HTTP ni Prisma: lanza AppError o sus subclases. La expansión,
@@ -24,6 +28,7 @@ import type {
 const MENSAJE_NO_ENCONTRADA = 'No existe una ocurrencia con ese turno y esa fecha'
 const MENSAJE_SIN_PERMISO = 'El turno no es suyo'
 const MENSAJE_PAGO_INCONSISTENTE = 'La ocurrencia figura pagada, pero no se encontró su pago'
+const MENSAJE_ALUMNO_NO_ENCONTRADO = 'Alumno no encontrado'
 
 /** Clave de `leerPrioridades`: la misma que arma `clavePrioridad` en `examenes.condiciones.ts`. */
 function clavePrioridad(item: { alumnoId: number; materiaId: number; fecha: string }): string {
@@ -38,10 +43,12 @@ function clavePrioridad(item: { alumnoId: number; materiaId: number; fecha: stri
 export function crearOcurrenciasService({
   repository,
   profesoresRepository,
+  alumnosRepository,
   reloj,
 }: {
   repository: OcurrenciasRepository
   profesoresRepository: Pick<ProfesoresRepository, 'buscarIdPorUsuario'>
+  alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
 }) {
   /**
@@ -213,6 +220,51 @@ export function crearOcurrenciasService({
     }
   }
 
+  /** El rango de `GET /ocurrencias` y de su PDF: el pedido o la ventana por defecto, ya validado. */
+  type Rango = { desde: string; hasta: string; fechaHoy: string }
+
+  /**
+   * Sin `desde`/`hasta`, la ventana por defecto de T-43/T-66 (el año en curso completo); un rango
+   * explícito que se salga de esa ventana, o venga invertido, es 400 en `hasta`.
+   */
+  function resolverRango(query: Pick<OcurrenciasDelAlumnoQuery, 'desde' | 'hasta'>): Rango {
+    const fechaHoy = hoy(reloj)
+    const ventana = ventanaOcurrencias(fechaHoy)
+    const desde = query.desde ?? ventana.desde
+    const hasta = query.hasta ?? ventana.hasta
+    validarRangoOcurrencias(desde, hasta, fechaHoy)
+    return { desde, hasta, fechaHoy }
+  }
+
+  /**
+   * Las ocurrencias del alumno en el rango, incluidas las canceladas, cada una con su prioridad y
+   * si se puede cancelar. Lo que devuelve `GET /ocurrencias` y lo que lista su PDF.
+   */
+  async function leerDelAlumno(
+    alumnoId: number,
+    { desde, hasta, fechaHoy }: Rango,
+  ): Promise<OcurrenciasDelAlumnoListado> {
+    const ocurrencias = await repository.leerOcurrenciasDelAlumno({ desde, hasta, alumnoId }, reloj)
+    const noCanceladas = ocurrencias.filter((o) => o.estado !== 'CANCELADO')
+    const prioridades = await repository.leerPrioridades(
+      noCanceladas.map((o) => ({ alumnoId: o.alumnoId, materiaId: o.materiaId, fecha: o.fecha })),
+    )
+
+    return ocurrencias.map((ocurrencia) => {
+      const prioridad =
+        ocurrencia.estado === 'CANCELADO'
+          ? null
+          : (prioridades.get(
+              clavePrioridad({
+                alumnoId: ocurrencia.alumnoId,
+                materiaId: ocurrencia.materiaId,
+                fecha: ocurrencia.fecha,
+              }),
+            )?.prioridad ?? null)
+      return aItem(ocurrencia, fechaHoy, prioridad)
+    })
+  }
+
   return {
     obtenerDetalle,
 
@@ -223,34 +275,31 @@ export function crearOcurrenciasService({
      * de esa ventana, o venga invertido, es 400 en `hasta`.
      */
     async listarDelAlumno(query: OcurrenciasDelAlumnoQuery): Promise<OcurrenciasDelAlumnoListado> {
-      const fechaHoy = hoy(reloj)
-      const ventana = ventanaOcurrencias(fechaHoy)
-      const desde = query.desde ?? ventana.desde
-      const hasta = query.hasta ?? ventana.hasta
-      validarRangoOcurrencias(desde, hasta, fechaHoy)
+      return leerDelAlumno(query.alumnoId, resolverRango(query))
+    },
 
-      const ocurrencias = await repository.leerOcurrenciasDelAlumno(
-        { desde, hasta, alumnoId: query.alumnoId },
-        reloj,
-      )
-      const noCanceladas = ocurrencias.filter((o) => o.estado !== 'CANCELADO')
-      const prioridades = await repository.leerPrioridades(
-        noCanceladas.map((o) => ({ alumnoId: o.alumnoId, materiaId: o.materiaId, fecha: o.fecha })),
-      )
+    /**
+     * Lo que va en el PDF de los turnos de un alumno: los mismos turnos y el mismo rango que
+     * `listarDelAlumno`, filtrados por la selección o el estado (`filtrarParaDocumento`), más el
+     * alumno para el encabezado. A diferencia del listado, un alumno inexistente es 404: sin su
+     * nombre y su DNI no hay documento. El rango se valida antes (400).
+     */
+    async turnosDelAlumnoParaDocumento(
+      query: TurnosDelAlumnoPdfQuery,
+    ): Promise<TurnosDelAlumnoDocumento> {
+      const rango = resolverRango(query)
+      const alumno = await alumnosRepository.buscarPorId(query.alumnoId)
+      if (!alumno) throw new NotFoundError(MENSAJE_ALUMNO_NO_ENCONTRADO)
 
-      return ocurrencias.map((ocurrencia) => {
-        const prioridad =
-          ocurrencia.estado === 'CANCELADO'
-            ? null
-            : (prioridades.get(
-                clavePrioridad({
-                  alumnoId: ocurrencia.alumnoId,
-                  materiaId: ocurrencia.materiaId,
-                  fecha: ocurrencia.fecha,
-                }),
-              )?.prioridad ?? null)
-        return aItem(ocurrencia, fechaHoy, prioridad)
-      })
+      const turnos = filtrarParaDocumento(await leerDelAlumno(query.alumnoId, rango), query)
+      return {
+        alumno: { nombre: alumno.nombre, apellido: alumno.apellido, dni: alumno.dni },
+        desde: rango.desde,
+        hasta: rango.hasta,
+        porSeleccion: query.seleccion !== undefined,
+        estado: query.seleccion === undefined ? (query.estado ?? null) : null,
+        turnos,
+      }
     },
   }
 }

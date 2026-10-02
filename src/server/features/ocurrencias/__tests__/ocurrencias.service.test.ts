@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, ForbiddenError, NotFoundError, ValidationError } from '@/server/errors'
+import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import type {
@@ -102,8 +103,14 @@ function crearRepositories() {
     profesoresRepository: {
       buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
     },
+    alumnosRepository: { buscarPorId: vi.fn<AlumnosRepository['buscarPorId']>() },
   }
 }
+
+/** El alumno 12, como lo devuelve `alumnosRepository.buscarPorId` (sólo importa lo del encabezado). */
+const ALUMNO = { id: 12, nombre: 'Lucía', apellido: 'González', dni: '40123456' } as NonNullable<
+  Awaited<ReturnType<AlumnosRepository['buscarPorId']>>
+>
 
 let repos: ReturnType<typeof crearRepositories>
 let service: ReturnType<typeof crearOcurrenciasService>
@@ -607,5 +614,97 @@ describe('listarDelAlumno', () => {
 
   it('sin turnos en el rango, devuelve un arreglo vacío', async () => {
     await expect(service.listarDelAlumno({ alumnoId: 12 })).resolves.toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// turnosDelAlumnoParaDocumento
+// ---------------------------------------------------------------------------------------------
+
+describe('turnosDelAlumnoParaDocumento', () => {
+  const turnos = [
+    ocurrencia({ turnoId: 1, fecha: '2026-09-21', estado: 'SIN_REGISTRAR' }),
+    ocurrencia({ turnoId: 1, fecha: '2026-09-28' }),
+    ocurrencia({ turnoId: 2, fecha: '2026-09-29', estado: 'CANCELADO' }),
+  ]
+
+  beforeEach(() => {
+    repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue(turnos)
+    repos.alumnosRepository.buscarPorId.mockResolvedValue(ALUMNO)
+  })
+
+  it('sin filtros: el alumno, el rango por defecto (el año en curso) y los mismos turnos que el listado', async () => {
+    const documento = await service.turnosDelAlumnoParaDocumento({ alumnoId: 12 })
+
+    expect(documento).toEqual({
+      alumno: { nombre: 'Lucía', apellido: 'González', dni: '40123456' },
+      desde: '2026-01-01',
+      hasta: '2026-12-31',
+      porSeleccion: false,
+      estado: null,
+      turnos: await service.listarDelAlumno({ alumnoId: 12 }),
+    })
+    expect(documento.turnos).toHaveLength(3)
+    expect(repos.alumnosRepository.buscarPorId).toHaveBeenCalledWith(12)
+  })
+
+  it('con un rango, lee ese rango y lo devuelve', async () => {
+    const documento = await service.turnosDelAlumnoParaDocumento({
+      alumnoId: 12,
+      desde: '2026-09-01',
+      hasta: '2026-09-30',
+    })
+
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledWith(
+      { desde: '2026-09-01', hasta: '2026-09-30', alumnoId: 12 },
+      relojFijo,
+    )
+    expect(documento).toMatchObject({ desde: '2026-09-01', hasta: '2026-09-30' })
+  })
+
+  it('con `estado`, sólo los de ese estado', async () => {
+    const documento = await service.turnosDelAlumnoParaDocumento({
+      alumnoId: 12,
+      estado: 'AGENDADO',
+    })
+
+    expect(documento.turnos.map((t) => [t.turnoId, t.fecha])).toEqual([[1, '2026-09-28']])
+    expect(documento).toMatchObject({ porSeleccion: false, estado: 'AGENDADO' })
+  })
+
+  it('con `seleccion`, sólo esas y se ignora `estado`', async () => {
+    const documento = await service.turnosDelAlumnoParaDocumento({
+      alumnoId: 12,
+      estado: 'AGENDADO',
+      seleccion: ['2:2026-09-29', '1:2026-09-21', '9:2026-09-28'],
+    })
+
+    // En el orden del listado, no en el de la selección; la clave que no existe no agrega nada.
+    expect(documento.turnos.map((t) => [t.turnoId, t.fecha])).toEqual([
+      [1, '2026-09-21'],
+      [2, '2026-09-29'],
+    ])
+    expect(documento).toMatchObject({ porSeleccion: true, estado: null })
+  })
+
+  it('un alumno inexistente → 404, sin leer sus turnos', async () => {
+    repos.alumnosRepository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.turnosDelAlumnoParaDocumento({ alumnoId: 99 }))
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('el rango se valida antes de buscar al alumno: fuera de la ventana → 400 en `hasta`', async () => {
+    const error = await errorDe(
+      service.turnosDelAlumnoParaDocumento({
+        alumnoId: 12,
+        desde: '2025-08-01',
+        hasta: '2025-09-30',
+      }),
+    )
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.message).toBe(MENSAJE_FUERA_DE_VENTANA)
+    expect(repos.alumnosRepository.buscarPorId).not.toHaveBeenCalled()
   })
 })

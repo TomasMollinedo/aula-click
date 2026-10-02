@@ -9,6 +9,9 @@ describe('nombreArchivoPdf', () => {
     ['  Agenda   diaria — 05/10/2026  ', 'agenda-diaria-05-10-2026'],
     ['Güemes, Martín Miguel', 'guemes-martin-miguel'],
     ['a/b\\c"d.pdf', 'a-b-c-d-pdf'],
+    // El guion bajo se conserva: separa las dos fechas de un rango.
+    ['turnos-Álvarez-Lucía-2026-10-01_2026-10-31', 'turnos-alvarez-lucia-2026-10-01_2026-10-31'],
+    ['_agenda_', 'agenda'],
   ])('%o → %o', (texto, nombre) => {
     expect(nombreArchivoPdf(texto)).toBe(nombre)
   })

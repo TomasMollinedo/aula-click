@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import { ahora } from '../fechas'
 import {
+  fechaConDia,
+  fechaCorta,
   fechaDocumento,
   fechaHoraDocumento,
   formatearPesos,
@@ -54,6 +56,43 @@ describe('fechaDocumento', () => {
     'lanza RangeError con %o',
     (fecha) => {
       expect(() => fechaDocumento(fecha)).toThrow(RangeError)
+    },
+  )
+})
+
+// Paridad con `src/utils/formato-fechas.ts` (date-fns con el locale `es`): mismos strings.
+describe('fechaCorta y fechaConDia', () => {
+  it('muestra el día de la fecha, sin correrlo por la zona horaria del servidor', () => {
+    expect(fechaCorta('2026-10-12')).toBe('12/10')
+    expect(fechaConDia('2026-10-12')).toBe('lunes 12/10')
+  })
+
+  it.each([
+    ['2026-10-12', 'lunes 12/10'],
+    ['2026-10-13', 'martes 13/10'],
+    ['2026-10-14', 'miércoles 14/10'],
+    ['2026-10-15', 'jueves 15/10'],
+    ['2026-10-16', 'viernes 16/10'],
+    ['2026-10-17', 'sábado 17/10'],
+    ['2026-10-18', 'domingo 18/10'],
+  ])('cada día de la semana: %s → %s', (fecha, texto) => {
+    expect(fechaConDia(fecha)).toBe(texto)
+  })
+
+  it('cruce de mes y de año, con los ceros a la izquierda', () => {
+    expect(fechaConDia('2026-10-31')).toBe('sábado 31/10')
+    expect(fechaConDia('2026-11-01')).toBe('domingo 01/11')
+    expect(fechaConDia('2026-12-31')).toBe('jueves 31/12')
+    expect(fechaConDia('2027-01-01')).toBe('viernes 01/01')
+    expect(fechaConDia('2028-02-29')).toBe('martes 29/02')
+    expect(fechaCorta('2026-01-05')).toBe('05/01')
+  })
+
+  it.each(['', '12/10/2026', '2026-02-30', '2026-10-12T00:00:00Z'])(
+    'lanzan RangeError con %o',
+    (fecha) => {
+      expect(() => fechaCorta(fecha)).toThrow(RangeError)
+      expect(() => fechaConDia(fecha)).toThrow(RangeError)
     },
   )
 })

@@ -1,8 +1,9 @@
-import { ZONA_HORARIA, dateAFecha, fechaADate } from './fechas'
+import { ZONA_HORARIA, dateAFecha, diaSemanaISO, fechaADate } from './fechas'
 
 // Textos para los documentos que arma el servidor (los PDF). Devuelven exactamente lo mismo que
-// los formateadores del frontend (`src/utils/moneda.ts`, `src/utils/horas.ts` y los `format` de
-// date-fns): el backend no importa código del frontend, así que tiene los suyos.
+// los formateadores del frontend (`src/utils/moneda.ts`, `src/utils/horas.ts`,
+// `src/utils/formato-fechas.ts` y los `format` de date-fns): el backend no importa código del
+// frontend, así que tiene los suyos.
 
 const PESOS = new Intl.NumberFormat('es-AR', {
   style: 'currency',
@@ -26,6 +27,27 @@ export function formatearPesos(importe: number): string {
 export function fechaDocumento(fecha: string): string {
   const [anio, mes, dia] = dateAFecha(fechaADate(fecha)).split('-')
   return `${dia}/${mes}/${anio}`
+}
+
+/**
+ * Fecha de calendario sin el año: `'2026-10-12'` → `'12/10'`. Lanza `RangeError` si no es
+ * `YYYY-MM-DD` o la fecha no existe.
+ */
+export function fechaCorta(fecha: string): string {
+  const [, mes, dia] = dateAFecha(fechaADate(fecha)).split('-')
+  return `${dia}/${mes}`
+}
+
+/** Día de la semana ISO (1 = lunes … 7 = domingo) → su nombre, como lo escribe date-fns en `es`. */
+const DIAS = ['lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábado', 'domingo'] as const
+
+/**
+ * Fecha de calendario con su día: `'2026-10-12'` → `'lunes 12/10'`. El día sale del calendario
+ * (`diaSemanaISO`, en UTC), no de la zona horaria del servidor. Lanza `RangeError` si la fecha es
+ * inválida.
+ */
+export function fechaConDia(fecha: string): string {
+  return `${DIAS[diaSemanaISO(fecha) - 1]} ${fechaCorta(fecha)}`
 }
 
 // Las partes numéricas no dependen del formato del locale.

@@ -2,7 +2,8 @@ import { Children, type ReactNode } from 'react'
 import { StyleSheet, Text, View } from '@react-pdf/renderer'
 import { BORDE_FINO, COLORES, RADIO_TARJETA, TEXTO, espaciado, px } from './estilos'
 
-// Los datos de un documento: una tarjeta suave con las etiquetas en cobalto y sus valores.
+// Los datos de un documento: una tarjeta suave con las etiquetas en cobalto y sus valores, o con
+// un dato destacado (de quién o de qué día es el documento) y, si no hay nada que listar, un mensaje.
 
 const estilos = StyleSheet.create({
   seccion: {
@@ -23,6 +24,17 @@ const estilos = StyleSheet.create({
     textTransform: 'uppercase',
   },
   valor: { ...TEXTO.campo, marginTop: px(4) },
+  destacado: { ...TEXTO.destacado, fontWeight: 600 },
+  detalle: { ...TEXTO.base, color: COLORES.texto70 },
+  nota: {
+    ...TEXTO.chico,
+    fontWeight: 700,
+    color: COLORES.cobalto,
+    letterSpacing: espaciado.ancho(TEXTO.chico.fontSize),
+    textTransform: 'uppercase',
+    marginTop: px(4),
+  },
+  mensaje: { ...TEXTO.normal, color: COLORES.texto70 },
 })
 
 /** La tarjeta. No se parte entre dos hojas. */
@@ -62,4 +74,31 @@ export function CampoPdf({ label, valor }: { label: string; valor: string | null
       <Text style={estilos.valor}>{valor || '—'}</Text>
     </View>
   )
+}
+
+/**
+ * El contenido de una `SeccionPdf` que encabeza un listado: el dato destacado (el alumno, el día),
+ * un detalle debajo (el DNI) y una nota en cobalto y en mayúsculas (el rango, los filtros).
+ */
+export function DestacadoPdf({
+  titulo,
+  detalle,
+  nota,
+}: {
+  titulo: string
+  detalle?: string | null
+  nota?: string | null
+}) {
+  return (
+    <View>
+      <Text style={estilos.destacado}>{titulo}</Text>
+      {detalle ? <Text style={estilos.detalle}>{detalle}</Text> : null}
+      {nota ? <Text style={estilos.nota}>{nota}</Text> : null}
+    </View>
+  )
+}
+
+/** Un renglón suelto en lugar de la tabla: no hay nada que listar ("Sin turnos en ese rango."). */
+export function MensajePdf({ children }: { children: string }) {
+  return <Text style={estilos.mensaje}>{children}</Text>
 }

@@ -1,10 +1,7 @@
-import { createElement } from 'react'
 import type { RouteHandler } from '@hono/zod-openapi'
 import { alumnosRepository } from '@/server/features/alumnos/alumnos.repository'
-import { DATOS_CENTRO, LogoCentroPdf } from '@/server/features/centro/centro.condiciones'
+import { encabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
 import type { AppEnv } from '@/server/router'
-import { ahora } from '@/server/shared/fechas'
-import { fechaHoraDocumento, nombreCompleto } from '@/server/shared/formato'
 import { respuestaPdf } from '@/server/shared/pdf/respuesta'
 import { nombreArchivoComprobante } from './pagos.formato'
 import { renderizarComprobantePdf } from './pagos.pdf'
@@ -38,13 +35,9 @@ export const obtenerComprobantePdf: RouteHandler<
   AppEnv
 > = async (c) => {
   const comprobante = await pagosService.obtenerComprobante(c.req.valid('param').id)
-  const usuario = c.get('user')
   const pdf = await renderizarComprobantePdf({
     comprobante,
-    centro: DATOS_CENTRO,
-    logo: createElement(LogoCentroPdf),
-    emitidoPor: nombreCompleto(usuario.name, usuario.apellido),
-    fechaEmision: fechaHoraDocumento(ahora()),
+    ...encabezadoDeDocumento(c.get('user')),
   })
   const { cuerpo, headers } = respuestaPdf(
     pdf,

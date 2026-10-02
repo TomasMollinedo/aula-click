@@ -60,6 +60,14 @@ export {
   nombreDia,
 }
 export type { EstadoOcurrencia, MotivoCancelacion, TipoTurno }
+// Cómo se escribe una ocurrencia en un documento (estado, prioridad, tipo y período de la serie):
+// lo usan las plantillas PDF de `ocurrencias` y `agendas`.
+export {
+  etiquetaEstado,
+  etiquetaPrioridad,
+  textoPeriodoSerie,
+  textoTipo,
+} from './ocurrencias.formato'
 
 /** Cliente con el que se consulta: `prisma` o el `tx` de una transacción. */
 export type ClienteOcurrencias = Prisma.TransactionClient

@@ -13,7 +13,9 @@ import {
 // Tabla de un documento que puede ocupar varias hojas (el comprobante de pago: hasta 200 turnos).
 // Mismo lenguaje que los campos: encabezados en cobalto y en mayúsculas, filas con un separador
 // suave e importes a la derecha. Al paginar: el encabezado se repite en cada hoja, ninguna fila se
-// parte y el cierre no se parte ni queda solo en la última hoja.
+// parte y el cierre no se parte ni queda solo en la última hoja. Hay dos aspectos, los de las hojas
+// que se imprimían: filas con separador (el comprobante) o `alternada`, con un fondo suave fila
+// por medio y sin separador (los listados de turnos).
 //
 // Sin contexto ni hooks: un Route Handler de Next se compila con el React de servidor, que no
 // tiene `createContext` ni `useContext`. Las columnas llegan a cada fila con `cloneElement`.
@@ -44,6 +46,7 @@ const estilos = StyleSheet.create({
     borderBottomWidth: BORDE_FINO,
     borderBottomColor: COLORES.borde,
   },
+  filaSinSeparador: { flexDirection: 'row' },
   filaAlternada: { backgroundColor: COLORES.fondoAlterno },
   celda: { paddingVertical: px(8), paddingRight: px(12) },
   celdaNumerica: { paddingRight: 0 },
@@ -66,7 +69,7 @@ function estiloDeCelda(columnas: readonly ColumnaPdf[], indice: number) {
 
 type TablaPdfProps = {
   columnas: readonly ColumnaPdf[]
-  /** Filas pares con un fondo suave. */
+  /** Filas pares con un fondo suave, en lugar del separador entre filas. */
   alternada?: boolean
   /**
    * Lo que cierra el documento después de la tabla (un `CierrePdf` con los totales y el pie). Va
@@ -80,6 +83,8 @@ type TablaPdfProps = {
 type FilaPdfProps = {
   /** Las pone `TablaPdf`: no se pasan a mano. */
   columnas?: readonly ColumnaPdf[]
+  /** La pone `TablaPdf` cuando es `alternada`: la fila va sin separador. */
+  sinSeparador?: boolean
   /** Las `CeldaPdf`, en el orden de las columnas. */
   children: ReactNode
 }
@@ -88,7 +93,9 @@ export function TablaPdf({ columnas, alternada = false, cierre, children }: Tabl
   const filas = Children.toArray(children).map((fila, i) => (
     // Una fila no se parte entre dos hojas.
     <View key={i} wrap={false} style={alternada && i % 2 === 1 ? estilos.filaAlternada : {}}>
-      {isValidElement<FilaPdfProps>(fila) ? cloneElement(fila, { columnas }) : fila}
+      {isValidElement<FilaPdfProps>(fila)
+        ? cloneElement(fila, { columnas, sinSeparador: alternada })
+        : fila}
     </View>
   ))
   const ultima = filas.pop()
@@ -116,9 +123,9 @@ export function TablaPdf({ columnas, alternada = false, cierre, children }: Tabl
 }
 
 /** Una fila: sus `CeldaPdf`, en el orden de las columnas (de ahí salen el ancho y la alineación). */
-export function FilaPdf({ columnas = [], children }: FilaPdfProps) {
+export function FilaPdf({ columnas = [], sinSeparador = false, children }: FilaPdfProps) {
   return (
-    <View style={estilos.fila}>
+    <View style={sinSeparador ? estilos.filaSinSeparador : estilos.fila}>
       {Children.toArray(children).map((celda, i) => (
         <View key={i} style={estiloDeCelda(columnas, i)}>
           <Text style={[estilos.texto, columnas[i]?.numerica ? estilos.textoNumerico : {}]}>

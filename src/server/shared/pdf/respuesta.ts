@@ -5,12 +5,13 @@ import { normalizarBusqueda } from '../busqueda'
 
 /**
  * Nombre de archivo en ASCII: sin tildes, en minúsculas y con guiones en lugar de espacios y
- * símbolos (`'Turnos de Ñandú Pérez'` → `'turnos-de-nandu-perez'`). Sin extensión.
+ * símbolos (`'Turnos de Ñandú Pérez'` → `'turnos-de-nandu-perez'`). El guion bajo se conserva: separa
+ * las dos fechas de un rango (`2026-10-01_2026-10-31`). Sin extensión.
  */
 export function nombreArchivoPdf(texto: string): string {
   const nombre = normalizarBusqueda(texto)
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
+    .replace(/[^a-z0-9_]+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '')
   return nombre || 'documento'
 }
 

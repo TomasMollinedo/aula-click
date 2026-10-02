@@ -173,6 +173,24 @@ export const agendaListadoSchema = paginatedSchema(agendaItemSchema)
 
 export type AgendaListado = z.infer<typeof agendaListadoSchema>
 
+/**
+ * Query del PDF de la agenda diaria de un profesor. `profesorId` es obligatorio: la agenda de todo
+ * el centro en un día puede ser demasiado larga para un documento. `fecha`, `incluirCancelados` y
+ * `prioridad`, como en la agenda diaria. Sin paginación, `q`, `materiaId` ni `aulaId`: el documento
+ * no los usa (si llegan, se descartan acá y no pasan al service).
+ */
+export const agendaPdfQuerySchema = z.object({
+  fecha: fechaISO.optional().openapi({
+    param: { name: 'fecha', in: 'query' },
+    description: 'Día a consultar (YYYY-MM-DD). Sin fecha, el de hoy (zona del negocio)',
+    example: '2026-09-28',
+  }),
+  profesorId: idQuery('profesorId', 'El profesor de la agenda. Obligatorio', 3),
+  ...filtrosEstadoYPrioridad,
+})
+
+export type AgendaPdfQuery = z.infer<typeof agendaPdfQuerySchema>
+
 /** Query de los selectores de materias y aulas con turno: `fecha` (sin ella, hoy). */
 const fechaSelectorQuerySchema = z.object({
   fecha: fechaISO.optional().openapi({

@@ -248,6 +248,15 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 - Ítem: el de "La ocurrencia de una agenda", con `profesor`.
 - Errores: 400 `VALIDACION` (fecha, ids, `incluirCancelados`, `prioridad`, `q` de más de 100 caracteres, paginación); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
+**`GET /api/v1/agendas/diaria/pdf?fecha&profesorId&incluirCancelados&prioridad`** (rol `MESA_ENTRADAS`): la agenda de **un profesor** en una fecha como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf).
+
+- **`profesorId` es obligatorio** (si falta o es inválido, 400 `VALIDACION` en `["profesorId"]`): la agenda de todo el centro en un día puede ser demasiado larga para un documento y no tiene PDF. Un profesor inexistente responde 404; su estado no importa (uno inactivo conserva sus turnos).
+- `fecha` (sin ella, hoy), `incluirCancelados` y `prioridad` valen lo mismo que en la agenda diaria. **No acepta** `q`, `materiaId`, `aulaId`, `page` ni `pageSize`: si llegan, se ignoran.
+- Trae **todas** las ocurrencias del día, sin paginar, con los mismos filtros y el mismo orden que `GET /agendas/diaria` (hora de inicio y, dentro de la hora, profesor e id del turno): es la misma lectura, sin el corte de la página.
+- Contenido: la fecha con su día (`viernes 02/10`) y la línea `Profesor: <nombre apellido>`, seguida de `· Incluye cancelados` y `· Prioridad: <etiqueta>` si se pidieron; y una tabla Horario · Alumno · Profesor · Materia · Aula · Estado. Sin turnos, "No hay turnos para este día." (el nombre del profesor sale igual).
+- Nombre del archivo: `agenda-<fecha>-<apellido>-<nombre>.pdf`, con el profesor (`agenda-2026-10-02-cornejo-bautista.pdf`).
+- Errores: 400 `VALIDACION` (`profesorId`, `fecha`, `incluirCancelados`, `prioridad`); 401; 403 para cualquier rol que no sea `MESA_ENTRADAS`; 404 si el profesor no existe.
+
 ### Selectores de la agenda
 
 **`GET /api/v1/agendas/materias?fecha?`** y **`GET /api/v1/agendas/aulas?fecha?`** (rol `MESA_ENTRADAS`, selectores con filtros): las materias o las aulas con al menos una ocurrencia no cancelada en `fecha` (`YYYY-MM-DD`; sin ella, hoy), `[{ "id", "nombre" }]`, sin paginar y ordenadas por nombre. No filtran por el estado de la materia o del aula: con una fecha pasada traen también una hoy `INACTIVO` si tuvo turno ese día. Siguen igual que antes de T-57: no consideran las canceladas. 400 si `fecha` es inválida.
@@ -361,6 +370,11 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
 - `createdBy`/`updatedBy`: quién creó el turno y quién lo modificó por última vez. Si el turno se reprogramó, quien lo modificó es quien lo reprogramó (no hay un campo aparte).
 - Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` (rol distinto de `MESA_ENTRADAS`/`PROFESOR`, o un `PROFESOR` que no es dueño del turno) o `USUARIO_INHABILITADO`; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias (incluida una posterior al fin efectivo de una serie ya finalizada).
 
+**`GET /api/v1/ocurrencias/{turnoId}/{fecha}/pdf`** (roles `MESA_ENTRADAS` y `PROFESOR`): el detalle del turno como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismos params, mismas reglas de acceso y mismos errores que el detalle (400, 401, 403 —también el del `PROFESOR` que pide un turno ajeno— y 404), y los mismos datos.
+
+- Contenido: Alumno, DNI, Materia, Profesor, Aula, "Día y horario" (la fecha con su día: `jueves 01/10`), Horario (`8:00 a 9:00`), Tipo (`Recurrente` / `Sesión única`) y, sólo en un recurrente, "Período de la serie" (`03/09 – 08/10`, o `03/09 – sin fin`); en otra tarjeta, "Temas a trabajar" (`—` si no hay).
+- Nombre del archivo: `turno-<fecha>-<apellido>-<nombre>.pdf`, con la fecha `YYYY-MM-DD` y el alumno (`turno-2026-10-01-colque-renata.pdf`).
+
 ### Turnos de un alumno
 
 **`GET /api/v1/ocurrencias?alumnoId&desde?&hasta?`** (rol `MESA_ENTRADAS`): las ocurrencias del alumno en `[desde, hasta]`, para la pestaña "Turnos" de su ficha (HU-02). Incluye las canceladas (a diferencia de las agendas): se siguen viendo con su estado.
@@ -389,6 +403,17 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
 
 - `estadoPago`: `PENDIENTE` o `PAGADO`; una cancelada viene `PENDIENTE` (nunca se cobró) y la UI no lo muestra. `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle (agendada y con el pago pendiente: una pagada no se puede tildar).
 - Errores: 400 `VALIDACION` (`alumnoId` faltante o inválido, `hasta` anterior a `desde`, o rango fuera de la ventana permitida, `details` sobre `hasta`); 401 `NO_AUTENTICADO`; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+
+**`GET /api/v1/ocurrencias/pdf?alumnoId&desde?&hasta?&estado?&seleccion?`** (rol `MESA_ENTRADAS`): los turnos del alumno como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). `alumnoId`, `desde` y `hasta` valen lo mismo que en el listado: mismos valores por defecto, misma ventana del año en curso y mismos 400. El documento lista los mismos turnos, en el mismo orden.
+
+- **Qué turnos van:**
+  - `seleccion` (opcional): las ocurrencias tildadas en la lista, como `turnoId:fecha` separadas por comas (`31:2026-09-28,31:2026-10-05`). Formato exacto (id entero positivo, fecha real), sin repetidos y hasta **400** claves; si no, 400 `VALIDACION` en `["seleccion"]`. Una clave que no es un turno del alumno en ese rango no agrega nada.
+  - `estado` (opcional): `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR`; otro valor, 400 en `["estado"]`.
+  - **Con `seleccion` van sólo esas ocurrencias y `estado` se ignora**: una selección explícita ya dice qué va en el documento. Sin `seleccion`, las del `estado` pedido; sin ninguno de los dos, todas.
+- **Alumno inexistente: 404 `NO_ENCONTRADO`.** Es distinto del listado JSON, que no verifica al alumno y responde `[]`: el documento lleva su nombre y su DNI en el encabezado, y sin ellos no se puede armar. El rango se valida antes (400).
+- Contenido: el nombre y el apellido del alumno, su DNI y el rango (`01/10 – 31/10`, el pedido o el que el listado toma por defecto), seguido de `· Selección (n)` o de `· Estado: <etiqueta>` si se filtró; y una tabla Fecha (con su día) · Horario · Materia · Profesor · Estado · Prioridad (`—` en una cancelada). Sin turnos, "Sin turnos en ese rango.".
+- Nombre del archivo: `turnos-<apellido>-<nombre>-<desde>_<hasta>.pdf` (`turnos-alderete-joaquin-2026-10-01_2026-10-31.pdf`).
+- Errores: 400 `VALIDACION` (los del listado, más `estado` y `seleccion`); 401; 403 para cualquier rol que no sea `MESA_ENTRADAS`; 404 si el alumno no existe.
 
 Todo sale de `leerOcurrencias` (T-30), `leerPrioridades` (T-31) y, para una pagada, `leerPagoDeOcurrencia` (`pagos`): la feature no reimplementa ninguna de las tres.
 
@@ -918,7 +943,16 @@ Los documentos PDF no piden estos endpoints: el backend arma el encabezado con l
 
 ## Documentos PDF
 
-Los documentos oficiales (hoy, el comprobante de pago: `GET /pagos/{id}/pdf`) los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
+Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
+
+| Documento             | Endpoint                                 | Roles                       |
+| --------------------- | ---------------------------------------- | --------------------------- |
+| Comprobante de pago   | `GET /pagos/{id}/pdf`                    | `MESA_ENTRADAS`             |
+| Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf` | `MESA_ENTRADAS`, `PROFESOR` |
+| Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`        | `MESA_ENTRADAS`             |
+| Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`   | `MESA_ENTRADAS`             |
+
+Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias y Agendas.
 
 - **200** con el cuerpo binario del PDF y estos headers:
 
@@ -929,7 +963,7 @@ Los documentos oficiales (hoy, el comprobante de pago: `GET /pagos/{id}/pdf`) lo
   | `Cache-Control`          | `no-store`                                                       | Son datos personales: no se guardan en caché                                       |
   | `X-Content-Type-Options` | `nosniff`                                                        |                                                                                    |
 
-- **Nombre del archivo:** en ASCII, sin tildes ni espacios, en minúsculas y con guiones (`comprobante-1024.pdf`). Cada endpoint dice cuál es el suyo.
+- **Nombre del archivo:** en ASCII, sin tildes ni espacios, en minúsculas y con guiones (`comprobante-1024.pdf`); el guion bajo sólo separa las dos fechas de un rango (`…-2026-10-01_2026-10-31.pdf`). Los nombres de persona van como apellido y nombre. Cada endpoint dice cuál es el suyo.
 - **Encabezado del documento:** logo, nombre, dirección y teléfono del centro (los de [Centro](#centro)); **"Emitido por"** es el usuario de la sesión que pide el PDF (nombre y apellido) y la **fecha de emisión** es el instante del servidor, en la zona horaria del negocio, como `dd/MM/yyyy HH:mm`.
 - **Metadatos del PDF:** el título es el del documento con su referencia ("Comprobante de pago N° 1024"), el autor es el centro y el idioma, `es`.
 - **Errores: JSON**, con el formato y los códigos de [Errores](#errores) (400 `VALIDACION`, 401 `NO_AUTENTICADO`, 403 `SIN_PERMISO`, 404 `NO_ENCONTRADO`), como el resto de la API. Comportamiento conocido: como el enlace se abre en una pestaña nueva, ante un error (por ejemplo, un 401 con la sesión vencida) esa pestaña muestra el JSON; no hay páginas de error HTML.

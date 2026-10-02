@@ -62,6 +62,10 @@ export const TEXTO = {
   chico: { fontSize: px(12), lineHeight: 4 / 3 },
   /** `text-sm`. */
   normal: { fontSize: px(14), lineHeight: 20 / 14 },
+  /** El texto base de la hoja (16 px), sin clase de tamaño. */
+  base: { fontSize: px(16), lineHeight: 1.5 },
+  /** `text-lg`: el dato destacado de una tarjeta. */
+  destacado: { fontSize: px(18), lineHeight: 28 / 18 },
   /** `text-[15px]`: el valor de un campo. */
   campo: { fontSize: px(15), lineHeight: 1.5 },
   /** `text-xl leading-tight`: el nombre del centro. */
