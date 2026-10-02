@@ -30,6 +30,11 @@ type BarraFiltrosProps = {
    * campo más la última para el botón (`auto`, o `1fr` si los campos no ocupan todo el ancho).
    */
   className?: string
+  /**
+   * "Limpiar filtros" se reduce al ícono hasta `xl` (el texto queda para lectores de pantalla): para
+   * que todos los campos entren en una fila en pantallas angostas.
+   */
+  limpiarSoloIcono?: boolean
 }
 
 /**
@@ -43,6 +48,7 @@ function BarraFiltros({
   onLimpiar,
   limpiarEnFila,
   className,
+  limpiarSoloIcono = false,
 }: BarraFiltrosProps) {
   return (
     <section
@@ -52,7 +58,13 @@ function BarraFiltros({
     >
       {children}
       <div className={cn('col-span-full flex justify-end', LIMPIAR_EN_FILA[limpiarEnFila])}>
-        <LimpiarFiltros hayFiltros={hayFiltros} onClick={onLimpiar} />
+        {limpiarSoloIcono ? (
+          <LimpiarFiltros hayFiltros={hayFiltros} onClick={onLimpiar} title="Limpiar filtros">
+            <span className="max-xl:sr-only">Limpiar filtros</span>
+          </LimpiarFiltros>
+        ) : (
+          <LimpiarFiltros hayFiltros={hayFiltros} onClick={onLimpiar} />
+        )}
       </div>
     </section>
   )
