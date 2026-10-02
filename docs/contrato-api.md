@@ -38,14 +38,14 @@ El DNI de un alumno o de un profesor no se puede modificar después del alta : u
 
 ## Listados paginados
 
-Query: `page` (entero >= 1, default 1) y `pageSize` (entero de 1 a 100, default 20).
+Query: `page` (entero >= 1, default 1) y `pageSize` (entero de 1 a 100, default 10).
 
 Respuesta:
 
 ```json
 {
   "data": [],
-  "meta": { "page": 1, "pageSize": 20, "total": 57, "totalPages": 3 }
+  "meta": { "page": 1, "pageSize": 10, "total": 57, "totalPages": 3 }
 }
 ```
 

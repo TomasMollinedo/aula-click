@@ -38,7 +38,7 @@ export const ejemploListadoItem = {
 
 export const ejemploListado = {
   data: [ejemploListadoItem],
-  meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
+  meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
 } satisfies ProfesoresListado
 
 export const ejemploDetalle = {
