@@ -219,6 +219,7 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
   "tipo": "RECURRENTE",
   "estado": "AGENDADO",
   "estadoPago": "PENDIENTE",
+  "cupo": { "ocupados": 3, "capacidad": 4 },
   "prioridad": "ALTA",
   "examen": {
     "id": 5,
@@ -234,6 +235,7 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 - `estado`: `AGENDADO`, `SIN_REGISTRAR` (pasada, sin asistencia: HU-22 es del próximo sprint) o `CANCELADO` (definición F). La UI muestra `AGENDADO` como "Agendado".
 - `estadoPago`: `PAGADO` si la ocurrencia tiene un pago aplicado, si no `PENDIENTE` (una cancelada nunca se cobró: `PENDIENTE`).
 - `prioridad` (`ALTA`, `MEDIA`, `BAJA`) y `examen` (el que la determina, T-31): `null` en una ocurrencia **cancelada**; `examen` también es `null` si no hay un examen próximo. Es la misma regla que el detalle y las ocurrencias del alumno.
+- `cupo` (`{ ocupados, capacidad }`, HU-19): el de la **clase** (`fecha` + `bloqueAgendaId`), el mismo para todas las ocurrencias de esa clase. `capacidad` es la efectiva de la hora, `min(profesor.capacidad, aula.capacidad)`, y `ocupados` cuenta los turnos que ocupan lugar (los cancelados no) con la misma regla que el alta de turnos. **No depende de los filtros** de la agenda: con un filtro que deja ver un solo turno de la clase, `cupo` sigue siendo el de la clase entera. La clase está llena si `ocupados >= capacidad`.
 - **No hay `fechaOriginal` ni `reprogramada`**: un turno reprogramado es un turno más, en su fecha y bloque nuevos (definiciones A y B). Tampoco hay `id` ni el `estado: "ACTIVO"` de antes: `estado` es el de la ocurrencia y el id es `turnoId`.
 - **Filtros `estado` y `prioridad`**, opcionales y combinables entre sí y con los demás filtros de cada agenda. `prioridad` deja afuera las canceladas (no tienen). Valores inválidos: 400 `VALIDACION`.
 

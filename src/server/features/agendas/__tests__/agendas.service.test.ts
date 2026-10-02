@@ -6,6 +6,7 @@ import type { Actor } from '@/server/shared/actor'
 import type { PrioridadDeTurno } from '@/server/features/examenes/examenes.condiciones'
 import type { AgendasRepository, Ocurrencia } from '../agendas.repository'
 import { MENSAJE_RANGO_INVERTIDO, MENSAJE_RANGO_MAXIMO } from '../agendas.reglas'
+import { claveOcupacion } from '@/server/features/turnos/ocurrencias.condiciones'
 import { crearAgendasService } from '../agendas.service'
 
 // Las agendas (se movieron de `turnos` en T-30; T-57 las pasó a ocurrencias con estado, pago y
@@ -42,6 +43,16 @@ function ocurrencia(
   }
 }
 
+/** Cupo por defecto de toda clase pedida: 1 lugar ocupado de 4 (el repository devuelve uno por clase). */
+function cupos(clases: readonly { bloqueAgendaId: number; fecha: string }[]) {
+  return new Map(
+    clases.map(({ bloqueAgendaId, fecha }) => [
+      claveOcupacion(bloqueAgendaId, fecha),
+      { ocupados: 1, capacidad: 4 },
+    ]),
+  )
+}
+
 /** Prioridades que devuelve el repository, por `alumnoId-materiaId-fecha` (`clavePrioridad`). */
 function prioridades(
   ...entradas: [alumnoId: number, materiaId: number, fecha: string, PrioridadDeTurno][]
@@ -70,6 +81,7 @@ function crearRepositories() {
     repository: {
       leerOcurrencias: vi.fn<AgendasRepository['leerOcurrencias']>(),
       leerPrioridades: vi.fn<AgendasRepository['leerPrioridades']>(),
+      leerCupos: vi.fn<AgendasRepository['leerCupos']>(),
     },
     profesoresRepository: {
       buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
@@ -87,6 +99,7 @@ beforeEach(() => {
   service = crearAgendasService({ ...repos, reloj: relojFijo })
   repos.repository.leerOcurrencias.mockResolvedValue([])
   repos.repository.leerPrioridades.mockResolvedValue(new Map())
+  repos.repository.leerCupos.mockImplementation(async (clases) => cupos(clases))
   repos.aulasRepository.listar.mockResolvedValue([])
 })
 
@@ -171,6 +184,7 @@ describe('listarAgenda', () => {
           estadoPago: 'PAGADO',
           prioridad: 'ALTA',
           examen,
+          cupo: { ocupados: 1, capacidad: 4 },
         },
       ],
       meta: { page: 1, pageSize: 20, total: 1, totalPages: 1 },
@@ -426,6 +440,7 @@ describe('listarAgendaPropia', () => {
         estadoPago: 'PENDIENTE',
         prioridad: 'ALTA',
         examen,
+        cupo: { ocupados: 1, capacidad: 4 },
       },
       expect.objectContaining({
         turnoId: 31,
@@ -560,6 +575,7 @@ describe('listarAgendaDeProfesor', () => {
         estadoPago: 'PENDIENTE',
         prioridad: null,
         examen: null,
+        cupo: { ocupados: 1, capacidad: 4 },
       },
       expect.objectContaining({ turnoId: 90, fecha: '2026-10-05' }),
     ])
@@ -860,5 +876,95 @@ describe('listarAulasConTurno', () => {
   it('sin aulas con turno ese día, devuelve un arreglo vacío (sin leer el catálogo)', async () => {
     await expect(service.listarAulasConTurno({ fecha: '2026-09-28' })).resolves.toEqual([])
     expect(repos.aulasRepository.listar).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Cupo de la clase (HU-19)
+// ---------------------------------------------------------------------------------------------
+
+describe('cupo de la clase', () => {
+  const DESDE = '2026-09-28'
+  const HASTA = '2026-10-04'
+
+  it('cada ocurrencia lleva el cupo de su clase, el mismo para todas las de la clase', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: DESDE, bloqueAgendaId: 10 }),
+      ocurrencia({ turnoId: 2, fecha: DESDE, bloqueAgendaId: 10 }),
+      ocurrencia({ turnoId: 3, fecha: DESDE, bloqueAgendaId: 11 }),
+    ])
+    repos.repository.leerCupos.mockResolvedValue(
+      new Map([
+        [claveOcupacion(10, DESDE), { ocupados: 3, capacidad: 4 }],
+        [claveOcupacion(11, DESDE), { ocupados: 6, capacidad: 6 }],
+      ]),
+    )
+
+    const agenda = await service.listarAgendaDelCentro({ desde: DESDE, hasta: HASTA })
+
+    expect(agenda.map((item) => item.cupo)).toEqual([
+      { ocupados: 3, capacidad: 4 },
+      { ocupados: 3, capacidad: 4 },
+      { ocupados: 6, capacidad: 6 },
+    ])
+  })
+
+  it('pide una sola vez cada clase distinta, no una por ocurrencia', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: DESDE, bloqueAgendaId: 10 }),
+      ocurrencia({ turnoId: 2, fecha: DESDE, bloqueAgendaId: 10 }),
+      ocurrencia({ turnoId: 1, fecha: '2026-10-05', bloqueAgendaId: 10 }),
+    ])
+
+    await service.listarAgendaDelCentro({ desde: DESDE, hasta: '2026-10-05' })
+
+    expect(repos.repository.leerCupos).toHaveBeenCalledTimes(1)
+    expect(repos.repository.leerCupos).toHaveBeenCalledWith([
+      { bloqueAgendaId: 10, fecha: DESDE },
+      { bloqueAgendaId: 10, fecha: '2026-10-05' },
+    ])
+  })
+
+  it('el cupo no depende de los filtros: cuenta los turnos que el filtro deja afuera', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: DESDE, estado: 'CANCELADO' }),
+      ocurrencia({ turnoId: 2, fecha: DESDE }),
+    ])
+    repos.repository.leerCupos.mockResolvedValue(
+      new Map([[claveOcupacion(10, DESDE), { ocupados: 3, capacidad: 4 }]]),
+    )
+
+    const agenda = await service.listarAgendaDelCentro({
+      desde: DESDE,
+      hasta: HASTA,
+      estado: 'CANCELADO',
+    })
+
+    expect(agenda).toHaveLength(1)
+    expect(agenda[0]?.cupo).toEqual({ ocupados: 3, capacidad: 4 })
+  })
+
+  it('la agenda diaria pide el cupo solo de las ocurrencias de la página', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: DESDE, bloqueAgendaId: 10 }),
+      ocurrencia({ turnoId: 2, fecha: DESDE, bloqueAgendaId: 11 }),
+    ])
+
+    await service.listarAgenda({ fecha: DESDE, page: 1, pageSize: 1 })
+
+    expect(repos.repository.leerCupos).toHaveBeenCalledWith([{ bloqueAgendaId: 10, fecha: DESDE }])
+  })
+
+  it('también lo llevan las agendas de un profesor', async () => {
+    repos.profesoresRepository.buscarConAsignaciones.mockResolvedValue({} as never)
+    repos.repository.leerOcurrencias.mockResolvedValue([ocurrencia({ turnoId: 1, fecha: DESDE })])
+
+    const agenda = await service.listarAgendaDeProfesor({
+      profesorId: 4,
+      desde: DESDE,
+      hasta: HASTA,
+    })
+
+    expect(agenda[0]?.cupo).toEqual({ ocupados: 1, capacidad: 4 })
   })
 })

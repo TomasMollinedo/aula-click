@@ -11,19 +11,19 @@ describe('parsearModo', () => {
     expect(parsearModo(valor)).toBe(MODO_POR_DEFECTO)
   })
 
-  it('el modo por defecto es la lista, como antes del calendario', () => {
-    expect(MODO_POR_DEFECTO).toBe('lista')
+  it('el modo por defecto es el calendario', () => {
+    expect(MODO_POR_DEFECTO).toBe('calendario')
   })
 })
 
 describe('paramsConModo', () => {
-  it('escribe el calendario y conserva los demás parámetros', () => {
-    const params = paramsConModo(new URLSearchParams('fecha=2026-09-29&tab=agenda'), 'calendario')
-    expect(params.toString()).toBe('fecha=2026-09-29&tab=agenda&modo=calendario')
+  it('escribe la lista y conserva los demás parámetros', () => {
+    const params = paramsConModo(new URLSearchParams('fecha=2026-09-29&tab=agenda'), 'lista')
+    expect(params.toString()).toBe('fecha=2026-09-29&tab=agenda&modo=lista')
   })
 
   it('no escribe el modo por defecto y saca el que había', () => {
-    const params = paramsConModo(new URLSearchParams('modo=calendario&fecha=2026-09-29'), 'lista')
+    const params = paramsConModo(new URLSearchParams('modo=lista&fecha=2026-09-29'), 'calendario')
     expect(params.toString()).toBe('fecha=2026-09-29')
   })
 })

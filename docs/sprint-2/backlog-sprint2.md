@@ -301,7 +301,7 @@
 - Los filtros de cada agenda (profesor, materia, estado, prioridad) también se aplican al calendario. Al aplicar un filtro, se muestran los bloques horarios que tengan al menos un turno que coincida con los criterios seleccionados; dentro del bloque se muestran únicamente los turnos que cumplen los filtros.
 - Al expandir un bloque horario, se mantiene la agrupación de los turnos correspondientes a esa clase, sin mezclar turnos de otras horas.
 - El calendario debe permitir identificar visualmente cuándo una misma hora tiene varios alumnos asignados, sin necesidad de mostrar toda la información de los turnos de forma simultánea.
-- El selector no recuerda la última vista elegida: por defecto se muestra la vista de lista.
+- El selector no recuerda la última vista elegida: por defecto se muestra el calendario semanal (cambio posterior a la definición de las PO: pedido del equipo).
 - Fuera de alcance en este incremento: vista mensual y arrastrar turnos para moverlos.
 
 **ID:** HU-20 | **Sprint:** 2
