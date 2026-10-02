@@ -185,6 +185,20 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 - **Total adeudado:** la suma de los importes de los turnos adeudados de **todos** los filtros (alumno, período, materia y profesor): con un período es la deuda de ese período. En la vista global es el de todos los adeudados del filtro, no sólo el de la página. Con un período sólo futuro es $ 0, aunque haya próximos turnos con importe.
 - Los importes y los totales los calcula siempre la API; la UI sólo los muestra.
 
+## Tablero
+
+HU-21 (T-61). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días). Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
+
+- **Turnos por estado:** los turnos del período (cada turno en cada fecha), incluidos los cancelados, con su cantidad y su porcentaje sobre el total: cancelados, sin registrar (pasados y no cancelados) y agendados (no cancelados, de hoy en adelante). Los agendados sólo se informan si el período incluye hoy o fechas futuras.
+- **Asistencia:** "Asistió", "No asistió", "alumnos atendidos" y "profesores con más actividad" dependen de la asistencia (HU-22, próximo sprint). Se informan como **no disponibles**, sin número, y no se reemplazan por otra cuenta (por ejemplo, los turnos pasados no cancelados).
+- **Clase:** una hora de un profesor en una fecha con al menos un turno no cancelado (la clase de HU-19). Una hora del horario sin turnos, o con todos cancelados, no es una clase.
+- **Ocupación:** turnos no cancelados del período sobre la capacidad total de sus clases. La capacidad de cada clase es la capacidad efectiva de esa hora (la menor entre la del profesor y la del aula, HU-06) **al momento de consultar**, y cuenta una vez por clase, tenga uno o varios alumnos. No se recorta a 100 %: si a un profesor o a un aula le bajaron la capacidad después, el porcentaje real puede superarlo.
+- **Alumnos nuevos:** los dados de alta dentro del período, en hora de Salta (de las 00:00 del primer día a las 24:00 del último). Cuentan aunque después se hayan dado de baja.
+- **Materias con más demanda:** las 5 con más turnos **no cancelados** en el período, con su cantidad. En empate, por nombre.
+- **Total cobrado:** la suma de los pagos vigentes con **fecha de pago** dentro del período (no la fecha en que se cargaron).
+- **Total adeudado:** la deuda **a la fecha** (hoy), de todos los alumnos: no depende del período elegido. Es la misma de [Deuda](#deuda) y coincide con el total de la vista global "Pagos" sin filtros.
+- **Porcentajes:** de 0 a 100 con un decimal; si no hay sobre qué calcular, 0.
+
 ## Exámenes
 
 HU-17 (T-55). Modelo de datos: T-29 (ver más arriba). Registrar un examen es cargar un `Examen` de un alumno en una materia; "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
