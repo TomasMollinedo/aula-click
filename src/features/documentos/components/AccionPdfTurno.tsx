@@ -3,24 +3,25 @@
 import { Printer } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 
 export type AccionPdfTurnoProps = {
-  ocurrencia: OcurrenciaDetalle
+  turnoId: number
+  /** `YYYY-MM-DD` de la ocurrencia (la primera fecha del tramo, si viene de un alta). */
+  fecha: string
 }
 
 /**
- * "Generar PDF" en el pie del detalle (HU-11, T-60): abre la hoja de impresión del turno en una
- * pestaña nueva, así el detalle que estaba abierto queda intacto en la pestaña original (cancelar
- * o cerrar el diálogo de imprimir del navegador no se puede detectar: no hay forma de "volver
- * sola"). No pide datos: la hoja (`app/mesa/turnos/[turnoId]/imprimir`) los trae con
- * `useOcurrencia`, igual que este detalle.
+ * "Generar PDF" de un turno (HU-11, T-60): abre la hoja de impresión en una pestaña nueva, así la
+ * pantalla de origen (el detalle, o la confirmación de un alta, T-69) queda intacta en la pestaña
+ * original (cancelar o cerrar el diálogo de imprimir del navegador no se puede detectar: no hay
+ * forma de "volver sola"). Sólo necesita `turnoId` y `fecha`: la hoja (`app/mesa/turnos/[turnoId]/
+ * imprimir`) trae el resto con `useOcurrencia`.
  */
-export function AccionPdfTurno({ ocurrencia }: AccionPdfTurnoProps) {
+export function AccionPdfTurno({ turnoId, fecha }: AccionPdfTurnoProps) {
   return (
     <Button type="button" variant="accent" asChild>
       <a
-        href={`/mesa/turnos/${ocurrencia.turnoId}/imprimir?fecha=${ocurrencia.fecha}`}
+        href={`/mesa/turnos/${turnoId}/imprimir?fecha=${fecha}`}
         target="_blank"
         rel="noopener noreferrer"
       >

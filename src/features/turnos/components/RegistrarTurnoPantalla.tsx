@@ -1,4 +1,4 @@
-import { Suspense } from 'react'
+import { Suspense, type ReactNode } from 'react'
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -13,6 +13,8 @@ type RegistrarTurnoPantallaProps = {
   hrefAltaAlumno: string
   /** Compone `app/` el detalle de un turno (`?detalle=&fecha=`), que abre la confirmación del alta. */
   renderDetalle: RenderDetalleOcurrencia
+  /** Compone `app/` el "Generar PDF" de cada tramo creado, en la confirmación del alta (T-69). */
+  renderPdf?: (tramo: { turnoId: number; fecha: string }) => ReactNode
 }
 
 // Encabezado + la pantalla, que lee la URL (`?alumnoId=`, `?detalle=`, `?fecha=`) con useSearchParams: por
@@ -21,6 +23,7 @@ export function RegistrarTurnoPantalla({
   rutaBase,
   hrefAltaAlumno,
   renderDetalle,
+  renderPdf,
 }: RegistrarTurnoPantallaProps) {
   return (
     <div className="space-y-8">
@@ -33,6 +36,7 @@ export function RegistrarTurnoPantalla({
           rutaBase={rutaBase}
           hrefAltaAlumno={hrefAltaAlumno}
           renderDetalle={renderDetalle}
+          renderPdf={renderPdf}
         />
       </Suspense>
     </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { type ReactNode, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useRouter, useSearchParams } from 'next/navigation'
@@ -48,6 +48,8 @@ type RegistrarTurnoProps = {
   rutaBase: string
   /** URL del alta de alumno que vuelve acá con `?alumnoId=` (la arma la página). */
   hrefAltaAlumno: string
+  /** Compone `app/` el "Generar PDF" de cada tramo creado, en la confirmación del alta (T-69). */
+  renderPdf?: (tramo: { turnoId: number; fecha: string }) => ReactNode
 }
 
 /** Id de la URL (`?alumnoId=`) como número, o `null` si no es un entero positivo. */
@@ -86,7 +88,12 @@ function ResumenBloque({ bloque }: { bloque: BloqueDisponible }) {
  * depende de eso. No calcula reglas: la ocupación, `lleno`, las fechas y los rechazos vienen de la
  * API; los errores se interpretan en `errores-turnos.ts`.
  */
-export function RegistrarTurno({ rutaBase, hrefAltaAlumno, renderDetalle }: RegistrarTurnoProps) {
+export function RegistrarTurno({
+  rutaBase,
+  hrefAltaAlumno,
+  renderDetalle,
+  renderPdf,
+}: RegistrarTurnoProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
   const toast = useToast()
@@ -334,6 +341,7 @@ export function RegistrarTurno({ rutaBase, hrefAltaAlumno, renderDetalle }: Regi
           onVerDetalle={marcarAbiertoConLink}
           onRegistrarOtro={() => reiniciar(false)}
           onRegistrarOtroMismoAlumno={() => reiniciar(true)}
+          renderPdf={renderPdf}
         />
         {detalle}
       </>
