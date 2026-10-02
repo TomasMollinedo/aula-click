@@ -13,27 +13,31 @@ export type TurnoPagado = {
   importe: number
 }
 
-/** Un tramo posterior del mismo alumno, materia y hora: se finaliza desde su propio detalle. */
-export type TramoPosterior = {
+/**
+ * Otra hora de la misma clase (registrada en el mismo alta) que sigue agendada desde la fecha
+ * elegida: no se finaliza con esta, sino desde su propio detalle. `turnoId` + `fecha` es su
+ * primera ocurrencia desde esa fecha.
+ */
+export type OtraHora = {
   turnoId: number
-  fechaInicio: string
-  /** `null` en un tramo sin fin. */
-  fechaFin: string | null
+  fecha: string
+  horaInicio: string
+  horaFin: string
 }
 
 /** Respuesta de `GET /finalizaciones/previa`. */
 export type PreviaFinalizacion = {
-  /** Turnos no cancelados que se liberan; `null` si la serie no tiene fin. */
+  /** Turnos no cancelados que se liberan, de todos los tramos de la hora; `null` si no tiene fin. */
   cantidad: number | null
   desde: string
-  /** La última ocurrencia de la serie; `null` si no tiene fin. */
+  /** La última ocurrencia de la hora; `null` si no tiene fin. */
   hasta: string | null
   pagadas: TurnoPagado[]
   /** `null` si no hay pagados. */
   ultimaFechaPagada: string | null
   /** La primera fecha que se puede elegir; `null` sin pagados o si llegan hasta el final. */
   fechaDesdeMinima: string | null
-  otrosTramos: TramoPosterior[]
+  otrasHoras: OtraHora[]
 }
 
 export type PreviaFinalizacionParams = {

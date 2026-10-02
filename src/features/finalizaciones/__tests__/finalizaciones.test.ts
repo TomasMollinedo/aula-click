@@ -16,15 +16,14 @@ import {
   esFechaConFormato,
   finalizacionFormSchema,
 } from '../finalizaciones.schema'
-import type { TurnoPagado } from '../finalizaciones.types'
+import type { OtraHora, PreviaFinalizacion, TurnoPagado } from '../finalizaciones.types'
 import {
-  avisoOtrosTramos,
+  avisoOtrasHoras,
   avisoPagados,
   lineaPagado,
   mensajeFinalizado,
   resumenPrevia,
   resumenTurno,
-  textoTramo,
   textoUsarFecha,
 } from '../formato-finalizaciones'
 
@@ -138,6 +137,25 @@ describe('interpretarErrorFinalizacion', () => {
       ultimaFechaPagada: '2026-11-16',
       fechaDesdeMinima: '2026-11-23',
       pagadas: [pagado],
+    })
+  })
+
+  it('409 TURNOS_PAGADOS con pagados de varios tramos de la hora: la lista llega entera', () => {
+    // Finalizar actúa sobre todos los tramos de la hora: los pagados pueden ser de tramos distintos.
+    const pagadas = [
+      { ...pagado, fecha: '2026-10-19' },
+      { ...pagado, fecha: '2026-11-16' },
+    ]
+    const error = new ApiError(409, 'TURNOS_PAGADOS', 'Hay turnos pagados desde esa fecha', {
+      ultimaFechaPagada: '2026-11-16',
+      fechaDesdeMinima: '2026-11-23',
+      pagadas,
+    })
+    expect(interpretarErrorFinalizacion(error)).toEqual({
+      tipo: 'pagados',
+      ultimaFechaPagada: '2026-11-16',
+      fechaDesdeMinima: '2026-11-23',
+      pagadas,
     })
   })
 
@@ -257,27 +275,56 @@ describe('formato', () => {
     )
   })
 
-  it('un tramo posterior, con y sin fin', () => {
-    expect(textoTramo({ turnoId: 58, fechaInicio: '2026-12-14', fechaFin: '2026-12-28' })).toBe(
-      'del 14/12 al 28/12',
+  const hora = (horaInicio: string, horaFin: string, turnoId = 42): OtraHora => ({
+    turnoId,
+    fecha: '2026-10-19',
+    horaInicio,
+    horaFin,
+  })
+
+  it('aviso de otra hora de la clase, que sigue agendada', () => {
+    expect(avisoOtrasHoras([hora('10:00', '11:00')])).toBe(
+      'Esta clase también tiene la hora de 10:00 a 11:00, que sigue agendada: finalizala desde su detalle',
     )
-    expect(textoTramo({ turnoId: 58, fechaInicio: '2026-12-14', fechaFin: null })).toBe(
-      'desde el 14/12, sin fecha de fin',
+    // Como el resto de la pantalla, sin el cero adelante de la hora.
+    expect(avisoOtrasHoras([hora('08:00', '09:00')])).toBe(
+      'Esta clase también tiene la hora de 8:00 a 9:00, que sigue agendada: finalizala desde su detalle',
     )
   })
 
-  it('aviso de tramos posteriores, uno o varios', () => {
-    expect(avisoOtrosTramos([{ turnoId: 58, fechaInicio: '2026-12-14', fechaFin: null }])).toBe(
-      'El alumno tiene otro tramo posterior de la misma hora y materia (desde el 14/12, sin fecha de fin). No se finaliza con este: se finaliza desde su propio detalle.',
+  it('aviso de varias otras horas, en plural', () => {
+    expect(avisoOtrasHoras([hora('10:00', '11:00'), hora('11:00', '12:00', 43)])).toBe(
+      'Esta clase también tiene las horas de 10:00 a 11:00 y de 11:00 a 12:00, que siguen agendadas: finalizalas desde su detalle',
     )
     expect(
-      avisoOtrosTramos([
-        { turnoId: 58, fechaInicio: '2026-12-07', fechaFin: '2026-12-14' },
-        { turnoId: 59, fechaInicio: '2026-12-28', fechaFin: null },
+      avisoOtrasHoras([
+        hora('10:00', '11:00'),
+        hora('11:00', '12:00', 43),
+        hora('12:00', '13:00', 44),
       ]),
     ).toBe(
-      'El alumno tiene 2 tramos posteriores de la misma hora y materia (del 07/12 al 14/12; desde el 28/12, sin fecha de fin). No se finalizan con este: cada uno se finaliza desde su propio detalle.',
+      'Esta clase también tiene las horas de 10:00 a 11:00, de 11:00 a 12:00 y de 12:00 a 13:00, que siguen agendadas: finalizalas desde su detalle',
     )
+  })
+
+  it('sin otras horas no hay aviso', () => {
+    expect(avisoOtrasHoras([])).toBe('')
+  })
+
+  it('la previa trae otrasHoras con la forma del contrato (sin otrosTramos)', () => {
+    // Compila sólo si `PreviaFinalizacion` sigue al contrato nuevo.
+    const previa: PreviaFinalizacion = {
+      cantidad: 7,
+      desde: '2026-10-12',
+      hasta: '2026-11-30',
+      pagadas: [],
+      ultimaFechaPagada: null,
+      fechaDesdeMinima: null,
+      otrasHoras: [{ turnoId: 42, fecha: '2026-10-12', horaInicio: '10:00', horaFin: '11:00' }],
+    }
+    expect(Object.keys(previa)).not.toContain('otrosTramos')
+    expect(resumenPrevia(previa)).toBe('Se liberan 7 turnos, del 12/10 al 30/11')
+    expect(avisoOtrasHoras(previa.otrasHoras)).toContain('de 10:00 a 11:00')
   })
 
   it('el toast de éxito, con lo que devuelve el 201', () => {

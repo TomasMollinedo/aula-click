@@ -51,6 +51,8 @@ type TurnoEnBase = {
   estado: 'ACTIVO' | 'CANCELADO'
   fechaInicio: string
   fechaFin: string | null
+  /** La serie del alta (decisión T-103); los turnos sembrados a mano no la llevan. */
+  serieId?: string | null
   /** Fechas canceladas (`CancelacionTurno`, T-30). */
   canceladas?: string[]
   /** `FinalizacionRecurrencia.fechaDesde`, si la serie se finalizó (T-30). */
@@ -279,7 +281,13 @@ let service: ReturnType<typeof crearTurnosService>
 beforeEach(() => {
   sembrar()
   repos = crearRepositories()
-  service = crearTurnosService({ ...repos, reloj: relojFijo })
+  let altas = 0
+  // Un id de serie distinto por alta ("serie-1", "serie-2", …), en lugar del `randomUUID` real.
+  service = crearTurnosService({
+    ...repos,
+    reloj: relojFijo,
+    generarSerieId: () => `serie-${(altas += 1)}`,
+  })
 
   repos.repository.reservar.mockImplementation(crearReservarEnMemoria())
   repos.repository.contarOcupacionPorBloque.mockResolvedValue([])
@@ -583,6 +591,39 @@ describe('crear: caminos felices', () => {
       [12, 'SESION_UNICA', '2026-10-05', '2026-10-05'],
     ])
     expect(new Set(alta.turnos.map((t) => t.materia.id))).toEqual(new Set([3]))
+  })
+
+  it('una sesión única (también de varias horas) no lleva serieId', async () => {
+    await service.crear({ ...SESION, bloqueIds: [12, 10] }, actor)
+
+    expect(turnos.map((t) => t.serieId)).toEqual([null, null])
+  })
+
+  it('recurrente de 2 horas con fechas llenas: todas las filas comparten un serieId', async () => {
+    llenar(10, '2026-10-26') // la hora de 8 queda en dos tramos
+    llenar(11, '2026-10-12') // y la de 9, en otros dos
+
+    const alta = await service.crear(
+      { ...RECURRENTE, bloqueIds: [10, 11], asignarDondeHayLugar: true },
+      actor,
+    )
+
+    expect(alta.turnos.map(resumen)).toEqual([
+      [10, 'RECURRENTE', '2026-10-05', '2026-10-19'],
+      [10, 'RECURRENTE', '2026-11-02', '2026-11-30'],
+      [11, 'RECURRENTE', '2026-10-05', '2026-10-05'],
+      [11, 'RECURRENTE', '2026-10-19', '2026-11-30'],
+    ])
+    const creados = turnos.filter((t) => t.alumnoId === 12)
+    expect(creados).toHaveLength(4)
+    expect(new Set(creados.map((t) => t.serieId))).toEqual(new Set(['serie-1']))
+  })
+
+  it('dos altas recurrentes separadas son dos series distintas', async () => {
+    await service.crear({ ...RECURRENTE, bloqueIds: [10] }, actor)
+    await service.crear({ ...RECURRENTE, bloqueIds: [12] }, actor)
+
+    expect(turnos.map((t) => t.serieId)).toEqual(['serie-1', 'serie-2'])
   })
 
   it('recurrente con fin', async () => {

@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { BloquesRepository } from '@/server/features/bloques/bloques.repository'
@@ -36,6 +37,7 @@ import type {
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
  * reales; los tests, con falsos y un reloj fijo (`reloj` opcional; por defecto el del sistema, vía
  * `hoy(reloj)`). Los importa solo como tipo, así el service no carga Prisma ni `@/config/env`.
+ * `generarSerieId` (por defecto `randomUUID`) da el id de la serie de cada alta (decisión T-103).
  */
 export function crearTurnosService({
   repository,
@@ -44,6 +46,7 @@ export function crearTurnosService({
   profesoresRepository,
   materiasRepository,
   reloj,
+  generarSerieId = randomUUID,
 }: {
   repository: Pick<TurnosRepository, 'contarOcupacionPorBloque' | 'reservar' | 'buscarDetalle'>
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
@@ -54,6 +57,7 @@ export function crearTurnosService({
   >
   materiasRepository: Pick<MateriasRepository, 'buscarPorIds'>
   reloj?: Reloj
+  generarSerieId?: () => string
 }) {
   /** 400 en `campo` si `fecha` es anterior a hoy (hoy se permite aunque la hora ya haya pasado). */
   function exigirNoPasada(fecha: string, fechaHoy: string, campo: string): void {
@@ -226,6 +230,7 @@ export function crearTurnosService({
         observaciones: datos.observaciones ?? null,
         temas: datos.temas ?? null,
         asignarDondeHayLugar: datos.asignarDondeHayLugar,
+        serieId: generarSerieId(),
       }
       const { turnos, fechasSinTurno } = await repository.reservar(
         {

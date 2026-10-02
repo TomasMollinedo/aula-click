@@ -295,6 +295,7 @@ describe('planificarReserva', () => {
     observaciones: null,
     temas: null,
     asignarDondeHayLugar: false,
+    serieId: '11111111-1111-4111-8111-111111111111',
   }
   const snapshot: SnapshotReserva = {
     filas: [
@@ -328,10 +329,21 @@ describe('planificarReserva', () => {
           fechaFin: '2026-11-30',
           observaciones: null,
           temas: null,
+          serieId: '11111111-1111-4111-8111-111111111111',
         },
       ],
       fechasSinTurno: [],
     })
+  })
+
+  it('una sesión única no es parte de una serie: serieId null', () => {
+    const plan = planificarReserva(snapshot, {
+      ...pedido,
+      tipo: 'SESION_UNICA',
+      fechaFin: '2026-10-05',
+      temas: 'Fracciones',
+    })
+    expect(plan.turnos.map((turno) => turno.serieId)).toEqual([null])
   })
 
   it('copia observaciones y temas del pedido a cada tramo ("Asignar igual")', () => {
@@ -633,6 +645,7 @@ describe('planificarReserva: superposición del alumno', () => {
     observaciones: null,
     temas: 'Fracciones',
     asignarDondeHayLugar: false,
+    serieId: '11111111-1111-4111-8111-111111111111',
   }
   const fila = (id: number, horaInicio: number) => ({
     id,
@@ -675,5 +688,66 @@ describe('planificarReserva: superposición del alumno', () => {
     )
     expect(error).toBeInstanceOf(ConflictError)
     expect((error as ConflictError).code).toBe('ALUMNO_SUPERPUESTO')
+  })
+})
+
+describe('planificarReserva: serieId (decisión T-103)', () => {
+  const fila = (id: number, horaInicio: number) => ({
+    id,
+    estado: 'ACTIVO' as const,
+    profesorId: 4,
+    diaSemana: 1,
+    horaInicio,
+    horaFin: horaInicio + 60,
+    aulaCapacidad: 1,
+  })
+  const snapshot: SnapshotReserva = {
+    filas: [fila(10, 540), fila(11, 600)],
+    profesor: { id: 4, capacidad: 6, estado: 'ACTIVO' },
+    materia: { id: 3, estado: 'ACTIVO' },
+    asignacion: { estado: 'ACTIVO' },
+    // La hora de 9 está llena el 26/10 y la de 10, el 12/10 (capacidad 1).
+    ocupantes: [
+      { bloqueAgendaId: 10, ...sesion('2026-10-26') },
+      { bloqueAgendaId: 11, ...sesion('2026-10-12') },
+    ],
+    turnosAlumno: [],
+  }
+  const pedido: PedidoReserva = {
+    alumnoId: 12,
+    materiaId: 3,
+    profesorId: 4,
+    diaSemana: 1,
+    bloqueIds: [10, 11],
+    tipo: 'RECURRENTE',
+    fechaInicio: '2026-10-05',
+    fechaFin: '2026-11-30',
+    observaciones: null,
+    temas: null,
+    asignarDondeHayLugar: true,
+    serieId: '11111111-1111-4111-8111-111111111111',
+  }
+
+  it('recurrente de 2 horas con fechas llenas: todas las filas (horas y tramos) con el mismo serieId', () => {
+    const plan = planificarReserva(snapshot, pedido)
+
+    expect(plan.turnos.map((t) => [t.bloqueAgendaId, t.fechaInicio, t.fechaFin])).toEqual([
+      [10, '2026-10-05', '2026-10-19'],
+      [10, '2026-11-02', '2026-11-30'],
+      [11, '2026-10-05', '2026-10-05'],
+      [11, '2026-10-19', '2026-11-30'],
+    ])
+    expect(new Set(plan.turnos.map((t) => t.serieId))).toEqual(
+      new Set(['11111111-1111-4111-8111-111111111111']),
+    )
+  })
+
+  it('sesión única de 2 horas: ninguna fila lleva serieId', () => {
+    const plan = planificarReserva(
+      { ...snapshot, ocupantes: [] },
+      { ...pedido, tipo: 'SESION_UNICA', fechaFin: '2026-10-05', temas: 'Fracciones' },
+    )
+
+    expect(plan.turnos.map((t) => t.serieId)).toEqual([null, null])
   })
 })

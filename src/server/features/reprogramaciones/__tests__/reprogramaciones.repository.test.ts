@@ -72,9 +72,11 @@ const entrada: EntradaReprogramacion = {
   fechaDestino: '2026-10-22',
 }
 
+const SERIE = '11111111-1111-4111-8111-111111111111'
+
 const planMedio: PlanReprogramacion = {
   original: { fechaFin: '2026-10-12' },
-  tramoNuevo: { fechaInicio: '2026-10-26', fechaFin: '2026-11-02' },
+  tramoNuevo: { fechaInicio: '2026-10-26', fechaFin: '2026-11-02', serieId: SERIE },
   sesionNueva: true,
   finalizacionAlTramo: true,
   borrarFinalizacion: false,
@@ -161,6 +163,8 @@ describe('reprogramacionesRepository.reprogramar', () => {
     expect(tramo).toMatchObject({
       bloqueAgendaId: 10,
       tipo: 'RECURRENTE',
+      // El tramo sigue en la serie del original; la sesión única queda fuera (T-103).
+      serieId: SERIE,
       fechaInicio: d('2026-10-26'),
       fechaFin: d('2026-11-02'),
       observaciones: 'Viene con tarea',
@@ -171,6 +175,7 @@ describe('reprogramacionesRepository.reprogramar', () => {
     expect(sesion).toMatchObject({
       bloqueAgendaId: 30,
       tipo: 'SESION_UNICA',
+      serieId: null,
       fechaInicio: d('2026-10-22'),
       fechaFin: d('2026-10-22'),
       createdById: 'usr_mesa',
@@ -225,6 +230,40 @@ describe('reprogramacionesRepository.reprogramar', () => {
       where: { turnoId: 50, fechaOcurrencia: d('2026-10-19') },
       data: { turnoId: 50, fechaOcurrencia: d('2026-10-22') },
     })
+  })
+
+  it('su única fecha: el original pasa a sesión única y pierde el serieId', async () => {
+    const plan: PlanReprogramacion = {
+      original: {
+        tipo: 'SESION_UNICA',
+        bloqueAgendaId: 30,
+        fechaInicio: '2026-10-22',
+        fechaFin: '2026-10-22',
+        serieId: null,
+      },
+      tramoNuevo: null,
+      sesionNueva: false,
+      finalizacionAlTramo: false,
+      borrarFinalizacion: true,
+      reapuntarPosterioresAlTramo: false,
+      moverPago: false,
+      cambio: 'x',
+    }
+
+    await reprogramacionesRepository.reprogramar(entrada, () => plan, actor, reloj)
+
+    expect(tx.turno.update).toHaveBeenCalledWith({
+      where: { id: 50 },
+      data: {
+        tipo: 'SESION_UNICA',
+        bloqueAgendaId: 30,
+        fechaInicio: d('2026-10-22'),
+        fechaFin: d('2026-10-22'),
+        serieId: null,
+        updatedById: 'usr_mesa',
+      },
+    })
+    expect(tx.finalizacionRecurrencia.deleteMany).toHaveBeenCalledWith({ where: { turnoId: 50 } })
   })
 
   it('si planificar lanza, no se escribe nada', async () => {

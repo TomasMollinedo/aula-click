@@ -45,7 +45,7 @@ import {
 } from '../finalizaciones.schema'
 import type { FinalizacionCreada } from '../finalizaciones.types'
 import {
-  avisoOtrosTramos,
+  avisoOtrasHoras,
   avisoPagados,
   lineaPagado,
   mensajeFinalizado,
@@ -69,7 +69,7 @@ export type FinalizarTurnoDialogProps = {
 /**
  * Diálogo de "Finalizar turno" (HU-14, `POST /finalizaciones`): desde qué fecha, motivo (lista) y
  * detalle (obligatorio con "Otro", contador de 500). Al elegir la fecha pide la previa y muestra
- * qué se libera, los turnos pagados que lo impiden y los tramos posteriores. El resumen es la
+ * qué se libera, los turnos pagados que lo impiden y las otras horas de la clase. El resumen es la
  * confirmación: no hay un segundo paso. No calcula reglas: qué fecha vale y qué se libera lo decide
  * la API. Si el POST falla, el diálogo queda abierto con el error.
  */
@@ -274,12 +274,10 @@ function FormularioFinalizar({
                   {resumenPrevia(previaMostrada)}
                 </p>
               )}
-              {previaMostrada.otrosTramos.length > 0 && (
+              {previaMostrada.otrasHoras.length > 0 && (
                 <Alert>
                   <Info className="size-4" />
-                  <AlertDescription>
-                    {avisoOtrosTramos(previaMostrada.otrosTramos)}
-                  </AlertDescription>
+                  <AlertDescription>{avisoOtrasHoras(previaMostrada.otrasHoras)}</AlertDescription>
                 </Alert>
               )}
             </div>

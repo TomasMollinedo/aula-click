@@ -131,6 +131,7 @@ export function crearReprogramacionesEnMemoria(
             ...copia,
             bloqueAgendaId: original.bloqueAgendaId,
             tipo: 'RECURRENTE',
+            serieId: plan.tramoNuevo.serieId,
             fechaInicio: plan.tramoNuevo.fechaInicio,
             fechaFin: plan.tramoNuevo.fechaFin,
           })
@@ -140,6 +141,7 @@ export function crearReprogramacionesEnMemoria(
             ...copia,
             bloqueAgendaId: bloqueDestinoId,
             tipo: 'SESION_UNICA',
+            serieId: null,
             fechaInicio: fechaDestino,
             fechaFin: fechaDestino,
           })
@@ -165,6 +167,7 @@ export function crearReprogramacionesEnMemoria(
       if (cambios.bloqueAgendaId !== undefined) original.bloqueAgendaId = cambios.bloqueAgendaId
       if (cambios.fechaInicio !== undefined) original.fechaInicio = cambios.fechaInicio
       if (cambios.fechaFin !== undefined) original.fechaFin = cambios.fechaFin
+      if (cambios.serieId !== undefined) original.serieId = cambios.serieId
       auditoria.set(original.id, {
         createdById: auditoria.get(original.id)?.createdById ?? 'usr_alta',
         updatedById: actor.userId,

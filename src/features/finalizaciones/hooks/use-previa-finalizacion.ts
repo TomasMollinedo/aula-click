@@ -9,7 +9,7 @@ import type { PreviaFinalizacion } from '../finalizaciones.types'
 
 /**
  * Qué pasa si el turno se finaliza desde `fechaDesde` (`GET /finalizaciones/previa`): cuántos
- * turnos se liberan, los pagados que lo impiden y los tramos posteriores. Sin una fecha con formato
+ * turnos se liberan, los pagados que lo impiden y las otras horas de la clase. Sin una fecha con formato
  * válido la query queda deshabilitada.
  *
  * Conserva la previa anterior mientras llega la nueva (`keepPreviousData`), así cambiar la fecha no

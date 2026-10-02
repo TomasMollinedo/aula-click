@@ -15,7 +15,7 @@ export const ejemploPrevia = {
   pagadas: [],
   ultimaFechaPagada: null,
   fechaDesdeMinima: null,
-  otrosTramos: [{ turnoId: 58, fechaInicio: '2026-12-14', fechaFin: null }],
+  otrasHoras: [{ turnoId: 42, fecha: '2026-10-19', horaInicio: '10:00', horaFin: '11:00' }],
 } satisfies PreviaFinalizacion
 
 export const ejemploFinalizar = {

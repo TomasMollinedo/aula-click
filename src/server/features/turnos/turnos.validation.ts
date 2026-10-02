@@ -410,6 +410,11 @@ export type TurnoNuevo = {
   fechaFin: string | null
   observaciones: string | null
   temas: string | null
+  /**
+   * La serie del alta (decisión T-103): la misma en todas las filas de un `RECURRENTE`; `null` en
+   * una sesión única.
+   */
+  serieId: string | null
 }
 
 /** Lo que decide `planificar`: qué insertar y qué fechas quedaron sin turno. */

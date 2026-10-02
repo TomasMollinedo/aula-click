@@ -5,8 +5,8 @@ import { formatearPesos } from '@/utils/moneda'
 
 import type {
   FinalizacionCreada,
+  OtraHora,
   PreviaFinalizacion,
-  TramoPosterior,
   TurnoPagado,
 } from './finalizaciones.types'
 
@@ -87,20 +87,23 @@ export function textoUsarFecha(fecha: string): string {
   return `Usar el ${fechaCorta(fecha)}`
 }
 
-/** `'del 14/12 al 28/12'` o `'desde el 14/12, sin fecha de fin'`. */
-export function textoTramo(t: TramoPosterior): string {
-  return t.fechaFin === null
-    ? `desde el ${fechaCorta(t.fechaInicio)}, sin fecha de fin`
-    : rango(t.fechaInicio, t.fechaFin)
+/** `'de 10:00 a 11:00'`; varias: `'de 10:00 a 11:00, de 11:00 a 12:00 y de 12:00 a 13:00'`. */
+function listaDeHoras(horas: readonly OtraHora[]): string {
+  const textos = horas.map((h) => `de ${rangoHoras(h.horaInicio, h.horaFin)}`)
+  return textos.length <= 1
+    ? (textos[0] ?? '')
+    : `${textos.slice(0, -1).join(', ')} y ${textos.at(-1)}`
 }
 
-/** Aviso de los tramos posteriores de la misma hora y materia, que no se finalizan con este. */
-export function avisoOtrosTramos(tramos: readonly TramoPosterior[]): string {
-  if (tramos.length === 1) {
-    return `El alumno tiene otro tramo posterior de la misma hora y materia (${textoTramo(tramos[0])}). No se finaliza con este: se finaliza desde su propio detalle.`
-  }
-  const lista = tramos.map(textoTramo).join('; ')
-  return `El alumno tiene ${tramos.length} tramos posteriores de la misma hora y materia (${lista}). No se finalizan con este: cada uno se finaliza desde su propio detalle.`
+/**
+ * Aviso de las otras horas de la misma clase (las que se registraron juntas), que no se finalizan
+ * con esta: cada una se finaliza desde su propio detalle. Sin otras horas, `''`.
+ */
+export function avisoOtrasHoras(horas: readonly OtraHora[]): string {
+  if (horas.length === 0) return ''
+  return horas.length === 1
+    ? `Esta clase también tiene la hora ${listaDeHoras(horas)}, que sigue agendada: finalizala desde su detalle`
+    : `Esta clase también tiene las horas ${listaDeHoras(horas)}, que siguen agendadas: finalizalas desde su detalle`
 }
 
 /** Mensaje del toast cuando la API confirma. */

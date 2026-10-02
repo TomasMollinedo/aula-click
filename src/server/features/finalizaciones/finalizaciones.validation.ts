@@ -28,7 +28,8 @@ export const previaFinalizacionQuerySchema = z.object({
     .positive({ error: 'Debe ser mayor a 0' })
     .openapi({
       param: { name: 'turnoId', in: 'query' },
-      description: 'Id del turno (o tramo) recurrente',
+      description:
+        'Id del turno recurrente desde cuyo detalle se opera (cualquier tramo de esa hora)',
       example: 41,
     }),
   fechaDesde: fechaISO.openapi({
@@ -47,10 +48,14 @@ export const finalizarTurnoSchema = z
       .number({ error: 'Debe ser un número' })
       .int({ error: 'Debe ser un número entero' })
       .positive({ error: 'Debe ser mayor a 0' })
-      .openapi({ description: 'Id del turno (o tramo) recurrente', example: 41 }),
+      .openapi({
+        description:
+          'Id del turno recurrente desde cuyo detalle se opera: se finaliza su hora, en todos los tramos de su serie',
+        example: 41,
+      }),
     fechaDesde: fechaISO.openapi({
       description:
-        'Primera fecha que se libera: de hoy en adelante, en el día de la serie, posterior a su inicio y no posterior a su fin',
+        'Primera fecha que se libera: de hoy en adelante, en el día de la serie, posterior al primer inicio de esa hora y no posterior a su último fin',
       example: '2026-10-19',
     }),
     motivo: z
@@ -91,26 +96,34 @@ export const turnoPagadoSchema = z
 
 export type TurnoPagado = z.infer<typeof turnoPagadoSchema>
 
-/** Otro tramo posterior del mismo alumno, materia y hora, todavía sin finalizar. */
-export const tramoPosteriorSchema = z
+/**
+ * Otra hora de la misma serie (decisión T-103) que sigue agendada desde `fechaDesde`: no se
+ * finaliza con este pedido. `turnoId` + `fecha` es su primera ocurrencia desde `fechaDesde`, la
+ * que abre su detalle.
+ */
+export const otraHoraSchema = z
   .object({
-    turnoId: z.number().int().openapi({ example: 58 }),
-    fechaInicio: fechaISO.openapi({ example: '2026-12-14' }),
-    fechaFin: fechaISO.nullable().openapi({ description: '`null` = sin fin', example: null }),
+    turnoId: z.number().int().openapi({ example: 42 }),
+    fecha: fechaISO.openapi({
+      description: 'Primera ocurrencia de esa hora desde `fechaDesde`',
+      example: '2026-10-19',
+    }),
+    horaInicio: horaHHmm.openapi({ example: '10:00' }),
+    horaFin: horaHHmm.openapi({ example: '11:00' }),
   })
-  .openapi('TramoPosterior')
+  .openapi('OtraHora')
 
-export type TramoPosterior = z.infer<typeof tramoPosteriorSchema>
+export type OtraHora = z.infer<typeof otraHoraSchema>
 
 const resumen = {
   cantidad: z.number().int().nullable().openapi({
     description:
-      'Turnos que se liberan (no cancelados) de `desde` a `hasta`. `null` si la serie no tiene fin',
+      'Turnos que se liberan (no cancelados) de `desde` a `hasta`, de todos los tramos de la hora. `null` si no tiene fin',
     example: 7,
   }),
   desde: fechaISO.openapi({ description: 'Igual a `fechaDesde`', example: '2026-10-19' }),
   hasta: fechaISO.nullable().openapi({
-    description: 'Última ocurrencia de la serie. `null` si la serie no tiene fin',
+    description: 'Última ocurrencia de la hora. `null` si no tiene fin',
     example: '2026-11-30',
   }),
 }
@@ -131,9 +144,9 @@ export const previaFinalizacionSchema = z
         'Primera `fechaDesde` posible: la ocurrencia siguiente al último pagado. `null` si no hay pagados, o si los pagados llegan hasta el final de la serie (no se puede finalizar)',
       example: null,
     }),
-    otrosTramos: z.array(tramoPosteriorSchema).openapi({
+    otrasHoras: z.array(otraHoraSchema).openapi({
       description:
-        'Tramos posteriores del mismo alumno, materia y hora, sin finalizar: se finalizan desde su propio detalle',
+        'Las otras horas de la serie con alguna ocurrencia desde `fechaDesde` y sin finalizar, por hora: no se finalizan con este pedido, sino desde su propio detalle',
     }),
   })
   .openapi('PreviaFinalizacion')
@@ -143,7 +156,7 @@ export type PreviaFinalizacion = z.infer<typeof previaFinalizacionSchema>
 /** Respuesta 201 de `POST /finalizaciones`: misma forma que el resumen de la previa. */
 export const finalizacionCreadaSchema = z
   .object({
-    turnoId: z.number().int().openapi({ description: 'El turno finalizado', example: 41 }),
+    turnoId: z.number().int().openapi({ description: 'El turno pedido', example: 41 }),
     ...resumen,
   })
   .openapi('FinalizacionCreada')

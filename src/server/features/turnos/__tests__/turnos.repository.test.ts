@@ -527,6 +527,7 @@ describe('reservar', () => {
         fechaFin: '2026-10-19',
         observaciones: null,
         temas: null,
+        serieId: '11111111-1111-4111-8111-111111111111',
       },
       {
         bloqueAgendaId: 10,
@@ -538,6 +539,7 @@ describe('reservar', () => {
         fechaFin: null,
         observaciones: null,
         temas: null,
+        serieId: '11111111-1111-4111-8111-111111111111',
       },
     ],
     fechasSinTurno: [
@@ -714,6 +716,7 @@ describe('reservar', () => {
   it('inserta lo planificado con la auditoría del actor y devuelve el detalle y las fechas sin turno', async () => {
     const resultado = await turnosRepository.reservar(entrada, () => plan, actor)
 
+    // Cada fila se inserta con el `serieId` que decidió el plan (los dos tramos, el mismo).
     expect(tx.turno.createManyAndReturn).toHaveBeenCalledWith({
       data: [
         {
