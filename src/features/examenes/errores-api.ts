@@ -8,6 +8,10 @@ import type { ExamenPendiente } from './examenes.types'
 
 export const CODIGO_EXAMEN_PENDIENTE = 'EXAMEN_PENDIENTE'
 export const CODIGO_MATERIA_INACTIVA = 'MATERIA_INACTIVA'
+export const CODIGO_MATERIA_SIN_TURNOS = 'MATERIA_SIN_TURNOS'
+
+/** 409 que la API informa sobre la materia (`path` `["materiaId"]`). */
+const CODIGOS_DE_MATERIA = new Set([CODIGO_MATERIA_INACTIVA, CODIGO_MATERIA_SIN_TURNOS])
 
 const MENSAJE_SIN_PERMISO =
   'No tenés permiso para esta operación: solo podés cargar, editar o eliminar exámenes de las materias que le dictás a este alumno'
@@ -16,7 +20,7 @@ const CAMPOS = new Set<string>(EXAMEN_FORM_FIELDS)
 const TIPOS = new Set<string>(TIPOS_EXAMEN.map((t) => t.valor))
 
 export type ErrorExamen =
-  /** 400 por campo, o 409 `MATERIA_INACTIVA` sobre la materia. `mensaje`: lo que no es de un campo. */
+  /** 400 por campo, o 409 `MATERIA_INACTIVA` / `MATERIA_SIN_TURNOS` sobre la materia. `mensaje`: lo que no es de un campo. */
   | {
       tipo: 'campos'
       camposMarcados: { campo: CampoExamenForm; mensaje: string }[]
@@ -58,7 +62,7 @@ export function interpretarErrorExamen(error: ApiError): ErrorExamen {
 
   const porCampo =
     (error.status === 400 && error.code === 'VALIDACION') ||
-    (error.status === 409 && error.code === CODIGO_MATERIA_INACTIVA)
+    (error.status === 409 && CODIGOS_DE_MATERIA.has(error.code))
   if (porCampo) {
     const details = Array.isArray(error.details) ? (error.details as unknown[]) : []
     const camposMarcados: { campo: CampoExamenForm; mensaje: string }[] = []

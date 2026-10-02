@@ -26,7 +26,7 @@ const examenesService = crearExamenesService({
 })
 
 export const listar: RouteHandler<typeof listarExamenesRoute, AppEnv> = async (c) =>
-  c.json(await examenesService.listar(c.req.valid('query').alumnoId), 200)
+  c.json(await examenesService.listar(c.req.valid('query').alumnoId, c.get('actor')), 200)
 
 export const materias: RouteHandler<typeof materiasExamenRoute, AppEnv> = async (c) =>
   c.json(

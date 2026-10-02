@@ -16,8 +16,8 @@ export function listarExamenes(alumnoId: number): Promise<ExamenesListado> {
 }
 
 /**
- * Materias en las que se le puede cargar un examen a ese alumno: mesa de entradas, las activas del
- * catálogo; el profesor, solo las que le dicta (lo decide la API según la sesión).
+ * Materias en las que se le puede cargar un examen nuevo a ese alumno: las de sus turnos activos de
+ * hoy en adelante; para el profesor, solo los que tiene con él (lo decide la API según la sesión).
  */
 export function listarMateriasExamen(alumnoId: number): Promise<MateriaExamen[]> {
   return fetchJson<MateriaExamen[]>(`${BASE}/materias?alumnoId=${alumnoId}`)

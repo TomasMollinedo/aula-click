@@ -133,6 +133,10 @@ export const examenItemSchema = z
       description: 'Días de calendario hasta el examen (0 = hoy). `null` en los pasados',
       example: 7,
     }),
+    administrable: z.boolean().openapi({
+      description:
+        'Quien consulta puede editarlo y darlo de baja: mesa de entradas, siempre; el profesor, si le dicta esa materia al alumno',
+    }),
     createdAt: instante,
     updatedAt: instante,
     createdBy: examenUsuarioAuditoriaSchema.nullable(),

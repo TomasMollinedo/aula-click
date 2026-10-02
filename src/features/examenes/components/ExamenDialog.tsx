@@ -109,8 +109,8 @@ function FormularioExamen({
   const fecha = useWatch({ control, name: 'fecha' }) ?? ''
   const observacionesLargo = useWatch({ control, name: 'observaciones' })?.length ?? 0
 
-  // La materia del examen que se edita puede no ser ofrecible (se dio de baja): se muestra igual,
-  // para que el selector no quede vacío. Cambiarla o no lo valida la API.
+  // La materia del examen que se edita puede no ser ofrecible (el alumno ya no tiene turnos
+  // próximos en ella, o se dio de baja): se muestra igual. Cambiarla o no lo valida la API.
   const opcionesMateria = useMemo(() => {
     const ofrecibles = materias.data ?? []
     if (!examen || ofrecibles.some((m) => m.id === examen.materia.id)) return ofrecibles
@@ -124,6 +124,8 @@ function FormularioExamen({
       ? error.camposMarcados.find((c) => c.campo === campo)?.mensaje
       : undefined)
   const errorGeneral = error?.tipo === 'pendiente' ? null : (error?.mensaje ?? null)
+  // Sin ninguna materia ofrecible (ni la propia, en la edición) no hay nada que elegir.
+  const sinMaterias = materias.isSuccess && opcionesMateria.length === 0
   const irAlExistente = error?.tipo === 'pendiente' ? editarExistente(error.existente.id) : null
 
   // Ayuda visual con el "hoy" del navegador: la API acepta una fecha pasada y lo avisa igual.
@@ -183,38 +185,45 @@ function FormularioExamen({
         </Alert>
       )}
 
-      <Field label="Materia" htmlFor="materiaId" required error={errorCampo('materiaId')}>
-        <Controller
-          control={control}
-          name="materiaId"
-          render={({ field }) => (
-            <Select
-              value={field.value ?? ''}
-              onValueChange={field.onChange}
-              disabled={materias.isLoading || opcionesMateria.length === 0}
-            >
-              <SelectTrigger
-                id="materiaId"
-                ref={field.ref}
-                className="w-full"
-                aria-invalid={errorCampo('materiaId') ? true : undefined}
-                aria-describedby={errorCampo('materiaId') ? fieldErrorId('materiaId') : undefined}
+      {sinMaterias ? (
+        <Alert>
+          <Info className="size-4" />
+          <AlertDescription>El alumno no tiene turnos próximos</AlertDescription>
+        </Alert>
+      ) : (
+        <Field label="Materia" htmlFor="materiaId" required error={errorCampo('materiaId')}>
+          <Controller
+            control={control}
+            name="materiaId"
+            render={({ field }) => (
+              <Select
+                value={field.value ?? ''}
+                onValueChange={field.onChange}
+                disabled={materias.isLoading}
               >
-                <SelectValue
-                  placeholder={materias.isLoading ? 'Cargando materias…' : 'Elegí una materia'}
-                />
-              </SelectTrigger>
-              <SelectContent>
-                {opcionesMateria.map((materia) => (
-                  <SelectItem key={materia.id} value={String(materia.id)}>
-                    {materia.nombre}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        />
-      </Field>
+                <SelectTrigger
+                  id="materiaId"
+                  ref={field.ref}
+                  className="w-full"
+                  aria-invalid={errorCampo('materiaId') ? true : undefined}
+                  aria-describedby={errorCampo('materiaId') ? fieldErrorId('materiaId') : undefined}
+                >
+                  <SelectValue
+                    placeholder={materias.isLoading ? 'Cargando materias…' : 'Elegí una materia'}
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {opcionesMateria.map((materia) => (
+                    <SelectItem key={materia.id} value={String(materia.id)}>
+                      {materia.nombre}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            )}
+          />
+        </Field>
+      )}
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Fecha" htmlFor="fecha" required error={errorCampo('fecha')}>
@@ -318,7 +327,7 @@ function FormularioExamen({
         <Button type="button" variant="outline" onClick={onCerrar} disabled={guardando}>
           Cancelar
         </Button>
-        <Button type="submit" variant="confirmado" disabled={guardando}>
+        <Button type="submit" variant="confirmado" disabled={guardando || sinMaterias}>
           {guardando ? 'Guardando…' : examen ? 'Guardar cambios' : 'Cargar examen'}
         </Button>
       </DialogFooter>

@@ -148,7 +148,7 @@ src/
 │   │   ├── examenes.{types,schema}.ts, errores-api.ts, formato-examenes.ts, api/{examenes.api,examenes.keys}.ts
 │   │   ├── hooks/{use-examenes.ts, use-materias-examen.ts, use-crear-examen.ts, use-editar-examen.ts, use-eliminar-examen.ts,
 │   │   │   use-refrescar-por-examen.ts, use-invalidar-examenes.ts}  # una mutación invalida exámenes, ocurrencias y agendas (la prioridad)
-│   │   └── components/{ExamenesDelAlumno, ExamenDialog, ConfirmarEliminarExamen}.tsx  # alta y edición en un Dialog sin URL propia
+│   │   └── components/{ExamenesDelAlumno, ExamenDialog, ConfirmarEliminarExamen}.tsx  # alta y edición en un Dialog sin URL propia; editar y eliminar según `administrable` de la API
 │   ├── pagos/  cuentas/                # api/<f>.keys.ts, hooks/use-invalidar-<f>.ts y los slots de acción
 │   │                                   #   (AccionCancelarTurno, AccionCancelarVarios,
 │   │                                   #   AccionRegistrarPago, RegistrarPagoDialog, PagosDelAlumno, PagosGlobal):

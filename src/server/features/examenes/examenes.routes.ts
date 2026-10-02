@@ -8,6 +8,7 @@ import {
   ejemploDetalle,
   ejemploEdicion,
   ejemploErrorMateriaInactiva,
+  ejemploErrorMateriaSinTurnos,
   ejemploErrorPendiente,
   ejemploListado,
   ejemploSelector,
@@ -46,15 +47,16 @@ const errores = {
 }
 const noEncontrado = respuestaError('El examen no existe (NO_ENCONTRADO)')
 
-/** 409 de `crear` y `editar`: materia inactiva o examen pendiente, con un ejemplo de cada uno. */
+/** 409 de `crear` y `editar`: materia inactiva, sin turnos o examen pendiente, con un ejemplo de cada uno. */
 const conflicto409 = {
   description:
-    'La materia está inactiva (MATERIA_INACTIVA), o ya hay un examen pendiente de esa materia (EXAMEN_PENDIENTE): el existente va en `details`, para ofrecer editarlo',
+    'La materia está inactiva (MATERIA_INACTIVA), el alumno no tiene turnos próximos de esa materia (MATERIA_SIN_TURNOS), o ya hay un examen pendiente de esa materia (EXAMEN_PENDIENTE): el existente va en `details`, para ofrecer editarlo',
   content: {
     'application/json': {
       schema: ErrorResponseSchema,
       examples: {
         materiaInactiva: { summary: 'Materia inactiva', value: ejemploErrorMateriaInactiva },
+        materiaSinTurnos: { summary: 'Materia sin turnos', value: ejemploErrorMateriaSinTurnos },
         examenPendiente: { summary: 'Examen pendiente', value: ejemploErrorPendiente },
       },
     },
@@ -72,7 +74,7 @@ export const listarExamenesRoute = createRoute({
   tags,
   summary: 'Exámenes de un alumno',
   description:
-    'Exámenes `ACTIVO` del alumno, separados en `proximos` (fecha de hoy en adelante, orden ascendente, con `diasRestantes`) y `pasados`. Cada uno trae su materia y la auditoría con el rol de quien lo cargó y de quien lo modificó por última vez.',
+    'Exámenes `ACTIVO` del alumno, separados en `proximos` (fecha de hoy en adelante, orden ascendente, con `diasRestantes`) y `pasados`. Cada uno trae su materia, la auditoría con el rol de quien lo cargó y de quien lo modificó por última vez, y `administrable` (si quien consulta puede editarlo y darlo de baja).',
   middleware: [requireAuth(), requireRole(...roles)] as const,
   request: { query: examenesQuerySchema },
   responses: {
@@ -89,9 +91,9 @@ export const materiasExamenRoute = createRoute({
   method: 'get',
   path: '/materias',
   tags,
-  summary: 'Materias ofrecibles para cargarle un examen a un alumno',
+  summary: 'Materias ofrecibles para cargarle un examen nuevo a un alumno',
   description:
-    'Mesa de entradas: materias activas del catálogo. Profesor: sólo las que le dicta a ese alumno (sin turnos activos del alumno con ese profesor, la lista viene vacía).',
+    'Materias activas en las que el alumno tiene algún turno vigente (al menos una fecha no cancelada de hoy en adelante). Mesa de entradas: las de todos sus turnos. Profesor: sólo las de los turnos que el alumno tiene con él. Sin turnos próximos, la lista viene vacía.',
   middleware: [requireAuth(), requireRole(...roles)] as const,
   request: { query: examenesQuerySchema },
   responses: {
@@ -111,7 +113,7 @@ export const crearExamenRoute = createRoute({
   tags,
   summary: 'Cargar un examen',
   description:
-    'Alumno, materia, fecha y tipo son obligatorios; las observaciones son opcionales (hasta 500 caracteres). La fecha puede ser pasada: la respuesta trae `pasado: true` para que el front avise. Un profesor sólo puede cargarlo en una materia que le dicte a ese alumno. No se puede cargar un segundo examen pendiente (fecha de hoy en adelante) de la misma materia: se ofrece editar el existente.',
+    'Alumno, materia, fecha y tipo son obligatorios; las observaciones son opcionales (hasta 500 caracteres). La fecha puede ser pasada: la respuesta trae `pasado: true` para que el front avise. Un profesor sólo puede cargarlo en una materia que le dicte a ese alumno. La materia tiene que ser una de las ofrecibles (`GET /examenes/materias`): el alumno tiene que tener algún turno próximo en ella. No se puede cargar un segundo examen pendiente (fecha de hoy en adelante) de la misma materia: se ofrece editar el existente.',
   middleware: [requireAuth(), requireRole(...roles)] as const,
   request: {
     body: {
@@ -133,7 +135,7 @@ export const editarExamenRoute = createRoute({
   tags,
   summary: 'Editar un examen',
   description:
-    'Edición parcial: lo omitido no cambia. Si cambia la materia o la fecha, se vuelve a chequear que no haya otro examen pendiente de la materia resultante (sin contar este examen). No se puede mover a una materia inactiva ni, si es profesor, a una que no le dicte a este alumno.',
+    'Edición parcial: lo omitido no cambia. Si cambia la materia o la fecha, se vuelve a chequear que no haya otro examen pendiente de la materia resultante (sin contar este examen). No se puede mover a una materia inactiva, a una en la que el alumno no tenga turnos próximos (la que ya tenía se conserva aunque no los tenga) ni, si es profesor, a una que no le dicte a este alumno.',
   middleware: [requireAuth(), requireRole(...roles)] as const,
   request: {
     params: examenIdParamsSchema,

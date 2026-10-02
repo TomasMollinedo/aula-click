@@ -50,7 +50,12 @@ function esVigente(serie: Serie, fechaHoy: string): boolean {
 async function leerVigentes(
   db: ClienteTurnos,
   fechaHoy: string,
-  filtro: { profesorId?: number; materiaIds?: number[]; bloqueAgendaIds?: number[] },
+  filtro: {
+    alumnoId?: number
+    profesorId?: number
+    materiaIds?: number[]
+    bloqueAgendaIds?: number[]
+  },
 ): Promise<Serie[]> {
   const series = await leerSeries(db, { ...filtro, desde: fechaHoy, hasta: null })
   return series.filter((serie) => esVigente(serie, fechaHoy))
@@ -66,14 +71,15 @@ function contarPor(series: readonly Serie[], clave: (serie: Serie) => number): [
 }
 
 /**
- * Cantidad de turnos vigentes por materia, filtrable por profesor (el del bloque) y materias.
- * Solo vienen las materias con al menos un turno vigente, ordenadas por id.
+ * Cantidad de turnos vigentes por materia, filtrable por alumno, profesor (el del bloque) y
+ * materias. Solo vienen las materias con al menos un turno vigente, ordenadas por id.
  */
 export async function contarVigentesPorMateria(
   db: ClienteTurnos,
-  filtro: { fechaHoy: string; profesorId?: number; materiaIds?: number[] },
+  filtro: { fechaHoy: string; alumnoId?: number; profesorId?: number; materiaIds?: number[] },
 ): Promise<TurnosVigentesPorMateria[]> {
   const vigentes = await leerVigentes(db, filtro.fechaHoy, {
+    alumnoId: filtro.alumnoId,
     profesorId: filtro.profesorId,
     materiaIds: filtro.materiaIds,
   })

@@ -8,6 +8,7 @@ import type { ExamenesRepository } from '../examenes.repository'
 import {
   CODIGO_EXAMEN_PENDIENTE,
   CODIGO_MATERIA_INACTIVA,
+  CODIGO_MATERIA_SIN_TURNOS,
   crearExamenesService,
 } from '../examenes.service'
 import type { ExamenGuardado } from '../examenes.validation'
@@ -53,6 +54,7 @@ function crearRepository() {
     actualizar: vi.fn<ExamenesRepository['actualizar']>(),
     darDeBaja: vi.fn<ExamenesRepository['darDeBaja']>(),
     materiasDictadas: vi.fn<ExamenesRepository['materiasDictadas']>(),
+    materiasConTurnoVigente: vi.fn<ExamenesRepository['materiasConTurnoVigente']>(),
   }
 }
 
@@ -95,6 +97,8 @@ beforeEach(() => {
     { id: 3, nombre: 'Matemática', estado: 'ACTIVO' },
   ])
   repository.buscarPendiente.mockResolvedValue(null)
+  // Por defecto el alumno tiene turnos vigentes de Matemática (3).
+  repository.materiasConTurnoVigente.mockResolvedValue([3])
   repository.crear.mockImplementation(async (datos, actor) =>
     examen({
       alumnoId: datos.alumnoId,
@@ -117,7 +121,7 @@ describe('listar', () => {
       examen({ id: 3, fecha: '2026-09-01' }), // pasado
     ])
 
-    const listado = await service.listar(12)
+    const listado = await service.listar(12, actorMesa)
 
     expect(listado.proximos.map((e) => [e.id, e.diasRestantes, e.pasado])).toEqual([
       [1, 0, false],
@@ -128,33 +132,88 @@ describe('listar', () => {
 
   it('sin exámenes, listas vacías', async () => {
     repository.listarDelAlumno.mockResolvedValue([])
-    expect(await service.listar(12)).toEqual({ proximos: [], pasados: [] })
+    expect(await service.listar(12, actorMesa)).toEqual({ proximos: [], pasados: [] })
+  })
+
+  it('mesa de entradas: todos son administrables, sin consultar materias dictadas', async () => {
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ id: 1 }),
+      examen({ id: 2, materiaId: 5 }),
+    ])
+
+    const listado = await service.listar(12, actorMesa)
+
+    expect(listado.proximos.map((e) => e.administrable)).toEqual([true, true])
+    expect(repository.materiasDictadas).not.toHaveBeenCalled()
+  })
+
+  it('profesor: administrables sólo los de las materias que le dicta al alumno', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(8)
+    repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ id: 1, materiaId: 3 }),
+      examen({ id: 2, materiaId: 5, fecha: '2026-09-01' }),
+    ])
+
+    const listado = await service.listar(12, actorProfesor)
+
+    expect(listado.proximos.map((e) => [e.id, e.administrable])).toEqual([[1, true]])
+    expect(listado.pasados.map((e) => [e.id, e.administrable])).toEqual([[2, false]])
+    expect(repository.materiasDictadas).toHaveBeenCalledWith(8, 12)
   })
 })
 
 describe('materiasOfrecibles', () => {
-  it('mesa de entradas: las activas del catálogo', async () => {
-    materiasRepository.listarActivas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+  const catalogo = [
+    { id: 5, nombre: 'Física' },
+    { id: 3, nombre: 'Matemática' },
+    { id: 7, nombre: 'Química' },
+  ]
+
+  it('mesa de entradas: las activas con algún turno vigente del alumno, en el orden del catálogo', async () => {
+    materiasRepository.listarActivas.mockResolvedValue(catalogo)
+    repository.materiasConTurnoVigente.mockResolvedValue([3, 7])
 
     expect(await service.materiasOfrecibles(12, actorMesa)).toEqual([
       { id: 3, nombre: 'Matemática' },
+      { id: 7, nombre: 'Química' },
     ])
-    expect(repository.materiasDictadas).not.toHaveBeenCalled()
+    // Sin profesor: los turnos del alumno con cualquiera. Hoy sale del reloj.
+    expect(repository.materiasConTurnoVigente).toHaveBeenCalledWith(12, '2026-10-05')
   })
 
-  it('profesor: las que le dicta a ese alumno', async () => {
+  it('profesor: sólo las de los turnos vigentes que el alumno tiene con él', async () => {
+    // El alumno tiene Matemática y Química; con este profesor, sólo Matemática.
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(8)
-    repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    materiasRepository.listarActivas.mockResolvedValue(catalogo)
+    repository.materiasConTurnoVigente.mockResolvedValue([3])
 
     expect(await service.materiasOfrecibles(12, actorProfesor)).toEqual([
       { id: 3, nombre: 'Matemática' },
     ])
-    expect(repository.materiasDictadas).toHaveBeenCalledWith(8, 12)
+    expect(repository.materiasConTurnoVigente).toHaveBeenCalledWith(12, '2026-10-05', 8)
+  })
+
+  it('una materia inactiva no se ofrece aunque tenga turnos', async () => {
+    materiasRepository.listarActivas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    repository.materiasConTurnoVigente.mockResolvedValue([3, 9])
+
+    expect(await service.materiasOfrecibles(12, actorMesa)).toEqual([
+      { id: 3, nombre: 'Matemática' },
+    ])
+  })
+
+  it('alumno sin turnos próximos: lista vacía, sin leer el catálogo', async () => {
+    repository.materiasConTurnoVigente.mockResolvedValue([])
+
+    expect(await service.materiasOfrecibles(12, actorMesa)).toEqual([])
+    expect(materiasRepository.listarActivas).not.toHaveBeenCalled()
   })
 
   it('profesor sin fila de Profesor (no debería pasar): lista vacía, no revienta', async () => {
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(null)
     expect(await service.materiasOfrecibles(12, actorProfesor)).toEqual([])
+    expect(repository.materiasConTurnoVigente).not.toHaveBeenCalled()
   })
 })
 
@@ -180,6 +239,29 @@ describe('crear', () => {
 
     expect(error).toBeInstanceOf(ConflictError)
     expect(error.code).toBe(CODIGO_MATERIA_INACTIVA)
+  })
+
+  it('el alumno no tiene turnos vigentes de esa materia: 409 MATERIA_SIN_TURNOS sobre materiaId', async () => {
+    repository.materiasConTurnoVigente.mockResolvedValue([7])
+
+    const error = await service.crear(datos, actorMesa).catch((e) => e)
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.code).toBe(CODIGO_MATERIA_SIN_TURNOS)
+    expect(error.details).toEqual([{ path: ['materiaId'], message: error.message }])
+    expect(repository.materiasConTurnoVigente).toHaveBeenCalledWith(12, '2026-10-05')
+    expect(repository.crear).not.toHaveBeenCalled()
+  })
+
+  it('profesor: el turno vigente tiene que ser con él (si es con otro profesor, 409)', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(8)
+    repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    repository.materiasConTurnoVigente.mockResolvedValue([])
+
+    const error = await service.crear(datos, actorProfesor).catch((e) => e)
+
+    expect(error.code).toBe(CODIGO_MATERIA_SIN_TURNOS)
+    expect(repository.materiasConTurnoVigente).toHaveBeenCalledWith(12, '2026-10-05', 8)
   })
 
   it('ya hay un examen pendiente de esa materia: 409 EXAMEN_PENDIENTE con el existente', async () => {
@@ -274,6 +356,32 @@ describe('editar', () => {
     repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }]) // no incluye la 5
 
     await expect(service.editar(1, { materiaId: 5 }, actorProfesor)).rejects.toThrow(ForbiddenError)
+  })
+
+  it('cambia a una materia en la que el alumno no tiene turnos vigentes: 409 MATERIA_SIN_TURNOS', async () => {
+    repository.buscarPorId.mockResolvedValue(examen({ id: 1, materiaId: 3 }))
+    materiasRepository.buscarPorIds.mockResolvedValue([
+      { id: 5, nombre: 'Física', estado: 'ACTIVO' },
+    ])
+    repository.materiasConTurnoVigente.mockResolvedValue([3])
+
+    const error = await service.editar(1, { materiaId: 5 }, actorMesa).catch((e) => e)
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.code).toBe(CODIGO_MATERIA_SIN_TURNOS)
+    expect(repository.actualizar).not.toHaveBeenCalled()
+  })
+
+  it('conserva su materia aunque el alumno ya no tenga turnos vigentes en ella', async () => {
+    repository.buscarPorId.mockResolvedValue(examen({ id: 1, materiaId: 3 }))
+    repository.materiasConTurnoVigente.mockResolvedValue([])
+    repository.actualizar.mockResolvedValue(examen({ fecha: '2026-10-22' }))
+
+    // Con la fecha sola, y también si el cliente reenvía la misma materia.
+    await expect(
+      service.editar(1, { fecha: '2026-10-22', materiaId: 3 }, actorMesa),
+    ).resolves.toMatchObject({ fecha: '2026-10-22' })
+    expect(repository.materiasConTurnoVigente).not.toHaveBeenCalled()
   })
 
   it('edita observaciones: devuelve el detalle actualizado', async () => {

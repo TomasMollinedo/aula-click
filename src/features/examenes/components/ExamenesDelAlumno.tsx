@@ -10,7 +10,6 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import type { Role } from '@/types'
-
 import type { ExamenItem } from '../examenes.types'
 import {
   etiquetaTipo,
@@ -20,15 +19,14 @@ import {
   textoModificadoPor,
 } from '../formato-examenes'
 import { useExamenes } from '../hooks/use-examenes'
-import { useMateriasExamen } from '../hooks/use-materias-examen'
 import { ConfirmarEliminarExamen } from './ConfirmarEliminarExamen'
 import { ExamenDialog } from './ExamenDialog'
 
 export type ExamenesDelAlumnoProps = {
   alumnoId: number
   /**
-   * Rol de quien mira: mesa de entradas administra cualquier examen; el profesor, solo los de las
-   * materias que le dicta a este alumno. Es ayuda visual: lo que decide es el 403 de la API.
+   * Rol de quien mira. Solo elige el texto de ayuda: qué examen se puede editar o eliminar
+   * (`administrable`) y en qué materias se puede cargar uno lo dice la API.
    */
   rol: Role
 }
@@ -42,7 +40,6 @@ type Formulario = { tipo: 'nuevo' } | { tipo: 'editar'; examenId: number }
  */
 export function ExamenesDelAlumno({ alumnoId, rol }: ExamenesDelAlumnoProps) {
   const { data, isLoading, isError, error, refetch } = useExamenes(alumnoId)
-  const materias = useMateriasExamen(alumnoId)
 
   // `formulario` se conserva al cerrar, así el diálogo no cambia de contenido mientras se va.
   const [formulario, setFormulario] = useState<Formulario>({ tipo: 'nuevo' })
@@ -58,13 +55,9 @@ export function ExamenesDelAlumno({ alumnoId, rol }: ExamenesDelAlumnoProps) {
     [...(data?.proximos ?? []), ...(data?.pasados ?? [])].find((e) => e.id === id)
   const examenEditado = formulario.tipo === 'editar' ? buscar(formulario.examenId) : undefined
 
-  // El profesor solo administra los exámenes de las materias que dicta: son las ofrecibles.
-  const puedeAdministrar = (examen: ExamenItem) =>
-    rol !== 'PROFESOR' || (materias.data ?? []).some((m) => m.id === examen.materia.id)
-  const sinMaterias = materias.data?.length === 0
-
+  // Qué examen se puede editar y eliminar lo dice la API (el profesor, solo los de sus materias).
   const acciones = (examen: ExamenItem) =>
-    puedeAdministrar(examen) && (
+    examen.administrable && (
       <div className="flex shrink-0 gap-1">
         <Button
           variant="ghost"
@@ -90,17 +83,11 @@ export function ExamenesDelAlumno({ alumnoId, rol }: ExamenesDelAlumnoProps) {
     <div className="space-y-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-muted-foreground text-sm">
-          {sinMaterias
-            ? rol === 'PROFESOR'
-              ? 'No le dictás ninguna materia a este alumno: no podés cargarle exámenes.'
-              : 'No hay materias activas para cargar un examen.'
-            : 'Los exámenes determinan la prioridad de los turnos del alumno.'}
+          Los exámenes determinan la prioridad de los turnos del alumno.
+          {rol === 'PROFESOR' &&
+            ' Solo podés cargar, editar y eliminar los de las materias que le dictás.'}
         </p>
-        <Button
-          size="lg"
-          onClick={() => abrir({ tipo: 'nuevo' })}
-          disabled={isError || !materias.data || sinMaterias}
-        >
+        <Button size="lg" onClick={() => abrir({ tipo: 'nuevo' })} disabled={isError}>
           <Plus />
           Nuevo examen
         </Button>

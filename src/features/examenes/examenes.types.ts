@@ -28,6 +28,11 @@ export type ExamenItem = {
   pasado: boolean
   /** Días de calendario hasta el examen (0 = hoy), calculados por la API. `null` en los pasados. */
   diasRestantes: number | null
+  /**
+   * Quien consulta puede editarlo y eliminarlo, según la API: mesa de entradas, siempre; el
+   * profesor, si le dicta esa materia al alumno.
+   */
+  administrable: boolean
   /** Instante ISO 8601 en UTC. */
   createdAt: string
   /** Instante ISO 8601 en UTC. */
@@ -43,7 +48,9 @@ export type ExamenesListado = {
 }
 
 /** Lo que devuelven el alta, la edición y la baja. */
-export type ExamenDetalle = Omit<ExamenItem, 'diasRestantes'> & { alumnoId: number }
+export type ExamenDetalle = Omit<ExamenItem, 'diasRestantes' | 'administrable'> & {
+  alumnoId: number
+}
 
 export type ExamenCrear = {
   alumnoId: number

@@ -32,6 +32,7 @@ const examen: ExamenItem = {
   observaciones: 'Trae calculadora',
   pasado: false,
   diasRestantes: 10,
+  administrable: true,
   createdAt: '2026-09-22T13:45:00.000Z',
   updatedAt: '2026-09-22T13:45:00.000Z',
   createdBy: { id: 'usr_prof_01', nombre: 'Luis', apellido: 'Gómez', role: 'PROFESOR' },
@@ -195,6 +196,18 @@ describe('interpretarErrorExamen', () => {
     expect(interpretarErrorExamen(error)).toEqual({
       tipo: 'campos',
       camposMarcados: [{ campo: 'materiaId', mensaje: 'La materia está inactiva' }],
+      mensaje: null,
+    })
+  })
+
+  it('409 MATERIA_SIN_TURNOS: marca la materia', () => {
+    const mensaje = 'El alumno no tiene turnos próximos de esa materia'
+    const error = new ApiError(409, 'MATERIA_SIN_TURNOS', mensaje, [
+      { path: ['materiaId'], message: mensaje },
+    ])
+    expect(interpretarErrorExamen(error)).toEqual({
+      tipo: 'campos',
+      camposMarcados: [{ campo: 'materiaId', mensaje }],
       mensaje: null,
     })
   })
