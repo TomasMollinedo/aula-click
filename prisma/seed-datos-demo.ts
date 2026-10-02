@@ -22,7 +22,13 @@
 //   - ningún alumno tiene dos turnos que se pisen (mismo día y hora, con fechas que se cruzan);
 //   - las fechas de un turno caen en el día de la semana de su bloque, y una sesión única tiene
 //     `fechaFin = fechaInicio`;
-//   - los profesores inactivos y las materias inactivas no tienen turnos vigentes.
+//   - los profesores inactivos y las materias inactivas no tienen turnos vigentes;
+//   - toda materia tiene precio y la carga el gerente (HU-12); las activas son las que se asignan;
+//   - un menor tiene los datos de su tutor y un mayor, su email y su teléfono (la edad es exacta);
+//   - una sesión única tiene "temas a trabajar" (HU-08) y cada recurrente, su `serieId` (T-103);
+//   - cancelar es una `CancelacionTurno` por ocurrencia: ningún turno nuevo nace `CANCELADO`;
+//   - un alumno tiene a lo sumo un examen pendiente (fecha >= hoy) por materia (HU-17);
+//   - sólo se cobran ocurrencias no canceladas, al precio de su materia (HU-15).
 //
 // El **miércoles queda libre a propósito** (`DIAS_CON_HORARIO`): ningún profesor de demo tiene
 // bloques ese día, así que tampoco hay turnos. Sirve para ver una agenda vacía y para cargar un
@@ -294,6 +300,19 @@ function sumarDias(fecha: string, dias: number): string {
   return dateAFecha(new Date(fechaADate(fecha).getTime() + dias * UN_DIA_MS))
 }
 
+/**
+ * `YYYY-MM-DD` menos `anios` años de calendario (un 29/02 que no existe pasa a 28/02). Para fechas
+ * de nacimiento con la edad exacta: `365 × años` se queda corto por los bisiestos y puede dejar
+ * como "mayor" a alguien a quien le faltan días para cumplir 18.
+ */
+function restarAnios(fecha: string, anios: number): string {
+  const [anio, mes, dia] = fecha.split('-').map(Number) as [number, number, number]
+  const destino = anio - anios
+  const bisiesto = (destino % 4 === 0 && destino % 100 !== 0) || destino % 400 === 0
+  const diaFinal = mes === 2 && dia === 29 && !bisiesto ? 28 : dia
+  return `${destino}-${String(mes).padStart(2, '0')}-${String(diaFinal).padStart(2, '0')}`
+}
+
 /** Primera fecha >= `desde` que cae en `diaSemana` (ISO 1..7). */
 function primeraFechaDelDia(diaSemana: number, desde: string): string {
   return sumarDias(desde, (diaSemana - diaSemanaISO(desde) + 7) % 7)
@@ -385,11 +404,16 @@ async function limpiar() {
 // Creación
 // ---------------------------------------------------------------------------------------------
 
-/** Lo que tiene que existir de antes (`pnpm db:seed`): actor, aulas y forma de pago. */
+/**
+ * Lo que tiene que existir de antes (`pnpm db:seed`): los actores, las aulas y la forma de pago.
+ * Mesa de entradas carga lo operativo (alumnos, horarios, turnos, pagos); el gerente, las materias
+ * (HU-12: el alta de materias es sólo suya).
+ */
 async function requisitos() {
-  const actor =
-    (await prisma.usuario.findFirst({ where: { role: 'MESA_ENTRADAS' } })) ??
-    (await prisma.usuario.findFirst({ where: { role: 'GERENTE' } }))
+  const actor = await prisma.usuario.findFirst({
+    where: { role: 'MESA_ENTRADAS', email: { not: { endsWith: `@${DOMINIO}` } } },
+  })
+  const gerente = await prisma.usuario.findFirst({ where: { role: 'GERENTE' } })
   const aulas = await prisma.aula.findMany({
     where: { estado: 'ACTIVO' },
     select: { id: true, nombre: true, capacidad: true },
@@ -398,23 +422,23 @@ async function requisitos() {
   const rolProfesor = await prisma.rol.findUnique({ where: { id: 'PROFESOR' } })
   const formaPago = await prisma.formaPago.findUnique({ where: { nombre: 'Efectivo' } })
 
-  if (!actor || !rolProfesor || aulas.length === 0 || !formaPago) {
+  if (!actor || !gerente || !rolProfesor || aulas.length === 0 || !formaPago) {
     throw new Error(
-      'Faltan datos del seed de desarrollo (roles, usuario de mesa de entradas, aulas o forma ' +
-        'de pago "Efectivo"). Corré primero `pnpm db:seed` y volvé a intentar.',
+      'Faltan datos del seed de desarrollo (roles, usuarios de mesa de entradas y gerente, aulas ' +
+        'o forma de pago "Efectivo"). Corré primero `pnpm db:seed` y volvé a intentar.',
     )
   }
-  return { actorId: actor.id, aulas, formaPagoId: formaPago.id }
+  return { actorId: actor.id, gerenteId: gerente.id, aulas, formaPagoId: formaPago.id }
 }
 
 async function crear(azar: Azar) {
-  const { actorId, aulas, formaPagoId } = await requisitos()
+  const { actorId, gerenteId, aulas, formaPagoId } = await requisitos()
   const fechaHoy = hoy()
   const desde = sumarDias(fechaHoy, -DIAS_ATRAS)
   const hasta = sumarDias(fechaHoy, DIAS_ADELANTE)
   const auditoria = { createdById: actorId, updatedById: actorId }
 
-  // --- Materias: las del seed de desarrollo más las de este script ---
+  // --- Materias: las del seed de desarrollo más las de este script, cargadas por el gerente ---
   for (const materia of MATERIAS_DEMO) {
     const busqueda = normalizarBusqueda(materia.nombre)
     await prisma.materia.upsert({
@@ -425,13 +449,16 @@ async function crear(azar: Azar) {
         descripcion: materia.descripcion,
         precioHora: materia.precioHora,
         estado: MATERIAS_INACTIVAS.includes(materia.nombre) ? 'INACTIVO' : 'ACTIVO',
-        ...auditoria,
+        createdById: gerenteId,
+        updatedById: gerenteId,
       },
       update: {},
     })
   }
+  // Toda materia activa tiene precio (HU-12; `pnpm db:seed` pasa a INACTIVO las que no): se pide
+  // igual, por si la base tiene una cargada a mano, porque sin precio no se puede cobrar su turno.
   const materiasActivas = await prisma.materia.findMany({
-    where: { estado: 'ACTIVO' },
+    where: { estado: 'ACTIVO', precioHora: { not: null } },
     select: { id: true, nombre: true, precioHora: true },
     orderBy: { id: 'asc' },
   })
@@ -507,9 +534,10 @@ async function crear(azar: Azar) {
   // --- Alumnos ---
   const alumnosData = personas.slice(totalProfesores).map((persona, i) => {
     const esMenor = azar.chance(0.3)
-    // Los menores nacieron hace 13 a 17 años; los mayores, hace 18 a 30.
+    // Los menores tienen 13 a 17 años; los mayores, 18 a 30. Nació entre 1 y 360 días antes de
+    // cumplir `edad` años: hoy tiene exactamente `edad` (le faltan días para el siguiente).
     const edad = esMenor ? azar.entero(13, 17) : azar.entero(18, 30)
-    const fechaNacimiento = sumarDias(fechaHoy, -(edad * 365 + azar.entero(1, 360)))
+    const fechaNacimiento = sumarDias(restarAnios(fechaHoy, edad), -azar.entero(1, 360))
     // DNI coherente con la edad: los más chicos tienen números más altos.
     const dni = String((esMenor ? 52000000 : 36000000) + i * 971 + azar.entero(0, 900))
     const tutor = personas[azar.entero(0, personas.length - 1)] as (typeof personas)[number]
@@ -622,11 +650,16 @@ async function crear(azar: Azar) {
     fechaFin: Date | null
     observaciones: string | null
     temas: string | null
-    estado: 'ACTIVO' | 'CANCELADO'
     // La serie del alta (decisión T-103): la comparten las horas y los tramos de un recurrente.
     serieId: string | null
   }
   const turnosData: TurnoNuevo[] = []
+  /**
+   * Ocurrencia cancelada de cada turno, por su posición en `turnosData`. Desde el Sprint 2 cancelar
+   * registra una `CancelacionTurno` por ocurrencia y el turno sigue `ACTIVO` (el valor `CANCELADO`
+   * queda para datos anteriores): el resto de la serie sigue agendado.
+   */
+  const fechaCancelada = new Map<number, string>()
 
   for (const bloque of bloques) {
     const capacidad = Math.min(
@@ -642,7 +675,7 @@ async function crear(azar: Azar) {
     for (let i = 0; i < intentos; i++) {
       const alumnoId = (azar.de(alumnos) as (typeof alumnos)[number]).id
       const materiaId = azar.de(materias)
-      const cancelado = azar.chance(0.06)
+      const conCancelacion = azar.chance(0.06)
 
       // Fecha de inicio: una ocurrencia del día del bloque dentro de la ventana.
       const inicio = primeraFechaDelDia(bloque.diaSemana, sumarDias(desde, azar.entero(0, 60)))
@@ -673,20 +706,19 @@ async function crear(azar: Azar) {
       const claveAlumno = (fecha: string) =>
         `${alumnoId}|${bloque.diaSemana}|${bloque.horaInicio}|${fecha}`
 
-      // Un turno cancelado no ocupa lugar ni bloquea al alumno (dominio.md → Turnos), pero
-      // tampoco se duplica sobre una fecha que ese alumno ya tiene tomada.
+      // Se controla con todas sus ocurrencias, también la que después se cancela: una cancelada
+      // libera su lugar, así que contarla deja la hora con lugar de sobra, nunca pasada.
       const chocaAlumno = ocurrencias.some((fecha) => alumnoOcupado.has(claveAlumno(fecha)))
       if (chocaAlumno) continue
-      if (!cancelado) {
-        const sinLugar = ocurrencias.some(
-          (fecha) => (ocupacion.get(claveOcupacion(fecha)) ?? 0) >= capacidad,
-        )
-        if (sinLugar) continue
-        for (const fecha of ocurrencias) {
-          ocupacion.set(claveOcupacion(fecha), (ocupacion.get(claveOcupacion(fecha)) ?? 0) + 1)
-          alumnoOcupado.add(claveAlumno(fecha))
-        }
+      const sinLugar = ocurrencias.some(
+        (fecha) => (ocupacion.get(claveOcupacion(fecha)) ?? 0) >= capacidad,
+      )
+      if (sinLugar) continue
+      for (const fecha of ocurrencias) {
+        ocupacion.set(claveOcupacion(fecha), (ocupacion.get(claveOcupacion(fecha)) ?? 0) + 1)
+        alumnoOcupado.add(claveAlumno(fecha))
       }
+      if (conCancelacion) fechaCancelada.set(turnosData.length, azar.de(ocurrencias))
 
       turnosData.push({
         bloqueAgendaId: bloque.id,
@@ -703,7 +735,6 @@ async function crear(azar: Azar) {
         observaciones: azar.de(MOTIVOS),
         // "Temas a trabajar" (HU-08): obligatorio en sesión única, opcional en recurrente.
         temas: tipo === 'SESION_UNICA' ? azar.de(TEMAS) : azar.chance(0.4) ? azar.de(TEMAS) : null,
-        estado: cancelado ? 'CANCELADO' : 'ACTIVO',
         // Cada recurrente es su propia serie (el seed crea clases de una sola hora).
         serieId: tipo === 'RECURRENTE' ? randomUUID() : null,
       })
@@ -713,9 +744,7 @@ async function crear(azar: Azar) {
   // alumno y bloque, dos semanas después de que termina el primero, como si "Asignar igual"
   // hubiera saltado un tramo de fechas llenas en el medio (HU-08). Comparte el `serieId` del
   // primero: son la misma serie, y finalizar esa hora actúa sobre los dos (decisión T-104).
-  const primerTramo = turnosData.find(
-    (t) => t.tipo === 'RECURRENTE' && t.fechaFin !== null && t.estado === 'ACTIVO',
-  )
+  const primerTramo = turnosData.find((t) => t.tipo === 'RECURRENTE' && t.fechaFin !== null)
   let segundoTramoAgregado = false
   if (primerTramo) {
     const bloqueDelTramo = bloques.find((b) => b.id === primerTramo.bloqueAgendaId)
@@ -753,7 +782,6 @@ async function crear(azar: Azar) {
           fechaFin: null,
           observaciones: 'Segundo tramo del mismo recurrente (dato de demo, T-29).',
           temas: azar.chance(0.4) ? azar.de(TEMAS) : null,
-          estado: 'ACTIVO',
           serieId: primerTramo.serieId,
         })
         segundoTramoAgregado = true
@@ -777,47 +805,87 @@ async function crear(azar: Azar) {
       serieId: true,
     },
   })
-  const activosOrdenados = turnosCreados
-    .filter((t) => t.estado === 'ACTIVO')
-    .sort((a, b) => a.id - b.id)
+  // Un solo INSERT con varias filas: Postgres asigna los ids en el orden de `turnosData`, así que
+  // ordenados por id quedan en la misma posición que en `fechaCancelada`.
+  const activosOrdenados = [...turnosCreados].sort((a, b) => a.id - b.id)
   const fechaStr = (d: Date) => dateAFecha(d)
-  const futuros = activosOrdenados.filter((t) => fechaStr(t.fechaInicio) >= fechaHoy)
+
+  // --- Cancelaciones de una ocurrencia (HU-13), pasadas y futuras ---
+  const MOTIVOS_CANCELACION = [
+    'CANCELACION_ALUMNO',
+    'CANCELACION_PROFESOR',
+    'PROBLEMA_ADMINISTRATIVO',
+  ] as const
+  const cancelaciones = [...fechaCancelada].map(([posicion, fecha]) => ({
+    turnoId: (activosOrdenados[posicion] as (typeof activosOrdenados)[number]).id,
+    fechaOcurrencia: fechaADate(fecha),
+    motivo: azar.de(MOTIVOS_CANCELACION),
+    detalle: null,
+    createdById: actorId,
+  }))
+  await prisma.cancelacionTurno.createMany({ data: cancelaciones })
+  /** Turnos con alguna ocurrencia cancelada: no se usan para los escenarios fijos ni el pago. */
+  const conCancelacion = new Set(cancelaciones.map((c) => c.turnoId))
+  const futuros = activosOrdenados.filter(
+    (t) => fechaStr(t.fechaInicio) >= fechaHoy && !conCancelacion.has(t.id),
+  )
 
   // --- Fechas de examen (de ellas depende la prioridad del turno, HU-18) ---
-  const examenes = new Map<
-    string,
-    { alumnoId: number; materiaId: number; fecha: Date; tipo: (typeof TIPOS_EXAMEN)[number] }
-  >()
-  while (examenes.size < CANTIDAD_EXAMENES) {
-    const alumnoId = (azar.de(alumnos) as (typeof alumnos)[number]).id
-    const materiaId = (azar.de(materiasActivas) as (typeof materiasActivas)[number]).id
-    const fecha = sumarDias(fechaHoy, azar.entero(-10, 45))
-    examenes.set(`${alumnoId}|${materiaId}|${fecha}`, {
-      alumnoId,
-      materiaId,
-      fecha: fechaADate(fecha),
-      tipo: azar.de(TIPOS_EXAMEN),
-    })
+  type ExamenNuevo = {
+    alumnoId: number
+    materiaId: number
+    fecha: string
+    tipo: (typeof TIPOS_EXAMEN)[number]
   }
-  // Tres ejemplos deterministas sobre turnos futuros ya creados, uno por franja de prioridad
-  // (HU-18): Alta (0 a 10 días), Media (11 a 20) y Baja (más de 20), para verlas sin buscarlas.
+  const examenes = new Map<string, ExamenNuevo>()
+  const parDe = (e: { alumnoId: number; materiaId: number }) => `${e.alumnoId}|${e.materiaId}`
+  /**
+   * Un examen pendiente por materia (HU-17, `EXAMEN_PENDIENTE`): el alumno no puede tener dos
+   * exámenes activos de la misma materia con fecha >= hoy. Los pasados no cuentan.
+   */
+  const tienePendiente = (e: ExamenNuevo) =>
+    [...examenes.values()].some((otro) => parDe(otro) === parDe(e) && otro.fecha >= fechaHoy)
+  while (examenes.size < CANTIDAD_EXAMENES) {
+    const examen: ExamenNuevo = {
+      alumnoId: (azar.de(alumnos) as (typeof alumnos)[number]).id,
+      materiaId: (azar.de(materiasActivas) as (typeof materiasActivas)[number]).id,
+      fecha: sumarDias(fechaHoy, azar.entero(-10, 45)),
+      tipo: azar.de(TIPOS_EXAMEN),
+    }
+    if (examen.fecha >= fechaHoy && tienePendiente(examen)) continue
+    examenes.set(`${parDe(examen)}|${examen.fecha}`, examen)
+  }
+  // Tres ejemplos deterministas, uno por franja de prioridad (HU-18): Alta (0 a 10 días), Media
+  // (11 a 20) y Baja (más de 20), contados desde la primera ocurrencia de turnos futuros sin
+  // cancelaciones (una ocurrencia cancelada no tiene prioridad). Reemplazan al examen pendiente que
+  // el alumno tuviera en esa materia, para no tener dos.
   const OFFSETS_PRIORIDAD = [5, 15, 30] as const
-  futuros.slice(0, OFFSETS_PRIORIDAD.length).forEach((turno, i) => {
-    const fecha = sumarDias(fechaStr(turno.fechaInicio), OFFSETS_PRIORIDAD[i] as number)
-    examenes.set(`${turno.alumnoId}|${turno.materiaId}|${fecha}`, {
+  const conPrioridad = futuros.slice(0, OFFSETS_PRIORIDAD.length)
+  conPrioridad.forEach((turno, i) => {
+    const examen: ExamenNuevo = {
       alumnoId: turno.alumnoId,
       materiaId: turno.materiaId,
-      fecha: fechaADate(fecha),
+      fecha: sumarDias(fechaStr(turno.fechaInicio), OFFSETS_PRIORIDAD[i] as number),
       tipo: 'PARCIAL',
-    })
+    }
+    for (const [clave, otro] of examenes) {
+      if (parDe(otro) === parDe(examen) && otro.fecha >= fechaHoy) examenes.delete(clave)
+    }
+    examenes.set(`${parDe(examen)}|${examen.fecha}`, examen)
   })
   await prisma.examen.createMany({
-    data: [...examenes.values()].map((e) => ({ ...e, estado: 'ACTIVO' as const, ...auditoria })),
+    data: [...examenes.values()].map((e) => ({
+      ...e,
+      fecha: fechaADate(e.fecha),
+      estado: 'ACTIVO' as const,
+      ...auditoria,
+    })),
   })
 
   // --- Escenarios fijos para recorrer a mano lo nuevo del Sprint 2 (T-29) ---
-  // 1. Cancelación de una ocurrencia futura (la serie sigue agendada en sus demás fechas).
-  const paraCancelar = futuros[0]
+  // 1. Cancelación de la primera ocurrencia de un turno futuro (la serie sigue agendada en sus
+  //    demás fechas). Es otro turno que los de los ejemplos de prioridad.
+  const paraCancelar = futuros[OFFSETS_PRIORIDAD.length]
   if (paraCancelar) {
     await prisma.cancelacionTurno.create({
       data: {
@@ -857,7 +925,9 @@ async function crear(azar: Azar) {
   })
   const auditoriaModificador = { createdById: modificador.id, updatedById: modificador.id }
   // Los turnos de la cancelación y de los ejemplos de prioridad no se mueven: siguen como están.
-  const reservados = new Set(futuros.slice(0, OFFSETS_PRIORIDAD.length).map((t) => t.id))
+  const reservados = new Set(
+    [...conPrioridad, ...(paraCancelar ? [paraCancelar] : [])].map((t) => t.id),
+  )
 
   /** Una hora y una fecha libres (> `despuesDe`) de otro bloque para mover una ocurrencia. */
   const buscarDestino = (turno: (typeof futuros)[number], despuesDe: string) => {
@@ -975,11 +1045,42 @@ async function crear(azar: Azar) {
     }
   }
 
+  // 2c. Finalización de un recurrente (HU-14, T-47): se registra una FinalizacionRecurrencia desde
+  //     su tercera ocurrencia, sin tocar `fechaFin` (el fin efectivo lo aplica el motor). Se elige
+  //     una serie de un solo turno (sin tramos) y sin pagos ni cancelaciones (los futuros no tienen
+  //     pagos), así la regla "en todos los tramos de esa hora" se cumple con una sola fila.
+  const turnosPorSerie = new Map<string, number>()
+  for (const turno of activosOrdenados) {
+    if (turno.serieId)
+      turnosPorSerie.set(turno.serieId, (turnosPorSerie.get(turno.serieId) ?? 0) + 1)
+  }
+  const paraFinalizar = futuros.find(
+    (t) =>
+      t.tipo === 'RECURRENTE' &&
+      !reservados.has(t.id) &&
+      t.id !== recurrente?.id &&
+      t.serieId !== null &&
+      turnosPorSerie.get(t.serieId) === 1 &&
+      (t.fechaFin === null || fechaStr(t.fechaFin) >= sumarDias(fechaStr(t.fechaInicio), 14)),
+  )
+  if (paraFinalizar) {
+    await prisma.finalizacionRecurrencia.create({
+      data: {
+        turnoId: paraFinalizar.id,
+        fechaDesde: fechaADate(sumarDias(fechaStr(paraFinalizar.fechaInicio), 14)),
+        motivo: 'CANCELACION_ALUMNO',
+        detalle: 'El alumno deja de venir (dato de demo, HU-14).',
+        createdById: actorId,
+      },
+    })
+  }
+
   // 3. Pago con dos ocurrencias pasadas de un mismo alumno (HU-15); el resto de los turnos
   //    pasados quedan impagos a propósito, para probar la deuda (HU-16).
   const pasadosPorAlumno = new Map<number, typeof activosOrdenados>()
   for (const turno of activosOrdenados) {
-    if (fechaStr(turno.fechaInicio) >= fechaHoy) continue
+    // Se cobra la primera ocurrencia, que ya pasó; una cancelada no se cobra (HU-15).
+    if (fechaStr(turno.fechaInicio) >= fechaHoy || conCancelacion.has(turno.id)) continue
     const lista = pasadosPorAlumno.get(turno.alumnoId) ?? []
     lista.push(turno)
     pasadosPorAlumno.set(turno.alumnoId, lista)
@@ -1016,7 +1117,6 @@ async function crear(azar: Azar) {
   }
 
   // --- Resumen ---
-  const activos = turnosData.filter((t) => t.estado === 'ACTIVO').length
   const franjas = new Set(bloques.map((b) => `${b.profesorId}|${b.diaSemana}`)).size
   console.log(`Datos de demo listos (hoy = ${fechaHoy}):`)
   console.log(
@@ -1024,14 +1124,16 @@ async function crear(azar: Azar) {
   )
   console.log(`  ${alumnos.length} alumnos, ${asignaciones.length} materias asignadas`)
   console.log(`  ${bloques.length} horas de horario en ${franjas} franjas`)
-  console.log(`  ${turnosData.length} turnos (${activos} activos) del ${desde} al ${hasta}`)
+  console.log(`  ${turnosData.length} turnos del ${desde} al ${hasta}`)
   console.log(`  ${examenes.size} fechas de examen`)
   console.log(
     `  escenarios T-29: ${paraCancelar ? '1' : '0'} cancelación, ` +
       `${sesionReprogramada ? '1' : '0'} sesión única reprogramada, ` +
       `${recurrenteReprogramado ? '1' : '0'} recurrente reprogramado en tramos, ` +
-      `${conDeuda ? '1' : '0'} pago con dos ocurrencias, ${segundoTramoAgregado ? '1' : '0'} tramo extra`,
+      `${conDeuda ? '1' : '0'} pago con dos ocurrencias, ${segundoTramoAgregado ? '1' : '0'} tramo extra, ` +
+      `${paraFinalizar ? '1' : '0'} finalización`,
   )
+  console.log(`  ${cancelaciones.length} ocurrencias canceladas al azar (pasadas y futuras)`)
   console.log('')
   console.log(`Los profesores entran con su email @${DOMINIO} y la contraseña "${PASSWORD_DEMO}".`)
   const ejemplo = usuariosData[0]
