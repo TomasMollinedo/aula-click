@@ -1,5 +1,8 @@
 'use client'
 
+import { useId } from 'react'
+
+import { Field } from '@/components/ui/field'
 import { SelectBuscable } from '@/components/ui/select-buscable'
 
 type Referencia = { id: number; nombre: string }
@@ -18,47 +21,55 @@ type FiltroGrillaProps = {
   onChange: (valor: Referencia | null) => void
 }
 
-export function FiltroAlumno({ opciones, value, onChange }: FiltroGrillaProps) {
+type TextosFiltroGrilla = {
+  label: string
+  textoTodas: string
+  etiquetaBusqueda: string
+  textoVacio: string
+}
+
+function FiltroGrilla({ label, ...props }: FiltroGrillaProps & TextosFiltroGrilla) {
+  const id = useId()
+
   return (
-    <SelectBuscable
-      opciones={opciones}
-      value={value}
-      onChange={onChange}
-      textoTodas="Todos los alumnos"
+    <Field label={label} htmlFor={id}>
+      <SelectBuscable id={id} {...props} />
+    </Field>
+  )
+}
+
+export function FiltroAlumno(props: FiltroGrillaProps) {
+  return (
+    <FiltroGrilla
+      {...props}
+      label="Alumno"
+      textoTodas="Todos"
       etiquetaBusqueda="Buscar alumno"
       textoVacio="No se encontraron alumnos."
-      aria-label="Filtrar por alumno"
-      className="w-full sm:w-48"
     />
   )
 }
 
-export function FiltroMateria({ opciones, value, onChange }: FiltroGrillaProps) {
+export function FiltroMateria(props: FiltroGrillaProps) {
   return (
-    <SelectBuscable
-      opciones={opciones}
-      value={value}
-      onChange={onChange}
-      textoTodas="Todas las materias"
+    <FiltroGrilla
+      {...props}
+      label="Materia"
+      textoTodas="Todas"
       etiquetaBusqueda="Buscar materia"
       textoVacio="No se encontraron materias."
-      aria-label="Filtrar por materia"
-      className="w-full sm:w-44"
     />
   )
 }
 
-export function FiltroAula({ opciones, value, onChange }: FiltroGrillaProps) {
+export function FiltroAula(props: FiltroGrillaProps) {
   return (
-    <SelectBuscable
-      opciones={opciones}
-      value={value}
-      onChange={onChange}
-      textoTodas="Todas las aulas"
+    <FiltroGrilla
+      {...props}
+      label="Aula"
+      textoTodas="Todas"
       etiquetaBusqueda="Buscar aula"
       textoVacio="No se encontraron aulas."
-      aria-label="Filtrar por aula"
-      className="w-full sm:w-40"
     />
   )
 }

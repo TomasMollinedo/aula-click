@@ -2,10 +2,10 @@
 
 import Link from 'next/link'
 
+import { ComboboxBuscador, useComboboxBuscador } from '@/components/ui/combobox-buscador'
 import { useAlumnos } from '@/features/alumnos/hooks/use-alumnos'
 
 import { hrefFichaAlumno } from '../rutas-cuentas'
-import { ComboboxBuscador, useComboboxBuscador } from './ComboboxBuscador'
 
 type FiltroAlumnoProps = {
   id: string

@@ -16,10 +16,8 @@ import { useAgenda } from '../hooks/use-agenda'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { AgendaConModo } from './AgendaConModo'
 import { AgendaTable } from './AgendaTable'
+import { BarraFiltrosAgenda } from './BarraFiltrosAgenda'
 import { CalendarioSemanal } from './CalendarioSemanal'
-import { FiltroProfesorAgenda } from './FiltroProfesorAgenda'
-import { FiltrosEstadoPrioridad } from './FiltrosEstadoPrioridad'
-import { LimpiarFiltrosAgenda } from './LimpiarFiltrosAgenda'
 import { NavegacionFecha } from './NavegacionFecha'
 
 const FECHA_VALIDA = /^\d{4}-\d{2}-\d{2}$/
@@ -41,7 +39,7 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
-  const { filtros, cambiar: cambiarFiltros } = useFiltrosAgenda()
+  const { filtros } = useFiltrosAgenda()
 
   const fechaParam = searchParams.get('fecha')
   const fecha = fechaParam && FECHA_VALIDA.test(fechaParam) ? fechaParam : fechaDeHoy()
@@ -75,8 +73,6 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
   }
   const irAHoy = () => actualizarUrl({ fecha: fechaDeHoy(), page: 1 })
   const setFecha = (nuevaFecha: string) => actualizarUrl({ fecha: nuevaFecha, page: 1 })
-  const setProfesorId = (nuevoProfesorId: number | null) =>
-    cambiarFiltros({ profesorId: nuevoProfesorId })
   const setPage = (nuevaPagina: number) => actualizarUrl({ page: nuevaPagina })
 
   const query = useAgenda({
@@ -101,7 +97,7 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
       acciones={renderPdf?.({ fecha, filtros })}
     >
       <Card className="gap-0 overflow-hidden p-0">
-        <div className="border-border flex flex-col gap-4 border-b p-6 sm:flex-row sm:items-center sm:justify-between">
+        <div className="border-border space-y-4 border-b p-6">
           <NavegacionFecha
             fecha={fecha}
             esActual={fecha === fechaDeHoy()}
@@ -110,11 +106,7 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
             onActual={irAHoy}
             onCambiarFecha={setFecha}
           />
-          <div className="flex flex-wrap items-center gap-2">
-            <FiltrosEstadoPrioridad />
-            <FiltroProfesorAgenda value={profesorId} onChange={setProfesorId} />
-            <LimpiarFiltrosAgenda conProfesor />
-          </div>
+          <BarraFiltrosAgenda conProfesor />
         </div>
 
         {query.isError ? (

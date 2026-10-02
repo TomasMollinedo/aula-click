@@ -4,9 +4,9 @@ import { type ReactNode, useId } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { BarraFiltros, claseControlFiltro } from '@/components/ui/barra-filtros'
 import { CalendarioFecha } from '@/components/ui/calendario-fecha'
 import { Field, fieldErrorId } from '@/components/ui/field'
-import { LimpiarFiltros } from '@/components/ui/limpiar-filtros'
 import {
   Select,
   SelectContent,
@@ -14,7 +14,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
-import { cn } from '@/utils/cn'
 
 import type { CampoFiltro } from '../errores-cuentas'
 import type { FiltrosCuenta as Filtros } from '../filtros-cuenta'
@@ -46,7 +45,7 @@ type FiltrosCuentaProps = {
  * No guarda estado: muestra los de la URL y avisa cada cambio, que se aplica enseguida. No valida el
  * período: un "Hasta" anterior al "Desde" se manda igual y el error de la API sale junto al campo.
  *
- * Controles compactos: en pantallas anchas (`xl`) entran todos en una sola fila, con "Limpiar
+ * Es una `BarraFiltros`: en pantallas anchas (`xl`) entran todos en una sola fila, con "Limpiar
  * filtros" al final; en las más angostas se reparten en columnas y el botón va en una fila propia.
  */
 export function FiltrosCuenta({
@@ -76,14 +75,16 @@ export function FiltrosCuenta({
     !materias.some((m) => m.id === filtros.materiaId)
 
   return (
-    <section aria-label="Filtros" className="space-y-3">
-      <div
-        className={cn(
-          'grid items-start gap-3',
+    <div className="space-y-3">
+      <BarraFiltros
+        hayFiltros={puedeLimpiar}
+        onLimpiar={onLimpiar}
+        limpiarEnFila="xl"
+        className={
           renderAlumno
             ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(4,minmax(0,1fr))_auto]'
-            : 'sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]',
-        )}
+            : 'sm:grid-cols-2 md:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]'
+        }
       >
         {renderAlumno && (
           <Field label="Alumno" htmlFor={ids.alumno} error={errores.alumnoId}>
@@ -127,10 +128,7 @@ export function FiltrosCuenta({
           >
             <SelectTrigger
               id={ids.materia}
-              className={cn(
-                'h-9 w-full px-3 [&>span]:truncate',
-                filtros.materiaId === null && 'text-muted-foreground',
-              )}
+              className={claseControlFiltro(filtros.materiaId === null)}
             >
               <SelectValue placeholder="Todas" />
             </SelectTrigger>
@@ -159,12 +157,7 @@ export function FiltrosCuenta({
             onChange={(profesorId) => onCambiar({ profesorId })}
           />
         </Field>
-
-        {/* En `xl`, en la misma fila: el margen de arriba ocupa el lugar del label de los campos. */}
-        <div className="col-span-full flex justify-end xl:col-span-1 xl:mt-[22px]">
-          <LimpiarFiltros hayFiltros={puedeLimpiar} onClick={onLimpiar} />
-        </div>
-      </div>
+      </BarraFiltros>
 
       {errorGeneral && (
         <Alert variant="destructive">
@@ -172,6 +165,6 @@ export function FiltrosCuenta({
           <AlertDescription className="text-destructive">{errorGeneral}</AlertDescription>
         </Alert>
       )}
-    </section>
+    </div>
   )
 }

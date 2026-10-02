@@ -1,9 +1,10 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { AlertCircle, CalendarX2, FilterX } from 'lucide-react'
+import { AlertCircle, CalendarX2 } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { BarraFiltros } from '@/components/ui/barra-filtros'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
@@ -45,6 +46,13 @@ export type CalendarioSemanalProps = {
   renderDetalle: RenderDetalleOcurrencia
 }
 
+// Las columnas de la barra de filtros: seis campos con el profesor (el calendario del centro) y
+// cinco sin él. Entran en una fila, con "Limpiar filtros" al final, recién en pantallas anchas (`xl`).
+const COLUMNAS = {
+  conProfesor: 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(6,minmax(0,1fr))_auto]',
+  sinProfesor: 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]',
+}
+
 function mensajeError(origen: OrigenAgenda, error: ApiError | null): string {
   if (error?.status === 403) return 'No tenés permiso para ver esta agenda'
   if (error?.status === 404) {
@@ -81,9 +89,9 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
 
   return (
     <Card className="gap-0 overflow-hidden p-0">
-      {/* Navegación por fecha y todos los filtros en la misma fila; cada control envuelve por su
-          cuenta si no entra. Orden: profesor, alumno, materia, prioridad, aula, estado. */}
-      <div className="border-border flex flex-wrap items-center gap-2 border-b p-6">
+      {/* La navegación por fecha y, debajo, los filtros. Orden: profesor, alumno, materia,
+          prioridad, aula, estado. */}
+      <div className="border-border space-y-4 border-b p-6">
         <NavegacionFecha
           fecha={fecha}
           esActual={esRangoActual('semana', fecha, hoy)}
@@ -98,46 +106,43 @@ export function CalendarioSemanal({ origen, filtros }: CalendarioSemanalProps) {
             actual: 'Hoy',
           }}
         />
-        {esCentro && (
-          <FiltroProfesorAgenda
-            value={filtros.profesorId}
-            onChange={(profesorId) => cambiarFiltros({ profesorId })}
+        <BarraFiltros
+          hayFiltros={hayFiltros}
+          onLimpiar={() => {
+            setFiltrosGrilla(FILTROS_GRILLA_VACIOS)
+            cambiarFiltros({
+              estado: null,
+              prioridad: null,
+              ...(esCentro ? { profesorId: null } : {}),
+            })
+          }}
+          limpiarEnFila="xl"
+          className={esCentro ? COLUMNAS.conProfesor : COLUMNAS.sinProfesor}
+        >
+          {esCentro && (
+            <FiltroProfesorAgenda
+              value={filtros.profesorId}
+              onChange={(profesorId) => cambiarFiltros({ profesorId })}
+            />
+          )}
+          <FiltroAlumno
+            opciones={opciones.alumnos}
+            value={filtrosGrilla.alumno}
+            onChange={(alumno) => setFiltrosGrilla((actuales) => ({ ...actuales, alumno }))}
           />
-        )}
-        <FiltroAlumno
-          opciones={opciones.alumnos}
-          value={filtrosGrilla.alumno}
-          onChange={(alumno) => setFiltrosGrilla((actuales) => ({ ...actuales, alumno }))}
-        />
-        <FiltroMateria
-          opciones={opciones.materias}
-          value={filtrosGrilla.materia}
-          onChange={(materia) => setFiltrosGrilla((actuales) => ({ ...actuales, materia }))}
-        />
-        <FiltroPrioridad />
-        <FiltroAula
-          opciones={opciones.aulas}
-          value={filtrosGrilla.aula}
-          onChange={(aula) => setFiltrosGrilla((actuales) => ({ ...actuales, aula }))}
-        />
-        <FiltroEstado />
-        {hayFiltros && (
-          <Button
-            variant="destructive"
-            size="sm"
-            onClick={() => {
-              setFiltrosGrilla(FILTROS_GRILLA_VACIOS)
-              cambiarFiltros({
-                estado: null,
-                prioridad: null,
-                ...(esCentro ? { profesorId: null } : {}),
-              })
-            }}
-          >
-            <FilterX />
-            Limpiar
-          </Button>
-        )}
+          <FiltroMateria
+            opciones={opciones.materias}
+            value={filtrosGrilla.materia}
+            onChange={(materia) => setFiltrosGrilla((actuales) => ({ ...actuales, materia }))}
+          />
+          <FiltroPrioridad />
+          <FiltroAula
+            opciones={opciones.aulas}
+            value={filtrosGrilla.aula}
+            onChange={(aula) => setFiltrosGrilla((actuales) => ({ ...actuales, aula }))}
+          />
+          <FiltroEstado />
+        </BarraFiltros>
       </div>
 
       {query.isError ? (
