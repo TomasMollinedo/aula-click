@@ -25,6 +25,7 @@ export const ejemploOcurrenciaDetalle = {
   observaciones: null,
   temas: null,
   cancelacion: null,
+  pago: { estado: 'PENDIENTE', importeVigente: 8000 },
   prioridad: 'ALTA',
   examen: {
     id: 8,
@@ -53,6 +54,7 @@ export const ejemploOcurrenciasDelAlumno = [
     materia: { id: 3, nombre: 'Matemática' },
     tipo: 'RECURRENTE',
     estado: 'AGENDADO',
+    estadoPago: 'PENDIENTE',
     prioridad: 'ALTA',
     cancelable: true,
   },
@@ -66,6 +68,7 @@ export const ejemploOcurrenciasDelAlumno = [
     materia: { id: 7, nombre: 'Física' },
     tipo: 'SESION_UNICA',
     estado: 'CANCELADO',
+    estadoPago: 'PENDIENTE',
     prioridad: null,
     cancelable: false,
   },

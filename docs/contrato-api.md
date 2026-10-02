@@ -284,11 +284,11 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 
 El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectura desde la que se opera (cancelar, finalizar, reprogramar, registrar pago, T-44 en adelante). La API calcula qué acciones están permitidas en `acciones`; ninguna pantalla repite esas reglas.
 
-> **Sin `pago`.** El ticket original pedía un campo `pago` (`PENDIENTE`/`PAGADO`, importe, forma de pago, comprobante) y que `acciones.cancelar` viniera deshabilitado con "El turno está pagado: no se puede cancelar" en una ocurrencia pagada. Decisión explícita de este incremento: **no hay hoy una fuente de datos de `Pago` de la que traerlo**, así que ninguno de los dos sale. `acciones.cancelar` es `{ visible, habilitada }` sin `motivo`, y depende únicamente de si la ocurrencia está `AGENDADO`; no mira el pago para nada. Se retoma cuando `pagos` (T-51) esté disponible.
+El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago`), y las acciones lo tienen en cuenta (decisiones T-106 a T-108).
 
 ### Detalle de una ocurrencia
 
-**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas). `PROFESOR` sólo puede pedir un turno suyo: si no lo es, 403 con las cuatro acciones en `false`. Con `MESA_ENTRADAS` o con el profesor dueño del turno, el resto de la respuesta es igual — salvo `acciones`, que para `PROFESOR` siempre viene con las cuatro en `false` (el profesor no cancela, finaliza, reprograma ni registra pagos en este incremento; sólo lee).
+**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas). `PROFESOR` sólo puede pedir un turno suyo: si no lo es, 403. Con `MESA_ENTRADAS` o con el profesor dueño del turno, el resto de la respuesta es igual — salvo `acciones`, que para `PROFESOR` siempre viene con las cuatro en `false` (el profesor no cancela, finaliza, reprograma ni registra pagos en este incremento; sólo lee), y `pago`, que para `PROFESOR` es `null` (no ve pagos).
 
 ```json
 {
@@ -310,6 +310,7 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
   "observaciones": null,
   "temas": null,
   "cancelacion": null,
+  "pago": { "estado": "PENDIENTE", "importeVigente": 8000 },
   "prioridad": "ALTA",
   "examen": {
     "id": 8,
@@ -334,8 +335,29 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
 - `estado`: sólo `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (definición F de las PO: cancelada, o pasada sin cancelar, o de hoy en adelante).
 - `serie`: período del turno o tramo (`fechaInicio`, `fechaFin`, `null` sin fin) y, si tiene una, la `finalizacion` (`fechaDesde` es el fin efectivo, definición C, más `motivo`, `detalle`, `createdBy`, `createdAt`); `null` si no está finalizada. La finalización es **de la hora** (decisión T-104): la del propio turno o, si no tiene, la de otro tramo de su misma hora en su serie, así que un tramo anterior también la muestra. El `serieId` que agrupa los turnos de un alta no viaja en la respuesta. Sin sección de reprogramación: un turno reprogramado ya está en su fecha y bloque nuevos, y no muestra desde cuándo se movió (definición A).
 - `cancelacion`: `null` salvo `estado = "CANCELADO"` (`motivo`, `detalle`, `createdBy`, `createdAt`).
+- `pago`: `null` para `PROFESOR`. Para `MESA_ENTRADAS`, según su `estado`:
+  - `PENDIENTE`: `importeVigente`, el precio por hora vigente de la materia (lo que se cobraría hoy), o `null` si la materia no tiene precio. Una cancelada también viene `PENDIENTE` (nunca se cobró): la UI no muestra su pago.
+  - `PAGADO`: los datos de su pago, con los nombres de `GET /pagos/{id}`. `importe` es lo que se cobró (`importeAplicado`): no cambia si después cambia el precio de la materia.
+
+    ```json
+    {
+      "estado": "PAGADO",
+      "pagoId": 31,
+      "numeroComprobante": 1024,
+      "importe": 8000,
+      "formaPago": { "id": 1, "nombre": "Efectivo" },
+      "fechaPago": "2026-10-01",
+      "registradoPor": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+      "registradoEl": "2026-10-01T14:30:00.000Z"
+    }
+    ```
+
 - `prioridad` y `examen` (el examen que la determina, T-31): `null` en una ocurrencia cancelada.
-- `acciones`: `cancelar` sólo mira si está `AGENDADO` (agendada, hoy o posterior); `finalizar`, si el turno es `RECURRENTE`, su hora está vigente (algún tramo de esa hora en su serie tiene `fechaFin` nula o de hoy en adelante) y **ningún tramo de esa hora tiene una finalización** (decisión T-104: si se ve, `POST /finalizaciones` no rechaza por "no vigente" ni por "ya finalizado"; la otra hora de la misma serie se evalúa aparte); `reprogramar`, igual que `cancelar`; `registrarPago`, si no está `CANCELADO`.
+- `acciones` (las calcula la API; ninguna pantalla repite estas reglas):
+  - `cancelar`: `{ visible, habilitada, motivo? }`. Visible si está `AGENDADO` (agendada, hoy o posterior). Si además está pagada, viene `habilitada: false` con `motivo: "El turno está pagado: no se puede cancelar"` (el mismo texto con el que `POST /cancelaciones` la rechaza); `motivo` sólo viene en ese caso.
+  - `finalizar`: si el turno es `RECURRENTE`, su hora está vigente (algún tramo de esa hora en su serie tiene `fechaFin` nula o de hoy en adelante) y **ningún tramo de esa hora tiene una finalización** (decisión T-104: si se ve, `POST /finalizaciones` no rechaza por "no vigente" ni por "ya finalizado"; la otra hora de la misma serie se evalúa aparte). No mira el pago de esta ocurrencia: las pagadas de la hora se validan al finalizar (409 `TURNOS_PAGADOS`).
+  - `reprogramar`: si está `AGENDADO`. Una pagada se reprograma igual (el pago acompaña al turno).
+  - `registrarPago`: si no está `CANCELADO`, su pago está `PENDIENTE` y su fecha no pasa el tope de cobro de `POST /pagos` (hoy + 56 días; las pasadas no tienen tope). Una materia sin precio sí lo muestra: decide el 409 `SIN_PRECIO` del cobro.
 - `createdBy`/`updatedBy`: quién creó el turno y quién lo modificó por última vez. Si el turno se reprogramó, quien lo modificó es quien lo reprogramó (no hay un campo aparte).
 - Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` (rol distinto de `MESA_ENTRADAS`/`PROFESOR`, o un `PROFESOR` que no es dueño del turno) o `USUARIO_INHABILITADO`; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias (incluida una posterior al fin efectivo de una serie ya finalizada).
 
@@ -358,16 +380,17 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
       "materia": { "id": 3, "nombre": "Matemática" },
       "tipo": "RECURRENTE",
       "estado": "AGENDADO",
+      "estadoPago": "PENDIENTE",
       "prioridad": "ALTA",
       "cancelable": true
     }
   ]
   ```
 
-- `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle.
+- `estadoPago`: `PENDIENTE` o `PAGADO`; una cancelada viene `PENDIENTE` (nunca se cobró) y la UI no lo muestra. `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle (agendada y con el pago pendiente: una pagada no se puede tildar).
 - Errores: 400 `VALIDACION` (`alumnoId` faltante o inválido, `hasta` anterior a `desde`, o rango fuera de la ventana permitida, `details` sobre `hasta`); 401 `NO_AUTENTICADO`; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
-Todo sale de `leerOcurrencias` (T-30) y `leerPrioridades` (T-31): la feature no reimplementa ninguna de las dos.
+Todo sale de `leerOcurrencias` (T-30), `leerPrioridades` (T-31) y, para una pagada, `leerPagoDeOcurrencia` (`pagos`): la feature no reimplementa ninguna de las tres.
 
 ## Cancelaciones
 
@@ -558,7 +581,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 - `ocurrencias`: de 1 a 200 pares `(turnoId, fecha)` sin repetir (un repetido: 400 en `["ocurrencias", <posición>]`). Todas del alumno.
 - `fechaPago`: `YYYY-MM-DD`, obligatoria, hoy o anterior (400 en `["fechaPago"]`).
-- `montoRecibido`: opcional (`null` u omitido = no se informó). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`; si viene, >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000) es menor al total ($ 32.000)").
+- `montoRecibido`: opcional (`null` u omitido = no se informó). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`; si viene, >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)").
 - `observaciones`: opcional, hasta 500 caracteres; `""` o `null` = sin observaciones.
 - La forma de pago no viaja: es "Efectivo" (única en este sprint).
 
@@ -575,7 +598,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 }
 ```
 
-`montoRecibido` y `vuelto` son `null` si no se informó el monto. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000" y "Vuelto: $ 3.000". El vuelto no se guarda.
+`montoRecibido` y `vuelto` son `null` si no se informó el monto. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000,00" y "Vuelto: $ 3.000,00". El vuelto no se guarda.
 
 **Errores del `POST`**, en este orden (el primero que falla gana):
 
@@ -631,7 +654,140 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 ## Cuentas
 
-A completar por T-53.
+HU-16 (T-53, con los ajustes de la PO del 01/10: decisiones T-91 a T-96). Turnos adeudados y próximos turnos de un alumno, y las dos vistas globales con la misma estructura. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
+
+| Endpoint                                 | Roles           | Qué hace                                                                         |
+| ---------------------------------------- | --------------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/cuentas/alumnos/{alumnoId}` | `MESA_ENTRADAS` | Adeudados y próximos del alumno, con el total adeudado. 404 si no existe         |
+| `GET /api/v1/cuentas/adeudados`          | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado      |
+| `GET /api/v1/cuentas/proximos`           | `MESA_ENTRADAS` | Próximos turnos de todos los alumnos (o de uno), paginados, con el tope de cobro |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: uno dado de baja puede deber.
+
+**Filtros comunes a los tres (query, todos opcionales):**
+
+- `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos. Cada extremo es opcional y **no hay tope de días**. Si vienen los dos y `hasta` es anterior a `desde`: 400 `VALIDACION` con `details` sobre `hasta`.
+- `materiaId`, `profesorId` (el profesor del bloque): enteros positivos (400 si no). Si la materia o el profesor no existen, la respuesta va vacía: **no hay 404**.
+
+**El período y las secciones.** Las dos secciones nunca se mezclan: "hoy" las separa. Las fechas de corte las calcula la API; el cliente no las repite.
+
+| Sección   | Sin período                            | Con período                                                                             | No aplica si…                             |
+| --------- | -------------------------------------- | --------------------------------------------------------------------------------------- | ----------------------------------------- |
+| Adeudados | Todos los impagos anteriores a hoy     | La parte del período anterior a hoy (nunca hoy ni después)                              | el período es sólo futuro: `desde` >= hoy |
+| Próximos  | De hoy a `limiteCobro` (hoy + 56 días) | La parte del período entre hoy y `limiteCobro` (nunca antes de hoy ni después del tope) | el período es sólo pasado: `hasta` < hoy  |
+
+- Una sección que **no aplica** no es lo mismo que una vacía: en la cuenta del alumno va `null` (y `[]` si aplica y no hay nada); en las vistas globales, `aplica: false` (y `aplica: true` con `data: []` si aplica y no hay nada).
+- Si el período es futuro pero empieza después de `limiteCobro`, los próximos **aplican y quedan vacíos**: la UI avisa con `limiteCobro` hasta qué fecha se puede cobrar.
+- `limiteCobro`: la última fecha que se puede cobrar por adelantado, la misma que usa `POST /pagos` (ver Pagos).
+- `totalAdeudado`: la suma de los adeudados con **todos** los filtros (alumno, período, materia y profesor). Los próximos **nunca** suman, tampoco con un período futuro: en ese caso el total es 0.
+
+**Una ocurrencia de la cuenta (`OcurrenciaDeCuenta`):**
+
+```json
+{
+  "turnoId": 41,
+  "fecha": "2026-09-28",
+  "horaInicio": "09:00",
+  "horaFin": "10:00",
+  "materia": { "id": 2, "nombre": "Matemática" },
+  "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+  "estado": "SIN_REGISTRAR",
+  "importe": 8000
+}
+```
+
+- Tiene los mismos campos que una ocurrencia del body de `POST /pagos` necesita para armarse (`turnoId`, `fecha`) y lo que muestra el diálogo de cobro: el frontend la pasa a `OcurrenciaACobrar` sin transformar nada.
+- `estado`: `SIN_REGISTRAR` en los adeudados y `AGENDADO` en los próximos (código, no texto: "Sin registrar" lo pone la UI).
+- `importe`: precio vigente de la materia en pesos, número JSON; `null` si la materia no tiene precio (no suma al total).
+
+**Respuesta de `GET /cuentas/alumnos/{alumnoId}`:**
+
+```json
+{
+  "totalAdeudado": 16000,
+  "adeudados": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-09-21",
+      "...": "...",
+      "estado": "SIN_REGISTRAR",
+      "importe": 8000
+    },
+    {
+      "turnoId": 41,
+      "fecha": "2026-09-28",
+      "...": "...",
+      "estado": "SIN_REGISTRAR",
+      "importe": 8000
+    }
+  ],
+  "proximos": [
+    { "turnoId": 41, "fecha": "2026-10-05", "...": "...", "estado": "AGENDADO", "importe": 8000 }
+  ],
+  "limiteCobro": "2026-11-26"
+}
+```
+
+Con un período sólo pasado (`?desde=2026-09-01&hasta=2026-09-30`), `"proximos": null`; con uno sólo futuro, `"adeudados": null` y `"totalAdeudado": 0`.
+
+- `adeudados`: ocurrencias anteriores a hoy, sin registrar (no canceladas) e impagas, del más antiguo al más reciente (fecha, hora de inicio y `turnoId`). `null` si la sección no aplica al período.
+- `proximos`: ocurrencias agendadas e impagas de hoy a `limiteCobro`, de series y sesiones únicas, en el mismo orden. Es exactamente lo que `POST /pagos` acepta cobrar hacia adelante (el mismo tope, ver Pagos). No suman a la deuda. `null` si la sección no aplica al período.
+- `totalAdeudado`: suma de los importes de `adeudados` (los `null` no suman); 0 si `adeudados` es `null`.
+- `limiteCobro`: siempre viene, haya o no período.
+- La cuenta **no** trae el historial de pagos ni lo pagado en el mes (decisión T-95). El comprobante de un pago se sigue leyendo con `GET /pagos/{pagoId}`.
+
+**`GET /cuentas/adeudados`:** query `page` y `pageSize` (Listados paginados), `alumnoId` opcional (entero positivo; 400 si no, 404 si el alumno no existe) y los filtros comunes. Responde el formato de un listado paginado **más `totalAdeudado` y `aplica`, junto a `data` y `meta`** (no dentro de `meta`, que no cambia):
+
+```json
+{
+  "data": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-09-21",
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+      "estado": "SIN_REGISTRAR",
+      "importe": 8000,
+      "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Álvarez", "dni": "52345678" }
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 10, "total": 37, "totalPages": 4 },
+  "totalAdeudado": 296000.5,
+  "aplica": true
+}
+```
+
+- Los mismos adeudados que la cuenta del alumno, de todos los alumnos (o del filtrado), del más antiguo al más reciente. Cada fila es una `OcurrenciaDeCuenta` más `alumno` (`OcurrenciaDeCuentaGlobal`).
+- `totalAdeudado` es la suma de **todos** los adeudados del filtro, no sólo de la página: coincide con la suma de los importes de todas las páginas, con el `totalAdeudado` de la cuenta del alumno con los mismos filtros (si se manda `alumnoId`) y con el total adeudado del tablero (T-61).
+- `aplica: false` (período sólo futuro): `data: []`, `meta.total: 0`, `meta.totalPages: 0` y `totalAdeudado: 0`.
+
+**`GET /cuentas/proximos`:** el mismo query que los adeudados (404 si `alumnoId` no existe). Responde el formato de un listado paginado **más `aplica` y `limiteCobro`**, sin `totalAdeudado` (los próximos no son deuda):
+
+```json
+{
+  "data": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-10-05",
+      "horaInicio": "09:00",
+      "horaFin": "10:00",
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+      "estado": "AGENDADO",
+      "importe": 8000,
+      "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Álvarez", "dni": "52345678" }
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 10, "total": 9, "totalPages": 1 },
+  "aplica": true,
+  "limiteCobro": "2026-11-26"
+}
+```
+
+- Los mismos próximos que la cuenta del alumno, de todos los alumnos (o del filtrado), por fecha, hora de inicio y `turnoId`. La misma fila que los adeudados (`OcurrenciaDeCuentaGlobal`).
+- `aplica: false` (período sólo pasado): `data: []`, `meta.total: 0` y `meta.totalPages: 0`. `limiteCobro` viene igual.
 
 ## Exámenes
 
@@ -714,17 +870,17 @@ Los datos del centro para el encabezado de los documentos oficiales (turno, agen
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 
-| Query                                | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
-| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `q`                                  | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras. En la agenda (decisión T-36) busca por nombre de alumno **o** de profesor, nunca mezclando palabras entre los dos; si además se manda `profesorId`, busca sólo por alumno (T-42) |
-| `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                                                                                                                                                                                 |
-| `materiaId`                          | Filtra por materia                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `profesorId`                         | Filtra por profesor. En la agenda (decisión T-42) es la vista personal de su agenda ese día                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
-| `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                     |
-| `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                   |
-| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos (`/agendas/propia` y `/agendas/profesor`; en `/agendas/centro` son obligatorios). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. `hasta` no puede ser anterior a `desde` ni dejar un rango de más de 31 días                                                                                                                                                                                                                                     |
-| `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| Query                                | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `q`                                  | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras. En la agenda (decisión T-36) busca por nombre de alumno **o** de profesor, nunca mezclando palabras entre los dos; si además se manda `profesorId`, busca sólo por alumno (T-42)                                       |
+| `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `materiaId`                          | Filtra por materia                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `profesorId`                         | Filtra por profesor. En la agenda (decisión T-42) es la vista personal de su agenda ese día                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                                                           |
+| `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                                                         |
+| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos. `hasta` no puede ser anterior a `desde`. En las agendas (`/agendas/propia` y `/agendas/profesor`; en `/agendas/centro` son obligatorios): sin `desde`, hoy; sin `hasta`, el mismo día que `desde`; el rango no puede superar los 31 días. En cuentas (`/cuentas/...`): cada extremo es opcional y **no hay tope de días**; cada sección toma la parte del período que le toca (adeudados, lo anterior a hoy; próximos, de hoy al tope de cobro) y la que no tiene parte no aplica (ver Cuentas) |
+| `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Recursos individuales
 

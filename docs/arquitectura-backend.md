@@ -51,7 +51,7 @@ src/
 │           ├── <dominio>.repository.ts
 │           ├── <dominio>.ejemplos.ts  # opcional: ejemplos del OpenAPI
 │           ├── <regla>.ts             # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
-│           ├── <dominio>.condiciones.ts # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos, examenes)
+│           ├── <dominio>.condiciones.ts # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos, examenes, cuentas, pagos)
 │           └── __tests__/             # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts, <dominio>.repository.test.ts (excepcional)
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```
@@ -66,7 +66,7 @@ Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la com
 - `finalizaciones`: finalizar un turno recurrente a partir de una fecha.
 - `reprogramaciones`: mover una ocurrencia a otra fecha, hora o profesor.
 - `pagos`: registrar el pago de una o varias ocurrencias y su comprobante.
-- `cuentas`: deuda y pagos de un alumno, y la vista global de adeudados.
+- `cuentas`: turnos adeudados y próximos de un alumno, y las vistas globales de adeudados y de próximos.
 - `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
 - `tablero`: indicadores agregados para el gerente (opcional).
 - `centro`: nombre, dirección, teléfono y logo del centro, para el encabezado de los documentos oficiales (T-64). Sin tabla: son constantes de la feature (el logo, un archivo); surgió con las definiciones del 29/09, así que es la única que agregó su línea a `app.ts` después de T-32.
@@ -109,7 +109,7 @@ Flujo: cliente → routes (valida con Zod) → controller → service → reposi
 
 Una feature solo puede importar el **repository** de otra, y solo para lecturas, o sus **condiciones** (`<dominio>.condiciones.ts`); nunca su service, controller, routes, validation ni reglas (los tests sí pueden importar tipos de su validation para armar sus falsos). Ejemplo: si `turnos` necesita confirmar que un alumno existe, lee `alumnos.repository.ts`, pero no usa las reglas de `alumnos.service.ts`.
 
-**Condiciones (`<dominio>.condiciones.ts`, decisión T-39).** Cuando una feature tiene que consultar datos de otra **dentro de su propia transacción** (por ejemplo, contar los turnos vigentes con el lock del profesor tomado antes de darlo de baja), no puede llamar al repository de la otra: una transacción no cruza repositories. La feature dueña de esos datos publica la condición y la lectura en su `*.condiciones.ts`: funciones que reciben el cliente (`prisma` o el `tx` de quien llama) y de Prisma solo importan **tipos**. Su propio repository las usa con `prisma` y los de otras features con su `tx`: una sola implementación. Por ejemplo, `turnos.condiciones.ts` publica las lecturas de vigentes y de ocupación máxima, y `turnos/ocurrencias.condiciones.ts` el motor de ocurrencias y los locks de la reserva (la lista con sus firmas está en `convenciones-backend.md` → Lecturas que publica `turnos`). Los tipos que devuelven se re-exportan desde ahí, para que nadie importe la validation de otra feature.
+**Condiciones (`<dominio>.condiciones.ts`, decisión T-39).** Cuando una feature tiene que consultar datos de otra **dentro de su propia transacción** (por ejemplo, contar los turnos vigentes con el lock del profesor tomado antes de darlo de baja), no puede llamar al repository de la otra: una transacción no cruza repositories. La feature dueña de esos datos publica la condición y la lectura en su `*.condiciones.ts`: funciones que reciben el cliente (`prisma` o el `tx` de quien llama) y de Prisma solo importan **tipos**. Su propio repository las usa con `prisma` y los de otras features con su `tx`: una sola implementación. Por ejemplo, `turnos.condiciones.ts` publica las lecturas de vigentes y de ocupación máxima, y `turnos/ocurrencias.condiciones.ts` el motor de ocurrencias y los locks de la reserva (la lista con sus firmas está en `convenciones-backend.md` → Lecturas que publica `turnos`). Los tipos que devuelven se re-exportan desde ahí, para que nadie importe la validation de otra feature. Un `*.condiciones.ts` también publica lo que otra feature necesita de sus **reglas** sin copiarlo, re-exportándolo: `pagos.condiciones.ts` publica el tope de cobro (`limiteDeCobro`), la suma en centavos y la lectura del pago de una ocurrencia (`leerPagoDeOcurrencia`), y `cancelaciones.condiciones.ts`, los mensajes de por qué un turno no se puede cancelar; `ocurrencias` los usa para calcular las acciones del detalle con las mismas reglas con las que cobrar y cancelar deciden (decisión T-107).
 
 Un repository importa Prisma, `@/server/errors`, `@/server/shared/*`, módulos puros de su propia feature (como `<dominio>.reglas.ts`, por ejemplo para un predicado que tiene que coincidir con una condición de consulta) y las `*.condiciones` de otra feature; nunca otros repositories ni services. Así el grafo no tiene ciclos (turnos ↔ profesores ↔ materias) y las reglas de negocio de una feature no quedan acopladas a las de otra. ESLint hace cumplir la parte de imports entre features.
 

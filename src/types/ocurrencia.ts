@@ -7,25 +7,38 @@ import type { Auditoria, UsuarioAuditoria } from './index'
 // `turnos`) y ninguna puede importar los types de otra (docs/arquitectura-frontend.md).
 //
 // Siguen el contrato real de `GET /ocurrencias/{turnoId}/{fecha}` y `GET /ocurrencias?alumnoId`
-// (T-43, docs/contrato-api.md → Ocurrencias). T-44 los ajustó a ese contrato final: **sin `pago`**
-// (T-43 no tiene de dónde traerlo todavía: no hay sección de pago en el detalle ni columna de pago
-// en "Turnos", y `EstadoPagoBadge` queda sin usar hasta que `pagos`, T-51/T-54, lo resuelva) y
-// **sin `reprogramacion`/`fechaOriginal`**: reprogramar cambia el turno a su fecha y bloque nuevos
-// (una sesión única nueva si era una ocurrencia de un recurrente), así que `turnoId` + `fecha` ya
-// identifican la ocurrencia tal cual está ahora; no se guarda desde dónde se movió (definición A de
-// las PO). Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`.
+// (T-43, docs/contrato-api.md → Ocurrencias), con el `pago` del detalle y el `estadoPago` de la
+// lista (los sumó el PR de pagos, T-52/T-54). **Sin `reprogramacion`/`fechaOriginal`**: reprogramar
+// cambia el turno a su fecha y bloque nuevos (una sesión única nueva si era una ocurrencia de un
+// recurrente), así que `turnoId` + `fecha` ya identifican la ocurrencia tal cual está ahora; no se
+// guarda desde dónde se movió (definición A de las PO). Fechas: string `YYYY-MM-DD`. Horas: string
+// `HH:mm`. Importes: número JSON en pesos, que calcula la API.
 
 export type TipoOcurrencia = 'RECURRENTE' | 'SESION_UNICA'
 
 /** Lo calcula la API. La UI lo muestra como "Agendado", "Cancelado" y "Sin registrado". */
 export type EstadoOcurrencia = 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR'
 
-/**
- * Estado de pago de una ocurrencia. No está en `OcurrenciaDetalle` ni `OcurrenciaDeAlumno` (T-43 no
- * lo expone ahí todavía), pero las agendas (T-57) sí lo traen del motor directo, así que el tipo
- * sigue acá para que `agendas.types.ts` lo use.
- */
+/** Estado de pago de una ocurrencia: el de las agendas, la lista de turnos del alumno y el detalle. */
 export type EstadoPagoOcurrencia = 'PENDIENTE' | 'PAGADO'
+
+/**
+ * El pago de una ocurrencia en su detalle (HU-15). Pendiente: lo que costaría cobrarla hoy (el
+ * precio vigente de la materia; `null` si no tiene precio). Pagada: lo que se cobró (`importe` no
+ * cambia si después cambia el precio) y los datos de su pago, con los nombres de `GET /pagos/{id}`.
+ */
+export type PagoDeOcurrencia =
+  | { estado: 'PENDIENTE'; importeVigente: number | null }
+  | {
+      estado: 'PAGADO'
+      pagoId: number
+      numeroComprobante: number
+      importe: number
+      formaPago: { id: number; nombre: string }
+      fechaPago: string
+      registradoPor: UsuarioAuditoria
+      registradoEl: string
+    }
 
 /** La calcula la API a partir de los exámenes del alumno (HU-18); `null` en una cancelada. */
 export type PrioridadOcurrencia = 'ALTA' | 'MEDIA' | 'BAJA'
@@ -39,8 +52,7 @@ type Referencia = { id: number; nombre: string }
 /**
  * Qué acciones admite la ocurrencia. **Lo decide la API**: cada acción se muestra según este dato
  * y nunca con reglas propias (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia).
- * `cancelar.motivo` queda sin usar hasta que haya pago del que depender (T-43): hoy `cancelar`
- * nunca viene visible-pero-deshabilitado.
+ * `cancelar` viene visible y deshabilitada, con su `motivo`, en una ocurrencia agendada y pagada.
  */
 export type AccionesOcurrencia = {
   cancelar: { visible: boolean; habilitada: boolean; motivo?: string }
@@ -99,6 +111,8 @@ export type OcurrenciaDetalle = {
     finalizacion: FinalizacionDeSerie | null
   }
   cancelacion: CancelacionDeOcurrencia | null
+  /** `null` para el profesor, que no ve pagos. */
+  pago: PagoDeOcurrencia | null
   prioridad: PrioridadOcurrencia | null
   examen: ExamenQueDeterminaPrioridad | null
   acciones: AccionesOcurrencia
@@ -116,6 +130,8 @@ export type OcurrenciaDeAlumno = {
   horaFin: string
   tipo: TipoOcurrencia
   estado: EstadoOcurrencia
+  /** Una cancelada viene `PENDIENTE` (nunca se cobró): la UI no lo muestra. */
+  estadoPago: EstadoPagoOcurrencia
   prioridad: PrioridadOcurrencia | null
   profesor: Persona
   materia: Referencia

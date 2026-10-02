@@ -12,8 +12,7 @@ import {
 } from './ocurrencias.validation'
 
 // Contrato HTTP de `ocurrencias` (T-43): el detalle de un turno en una fecha, y los turnos de un
-// alumno, con las acciones ya calculadas. Sin `pago`: no hay hoy una fuente de datos de `Pago` de
-// la que traerlo (ver `ocurrencias.reglas.ts`).
+// alumno, con su pago y las acciones ya calculadas.
 
 const tags = ['Ocurrencias']
 
@@ -30,7 +29,7 @@ export const obtenerOcurrenciaRoute = createRoute({
   tags,
   summary: 'Detalle de una ocurrencia',
   description:
-    'La ocurrencia `(turnoId, fecha)` (definición B): alumno, materia, profesor, aula, horario, tipo, serie (con su finalización si la tiene), estado, observaciones, temas, cancelación, prioridad y el examen que la determina, auditoría y las acciones permitidas (`cancelar`, `finalizar`, `reprogramar`, `registrarPago`). `PROFESOR` sólo puede ver el turno si es suyo; si no, 403 con las cuatro acciones no visibles.',
+    'La ocurrencia `(turnoId, fecha)` (definición B): alumno, materia, profesor, aula, horario, tipo, serie (con su finalización si la tiene), estado, observaciones, temas, cancelación, pago (pendiente con el importe vigente, o pagado con los datos de su pago), prioridad y el examen que la determina, auditoría y las acciones permitidas (`cancelar`, `finalizar`, `reprogramar`, `registrarPago`). Una ocurrencia agendada y pagada trae `cancelar` visible y deshabilitada, con su `motivo`. `PROFESOR` sólo puede ver el turno si es suyo (si no, 403), con las cuatro acciones no visibles y `pago: null`.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'PROFESOR')] as const,
   request: { params: ocurrenciaParamsSchema },
   responses: {
@@ -57,7 +56,7 @@ export const listarOcurrenciasDelAlumnoRoute = createRoute({
   tags,
   summary: 'Turnos de un alumno',
   description:
-    'Las ocurrencias del alumno en `[desde, hasta]` (pestaña "Turnos" de la ficha, HU-02), incluidas las canceladas: cada una con estado, prioridad y si se puede cancelar. Sin `desde`/`hasta`, el año en curso completo (1 de enero a 31 de diciembre). El rango no puede salir del año en curso. Sin paginar, ordenadas por fecha y hora.',
+    'Las ocurrencias del alumno en `[desde, hasta]` (pestaña "Turnos" de la ficha, HU-02), incluidas las canceladas: cada una con estado, estado de pago, prioridad y si se puede cancelar. Sin `desde`/`hasta`, el año en curso completo (1 de enero a 31 de diciembre). El rango no puede salir del año en curso. Sin paginar, ordenadas por fecha y hora.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: ocurrenciasDelAlumnoQuerySchema },
   responses: {

@@ -71,12 +71,18 @@ describe('sumarImportes y calcularVuelto', () => {
 })
 
 describe('formatearPesos', () => {
-  it('formato de Argentina, sin depender del ICU', () => {
-    expect(formatearPesos(30000)).toBe('$ 30.000')
-    expect(formatearPesos(32000)).toBe('$ 32.000')
+  it('formato de Argentina con dos decimales siempre, sin depender del ICU', () => {
+    expect(formatearPesos(30000)).toBe('$ 30.000,00')
+    expect(formatearPesos(32000)).toBe('$ 32.000,00')
     expect(formatearPesos(30000.5)).toBe('$ 30.000,50')
-    expect(formatearPesos(999)).toBe('$ 999')
+    expect(formatearPesos(999)).toBe('$ 999,00')
+    expect(formatearPesos(0.5)).toBe('$ 0,50')
     expect(formatearPesos(1234567.05)).toBe('$ 1.234.567,05')
+  })
+
+  it('espacio normal entre `$` y el número (viaja en JSON), no el duro de la UI', () => {
+    expect(formatearPesos(7500)).toBe('$ 7.500,00')
+    expect(formatearPesos(7500)).not.toContain(String.fromCharCode(0xa0))
   })
 })
 
@@ -275,11 +281,11 @@ describe('planificarPago', () => {
     )
 
     expect(error).toBeInstanceOf(ValidationError)
-    expect(error.message).toBe('El monto recibido ($ 30.000) es menor al total ($ 32.000)')
+    expect(error.message).toBe('El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)')
     expect(error.details).toEqual([
       {
         path: ['montoRecibido'],
-        message: 'El monto recibido ($ 30.000) es menor al total ($ 32.000)',
+        message: 'El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)',
       },
     ])
   })

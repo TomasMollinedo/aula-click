@@ -87,11 +87,11 @@ export const ejemploErrorNoCobrables = {
 export const ejemploErrorMonto = {
   error: {
     code: 'VALIDACION',
-    message: 'El monto recibido ($ 30.000) es menor al total ($ 32.000)',
+    message: 'El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)',
     details: [
       {
         path: ['montoRecibido'],
-        message: 'El monto recibido ($ 30.000) es menor al total ($ 32.000)',
+        message: 'El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)',
       },
     ],
   },

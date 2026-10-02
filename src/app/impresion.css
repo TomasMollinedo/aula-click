@@ -42,4 +42,38 @@
     overflow: visible !important;
     height: auto !important;
   }
+
+  /*
+   * El relleno de abajo del <main> y del documento no se ve en papel, pero ocupa lugar: cuando el
+   * contenido termina cerca del final de una hoja, ese relleno pasa a la siguiente y sale una hoja
+   * en blanco al final.
+   */
+  [data-app-shell] > main,
+  [data-app-shell] > main > article:last-child {
+    padding-bottom: 0 !important;
+  }
+}
+
+/*
+ * Tablas que ocupan varias hojas (`components/impresion/tabla-impresa.tsx`; el comprobante de pago
+ * llega a 200 turnos). Acotado a `[data-tabla-impresa]` y `[data-no-partir]`: las tablas de las
+ * otras hojas paginan como siempre.
+ * - El encabezado se repite arriba de cada hoja.
+ * - Una fila no se parte entre dos hojas.
+ * - El cierre (totales y pie) no se parte, y tampoco queda solo en la última hoja: el corte se
+ *   hace antes, entre filas, y se lleva la última consigo.
+ */
+@media print {
+  [data-tabla-impresa] thead {
+    display: table-header-group;
+  }
+
+  [data-tabla-impresa] tr {
+    break-inside: avoid;
+  }
+
+  [data-no-partir] {
+    break-inside: avoid;
+    break-before: avoid;
+  }
 }

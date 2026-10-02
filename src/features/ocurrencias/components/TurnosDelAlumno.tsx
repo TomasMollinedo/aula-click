@@ -4,6 +4,7 @@ import { type ReactNode, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, CalendarX2 } from 'lucide-react'
 
+import { EstadoPagoBadge } from '@/components/turno/estado-pago-badge'
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { ESTADO_TURNO, type EstadoTurno } from '@/components/turno/indicadores-turno'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
@@ -43,7 +44,7 @@ import {
   rangoDelFiltro,
 } from '../meses-del-anio'
 
-const COLUMNAS = 6
+const COLUMNAS = 7
 const TODOS_LOS_ESTADOS = 'TODOS'
 type FiltroEstado = typeof TODOS_LOS_ESTADOS | EstadoTurno
 
@@ -79,9 +80,9 @@ export type TurnosDelAlumnoProps = {
 
 /**
  * Pestaña "Turnos" de la ficha del alumno (HU-02): sus ocurrencias, con casilla de selección en
- * las `cancelable`, clic para abrir el detalle, un mes del año en curso a elegir (o todo el año,
- * T-66/T-67) y un filtro por estado. Sin columna de pago: T-43 no tiene de dónde traerlo todavía
- * (docs/contrato-api.md → Ocurrencias).
+ * las `cancelable` (lo decide la API: una pagada no se puede tildar), clic para abrir el detalle, un
+ * mes del año en curso a elegir (o todo el año, T-66/T-67) y un filtro por estado. El estado de pago
+ * es el de la API; en una cancelada no se muestra.
  */
 export function TurnosDelAlumno({
   alumnoId,
@@ -221,6 +222,7 @@ export function TurnosDelAlumno({
                 <TableHead>Materia</TableHead>
                 <TableHead>Profesor</TableHead>
                 <TableHead className="w-32">Estado</TableHead>
+                <TableHead className="w-28">Pago</TableHead>
                 <TableHead className="w-40">Prioridad</TableHead>
               </TableRow>
             </TableHeader>
@@ -262,6 +264,19 @@ export function TurnosDelAlumno({
                     </TableCell>
                     <TableCell>
                       <EstadoTurnoBadge estado={turno.estado} />
+                    </TableCell>
+                    <TableCell>
+                      {/* Una cancelada nunca se cobró (la API manda PENDIENTE): "Pendiente" confundiría. */}
+                      {turno.estado === 'CANCELADO' ? (
+                        <span
+                          className="text-muted-foreground"
+                          aria-label="Sin pago: turno cancelado"
+                        >
+                          —
+                        </span>
+                      ) : (
+                        <EstadoPagoBadge estado={turno.estadoPago} />
+                      )}
                     </TableCell>
                     <TableCell>
                       {turno.prioridad && (

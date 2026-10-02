@@ -1,17 +1,22 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Ban, History, NotebookPen, type LucideIcon } from 'lucide-react'
+import { Ban, Banknote, History, NotebookPen, type LucideIcon } from 'lucide-react'
 
+import { EstadoPagoBadge } from '@/components/turno/estado-pago-badge'
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
 import { Card } from '@/components/ui/card'
 import { Dato, Datos } from '@/components/ui/datos'
 import { DetalleModal } from '@/components/ui/detalle-modal'
-import type { OcurrenciaDetalle as OcurrenciaDetalleDatos } from '@/types/ocurrencia'
+import type {
+  OcurrenciaDetalle as OcurrenciaDetalleDatos,
+  PagoDeOcurrencia,
+} from '@/types/ocurrencia'
 import { formatoInstante, nombreUsuarioAuditoria } from '@/utils/auditoria'
 import { fechaConDia, fechaCorta } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
+import { formatearPesos } from '@/utils/moneda'
 
 import { useOcurrencia } from '../hooks/use-ocurrencia'
 import { etiquetaMotivoCancelacion } from '../motivo-cancelacion'
@@ -25,7 +30,15 @@ export type OcurrenciaDetalleProps = {
    * porque cada una es de otra feature, y cada una decide si se muestra con `ocurrencia.acciones`.
    */
   renderAcciones: (ocurrencia: OcurrenciaDetalleDatos) => ReactNode
+  /**
+   * El enlace al comprobante de un turno pagado. Lo compone `app/` (la URL del comprobante es de
+   * `features/pagos` y solo de mesa de entradas); sin esta prop, la sección de pago no lo muestra.
+   */
+  renderComprobante?: (pago: PagoRegistrado) => ReactNode
 }
+
+/** El pago de una ocurrencia ya pagada. */
+type PagoRegistrado = Extract<PagoDeOcurrencia, { estado: 'PAGADO' }>
 
 function Seccion({
   icon: Icon,
@@ -50,15 +63,65 @@ function Seccion({
 }
 
 /**
+ * El pago de la ocurrencia (HU-15), tal como lo manda la API: pendiente con lo que costaría cobrarla
+ * hoy, o pagada con el importe cobrado, la forma de pago, la fecha, el número de comprobante y quién
+ * lo registró. No calcula nada.
+ */
+function SeccionPago({
+  pago,
+  renderComprobante,
+}: {
+  pago: PagoDeOcurrencia
+  renderComprobante?: (pago: PagoRegistrado) => ReactNode
+}) {
+  if (pago.estado === 'PENDIENTE') {
+    return (
+      <Seccion icon={Banknote} titulo="Pago">
+        <Datos>
+          <Dato label="Estado" valor={<EstadoPagoBadge estado={pago.estado} />} />
+          <Dato
+            label="Importe a cobrar"
+            valor={
+              pago.importeVigente === null ? 'Sin precio' : formatearPesos(pago.importeVigente)
+            }
+          />
+        </Datos>
+      </Seccion>
+    )
+  }
+
+  return (
+    <Seccion icon={Banknote} titulo="Pago">
+      <Datos>
+        <Dato label="Estado" valor={<EstadoPagoBadge estado={pago.estado} />} />
+        <Dato label="Importe" valor={formatearPesos(pago.importe)} />
+        <Dato label="Forma de pago" valor={pago.formaPago.nombre} />
+        <Dato label="Fecha de pago" valor={fechaCorta(pago.fechaPago)} />
+        <Dato label="Comprobante" valor={`N° ${pago.numeroComprobante}`} />
+      </Datos>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+          <History className="size-3.5" />
+          {nombreUsuarioAuditoria(pago.registradoPor)}, {formatoInstante(pago.registradoEl)}
+        </p>
+        {renderComprobante?.(pago)}
+      </div>
+    </Seccion>
+  )
+}
+
+/**
  * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20): datos del turno (con el período de
- * la serie si es recurrente), prioridad, cancelación y las acciones del pie. Sin pago: T-43 no
- * tiene de dónde traerlo todavía (no hay sección de pago, ver docs/contrato-api.md → Ocurrencias).
+ * la serie si es recurrente), prioridad, pago, cancelación y las acciones del pie. La sección de
+ * pago no se muestra en una cancelada (nunca se cobró: la API manda "Pendiente" y confundiría) ni
+ * cuando la API no manda `pago` (el profesor).
  */
 export function OcurrenciaDetalle({
   turnoId,
   fecha,
   onCerrar,
   renderAcciones,
+  renderComprobante,
 }: OcurrenciaDetalleProps) {
   const { data: ocurrencia, isLoading, error, refetch } = useOcurrencia({ turnoId, fecha })
 
@@ -136,6 +199,10 @@ export function OcurrenciaDetalle({
                 <Dato label="Temas a trabajar" valor={ocurrencia.temas} />
               </Datos>
             </Seccion>
+          )}
+
+          {ocurrencia.pago && ocurrencia.estado !== 'CANCELADO' && (
+            <SeccionPago pago={ocurrencia.pago} renderComprobante={renderComprobante} />
           )}
 
           {ocurrencia.cancelacion && (

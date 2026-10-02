@@ -13,6 +13,7 @@ const { repository, profesoresRepository, getSession } = vi.hoisted(() => ({
     buscarDatosAdicionales: vi.fn(),
     leerFilasDeLaHora: vi.fn(),
     buscarFinalizacion: vi.fn(),
+    buscarPago: vi.fn(),
     leerOcurrenciasDelAlumno: vi.fn(),
     resolverUsuarioAuditoria: vi.fn(),
     leerPrioridades: vi.fn(),
@@ -54,6 +55,7 @@ const DATOS_ADICIONALES = {
   alumnoDni: '40123456',
   observaciones: null,
   temas: null,
+  precioVigente: 8000,
   createdAt: '2026-08-01T13:00:00.000Z',
   updatedAt: '2026-08-01T13:00:00.000Z',
   createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
@@ -104,12 +106,62 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
       apellido: 'González',
       dni: '40123456',
     })
+    expect(cuerpo.pago).toEqual({ estado: 'PENDIENTE', importeVigente: 8000 })
+    // El reloj acá es el real y la fecha es de 2099: queda después del tope de cobro (hoy + 56),
+    // así que no se ofrece registrar el pago. El resto de la matriz, en `ocurrencias.reglas.test.ts`.
     expect(cuerpo.acciones).toEqual({
       cancelar: { visible: true, habilitada: true },
       finalizar: { visible: true },
       reprogramar: { visible: true },
-      registrarPago: { visible: true },
+      registrarPago: { visible: false },
     })
+  })
+
+  it('una pasada y pendiente ofrece registrar el pago', async () => {
+    repository.buscarOcurrencia.mockResolvedValue({
+      ...OCURRENCIA,
+      fecha: '2020-01-06',
+      estado: 'SIN_REGISTRAR',
+    })
+
+    const cuerpo = await (await pedir('/31/2020-01-06')).json()
+    expect(cuerpo.acciones.registrarPago).toEqual({ visible: true })
+  })
+
+  it('una pagada sale con los datos de su pago y `cancelar` deshabilitada con su motivo', async () => {
+    repository.buscarOcurrencia.mockResolvedValue({
+      ...OCURRENCIA,
+      pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 },
+    })
+    repository.buscarPago.mockResolvedValue({
+      numeroComprobante: 1024,
+      fechaPago: '2026-10-01',
+      formaPago: { id: 1, nombre: 'Efectivo' },
+      registradoPor: { id: 'usr_mesa', nombre: 'Marta', apellido: 'Ruiz' },
+      registradoEl: '2026-10-01T14:30:00.000Z',
+    })
+
+    const res = await pedir('/31/2099-01-05')
+    const cuerpo = await res.json()
+
+    expect(res.status).toBe(200)
+    expect(repository.buscarPago).toHaveBeenCalledExactlyOnceWith(31)
+    expect(cuerpo.pago).toEqual({
+      estado: 'PAGADO',
+      pagoId: 31,
+      numeroComprobante: 1024,
+      importe: 7500,
+      formaPago: { id: 1, nombre: 'Efectivo' },
+      fechaPago: '2026-10-01',
+      registradoPor: { id: 'usr_mesa', nombre: 'Marta', apellido: 'Ruiz' },
+      registradoEl: '2026-10-01T14:30:00.000Z',
+    })
+    expect(cuerpo.acciones.cancelar).toEqual({
+      visible: true,
+      habilitada: false,
+      motivo: 'El turno está pagado: no se puede cancelar',
+    })
+    expect(cuerpo.acciones.registrarPago).toEqual({ visible: false })
   })
 
   it('el turno no existe, o la fecha no es una de sus ocurrencias → 404', async () => {
@@ -146,12 +198,14 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
     expect((await pedir('/31/2099-01-05')).status).toBe(403)
   })
 
-  it('profesor dueño del turno → 200', async () => {
+  it('profesor dueño del turno → 200, con `pago: null`', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
     repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
 
-    expect((await pedir('/31/2099-01-05')).status).toBe(200)
+    const res = await pedir('/31/2099-01-05')
+    expect(res.status).toBe(200)
+    expect((await res.json()).pago).toBeNull()
   })
 })
 
@@ -179,6 +233,7 @@ describe('GET /ocurrencias', () => {
         materia: { id: 3, nombre: 'Matemática' },
         tipo: 'RECURRENTE',
         estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
         prioridad: null,
         cancelable: true,
       },
@@ -233,13 +288,20 @@ describe('OpenAPI de ocurrencias', () => {
         'Serie',
         'Cancelacion',
         'Finalizacion',
+        'PagoDeOcurrenciaPendiente',
+        'PagoDeOcurrenciaPagado',
       ]),
     )
   })
 
-  it('no publica ningún campo `pago` (a pedido explícito: no hay de dónde traerlo)', () => {
-    const schema = JSON.stringify(doc.components?.schemas?.OcurrenciaDetalle)
-    expect(schema).not.toContain('"pago"')
+  it('publica `pago` como la unión de pendiente y pagado, y el `motivo` de `cancelar`', () => {
+    const schemas = doc.components?.schemas ?? {}
+    const detalle = JSON.stringify(schemas.OcurrenciaDetalle)
+    expect(detalle).toContain('"pago"')
+    expect(detalle).toContain('PagoDeOcurrenciaPendiente')
+    expect(detalle).toContain('PagoDeOcurrenciaPagado')
+    expect(JSON.stringify(schemas.AccionCancelar)).toContain('"motivo"')
+    expect(JSON.stringify(schemas.OcurrenciaDelAlumnoItem)).toContain('"estadoPago"')
   })
 
   it('conserva los ejemplos del OpenAPI', () => {

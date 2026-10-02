@@ -1,10 +1,16 @@
 import { ValidationError } from '@/server/errors'
-import type { EstadoOcurrencia, TipoTurno } from '@/server/features/turnos/ocurrencias.condiciones'
+import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelaciones.condiciones'
+import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
+import type {
+  EstadoOcurrencia,
+  EstadoPagoOcurrencia,
+  TipoTurno,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 
-// Reglas puras de `ocurrencias`: sin Prisma y sin `hoy()` (lo recibe quien llama). El estado de
-// pago **no se evalúa acá** (a pedido explícito: hoy no hay de dónde traer los datos de `Pago`).
-// Por eso "cancelar" y "registrarPago" no miran si la ocurrencia está pagada ni pendiente, aunque
-// el ticket original (T-43) lo pida: es una simplificación consciente, no un olvido.
+// Reglas puras de `ocurrencias`: sin Prisma y sin `hoy()` (lo recibe quien llama). Las acciones
+// miran el pago de la ocurrencia, que ya trae el motor (`Ocurrencia.pago`). Lo que es de otra
+// feature no se repite acá: el mensaje de "pagado" es el de `cancelaciones` y el tope de cobro, el
+// de `pagos`.
 
 export const MENSAJE_RANGO_INVERTIDO = '`hasta` no puede ser anterior a `desde`'
 export const MENSAJE_FUERA_DE_VENTANA = 'El rango tiene que estar dentro del año en curso'
@@ -66,7 +72,8 @@ function estaVigente(filas: readonly FilaDeLaHora[], fechaHoy: string): boolean 
 }
 
 export type AccionSimple = { visible: boolean }
-export type AccionCancelar = { visible: boolean; habilitada: boolean }
+/** `motivo`: por qué está deshabilitada (sólo viene cuando se ve y no se puede usar). */
+export type AccionCancelar = { visible: boolean; habilitada: boolean; motivo?: string }
 
 export type Acciones = {
   cancelar: AccionCancelar
@@ -75,7 +82,7 @@ export type Acciones = {
   registrarPago: AccionSimple
 }
 
-/** Las cuatro acciones en `false`/no visibles: lo que ve un `PROFESOR` que no es dueño del turno. */
+/** Las cuatro acciones en `false`/no visibles: lo que ve un `PROFESOR` (sólo lee). */
 export const ACCIONES_SIN_PERMISO: Acciones = {
   cancelar: { visible: false, habilitada: false },
   finalizar: { visible: false },
@@ -83,26 +90,44 @@ export const ACCIONES_SIN_PERMISO: Acciones = {
   registrarPago: { visible: false },
 }
 
+/** Lo que `calcularAcciones` mira de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
+export type OcurrenciaParaAcciones = {
+  fecha: string
+  estado: EstadoOcurrencia
+  tipo: TipoTurno
+  pago: { estado: EstadoPagoOcurrencia }
+}
+
 /**
- * Las acciones permitidas sobre una ocurrencia (T-43), sin mirar el pago (ver el comentario de
- * arriba del archivo):
- * - `cancelar`: agendada (que ya implica hoy o posterior: una ocurrencia pasada y no cancelada es
- *   `SIN_REGISTRAR`, nunca `AGENDADO` — `estadoDeOcurrencia` en `turnos.reglas.ts`).
- * - `finalizar`: recurrente, con su hora vigente y sin finalizar. Se mira el conjunto de
+ * Las acciones permitidas sobre una ocurrencia (T-43):
+ * - `cancelar` (HU-13): visible si está agendada (que ya implica hoy o posterior: una ocurrencia
+ *   pasada y no cancelada es `SIN_REGISTRAR`, nunca `AGENDADO` — `estadoDeOcurrencia` en
+ *   `turnos.reglas.ts`). Si además está pagada, se muestra deshabilitada con el `motivo` con el que
+ *   `POST /cancelaciones` la rechazaría (definición D: un turno pagado no se cancela).
+ * - `finalizar` (HU-14): recurrente, con su hora vigente y sin finalizar. Se mira el conjunto de
  *   `filasDeLaHora` (todos los tramos de esa hora en su serie), no sólo la fila de la ocurrencia:
  *   un tramo anterior de una hora ya finalizada en un tramo posterior no la ofrece, y la otra hora
- *   de la misma serie sí. Sin filas (quien llama no la necesita), no visible.
- * - `reprogramar`: agendada, mismo criterio que cancelar.
- * - `registrarPago`: no cancelada.
+ *   de la misma serie sí. Sin filas (quien llama no la necesita), no visible. No mira el pago de
+ *   esta ocurrencia: las pagadas de la hora se validan al finalizar (409 `TURNOS_PAGADOS`).
+ * - `reprogramar` (HU-20): agendada. Una pagada se reprograma igual: el pago acompaña al turno.
+ * - `registrarPago` (HU-15): no cancelada, pago `PENDIENTE` y fecha dentro del tope de cobro
+ *   (`limiteDeCobro(hoy)`, el de `POST /pagos`; las pasadas no tienen tope), así no se ofrece algo
+ *   que la API rechaza con `FUERA_DE_RANGO`. Una materia sin precio sí lo muestra: decide el 409
+ *   `SIN_PRECIO` del cobro.
  */
 export function calcularAcciones(
-  ocurrencia: { estado: EstadoOcurrencia; tipo: TipoTurno },
+  ocurrencia: OcurrenciaParaAcciones,
   filasDeLaHora: readonly FilaDeLaHora[],
   fechaHoy: string,
 ): Acciones {
   const agendada = ocurrencia.estado === 'AGENDADO'
+  const pagada = ocurrencia.pago.estado === 'PAGADO'
   return {
-    cancelar: { visible: agendada, habilitada: agendada },
+    cancelar: !agendada
+      ? { visible: false, habilitada: false }
+      : pagada
+        ? { visible: true, habilitada: false, motivo: MENSAJES_NO_CANCELABLE.PAGADO }
+        : { visible: true, habilitada: true },
     finalizar: {
       visible:
         ocurrencia.tipo === 'RECURRENTE' &&
@@ -110,6 +135,9 @@ export function calcularAcciones(
         !estaFinalizada(filasDeLaHora),
     },
     reprogramar: { visible: agendada },
-    registrarPago: { visible: ocurrencia.estado !== 'CANCELADO' },
+    registrarPago: {
+      visible:
+        ocurrencia.estado !== 'CANCELADO' && !pagada && ocurrencia.fecha <= limiteDeCobro(fechaHoy),
+    },
   }
 }

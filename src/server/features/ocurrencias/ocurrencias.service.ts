@@ -1,4 +1,4 @@
-import { ForbiddenError, NotFoundError } from '@/server/errors'
+import { AppError, ForbiddenError, NotFoundError } from '@/server/errors'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
@@ -17,12 +17,13 @@ import type {
   OcurrenciasDelAlumnoQuery,
 } from './ocurrencias.validation'
 
-// Reglas de `ocurrencias`. No conoce HTTP ni Prisma: lanza AppError o sus subclases. La expansión
-// y la prioridad salen del motor de otras features (vía el repository); acá sólo se arma el DTO y
-// se calculan las acciones permitidas (`ocurrencias.reglas.ts`).
+// Reglas de `ocurrencias`. No conoce HTTP ni Prisma: lanza AppError o sus subclases. La expansión,
+// el pago y la prioridad salen del motor de otras features (vía el repository); acá sólo se arma el
+// DTO y se calculan las acciones permitidas (`ocurrencias.reglas.ts`).
 
 const MENSAJE_NO_ENCONTRADA = 'No existe una ocurrencia con ese turno y esa fecha'
 const MENSAJE_SIN_PERMISO = 'El turno no es suyo'
+const MENSAJE_PAGO_INCONSISTENTE = 'La ocurrencia figura pagada, pero no se encontró su pago'
 
 /** Clave de `leerPrioridades`: la misma que arma `clavePrioridad` en `examenes.condiciones.ts`. */
 function clavePrioridad(item: { alumnoId: number; materiaId: number; fecha: string }): string {
@@ -44,17 +45,37 @@ export function crearOcurrenciasService({
   reloj?: Reloj
 }) {
   /**
+   * El `pago` del detalle (HU-15). Pendiente: el precio vigente de la materia, que es lo que se
+   * cobraría hoy (`null` sin precio). Pagada: el importe que se cobró (`importeAplicado`, del motor:
+   * no cambia si después cambia el precio) y los datos de su pago, en una consulta.
+   */
+  async function armarPago(
+    ocurrencia: Ocurrencia,
+    precioVigente: number | null,
+  ): Promise<NonNullable<OcurrenciaDetalle['pago']>> {
+    const { estado, pagoId, importeAplicado } = ocurrencia.pago
+    if (estado === 'PENDIENTE') return { estado, importeVigente: precioVigente }
+
+    // No puede faltar: el motor marca `PAGADO` porque existe el `PagoTurno` de ese pago.
+    const pago = pagoId === undefined ? null : await repository.buscarPago(pagoId)
+    if (!pago || pagoId === undefined || importeAplicado === undefined) {
+      throw new AppError(MENSAJE_PAGO_INCONSISTENTE, 500)
+    }
+    return { estado, pagoId, importe: importeAplicado, ...pago }
+  }
+
+  /**
    * Detalle de una ocurrencia (HU-02, HU-13 a HU-20): combina la ocurrencia calculada por el
-   * motor (estado, cancelación, fin efectivo), lo que le falta del turno (DNI, observaciones,
+   * motor (estado, pago, cancelación, fin efectivo), lo que le falta del turno (DNI, observaciones,
    * temas, auditoría), la finalización de su hora si la tiene y su prioridad.
    *
    * En un recurrente, "Finalizar" y `serie.finalizacion` se resuelven sobre las filas de su serie
    * que son de la misma hora (todos sus tramos, decisiones T-103 y T-104): la finalización puede
    * estar registrada en otro tramo de esa hora.
    *
-   * `PROFESOR` sólo puede ver el turno si es suyo: si no, 403 con las cuatro acciones en `false`
-   * (no se filtra antes: primero hay que saber de quién es el turno, y eso ya resuelve el 404).
-   * `MESA_ENTRADAS` no tiene esta restricción (`actor` es opcional a propósito para eso).
+   * `PROFESOR` sólo puede ver el turno si es suyo (si no, 403; no se filtra antes: primero hay que
+   * saber de quién es el turno, y eso ya resuelve el 404). Ve el turno sin operar ni cobrar: las
+   * cuatro acciones en `false` y `pago: null`. `MESA_ENTRADAS` no tiene esta restricción.
    */
   async function obtenerDetalle(
     turnoId: number,
@@ -110,17 +131,18 @@ export function crearOcurrenciasService({
             }),
           ) ?? null)
 
-    const acciones =
-      actor.role === 'PROFESOR'
-        ? ACCIONES_SIN_PERMISO
-        : calcularAcciones(
-            ocurrencia,
-            filasDeLaHora.map((fila) => ({
-              fechaFin: fila.fechaFin,
-              finalizada: fila.finalizadaDesde !== null,
-            })),
-            fechaHoy,
-          )
+    const esProfesor = actor.role === 'PROFESOR'
+    const acciones = esProfesor
+      ? ACCIONES_SIN_PERMISO
+      : calcularAcciones(
+          ocurrencia,
+          filasDeLaHora.map((fila) => ({
+            fechaFin: fila.fechaFin,
+            finalizada: fila.finalizadaDesde !== null,
+          })),
+          fechaHoy,
+        )
+    const pago = esProfesor ? null : await armarPago(ocurrencia, datos.precioVigente)
 
     return {
       turnoId: ocurrencia.turnoId,
@@ -150,6 +172,7 @@ export function crearOcurrenciasService({
       observaciones: datos.observaciones,
       temas: datos.temas,
       cancelacion: cancelacion ?? null,
+      pago,
       prioridad: prioridadPorClave?.prioridad ?? null,
       examen: prioridadPorClave?.examen ?? null,
       acciones,
@@ -160,7 +183,10 @@ export function crearOcurrenciasService({
     }
   }
 
-  /** Ítem de `GET /ocurrencias`, con la prioridad y `cancelable` (mismas reglas que `acciones.cancelar`). */
+  /**
+   * Ítem de `GET /ocurrencias`, con el estado de pago (del motor, sin consultas), la prioridad y
+   * `cancelable` (mismas reglas que `acciones.cancelar`: una pagada no se puede tildar).
+   */
   function aItem(
     ocurrencia: Ocurrencia,
     fechaHoy: string,
@@ -180,6 +206,7 @@ export function crearOcurrenciasService({
       materia: ocurrencia.materia,
       tipo: ocurrencia.tipo,
       estado: ocurrencia.estado,
+      estadoPago: ocurrencia.pago.estado,
       prioridad,
       // Sin las filas de la hora: acá sólo se usa `cancelar`, que no las mira.
       cancelable: calcularAcciones(ocurrencia, [], fechaHoy).cancelar.habilitada,

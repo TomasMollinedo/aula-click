@@ -7,13 +7,14 @@ import type {
   Finalizacion,
   Ocurrencia,
   OcurrenciasRepository,
+  PagoDeOcurrencia,
 } from '../ocurrencias.repository'
 import { MENSAJE_FUERA_DE_VENTANA, MENSAJE_RANGO_INVERTIDO } from '../ocurrencias.reglas'
 import { crearOcurrenciasService } from '../ocurrencias.service'
 
-// El service de `ocurrencias` (T-43): arma el detalle de una ocurrencia y los turnos de un alumno,
-// sin pago (a pedido explícito, ver `ocurrencias.reglas.ts`). El repository se reemplaza por uno
-// falso: el motor de T-30 y `leerPrioridades` de T-31 ya están probados en sus propias features.
+// El service de `ocurrencias` (T-43): arma el detalle de una ocurrencia (con su pago) y los turnos
+// de un alumno. El repository se reemplaza por uno falso: el motor de T-30, `leerPrioridades` de
+// T-31 y `leerPagoDeOcurrencia` de `pagos` ya están probados en sus propias features.
 
 const HOY = '2026-09-22'
 const relojFijo = () => new Date('2026-09-22T15:00:00Z')
@@ -66,10 +67,20 @@ const DATOS_ADICIONALES = {
   alumnoDni: '40123456',
   observaciones: null,
   temas: null,
+  precioVigente: 8000,
   createdAt: '2026-08-01T13:00:00.000Z',
   updatedAt: '2026-08-01T13:00:00.000Z',
   createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
   updatedBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
+}
+
+/** Lo que `pagos` devuelve del pago 31 (el importe no está acá: es el aplicado, del motor). */
+const PAGO: PagoDeOcurrencia = {
+  numeroComprobante: 1024,
+  fechaPago: '2026-09-20',
+  formaPago: { id: 1, nombre: 'Efectivo' },
+  registradoPor: { id: 'usr_mesa', nombre: 'Marta', apellido: 'Ruiz' },
+  registradoEl: '2026-09-20T14:30:00.000Z',
 }
 
 const actorMesa: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
@@ -83,6 +94,7 @@ function crearRepositories() {
       buscarDatosAdicionales: vi.fn<OcurrenciasRepository['buscarDatosAdicionales']>(),
       leerFilasDeLaHora: vi.fn<OcurrenciasRepository['leerFilasDeLaHora']>(),
       buscarFinalizacion: vi.fn<OcurrenciasRepository['buscarFinalizacion']>(),
+      buscarPago: vi.fn<OcurrenciasRepository['buscarPago']>(),
       leerOcurrenciasDelAlumno: vi.fn<OcurrenciasRepository['leerOcurrenciasDelAlumno']>(),
       resolverUsuarioAuditoria: vi.fn<OcurrenciasRepository['resolverUsuarioAuditoria']>(),
       leerPrioridades: vi.fn<OcurrenciasRepository['leerPrioridades']>(),
@@ -159,6 +171,120 @@ describe('obtenerDetalle', () => {
       reprogramar: { visible: false },
       registrarPago: { visible: false },
     })
+  })
+
+  it('profesor dueño del turno: no ve el pago (`pago: null`), ni pendiente ni pagado, y no se consulta', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    expect((await service.obtenerDetalle(31, HOY, actorProfesorDueño)).pago).toBeNull()
+
+    repos.repository.buscarOcurrencia.mockResolvedValue(
+      ocurrencia({
+        turnoId: 31,
+        fecha: HOY,
+        pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 },
+      }),
+    )
+    expect((await service.obtenerDetalle(31, HOY, actorProfesorDueño)).pago).toBeNull()
+    expect(repos.repository.buscarPago).not.toHaveBeenCalled()
+  })
+
+  it('pendiente: `pago` trae el importe vigente de la materia, sin consultar ningún pago', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(detalle.pago).toEqual({ estado: 'PENDIENTE', importeVigente: 8000 })
+    expect(detalle.acciones.registrarPago).toEqual({ visible: true })
+    expect(detalle.acciones.cancelar).toEqual({ visible: true, habilitada: true })
+    expect(repos.repository.buscarPago).not.toHaveBeenCalled()
+  })
+
+  it('pendiente y la materia no tiene precio: `importeVigente: null`; el botón se ofrece igual (decide el 409 SIN_PRECIO)', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    repos.repository.buscarDatosAdicionales.mockResolvedValue({
+      ...DATOS_ADICIONALES,
+      precioVigente: null,
+    })
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(detalle.pago).toEqual({ estado: 'PENDIENTE', importeVigente: null })
+    expect(detalle.acciones.registrarPago).toEqual({ visible: true })
+  })
+
+  it('pendiente y posterior al tope de cobro (hoy + 56): no se ofrece registrar el pago', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(
+      ocurrencia({ turnoId: 31, fecha: '2026-11-18' }),
+    )
+
+    const detalle = await service.obtenerDetalle(31, '2026-11-18', actorMesa)
+    expect(detalle.pago).toEqual({ estado: 'PENDIENTE', importeVigente: 8000 })
+    expect(detalle.acciones.registrarPago).toEqual({ visible: false })
+  })
+
+  it('pagada: `pago` con los datos de su pago, cancelar deshabilitada con su motivo y sin registrarPago', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(
+      ocurrencia({
+        turnoId: 31,
+        fecha: HOY,
+        pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 8000 },
+      }),
+    )
+    repos.repository.buscarPago.mockResolvedValue(PAGO)
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(repos.repository.buscarPago).toHaveBeenCalledExactlyOnceWith(31)
+    expect(detalle.pago).toEqual({
+      estado: 'PAGADO',
+      pagoId: 31,
+      numeroComprobante: 1024,
+      importe: 8000,
+      formaPago: { id: 1, nombre: 'Efectivo' },
+      fechaPago: '2026-09-20',
+      registradoPor: { id: 'usr_mesa', nombre: 'Marta', apellido: 'Ruiz' },
+      registradoEl: '2026-09-20T14:30:00.000Z',
+    })
+    expect(detalle.acciones.cancelar).toEqual({
+      visible: true,
+      habilitada: false,
+      motivo: 'El turno está pagado: no se puede cancelar',
+    })
+    expect(detalle.acciones.registrarPago).toEqual({ visible: false })
+    // Una pagada se reprograma: el pago acompaña al turno (HU-20).
+    expect(detalle.acciones.reprogramar).toEqual({ visible: true })
+    // Finalizar sale de las filas de la hora (vigente y sin finalizar), no del pago.
+    expect(detalle.acciones.finalizar).toEqual({ visible: true })
+  })
+
+  it('pagada y después cambió el precio de la materia: `importe` sigue siendo el que se cobró', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(
+      ocurrencia({
+        turnoId: 31,
+        fecha: HOY,
+        pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 },
+      }),
+    )
+    repos.repository.buscarDatosAdicionales.mockResolvedValue({
+      ...DATOS_ADICIONALES,
+      precioVigente: 9000,
+    })
+    repos.repository.buscarPago.mockResolvedValue(PAGO)
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(detalle.pago).toMatchObject({ estado: 'PAGADO', importe: 7500 })
+    expect(JSON.stringify(detalle.pago)).not.toContain('9000')
+  })
+
+  it('pagada pero su pago no aparece (inconsistencia): 500, no un detalle a medias', async () => {
+    repos.repository.buscarOcurrencia.mockResolvedValue(
+      ocurrencia({
+        turnoId: 31,
+        fecha: HOY,
+        pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 8000 },
+      }),
+    )
+    repos.repository.buscarPago.mockResolvedValue(null)
+
+    const error = await errorDe(service.obtenerDetalle(31, HOY, actorMesa))
+    expect(error.statusCode).toBe(500)
   })
 
   it('MESA_ENTRADAS no tiene la restricción de dueño (no consulta al profesor)', async () => {
@@ -454,9 +580,29 @@ describe('listarDelAlumno', () => {
       materia: { id: 3, nombre: 'Matemática' },
       tipo: 'RECURRENTE',
       estado: 'AGENDADO',
+      estadoPago: 'PENDIENTE',
       prioridad: null,
       cancelable: true,
     })
+  })
+
+  it('cada ítem lleva su `estadoPago`; una pagada no es `cancelable`, y no se consulta ningún pago', async () => {
+    repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: HOY }),
+      ocurrencia({
+        turnoId: 2,
+        fecha: HOY,
+        pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 8000 },
+      }),
+    ])
+
+    const items = await service.listarDelAlumno({ alumnoId: 12 })
+    expect(items).toEqual([
+      expect.objectContaining({ turnoId: 1, estadoPago: 'PENDIENTE', cancelable: true }),
+      expect.objectContaining({ turnoId: 2, estadoPago: 'PAGADO', cancelable: false }),
+    ])
+    expect(repos.repository.buscarPago).not.toHaveBeenCalled()
+    expect(repos.repository.buscarDatosAdicionales).not.toHaveBeenCalled()
   })
 
   it('sin turnos en el rango, devuelve un arreglo vacío', async () => {
