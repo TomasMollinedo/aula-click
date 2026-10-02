@@ -105,7 +105,8 @@ src/
 │   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
 │   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
 │   │                                   # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
-│   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque
+│   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque;
+│   │                                   # el listado es una grilla de tarjetas con foto (ProfesoresGrid + ProfesorCard), no una tabla
 │   ├── turnos/                         # registrar turno (HU-07) y reprogramar un turno (HU-20, T-50)
 │   │   ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts
 │   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, errores-reprogramaciones.ts, formato-reprogramaciones.ts
