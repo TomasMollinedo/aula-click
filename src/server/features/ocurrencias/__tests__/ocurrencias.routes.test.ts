@@ -189,7 +189,7 @@ describe('GET /ocurrencias', () => {
     ['sin alumnoId', ''],
     ['alumnoId inválido', '?alumnoId=abc'],
     ['hasta anterior a desde', '?alumnoId=12&desde=2026-09-22&hasta=2026-09-21'],
-    ['rango fuera de la ventana', '?alumnoId=12&desde=2026-01-01&hasta=2026-01-02'],
+    ['rango fuera de la ventana', '?alumnoId=12&desde=2025-12-01&hasta=2025-12-31'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
     const res = await pedir(query)
     expect(res.status).toBe(400)

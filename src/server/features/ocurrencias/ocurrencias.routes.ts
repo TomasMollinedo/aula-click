@@ -57,7 +57,7 @@ export const listarOcurrenciasDelAlumnoRoute = createRoute({
   tags,
   summary: 'Turnos de un alumno',
   description:
-    'Las ocurrencias del alumno en `[desde, hasta]` (pestaña "Turnos" de la ficha, HU-02), incluidas las canceladas: cada una con estado, prioridad y si se puede cancelar. Sin `desde`, 30 días atrás de hoy; sin `hasta`, 8 semanas adelante. El rango no puede exceder esa misma ventana. Sin paginar, ordenadas por fecha y hora.',
+    'Las ocurrencias del alumno en `[desde, hasta]` (pestaña "Turnos" de la ficha, HU-02), incluidas las canceladas: cada una con estado, prioridad y si se puede cancelar. Sin `desde`/`hasta`, el año en curso completo (1 de enero a 31 de diciembre). El rango no puede salir del año en curso. Sin paginar, ordenadas por fecha y hora.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: ocurrenciasDelAlumnoQuerySchema },
   responses: {

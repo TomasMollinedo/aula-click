@@ -192,8 +192,8 @@ export function crearOcurrenciasService({
     /**
      * Ocurrencias del alumno en `[desde, hasta]` (HU-02, pestaña "Turnos" de la ficha), incluidas
      * las canceladas: cada una con su prioridad y si se puede cancelar. Sin `desde`/`hasta`, la
-     * ventana por defecto de T-43 (30 días atrás a 8 semanas adelante); un rango explícito que se
-     * salga de esa ventana, o venga invertido, es 400 en `hasta`.
+     * ventana por defecto de T-43/T-66 (el año en curso completo); un rango explícito que se salga
+     * de esa ventana, o venga invertido, es 400 en `hasta`.
      */
     async listarDelAlumno(query: OcurrenciasDelAlumnoQuery): Promise<OcurrenciasDelAlumnoListado> {
       const fechaHoy = hoy(reloj)
