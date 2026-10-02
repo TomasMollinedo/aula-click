@@ -48,7 +48,7 @@ export const ejemploAgendaDiaria = {
       examen: null,
     },
   ],
-  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+  meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
 } satisfies AgendaListado
 
 // Una semana de la agenda propia: el recurrente de los lunes 9–10 (ya pagado el primero, con

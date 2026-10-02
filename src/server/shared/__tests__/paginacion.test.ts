@@ -11,8 +11,8 @@ import {
 } from '../paginacion'
 
 describe('paginacionQuerySchema', () => {
-  it('sin parámetros usa page 1 y pageSize 20', () => {
-    expect(paginacionQuerySchema.parse({})).toEqual({ page: 1, pageSize: 20 })
+  it('sin parámetros usa page 1 y pageSize 10', () => {
+    expect(paginacionQuerySchema.parse({})).toEqual({ page: 1, pageSize: 10 })
   })
 
   it('coerciona los strings del query', () => {
@@ -43,8 +43,8 @@ describe('paginacionQuerySchema', () => {
   it('.extend y .merge mantienen los defaults y los tipos', () => {
     const extendido = paginacionQuerySchema.extend({ q: z.string().optional() })
     const unido = paginacionQuerySchema.merge(z.object({ estado: z.string().optional() }))
-    expect(extendido.parse({ q: 'ana' })).toEqual({ page: 1, pageSize: 20, q: 'ana' })
-    expect(unido.parse({})).toEqual({ page: 1, pageSize: 20 })
+    expect(extendido.parse({ q: 'ana' })).toEqual({ page: 1, pageSize: 10, q: 'ana' })
+    expect(unido.parse({})).toEqual({ page: 1, pageSize: 10 })
     expectTypeOf<z.infer<typeof extendido>>().toEqualTypeOf<{
       page: number
       pageSize: number
@@ -131,6 +131,6 @@ describe('paginacionQuerySchema en un router', () => {
   it('sin query responde 200 con los defaults', async () => {
     const res = await app.request('/x')
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ page: 1, pageSize: 20 })
+    expect(await res.json()).toEqual({ page: 1, pageSize: 10 })
   })
 })

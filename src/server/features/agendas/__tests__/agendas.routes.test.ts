@@ -31,7 +31,7 @@ const EXAMEN = {
   dias: 15,
 }
 
-const paginaVacia = { data: [], meta: { page: 1, pageSize: 20, total: 0, totalPages: 0 } }
+const paginaVacia = { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } }
 
 /** Una ocurrencia del motor, con los campos internos (`busqueda`) que no deben salir. */
 const OCURRENCIA = {
