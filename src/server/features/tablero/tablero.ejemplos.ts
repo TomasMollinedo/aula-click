@@ -25,7 +25,11 @@ export const ejemploTablero = {
     { materia: { id: 5, nombre: 'Química' }, cantidad: 6 },
     { materia: { id: 9, nombre: 'Lengua' }, cantidad: 4 },
   ],
-  profesoresConMasActividad: { disponible: false },
+  profesoresConMasTurnos: [
+    { profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' }, cantidad: 14 },
+    { profesor: { id: 5, nombre: 'Luis', apellido: 'Pérez' }, cantidad: 11 },
+    { profesor: { id: 8, nombre: 'Marta', apellido: 'Ruiz' }, cantidad: 9 },
+  ],
   pagos: { totalCobrado: 96000, totalAdeudado: 296000.5 },
 } satisfies Tablero
 

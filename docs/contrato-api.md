@@ -871,7 +871,10 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
     { "materia": { "id": 2, "nombre": "Matemática" }, "cantidad": 15 },
     { "materia": { "id": 7, "nombre": "Física" }, "cantidad": 9 }
   ],
-  "profesoresConMasActividad": { "disponible": false },
+  "profesoresConMasTurnos": [
+    { "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" }, "cantidad": 14 },
+    { "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" }, "cantidad": 11 }
+  ],
   "pagos": { "totalCobrado": 96000, "totalAdeudado": 296000.5 }
 }
 ```
@@ -879,9 +882,10 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
 - `periodo`: el período pedido. `hoy`: la fecha de hoy en la zona del negocio con la que se calculó toda la respuesta; es la fecha de `pagos.totalAdeudado` y la que separa "sin registrar" de "agendados".
 - `turnos.total`: ocurrencias del período, **incluidas las canceladas**. `cancelados`, `sinRegistrar` y `agendados` traen `cantidad` y `porcentaje` sobre `total`. Los estados son sólo los de la definición F; van como claves, sin textos.
 - **`turnos.agendados` es `null`** si el período no incluye fechas futuras (`hasta` anterior a `hoy`): la UI no muestra el indicador. Si `hasta` es hoy o posterior viene con su cantidad, que puede ser 0.
-- **Indicadores que dependen de la asistencia** (HU-22, próximo sprint; definición F): `turnos.asistio`, `turnos.noAsistio`, `alumnos.atendidos` y `profesoresConMasActividad` son **exactamente `{ "disponible": false }`**, sin `valor` ni otra clave, y no se calculan con ningún sustituto. La UI muestra "Disponible cuando se registre la asistencia".
+- **Indicadores que dependen de la asistencia** (HU-22, próximo sprint; definición F): `turnos.asistio`, `turnos.noAsistio` y `alumnos.atendidos` son **exactamente `{ "disponible": false }`**, sin `valor` ni otra clave, y no se calculan con ningún sustituto.
 - `ocupacion`: `turnos` son las ocurrencias no canceladas del período y `capacidad` la suma de la capacidad efectiva de cada **clase** (una hora de un bloque en una fecha con al menos un turno no cancelado; las horas sin turnos no cuentan). `ocupacion.turnos` es lo mismo que `cupo.ocupados` de las agendas, sumado sobre todas las clases del período, y `capacidad` lo mismo que `cupo.capacidad`. El `porcentaje` **no se recorta a 100**: si a un profesor o a un aula le bajaron la capacidad, puede superarlo.
 - `alumnos.nuevos`: alumnos dados de alta en el período (en hora de Salta), aunque después se hayan dado de baja.
+- `profesoresConMasTurnos` (decisión T-121): hasta 5, por cantidad de turnos **no cancelados** del período en sus horas, es decir, por alumnos con turno con ese profesor; descendente y, en empate, por apellido, nombre y `id`. Trae `{ id, nombre, apellido }` del profesor y nunca datos de sus alumnos. `[]` si no hay ninguno.
 - `materiasConMasDemanda`: hasta 5, por cantidad de turnos **no cancelados** del período, descendente; en empate, por nombre y después por `id`. `[]` si no hay ninguno.
 - `pagos.totalCobrado`: suma de los pagos vigentes con **fecha de pago** dentro del período.
 - **`pagos.totalAdeudado` es la deuda a la fecha (`hoy`), no la del período**: no cambia al cambiar `desde` y `hasta`, y coincide con el `totalAdeudado` de `GET /cuentas/adeudados` sin filtros (misma implementación, ver Cuentas).
