@@ -90,6 +90,7 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
 
   return (
     <AgendaConModo
+      enEncabezado="titulo"
       renderDetalle={renderDetalle}
       renderCalendario={(filtrosDelCalendario) => (
         <CalendarioSemanal

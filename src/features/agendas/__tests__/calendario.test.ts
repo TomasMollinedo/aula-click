@@ -9,6 +9,7 @@ import {
   disponibilidadDeClase,
   etiquetaDeHora,
   FILTROS_GRILLA_VACIOS,
+  type FiltrosGrilla,
   filtrarOcurrencias,
   filtrosDelOrigen,
   hayFiltrosGrilla,
@@ -268,9 +269,11 @@ describe('cupo de la clase', () => {
   it.each([
     [{ ocupados: 4, capacidad: 4 }, 'llena', 0, 'Llena'],
     [{ ocupados: 5, capacidad: 4 }, 'llena', 0, 'Llena'],
-    [{ ocupados: 3, capacidad: 4 }, 'ultimo', 1, '1 libre'],
-    [{ ocupados: 1, capacidad: 4 }, 'libre', 3, '3 libres'],
-    [{ ocupados: 0, capacidad: 2 }, 'libre', 2, '2 libres'],
+    [{ ocupados: 3, capacidad: 4 }, 'casi', 1, '1 cupo libre'],
+    [{ ocupados: 5, capacidad: 8 }, 'normal', 3, '3 cupos libres'],
+    [{ ocupados: 6, capacidad: 8 }, 'casi', 2, '2 cupos libres'],
+    [{ ocupados: 2, capacidad: 6 }, 'normal', 4, '4 cupos libres'],
+    [{ ocupados: 0, capacidad: 2 }, 'normal', 2, '2 cupos libres'],
   ] as const)('disponibilidad de %j', (cupo, nivel, libres, texto) => {
     const disponibilidad = disponibilidadDeClase(cupo)
     expect(disponibilidad).toEqual({ nivel, libres })
@@ -304,38 +307,32 @@ describe('filtros de la grilla', () => {
     expect(hayFiltrosGrilla(FILTROS_GRILLA_VACIOS)).toBe(false)
   })
 
-  it('filtra por materia y por aula, y se combinan', () => {
-    expect(ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, materia: FISICA_ }))).toEqual([
-      2, 3,
-    ])
-    expect(ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, aula: AULA_2 }))).toEqual([2])
+  it('filtra por materia, por aula y por alumno, y se combinan', () => {
+    const filtrar = (cambios: Partial<FiltrosGrilla>) =>
+      ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, ...cambios }))
+    expect(filtrar({ materia: FISICA_ })).toEqual([2, 3])
+    expect(filtrar({ aula: AULA_2 })).toEqual([2])
+    expect(filtrar({ alumno: { id: 3, nombre: 'Núñez, Rosa' } })).toEqual([3])
+    expect(filtrar({ materia: FISICA_, aula: { id: 1, nombre: 'Aula 1' } })).toEqual([3])
+    expect(filtrar({ materia: FISICA_, alumno: { id: 1, nombre: 'Paz, Ana' } })).toEqual([])
+  })
+
+  it('el alumno se filtra por su id: el profesor de la clase no cuenta', () => {
+    // El alumno 1 se llama "Ana" igual que el profesor de las clases 1 y 2.
     expect(
       ids(
-        filtrarOcurrencias(items, { materia: FISICA_, aula: { id: 1, nombre: 'Aula 1' }, q: '' }),
+        filtrarOcurrencias(items, {
+          ...FILTROS_GRILLA_VACIOS,
+          alumno: { id: 1, nombre: 'Paz, Ana' },
+        }),
       ),
-    ).toEqual([3])
-  })
-
-  it('busca al alumno sin importar tildes, mayúsculas ni el orden de las palabras', () => {
-    const buscar = (q: string) => ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, q }))
-    expect(buscar('nunez')).toEqual([3])
-    expect(buscar('ANA paz')).toEqual([1])
-    expect(buscar('paz ana')).toEqual([1])
-    expect(buscar('gom')).toEqual([2])
-    expect(buscar('  ')).toEqual([1, 2, 3])
-    expect(buscar('zzz')).toEqual([])
-  })
-
-  it('la búsqueda es solo por alumno: el nombre del profesor de la clase no cuenta', () => {
-    const buscar = (q: string) => ids(filtrarOcurrencias(items, { ...FILTROS_GRILLA_VACIOS, q }))
-    // "ibarra" es el profesor de 3 y no el apellido de ningún alumno.
-    expect(buscar('ibarra')).toEqual([])
-    // "ana" es el nombre del alumno de 1 y el del profesor de 1 y 2: solo cuenta el del alumno.
-    expect(buscar('ana')).toEqual([1])
+    ).toEqual([1])
   })
 
   it('hayFiltrosGrilla', () => {
-    expect(hayFiltrosGrilla({ ...FILTROS_GRILLA_VACIOS, q: 'ana' })).toBe(true)
+    expect(
+      hayFiltrosGrilla({ ...FILTROS_GRILLA_VACIOS, alumno: { id: 1, nombre: 'Paz, Ana' } }),
+    ).toBe(true)
     expect(hayFiltrosGrilla({ ...FILTROS_GRILLA_VACIOS, aula: AULA_2 })).toBe(true)
   })
 
@@ -343,6 +340,11 @@ describe('filtros de la grilla', () => {
     expect(opcionesDeFiltros(items)).toEqual({
       materias: [FISICA_, MATEMATICA],
       aulas: [{ id: 1, nombre: 'Aula 1' }, AULA_2],
+      alumnos: [
+        { id: 2, nombre: 'Gómez, Luis' },
+        { id: 3, nombre: 'Núñez, Rosa' },
+        { id: 1, nombre: 'Paz, Ana' },
+      ],
     })
   })
 })

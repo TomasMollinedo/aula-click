@@ -192,7 +192,7 @@ export function ProfesorDetalle({ profesorId, rutaBase, renderAgenda }: Profesor
         }
       />
 
-      <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
+      <Tabs value={tab} onValueChange={cambiarTab} className="relative space-y-6">
         {/* Con cuatro tabs, en mobile la barra se desplaza sola en lugar de desbordar la página. */}
         <div className="max-w-full overflow-x-auto">
           <TabsList>

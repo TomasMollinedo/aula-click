@@ -18,13 +18,17 @@ import {
 } from '../calendario'
 import { useDetalleAgenda } from '../hooks/use-detalle-agenda'
 
-// Cómo se ve la disponibilidad de la clase: el color de la palabra y el de la barra. La palabra
-// siempre está escrita: el color nunca es el único canal.
+// Cómo se ve la ocupación de la clase: el color de la palabra y el de la barra. Estos colores se
+// usan solo para la ocupación (normal, casi llena, llena). La palabra siempre está escrita: el
+// color nunca es el único canal.
 const ESTILO_CUPO: Record<NivelDeCupo, { texto: string; barra: string }> = {
   llena: { texto: 'text-cancelado', barra: 'bg-cancelado' },
-  ultimo: { texto: 'text-urgente', barra: 'bg-urgente' },
-  libre: { texto: 'text-confirmado', barra: 'bg-confirmado' },
+  casi: { texto: 'text-urgente', barra: 'bg-urgente' },
+  normal: { texto: 'text-confirmado', barra: 'bg-confirmado' },
 }
+
+// La capacidad de una hora es la menor entre la del profesor y la del aula (docs/dominio.md).
+const AYUDA_CAPACIDAD = 'Capacidad de la clase: la menor entre la del profesor y la del aula'
 
 type BloqueClaseProps = {
   clase: ClaseCalendario
@@ -117,10 +121,10 @@ export function BloqueClase({
           <span className="shrink-0 font-medium">{clase.aula.nombre}</span>
         </span>
 
-        <span className="mt-1 flex flex-col gap-1">
-          <span className="flex items-baseline justify-between gap-2 text-xs">
+        <span className="mt-1 flex flex-col gap-1" title={AYUDA_CAPACIDAD}>
+          <span className="flex flex-wrap items-baseline justify-between gap-x-2 text-xs">
             <span className="font-semibold tabular-nums">
-              {clase.cupo.ocupados}/{clase.cupo.capacidad} alumnos
+              {clase.cupo.ocupados}/{clase.cupo.capacidad} ocupados
             </span>
             <span className={cn('font-semibold', estiloCupo.texto)}>
               {textoDisponibilidad(disponibilidad)}
@@ -176,34 +180,43 @@ function TurnoDeClase({
   const cancelado = turno.estado === 'CANCELADO'
 
   return (
-    <li className="hover:bg-muted/70 relative flex flex-col gap-1 rounded-md px-2 py-1.5">
-      <Link
-        href={hrefDetalle(turno.turnoId, turno.fecha)}
-        scroll={false}
-        onClick={(e) => {
-          if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) marcarAbiertoConLink()
-        }}
-        className={cn(
-          'focus-visible:ring-ring truncate rounded-sm text-sm font-medium after:absolute after:inset-0 after:content-[""] hover:underline focus-visible:ring-2 focus-visible:outline-none',
-          cancelado && 'text-muted-foreground line-through',
-        )}
-      >
-        {turno.alumno.apellido}, {turno.alumno.nombre}
-      </Link>
-      {mostrarMateria && (
-        <span className="text-muted-foreground truncate text-xs">{turno.materia.nombre}</span>
-      )}
-      <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-        <EstadoTurnoBadge estado={turno.estado} />
-        {turno.prioridad && (
-          <PrioridadIndicador
-            prioridad={turno.prioridad}
-            examen={turno.examen ?? undefined}
-            variante="punto"
-            className="relative z-10"
-          />
-        )}
+    <li className="hover:bg-muted/70 relative flex flex-col gap-0.5 rounded-md px-2 py-1.5">
+      {/* Nombre y estado en una sola línea: el nombre se recorta si no entra, el estado no. */}
+      <span className="flex items-center justify-between gap-2">
+        <Link
+          href={hrefDetalle(turno.turnoId, turno.fecha)}
+          scroll={false}
+          onClick={(e) => {
+            if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) marcarAbiertoConLink()
+          }}
+          title={`${turno.alumno.apellido}, ${turno.alumno.nombre}`}
+          className={cn(
+            'focus-visible:ring-ring min-w-0 truncate rounded-sm text-sm font-medium after:absolute after:inset-0 after:content-[""] hover:underline focus-visible:ring-2 focus-visible:outline-none',
+            cancelado && 'text-muted-foreground line-through',
+          )}
+        >
+          {turno.alumno.apellido}, {turno.alumno.nombre}
+        </Link>
+        <span className="shrink-0">
+          <EstadoTurnoBadge estado={turno.estado} />
+        </span>
       </span>
+      {/* La materia solo si la clase mezcla; la prioridad va a su lado en la misma línea. */}
+      {(mostrarMateria || turno.prioridad) && (
+        <span className="flex flex-wrap items-center gap-x-2 text-xs">
+          {mostrarMateria && (
+            <span className="text-muted-foreground min-w-0 truncate">{turno.materia.nombre}</span>
+          )}
+          {turno.prioridad && (
+            <PrioridadIndicador
+              prioridad={turno.prioridad}
+              examen={turno.examen ?? undefined}
+              variante="punto"
+              className="relative z-10"
+            />
+          )}
+        </span>
+      )}
     </li>
   )
 }

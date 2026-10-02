@@ -5,6 +5,7 @@ import type { ReactNode } from 'react'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import type { FiltrosAgenda } from '@/types/agenda'
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
+import { cn } from '@/utils/cn'
 
 import { DetalleAgendaProvider } from '../hooks/use-detalle-agenda'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
@@ -20,6 +21,13 @@ type AgendaConModoProps = {
   renderDetalle: RenderDetalleOcurrencia
   /** Junto al selector, por ejemplo el botón del PDF de la agenda diaria. */
   acciones?: ReactNode
+  /**
+   * Sube el selector y las acciones al borde derecho de un encabezado que está arriba: `'titulo'`,
+   * a la línea del `PageHeader` (desde `sm`); `'pestanas'`, a la de las pestañas de la ficha
+   * (desde `lg`, donde entran junto a ellas). En los dos casos el contenedor de esa pantalla tiene
+   * que ser `relative` y el encabezado, su primer elemento.
+   */
+  enEncabezado?: 'titulo' | 'pestanas'
 }
 
 /**
@@ -36,6 +44,7 @@ export function AgendaConModo({
   renderCalendario,
   renderDetalle,
   acciones,
+  enEncabezado,
 }: AgendaConModoProps) {
   const { modo, cambiarModo } = useModoAgenda()
   const { filtros } = useFiltrosAgenda()
@@ -48,7 +57,13 @@ export function AgendaConModo({
   return (
     <DetalleAgendaProvider value={{ hrefDetalle, marcarAbiertoConLink }}>
       <div className="space-y-4">
-        <div className="flex flex-wrap items-center justify-end gap-3">
+        <div
+          className={cn(
+            'flex flex-wrap items-center justify-end gap-3',
+            enEncabezado === 'titulo' && 'sm:absolute sm:top-0 sm:right-0',
+            enEncabezado === 'pestanas' && 'lg:absolute lg:top-0 lg:right-0',
+          )}
+        >
           <div className="flex flex-wrap items-center gap-3">
             {acciones}
             <SelectorModoAgenda value={modo} onChange={cambiarModo} />

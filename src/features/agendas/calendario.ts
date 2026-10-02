@@ -156,24 +156,29 @@ export function textoAlumnos(cantidad: number): string {
   return cantidad === 1 ? '1 alumno' : `${cantidad} alumnos`
 }
 
-/** Cómo viene la disponibilidad de una clase: llena, queda un solo lugar o hay lugar de sobra. */
-export type NivelDeCupo = 'llena' | 'ultimo' | 'libre'
+/** Cómo viene la ocupación de una clase: normal, casi llena (queda poco lugar) o llena. */
+export type NivelDeCupo = 'llena' | 'casi' | 'normal'
+
+// Desde esta ocupación (o cuando queda un solo lugar) la clase se marca como casi llena.
+const OCUPACION_CASI_LLENA = 0.75
 
 /**
- * La disponibilidad de la clase a partir de su cupo (los números los calcula la API): llena si
- * `ocupados >= capacidad` (la misma regla del alta de turnos), y avisa aparte cuando queda un solo
- * lugar. `libres` nunca es negativo.
+ * La ocupación de la clase a partir de su cupo (los números los calcula la API): llena si
+ * `ocupados >= capacidad` (la misma regla del alta de turnos); casi llena si queda un solo lugar o
+ * se ocupó el 75 % o más. `libres` nunca es negativo.
  */
 export function disponibilidadDeClase(cupo: CupoClase): { nivel: NivelDeCupo; libres: number } {
   const libres = Math.max(cupo.capacidad - cupo.ocupados, 0)
   if (cupo.ocupados >= cupo.capacidad) return { nivel: 'llena', libres: 0 }
-  return { nivel: libres === 1 ? 'ultimo' : 'libre', libres }
+  const casiLlena =
+    libres === 1 || cupo.ocupados / Math.max(cupo.capacidad, 1) >= OCUPACION_CASI_LLENA
+  return { nivel: casiLlena ? 'casi' : 'normal', libres }
 }
 
-/** `'Llena'`, `'1 libre'`, `'3 libres'`: corto, para que entre al lado de "3/6 alumnos". */
+/** `'Llena'`, `'1 cupo libre'`, `'4 cupos libres'`: acompaña a "2/6 ocupados". */
 export function textoDisponibilidad({ nivel, libres }: { nivel: NivelDeCupo; libres: number }) {
   if (nivel === 'llena') return 'Llena'
-  return libres === 1 ? '1 libre' : `${libres} libres`
+  return libres === 1 ? '1 cupo libre' : `${libres} cupos libres`
 }
 
 /** Cuántos de los turnos de la clase están cancelados. */
@@ -245,77 +250,66 @@ export function tituloDeSemana(desde: string): string {
 // Filtros de la grilla: materia, aula y alumno
 // ---------------------------------------------------------------------------------------------
 
-// Se aplican acá, sobre la semana que ya llegó, y no en la API: son coincidencias de texto o de id
+// Se aplican acá, sobre la semana que ya llegó, y no en la API: son coincidencias de id
 // sin reglas de negocio, así responden al instante y los selectores se arman con lo que hay en la
 // semana. Los de estado, prioridad y profesor siguen siendo de la API (`useFiltrosAgenda`).
 
 export type FiltrosGrilla = {
   materia: Referencia | null
   aula: Referencia | null
-  /** Lo que se escribió en el buscador de alumnos; vacío = sin búsqueda. */
-  q: string
+  /** El alumno elegido (`nombre` es "Apellido, Nombre"); `null` = todos. */
+  alumno: Referencia | null
 }
 
-export const FILTROS_GRILLA_VACIOS: FiltrosGrilla = { materia: null, aula: null, q: '' }
+export const FILTROS_GRILLA_VACIOS: FiltrosGrilla = { materia: null, aula: null, alumno: null }
 
 export function hayFiltrosGrilla(filtros: FiltrosGrilla): boolean {
-  return filtros.materia !== null || filtros.aula !== null || filtros.q.trim() !== ''
+  return filtros.materia !== null || filtros.aula !== null || filtros.alumno !== null
 }
 
-/** Sin tildes ni mayúsculas, para comparar nombres como lo hace la búsqueda del backend (T-36). */
-function normalizar(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-}
-
-/** Las palabras de la búsqueda, normalizadas y sin vacías. */
-function terminosDe(q: string): string[] {
-  return normalizar(q).split(/\s+/).filter(Boolean)
-}
-
-function coincide(nombre: string, terminos: readonly string[]): boolean {
-  const texto = normalizar(nombre)
-  return terminos.every((termino) => texto.includes(termino))
+/** Cómo se llama un alumno en el selector y en el calendario: "Apellido, Nombre". */
+function nombreDeAlumno({ apellido, nombre }: { apellido: string; nombre: string }): string {
+  return `${apellido}, ${nombre}`
 }
 
 /**
- * Las ocurrencias que pasan los filtros de la grilla, en el mismo orden. La búsqueda es solo por
- * alumno (para un profesor está su filtro): coincide si **todas** sus palabras están en el nombre
- * del alumno, en cualquier orden ("ana paz" o "paz ana"), sin importar tildes ni mayúsculas.
+ * Las ocurrencias que pasan los filtros de la grilla, en el mismo orden. Los tres son un valor
+ * elegido de un selector (materia, aula y alumno) y se combinan.
  */
 export function filtrarOcurrencias(
   items: readonly CalendarioItem[],
-  { materia, aula, q }: FiltrosGrilla,
+  { materia, aula, alumno }: FiltrosGrilla,
 ): CalendarioItem[] {
-  const terminos = terminosDe(q)
   return items.filter(
     (item) =>
       (materia === null || item.materia.id === materia.id) &&
       (aula === null || item.aula.id === aula.id) &&
-      (terminos.length === 0 ||
-        coincide(`${item.alumno.apellido} ${item.alumno.nombre}`, terminos)),
+      (alumno === null || item.alumno.id === alumno.id),
   )
 }
 
 /**
- * Las materias y las aulas de la semana, para los selectores, ordenadas por nombre. Salen de lo que
- * llegó de la API, antes de filtrar con la grilla: elegir una no deja a las demás sin opción.
+ * Las materias, las aulas y los alumnos de la semana, para los selectores, ordenados por nombre.
+ * Salen de lo que llegó de la API, antes de filtrar con la grilla: elegir una no deja a las demás
+ * sin opción.
  */
 export function opcionesDeFiltros(items: readonly CalendarioItem[]): {
   materias: Referencia[]
   aulas: Referencia[]
+  alumnos: Referencia[]
 } {
   const materias = new Map<number, Referencia>()
   const aulas = new Map<number, Referencia>()
-  for (const { materia, aula } of items) {
+  const alumnos = new Map<number, Referencia>()
+  for (const { materia, aula, alumno } of items) {
     materias.set(materia.id, materia)
     aulas.set(aula.id, aula)
+    alumnos.set(alumno.id, { id: alumno.id, nombre: nombreDeAlumno(alumno) })
   }
   const porNombre = (a: Referencia, b: Referencia) => a.nombre.localeCompare(b.nombre, 'es')
   return {
     materias: [...materias.values()].sort(porNombre),
     aulas: [...aulas.values()].sort(porNombre),
+    alumnos: [...alumnos.values()].sort(porNombre),
   }
 }

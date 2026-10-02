@@ -13,7 +13,7 @@ type AgendaPropiaPantallaProps = Parameters<typeof AgendaPropiaListado>[0]
 // compone `app/` (`renderDetalle`).
 export function AgendaPropiaPantalla(props: AgendaPropiaPantallaProps) {
   return (
-    <div className="space-y-8">
+    <div className="relative space-y-8">
       <PageHeader title="Mi agenda" description="Tus turnos por día o por semana" />
       <Suspense fallback={<Skeleton className="h-96 w-full rounded-2xl" />}>
         <AgendaPropiaListado {...props} />
