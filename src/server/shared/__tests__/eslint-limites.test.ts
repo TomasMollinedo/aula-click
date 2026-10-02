@@ -40,6 +40,12 @@ describe(
       ['src/server/shared/x.ts', '@/config/env'],
       ['src/server/shared/__tests__/x.test.ts', '../../../config/env'],
       ['src/server/shared/x.ts', '@/features/alumnos/alumnos.types'],
+      // Los .tsx (primitivas de los documentos PDF) caen en la misma zona.
+      ['src/server/shared/pdf/x.tsx', '@/server/features/centro/centro.condiciones'],
+      ['src/server/shared/pdf/x.tsx', '../../features/centro/centro.condiciones'],
+      ['src/server/shared/pdf/x.tsx', '@/lib/prisma'],
+      ['src/server/shared/pdf/x.tsx', '@/config/env'],
+      ['src/server/shared/pdf/x.tsx', '@/components/impresion/DocumentoOficial'],
     ])('desde %s, importar %s da error', async (filePath, ruta) => {
       expect(await erroresDeImport(filePath, importar(ruta))).toHaveLength(1)
     })
@@ -59,6 +65,12 @@ describe('ESLint: las features y shared/ pueden importar de shared/', { timeout:
   it('shared/zod.ts importa z de @hono/zod-openapi', async () => {
     const codigo = "import { z } from '@hono/zod-openapi'\nexport { z }\n"
     expect(await erroresDeImport('src/server/shared/zod.ts', codigo)).toEqual([])
+  })
+
+  it('shared/pdf/*.tsx importa @react-pdf/renderer y otro archivo de shared/', async () => {
+    const codigo =
+      "import { View } from '@react-pdf/renderer'\nimport { px } from './estilos'\nexport { View, px }\n"
+    expect(await erroresDeImport('src/server/shared/pdf/x.tsx', codigo)).toEqual([])
   })
 
   it('shared/ importa otro archivo de shared/ con ruta relativa', async () => {
@@ -90,6 +102,11 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
       'src/server/features/turnos/turnos.condiciones.ts',
       '@/server/features/profesores/profesores.repository',
     ],
+    // Una plantilla PDF (.tsx) sigue las reglas de su feature.
+    ['src/server/features/pagos/pagos.pdf.tsx', '@/server/features/centro/centro.datos'],
+    ['src/server/features/pagos/pagos.pdf.tsx', '@/server/features/centro/centro.logo-pdf'],
+    ['src/server/features/pagos/pagos.pdf.tsx', '@/lib/prisma'],
+    ['src/server/features/pagos/pagos.pdf.tsx', '@/utils/moneda'],
   ])('desde %s, importar %s da error', async (filePath, ruta) => {
     expect(await erroresDeImport(filePath, importar(ruta))).toHaveLength(1)
   })
@@ -110,6 +127,10 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
       'src/server/features/bloques/__tests__/bloques.service.test.ts',
       '@/server/features/profesores/profesores.validation',
     ],
+    ['src/server/features/pagos/pagos.pdf.tsx', '@/server/features/centro/centro.condiciones'],
+    ['src/server/features/pagos/pagos.pdf.tsx', '@/server/shared/pdf/tabla'],
+    ['src/server/features/pagos/pagos.pdf.tsx', './pagos.formato'],
+    ['src/server/features/centro/centro.condiciones.ts', './centro.logo-pdf'],
   ])('desde %s, importar %s está permitido', async (filePath, ruta) => {
     expect(await erroresDeImport(filePath, importar(ruta))).toEqual([])
   })

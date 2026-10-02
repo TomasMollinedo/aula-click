@@ -6,10 +6,10 @@ Si algo de este archivo cambia, se avisa al otro lado y se actualiza acá en el 
 
 ## URLs
 
-| Prefijo         | Qué es                              | Quién lo llama desde el frontend                      |
-| --------------- | ----------------------------------- | ----------------------------------------------------- |
-| `/api/v1/...`   | API de negocio (Hono + OpenAPI)     | Solo `fetchJson`, desde `src/features/<entidad>/api/` |
-| `/api/auth/...` | Better Auth: login, logout y sesión | Solo el `authClient` de `src/features/auth/`          |
+| Prefijo         | Qué es                              | Quién lo llama desde el frontend                                                                                     |
+| --------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `/api/v1/...`   | API de negocio (Hono + OpenAPI)     | Solo `fetchJson`, desde `src/features/<entidad>/api/` (salvo los documentos PDF, que se enlazan: ver Documentos PDF) |
+| `/api/auth/...` | Better Auth: login, logout y sesión | Solo el `authClient` de `src/features/auth/`                                                                         |
 
 Todo es mismo origen: la sesión viaja en una cookie y no hay tokens que manejar a mano.
 
@@ -557,10 +557,11 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 HU-15 (T-51). Registrar el pago de una o varias ocurrencias de un alumno y leer su comprobante. Reglas en `dominio.md` → Pagos. **Los importes, el total y el vuelto los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
 
-| Endpoint                 | Roles           | Qué hace                                                                                            |
-| ------------------------ | --------------- | --------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/pagos`     | `MESA_ENTRADAS` | Registra el pago en efectivo, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409 |
-| `GET /api/v1/pagos/{id}` | `MESA_ENTRADAS` | Datos del comprobante. 404 si el pago no existe                                                     |
+| Endpoint                     | Roles           | Qué hace                                                                                                   |
+| ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/pagos`         | `MESA_ENTRADAS` | Registra el pago en efectivo, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409        |
+| `GET /api/v1/pagos/{id}`     | `MESA_ENTRADAS` | Datos del comprobante. 404 si el pago no existe                                                            |
+| `GET /api/v1/pagos/{id}/pdf` | `MESA_ENTRADAS` | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 404 si el pago no existe |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
@@ -652,6 +653,12 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 - `vuelto`: recalculado en cada lectura (`montoRecibido - total`); `null` sin monto recibido.
 - `registradoPor` es un `UsuarioAuditoria`; `registradoEl`, un instante ISO 8601 en UTC.
 - `numeroComprobante` es correlativo y único, pero puede tener huecos (decisión T-62).
+
+**`GET /pagos/{id}/pdf`**: el comprobante de pago como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismos roles, misma validación del `id` y mismo 404 que `GET /pagos/{id}`, y **los mismos datos**: los importes, el total y el vuelto son los de esa respuesta, sin recalcular (decisiones T-63 y T-80).
+
+- Nombre del archivo: `comprobante-<numeroComprobante>.pdf` (sólo el número: `comprobante-1024.pdf`).
+- Contenido: número junto al título, alumno, DNI, fecha y forma de pago, la tabla de turnos (fecha, horario, materia, profesor e importe), el total con el monto recibido y el vuelto si los hay, las observaciones y el pie "Registrado por <nombre apellido> el dd/MM/yyyy HH:mm" (`registradoPor` y `registradoEl`, en la hora del negocio) con la leyenda "Comprobante interno de pago · No válido como factura" (decisión T-111).
+- El frontend no lo pide con `fetchJson`: lo enlaza con `<a href="/api/v1/pagos/{id}/pdf" target="_blank">` (`hrefComprobante`).
 
 ## Cuentas
 
@@ -906,6 +913,27 @@ Los datos del centro para el encabezado de los documentos oficiales (turno, agen
 **`GET /api/v1/centro/logo`**: la imagen del logo (`image/svg+xml`), con `Cache-Control` largo (`public, max-age=604800`): no hay pantalla para reemplazarlo, así que no hace falta revalidar seguido. Se lee de un archivo de la propia feature (`src/server/features/centro/assets/logo.svg`), no de `public/` (la imagen va detrás de la sesión, como el resto de la API) ni de `src/config`.
 
 - Errores: los mismos 401/403 que el endpoint anterior.
+
+Los documentos PDF no piden estos endpoints: el backend arma el encabezado con los mismos datos y el mismo logo (ver Documentos PDF).
+
+## Documentos PDF
+
+Los documentos oficiales (hoy, el comprobante de pago: `GET /pagos/{id}/pdf`) los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
+
+- **200** con el cuerpo binario del PDF y estos headers:
+
+  | Header                   | Valor                                                            | Para qué                                                                           |
+  | ------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+  | `Content-Type`           | `application/pdf`                                                |                                                                                    |
+  | `Content-Disposition`    | `inline; filename="<nombre>.pdf"; filename*=UTF-8''<nombre>.pdf` | `inline`: se abre en el visor, no se descarga solo. El nombre es el de la descarga |
+  | `Cache-Control`          | `no-store`                                                       | Son datos personales: no se guardan en caché                                       |
+  | `X-Content-Type-Options` | `nosniff`                                                        |                                                                                    |
+
+- **Nombre del archivo:** en ASCII, sin tildes ni espacios, en minúsculas y con guiones (`comprobante-1024.pdf`). Cada endpoint dice cuál es el suyo.
+- **Encabezado del documento:** logo, nombre, dirección y teléfono del centro (los de [Centro](#centro)); **"Emitido por"** es el usuario de la sesión que pide el PDF (nombre y apellido) y la **fecha de emisión** es el instante del servidor, en la zona horaria del negocio, como `dd/MM/yyyy HH:mm`.
+- **Metadatos del PDF:** el título es el del documento con su referencia ("Comprobante de pago N° 1024"), el autor es el centro y el idioma, `es`.
+- **Errores: JSON**, con el formato y los códigos de [Errores](#errores) (400 `VALIDACION`, 401 `NO_AUTENTICADO`, 403 `SIN_PERMISO`, 404 `NO_ENCONTRADO`), como el resto de la API. Comportamiento conocido: como el enlace se abre en una pestaña nueva, ante un error (por ejemplo, un 401 con la sesión vencida) esa pestaña muestra el JSON; no hay páginas de error HTML.
+- En el OpenAPI, el 200 se declara como `application/pdf` con `type: string, format: binary`.
 
 ## Filtros
 

@@ -97,7 +97,7 @@ Fuera de `src/`: `prisma/schema.prisma`, `prisma/seed.ts`, `prisma7.config.ts` (
 
 ## Reglas que hace cumplir ESLint
 
-Están en `eslint.config.mjs`. `pnpm lint` (y por lo tanto `pnpm check`, el pre-push y el CI) falla si se rompen. "Carpeta" incluye importarla entera (`@/types`) o cualquier cosa adentro (`@/types/index`).
+Están en `eslint.config.mjs`. `pnpm lint` (y por lo tanto `pnpm check`, el pre-push y el CI) falla si se rompen. "Carpeta" incluye importarla entera (`@/types`) o cualquier cosa adentro (`@/types/index`). Las zonas del backend valen para `.ts` y `.tsx`: las plantillas de los documentos PDF (`src/server/shared/pdf/`, `<dominio>.pdf.tsx`) son `.tsx` y siguen las mismas reglas que el resto de su zona.
 
 | Regla                      | Qué prohíbe                                                                                                                                                                         | Dónde aplica                                                                                                                                                                                                   |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

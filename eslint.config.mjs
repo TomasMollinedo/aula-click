@@ -8,7 +8,8 @@ import prettier from 'eslint-config-prettier/flat'
 //
 // no-restricted-imports NO se acumula entre bloques: si dos bloques aplican al mismo archivo,
 // gana el último. Por eso cada bloque declara todo lo suyo, y los bloques de "Imports por zona"
-// están armados para que cada archivo caiga en uno solo.
+// están armados para que cada archivo caiga en uno solo. Las zonas del backend cubren .ts y .tsx
+// (las plantillas de los documentos PDF son .tsx: shared/pdf/ y <dominio>.pdf.tsx).
 //
 // Imports relativos:
 // - Dentro de una misma feature de API se importa con ruta relativa (./x.service, ../x.service
@@ -167,12 +168,12 @@ const eslintConfig = defineConfig([
 
   // Backend: lib/ y config/ (lib/prisma.ts y lib/auth.ts sí usan Prisma).
   {
-    files: ['src/lib/**/*.ts', 'src/config/**/*.ts'],
+    files: ['src/lib/**/*.{ts,tsx}', 'src/config/**/*.{ts,tsx}'],
     rules: { 'no-restricted-imports': restrict({ patterns: [frontendFromBackend] }) },
   },
   // Backend: server/ salvo features/, shared/, router.ts y app.ts (errors/, middlewares/).
   {
-    files: ['src/server/**/*.ts'],
+    files: ['src/server/**/*.{ts,tsx}'],
     ignores: [
       'src/server/features/**',
       'src/server/shared/**',
@@ -196,7 +197,7 @@ const eslintConfig = defineConfig([
   // Backend: shared/ no importa features, lib/ (Prisma incluido), config/, generated/ ni frontend.
   // Lo prueba shared/__tests__/eslint-limites.test.ts.
   {
-    files: ['src/server/shared/**/*.ts'],
+    files: ['src/server/shared/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': restrict({
         patterns: [...serverInfraFromShared, ...featuresFromShared, frontendFromBackend],
@@ -205,7 +206,7 @@ const eslintConfig = defineConfig([
   },
   // Backend: features, salvo repositories, condiciones y tests.
   {
-    files: ['src/server/features/**/*.ts'],
+    files: ['src/server/features/**/*.{ts,tsx}'],
     ignores: [
       'src/server/features/**/*.repository.ts',
       'src/server/features/**/*.condiciones.ts',
@@ -240,7 +241,7 @@ const eslintConfig = defineConfig([
   // Backend: tests de las features. Pueden importar tipos de la validation de otra feature (para
   // armar sus falsos), pero no su service, controller ni routes, ni Prisma.
   {
-    files: ['src/server/features/**/__tests__/**/*.ts'],
+    files: ['src/server/features/**/__tests__/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': restrict({
         patterns: [prismaImports, crossFeatureImports, frontendFromBackend],
@@ -249,7 +250,7 @@ const eslintConfig = defineConfig([
   },
   // Backend: adaptadores de Next para Hono y Better Auth.
   {
-    files: ['src/app/api/**/*.ts'],
+    files: ['src/app/api/**/*.{ts,tsx}'],
     rules: {
       'no-restricted-imports': restrict({ patterns: [prismaImports, frontendFromBackend] }),
     },

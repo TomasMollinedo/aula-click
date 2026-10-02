@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { dateAFecha, diaSemanaISO, fechaADate, hoy, proximaFechaDelDia, sumarDias } from '../fechas'
+import {
+  ahora,
+  dateAFecha,
+  diaSemanaISO,
+  fechaADate,
+  hoy,
+  proximaFechaDelDia,
+  sumarDias,
+} from '../fechas'
 
 describe('hoy', () => {
   afterEach(() => {
@@ -22,6 +30,23 @@ describe('hoy', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-23T02:30:00Z'))
     expect(hoy()).toBe('2026-09-22')
+  })
+})
+
+describe('ahora', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+  })
+
+  it('devuelve el instante del reloj inyectado', () => {
+    const instante = new Date('2026-09-23T02:30:00Z')
+    expect(ahora(() => instante)).toBe(instante)
+  })
+
+  it('sin reloj usa el del sistema', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-23T02:30:00Z'))
+    expect(ahora().toISOString()).toBe('2026-09-23T02:30:00.000Z')
   })
 })
 

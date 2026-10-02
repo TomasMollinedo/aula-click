@@ -59,3 +59,5 @@ skills-lock.json
 
 # Override local de puertos de Docker (por si chocan con otro proyecto en esta máquina)
 docker-compose.override.yml
+
+pdf-referencia/

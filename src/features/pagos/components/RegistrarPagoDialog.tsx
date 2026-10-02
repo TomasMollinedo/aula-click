@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
-import { AlertCircle, CircleCheck, Info, Printer, Receipt } from 'lucide-react'
+import { AlertCircle, CircleCheck, Info, Receipt } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -334,10 +334,10 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
                   href={hrefComprobante(pagoRegistrado.pagoId)}
                   target="_blank"
                   rel="noopener noreferrer"
+                  aria-label={`Ver comprobante: ${textoNumeroComprobante(pagoRegistrado.numeroComprobante)} (abre el PDF en otra pestaña)`}
                 >
-                  <Printer />
-                  Imprimir comprobante
-                  <span className="sr-only">(se abre en otra pestaña)</span>
+                  <Receipt />
+                  Ver comprobante
                 </a>
               </Button>
             </>
