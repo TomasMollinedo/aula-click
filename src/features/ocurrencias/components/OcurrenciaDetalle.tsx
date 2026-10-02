@@ -31,6 +31,11 @@ export type OcurrenciaDetalleProps = {
    */
   renderAcciones: (ocurrencia: OcurrenciaDetalleDatos) => ReactNode
   /**
+   * Las acciones del encabezado, al lado de la cruz de cerrar ("Generar PDF"). También las compone
+   * `app/`; sin esta prop, el encabezado solo lleva la cruz.
+   */
+  renderAccionesEncabezado?: (ocurrencia: OcurrenciaDetalleDatos) => ReactNode
+  /**
    * El enlace al comprobante de un turno pagado. Lo compone `app/` (la URL del comprobante es de
    * `features/pagos` y solo de mesa de entradas); sin esta prop, la sección de pago no lo muestra.
    */
@@ -112,15 +117,17 @@ function SeccionPago({
 
 /**
  * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20): datos del turno (con el período de
- * la serie si es recurrente), prioridad, pago, cancelación y las acciones del pie. La sección de
- * pago no se muestra en una cancelada (nunca se cobró: la API manda "Pendiente" y confundiría) ni
- * cuando la API no manda `pago` (el profesor).
+ * la serie si es recurrente), prioridad, pago, cancelación y las acciones del pie. Se cierra solo
+ * con la cruz del encabezado (no hay "Cerrar" en el pie). La sección de pago no se muestra en una
+ * cancelada (nunca se cobró: la API manda "Pendiente" y confundiría) ni cuando la API no manda
+ * `pago` (el profesor).
  */
 export function OcurrenciaDetalle({
   turnoId,
   fecha,
   onCerrar,
   renderAcciones,
+  renderAccionesEncabezado,
   renderComprobante,
 }: OcurrenciaDetalleProps) {
   const { data: ocurrencia, isLoading, error, refetch } = useOcurrencia({ turnoId, fecha })
@@ -143,6 +150,8 @@ export function OcurrenciaDetalle({
       textoNoEncontrado="Turno no encontrado"
       auditoria={ocurrencia}
       acciones={ocurrencia && renderAcciones(ocurrencia)}
+      accionesEncabezado={ocurrencia && renderAccionesEncabezado?.(ocurrencia)}
+      soloCruz
     >
       {ocurrencia && (
         <div className="space-y-6">

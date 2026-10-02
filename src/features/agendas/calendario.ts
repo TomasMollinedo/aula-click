@@ -50,13 +50,20 @@ export type DiaCalendario = {
   esPasado: boolean
 }
 
-export type SemanaCalendario = {
-  /** Solo los días con clases, de lunes a domingo. */
+/**
+ * La grilla de una semana, sea cual sea lo que lleva cada celda (clases en las agendas, turnos del
+ * alumno en su ficha): los días con algo, las horas y el contenido de cada celda.
+ */
+export type GrillaSemanal<T> = {
+  /** Solo los días con algo, de lunes a domingo. */
   dias: DiaCalendario[]
-  /** Desde la hora de la primera clase de la semana hasta la de la última, sin saltear ninguna. */
+  /** Desde la hora del primer elemento de la semana hasta la del último, sin saltear ninguna. */
   horas: number[]
-  /** Las clases de cada celda (día y hora), por `claveDeCelda`. */
-  celdas: ReadonlyMap<string, ClaseCalendario[]>
+  /** Lo que hay en cada celda (día y hora), por `claveDeCelda`. */
+  celdas: ReadonlyMap<string, T[]>
+}
+
+export type SemanaCalendario = GrillaSemanal<ClaseCalendario> & {
   totalClases: number
   totalTurnos: number
 }
@@ -126,14 +133,27 @@ export function agruparClases(items: readonly CalendarioItem[]): ClaseCalendario
  */
 export function armarSemana(items: readonly CalendarioItem[], hoy: string): SemanaCalendario {
   const clases = agruparClases(items)
-  const celdas = new Map<string, ClaseCalendario[]>()
-  for (const clase of clases) {
-    const clave = claveDeCelda(clase.fecha, clase.hora)
-    celdas.set(clave, [...(celdas.get(clave) ?? []), clase])
+  return { ...armarGrilla(clases, hoy), totalClases: clases.length, totalTurnos: items.length }
+}
+
+/**
+ * Ubica elementos con fecha y hora en la grilla de una semana: los días que tienen algo (de lunes a
+ * domingo), las horas desde la primera hasta la última y los elementos de cada celda, en el orden en
+ * que llegan. Es lo que tienen en común el calendario de las agendas (clases) y el de la ficha del
+ * alumno (sus turnos).
+ */
+export function armarGrilla<T extends { fecha: string; hora: number }>(
+  elementos: readonly T[],
+  hoy: string,
+): GrillaSemanal<T> {
+  const celdas = new Map<string, T[]>()
+  for (const elemento of elementos) {
+    const clave = claveDeCelda(elemento.fecha, elemento.hora)
+    celdas.set(clave, [...(celdas.get(clave) ?? []), elemento])
   }
 
   // `YYYY-MM-DD`: ordenar los textos es ordenar las fechas.
-  const fechas = [...new Set(clases.map((clase) => clase.fecha))].sort()
+  const fechas = [...new Set(elementos.map((elemento) => elemento.fecha))].sort()
   const dias = fechas.map((fecha) => ({
     fecha,
     diaSemana: diaSemanaDeFecha(fecha),
@@ -142,13 +162,15 @@ export function armarSemana(items: readonly CalendarioItem[], hoy: string): Sema
     esPasado: fecha < hoy,
   }))
 
-  const horasConClases = clases.map((clase) => clase.hora)
-  const primera = Math.min(...horasConClases)
-  const ultima = Math.max(...horasConClases)
+  const horasConElementos = elementos.map((elemento) => elemento.hora)
+  const primera = Math.min(...horasConElementos)
+  const ultima = Math.max(...horasConElementos)
   const horas =
-    clases.length === 0 ? [] : Array.from({ length: ultima - primera + 1 }, (_, i) => primera + i)
+    elementos.length === 0
+      ? []
+      : Array.from({ length: ultima - primera + 1 }, (_, i) => primera + i)
 
-  return { dias, horas, celdas, totalClases: clases.length, totalTurnos: items.length }
+  return { dias, horas, celdas }
 }
 
 /** `1` → `'1 alumno'`, `3` → `'3 alumnos'`. */
@@ -222,17 +244,18 @@ export function paramsDelCalendario(
 
 /**
  * Query params de la URL para mostrar la semana de `fecha`, a partir de los actuales (sin mutarlos):
- * conserva los demás (modo, filtros, tab) y omite `fecha` si es la semana de `hoy`. Guarda el lunes.
- * No toca `vista`, que es de la lista: al volver a ella se conserva.
+ * conserva los demás (modo, filtros, tab) y omite `fecha` si es la semana por defecto (`porDefecto`:
+ * la de hoy, o la que elija la pantalla). Guarda el lunes. No toca `vista`, que es de la lista: al
+ * volver a ella se conserva.
  */
 export function paramsDeSemana(
   actuales: URLSearchParams,
   fecha: string,
-  hoy: string,
+  porDefecto: string,
 ): URLSearchParams {
   const params = new URLSearchParams(actuales)
   const lunes = normalizarFecha('semana', fecha)
-  if (esRangoActual('semana', lunes, hoy)) params.delete('fecha')
+  if (esRangoActual('semana', lunes, porDefecto)) params.delete('fecha')
   else params.set('fecha', lunes)
   return params
 }

@@ -42,6 +42,7 @@ const ocurrencia = {
   bloqueAgendaId: 10,
   estado: 'SIN_REGISTRAR',
   materia: { id: 2, nombre: 'Matemática' },
+  profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez', busqueda: 'gomez ana' },
 }
 
 beforeEach(() => {
@@ -100,7 +101,9 @@ describe('GET /tablero', () => {
       ocupacion: { turnos: 1, capacidad: 4, porcentaje: 25 },
       alumnos: { nuevos: 2, atendidos: { disponible: false } },
       materiasConMasDemanda: [{ materia: { id: 2, nombre: 'Matemática' }, cantidad: 1 }],
-      profesoresConMasActividad: { disponible: false },
+      profesoresConMasTurnos: [
+        { profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' }, cantidad: 1 },
+      ],
       pagos: { totalCobrado: 16000, totalAdeudado: 48000.5 },
     })
   })

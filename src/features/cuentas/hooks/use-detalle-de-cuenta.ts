@@ -24,8 +24,8 @@ type Opciones = {
 
 /**
  * El detalle del turno abierto desde una fila de `cuentas` ("Ver detalle"): ahí se cobra ese turno
- * solo, y también se cancela o se reprograma. Va en la URL de la pantalla
- * (`?detalle=<turnoId>&fecha=`, `useDetalleEnUrl` de `ocurrencias`), junto a los filtros, las
+ * solo (es la única acción que `app/` le pone al pie en las vistas de pagos). Va en la URL de la
+ * pantalla (`?detalle=<turnoId>&fecha=`, `useDetalleEnUrl` de `ocurrencias`), junto a los filtros, las
  * páginas y el `tab` de la ficha, que se conservan al abrir y al cerrar. Qué se muestra adentro lo
  * compone `app/`.
  *

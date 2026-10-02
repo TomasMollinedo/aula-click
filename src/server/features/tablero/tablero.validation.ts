@@ -1,6 +1,11 @@
 import { z } from '@hono/zod-openapi'
 import { fechaISO } from '@/server/shared/zod'
-import { MAX_DIAS_TABLERO, MAX_MATERIAS_TABLERO, problemaDelPeriodo } from './tablero.reglas'
+import {
+  MAX_DIAS_TABLERO,
+  MAX_MATERIAS_TABLERO,
+  MAX_PROFESORES_TABLERO,
+  problemaDelPeriodo,
+} from './tablero.reglas'
 
 // Schemas Zod del query y de la respuesta del tablero del gerente (HU-21, T-61). Son la fuente del
 // OpenAPI. Sin reglas de negocio: qué cuenta cada indicador lo deciden `tablero.reglas.ts`, el
@@ -117,7 +122,17 @@ export const tableroSchema = z
       .openapi({
         description: `Hasta ${MAX_MATERIAS_TABLERO} materias por cantidad de turnos no cancelados del período (descendente; en empate, por nombre). Vacío si no hay ninguno`,
       }),
-    profesoresConMasActividad: indicadorNoDisponibleSchema,
+    profesoresConMasTurnos: z
+      .array(
+        z.object({
+          profesor: z.object({ id: z.number().int(), nombre: z.string(), apellido: z.string() }),
+          cantidad: z.number().int().min(1),
+        }),
+      )
+      .max(MAX_PROFESORES_TABLERO)
+      .openapi({
+        description: `Hasta ${MAX_PROFESORES_TABLERO} profesores por cantidad de turnos no cancelados del período, es decir, por alumnos con turno en sus horas (descendente; en empate, por apellido y nombre). Vacío si no hay ninguno`,
+      }),
     pagos: z.object({
       totalCobrado: z.number().openapi({
         description:

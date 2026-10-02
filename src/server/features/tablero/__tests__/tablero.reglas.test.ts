@@ -7,6 +7,7 @@ import {
   materiasConMasDemanda,
   ocupacion,
   porcentaje,
+  profesoresConMasTurnos,
   problemaDelPeriodo,
   turnosPorEstado,
   type OcurrenciaTablero,
@@ -26,16 +27,33 @@ const MATERIAS: Record<number, string> = {
   7: 'Biología',
 }
 
+const PROFESORES: Record<number, { nombre: string; apellido: string }> = {
+  1: { nombre: 'Ana', apellido: 'Gómez' },
+  2: { nombre: 'Luis', apellido: 'Pérez' },
+  3: { nombre: 'Marta', apellido: 'Álvarez' },
+  4: { nombre: 'Juan', apellido: 'Pérez' },
+  5: { nombre: 'Sofía', apellido: 'Ruiz' },
+  6: { nombre: 'Pablo', apellido: 'Soto' },
+}
+
 function ocurrencia(
   fecha: string,
   estado: OcurrenciaTablero['estado'],
-  { bloqueAgendaId = 10, materiaId = 2 }: { bloqueAgendaId?: number; materiaId?: number } = {},
+  {
+    bloqueAgendaId = 10,
+    materiaId = 2,
+    profesorId = 1,
+  }: { bloqueAgendaId?: number; materiaId?: number; profesorId?: number } = {},
 ): OcurrenciaTablero {
   return {
     fecha,
     estado,
     bloqueAgendaId,
     materia: { id: materiaId, nombre: MATERIAS[materiaId] ?? `Materia ${materiaId}` },
+    profesor: {
+      id: profesorId,
+      ...(PROFESORES[profesorId] ?? { nombre: 'Nombre', apellido: `Apellido ${profesorId}` }),
+    },
   }
 }
 
@@ -267,6 +285,56 @@ describe('materiasConMasDemanda', () => {
 
   it('sin ocurrencias → vacío', () => {
     expect(materiasConMasDemanda([])).toEqual([])
+  })
+})
+
+describe('profesoresConMasTurnos', () => {
+  const de = (profesorId: number, cantidad: number, estado: OcurrenciaTablero['estado']) =>
+    repetir(cantidad, () => ocurrencia('2026-09-28', estado, { profesorId }))
+
+  it('hasta 5, por cantidad de turnos descendente', () => {
+    const top = profesoresConMasTurnos([
+      ...de(6, 1, 'AGENDADO'),
+      ...de(1, 6, 'SIN_REGISTRAR'),
+      ...de(2, 5, 'SIN_REGISTRAR'),
+      ...de(3, 4, 'AGENDADO'),
+      ...de(4, 3, 'AGENDADO'),
+      ...de(5, 2, 'AGENDADO'),
+    ])
+
+    expect(top).toEqual([
+      { profesor: { id: 1, nombre: 'Ana', apellido: 'Gómez' }, cantidad: 6 },
+      { profesor: { id: 2, nombre: 'Luis', apellido: 'Pérez' }, cantidad: 5 },
+      { profesor: { id: 3, nombre: 'Marta', apellido: 'Álvarez' }, cantidad: 4 },
+      { profesor: { id: 4, nombre: 'Juan', apellido: 'Pérez' }, cantidad: 3 },
+      { profesor: { id: 5, nombre: 'Sofía', apellido: 'Ruiz' }, cantidad: 2 },
+    ])
+  })
+
+  it('empate → por apellido en español (la tilde no manda al final), nombre y después id', () => {
+    const top = profesoresConMasTurnos([
+      ...de(2, 2, 'AGENDADO'),
+      ...de(4, 2, 'AGENDADO'),
+      ...de(3, 2, 'AGENDADO'),
+      ...de(1, 2, 'AGENDADO'),
+    ])
+
+    // Álvarez, Gómez, Pérez (Juan antes que Luis).
+    expect(top.map((item) => item.profesor.id)).toEqual([3, 1, 4, 2])
+  })
+
+  it('las canceladas no cuentan: un profesor sólo con canceladas no aparece', () => {
+    const top = profesoresConMasTurnos([
+      ...de(1, 1, 'SIN_REGISTRAR'),
+      ...de(1, 3, 'CANCELADO'),
+      ...de(2, 5, 'CANCELADO'),
+    ])
+
+    expect(top).toEqual([{ profesor: { id: 1, nombre: 'Ana', apellido: 'Gómez' }, cantidad: 1 }])
+  })
+
+  it('sin ocurrencias → vacío', () => {
+    expect(profesoresConMasTurnos([])).toEqual([])
   })
 })
 
