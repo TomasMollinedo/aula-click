@@ -8,6 +8,8 @@ const LOGO_CENTRO = '/api/v1/centro/logo'
  * Encabezado común de los documentos oficiales imprimibles (HU-11, HU-15): logo y datos del
  * centro, el título del documento, quién lo emite y la fecha y hora de emisión (del navegador, no
  * del servidor). El contenido propio de cada documento (comprobante, turno, agenda) va en `children`.
+ * `referencia` es lo que identifica al documento, a la derecha del título (el número del
+ * comprobante): va una sola vez, ahí.
  *
  * `centro` llega por props porque `components/` no puede importar de `features/` (ESLint): lo pide
  * con `useCentro()` quien arma el documento. `onLogoListo` se llama cuando el logo terminó de
@@ -16,12 +18,14 @@ const LOGO_CENTRO = '/api/v1/centro/logo'
  */
 export function DocumentoOficial({
   titulo,
+  referencia,
   emitidoPor,
   centro,
   onLogoListo,
   children,
 }: {
   titulo: string
+  referencia?: string
   emitidoPor: string
   centro: { nombre: string; direccion: string; telefono: string }
   onLogoListo?: () => void
@@ -52,7 +56,14 @@ export function DocumentoOficial({
         </div>
       </header>
 
-      <h1 className="mb-6 text-lg font-semibold">{titulo}</h1>
+      {referencia ? (
+        <div className="mb-6 flex items-baseline justify-between gap-6">
+          <h1 className="text-lg font-semibold">{titulo}</h1>
+          <p className="text-xl font-semibold tabular-nums">{referencia}</p>
+        </div>
+      ) : (
+        <h1 className="mb-6 text-lg font-semibold">{titulo}</h1>
+      )}
 
       {children}
     </article>

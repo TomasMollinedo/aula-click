@@ -43,9 +43,14 @@ export function textoExito(pago: Pick<PagoRegistrado, 'cantidad' | 'total'>): st
   return `Pago registrado: ${textoCantidad(pago.cantidad)} por ${formatearPesos(pago.total)}`
 }
 
+/** `'N° 1024'`: el número solo, junto al título del comprobante impreso. */
+export function textoNumero(numeroComprobante: number): string {
+  return `N° ${numeroComprobante}`
+}
+
 /** `'Comprobante N° 1024'`. */
 export function textoNumeroComprobante(numeroComprobante: number): string {
-  return `Comprobante N° ${numeroComprobante}`
+  return `Comprobante ${textoNumero(numeroComprobante)}`
 }
 
 /**
@@ -61,7 +66,14 @@ export function fechaDocumento(fecha: string): string {
   return format(parseISO(fecha), 'dd/MM/yyyy')
 }
 
-/** Instante ISO 8601 (UTC) en hora local del navegador: `'Registrado el 05/10/2026 11:30'`. */
-export function textoRegistradoEl(instante: string): string {
-  return `Registrado el ${format(parseISO(instante), 'dd/MM/yyyy HH:mm')}`
+/**
+ * Quién cargó el pago y cuándo, en el pie del comprobante: `'Registrado por Ana Pérez el
+ * 05/10/2026 11:30'`. El instante es ISO 8601 (UTC) y se muestra en la hora local del navegador.
+ */
+export function textoRegistradoPor(
+  usuario: { nombre: string; apellido: string },
+  instante: string,
+): string {
+  const cuando = format(parseISO(instante), 'dd/MM/yyyy HH:mm')
+  return `Registrado por ${usuario.nombre} ${usuario.apellido} el ${cuando}`
 }

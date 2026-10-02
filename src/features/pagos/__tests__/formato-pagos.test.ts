@@ -7,8 +7,9 @@ import {
   textoExito,
   textoHorario,
   textoImporte,
+  textoNumero,
   textoNumeroComprobante,
-  textoRegistradoEl,
+  textoRegistradoPor,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
@@ -27,12 +28,15 @@ describe('textos del resumen', () => {
 })
 
 describe('textos del comprobante', () => {
-  it('número, fecha de pago e instante del registro en hora local', () => {
+  it('número, fecha de pago y quién registró, con el instante en hora local', () => {
+    expect(textoNumero(1024)).toBe('N° 1024')
     expect(textoNumeroComprobante(1024)).toBe('Comprobante N° 1024')
     expect(fechaDocumento('2026-10-05')).toBe('05/10/2026')
     // Armado en hora local: el test no depende de la zona horaria de la máquina.
     const instante = new Date(2026, 9, 5, 14, 30).toISOString()
-    expect(textoRegistradoEl(instante)).toBe('Registrado el 05/10/2026 14:30')
+    expect(textoRegistradoPor({ nombre: 'Ana', apellido: 'Pérez' }, instante)).toBe(
+      'Registrado por Ana Pérez el 05/10/2026 14:30',
+    )
   })
 })
 

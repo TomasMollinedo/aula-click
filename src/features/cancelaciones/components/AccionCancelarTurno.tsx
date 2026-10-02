@@ -8,6 +8,8 @@ import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 
 import { CancelarTurnosDialog } from './CancelarTurnosDialog'
 
+const ID_MOTIVO = 'cancelar-turno-motivo'
+
 export type AccionCancelarTurnoProps = {
   ocurrencia: OcurrenciaDetalle
 }
@@ -23,21 +25,25 @@ export function AccionCancelarTurno({ ocurrencia }: AccionCancelarTurnoProps) {
   if (!visible) return null
 
   if (!habilitada) {
+    const texto = motivo ?? 'El turno no se puede cancelar'
     return (
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>
             {/* El botón deshabilitado no recibe hover ni foco: el span sí. */}
-            <span tabIndex={0} className="inline-flex" aria-describedby="cancelar-turno-motivo">
+            <span tabIndex={0} className="inline-flex" aria-describedby={ID_MOTIVO}>
               <Button type="button" variant="cancelado" disabled>
                 Cancelar turno
               </Button>
             </span>
           </TooltipTrigger>
-          <TooltipContent id="cancelar-turno-motivo">
-            {motivo ?? 'El turno no se puede cancelar'}
-          </TooltipContent>
+          {/* A la vista sólo con hover o foco: quien no ve lo lee del texto de abajo. */}
+          <TooltipContent aria-hidden>{texto}</TooltipContent>
         </Tooltip>
+        {/* Siempre en el DOM: el contenido del tooltip sólo existe mientras está abierto. */}
+        <span id={ID_MOTIVO} className="sr-only">
+          {texto}
+        </span>
       </TooltipProvider>
     )
   }

@@ -1,23 +1,38 @@
 'use client'
 
 import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { AlertCircle, Printer, SearchX, X } from 'lucide-react'
+import { AlertCircle, Printer, SearchX } from 'lucide-react'
 
+import {
+  BotonVolverImprimir,
+  Campo,
+  Campos,
+  SeccionImpresa,
+} from '@/components/impresion/campo-impreso'
 import { DocumentoOficial } from '@/components/impresion/DocumentoOficial'
+import {
+  CeldaImpresa,
+  CierreImpreso,
+  EncabezadoImpreso,
+  EncabezadosImpresos,
+  FilaImpresa,
+  TablaImpresa,
+} from '@/components/impresion/tabla-impresa'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { useNombreSesion } from '@/features/auth/hooks/use-nombre-sesion'
 import { useCentro } from '@/features/centro/hooks/use-centro'
 import { useImprimirCuandoEsteListo } from '@/hooks/use-imprimir'
+import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
 import {
   fechaDocumento,
-  textoHorario,
+  textoNumero,
   textoNumeroComprobante,
-  textoRegistradoEl,
+  textoRegistradoPor,
 } from '../formato-pagos'
 import { useComprobante } from '../hooks/use-comprobante'
 import type { Comprobante } from '../pagos.types'
@@ -25,32 +40,41 @@ import type { Comprobante } from '../pagos.types'
 type ComprobantePagoProps = {
   /** El `[pagoId]` de la URL, tal cual: uno que no es un entero positivo se trata como 404. */
   pagoId: string
-  /** Adónde volver con "Cerrar" si la pestaña no se puede cerrar (la abrió el usuario, no la app). */
-  rutaVolver: string
+  /** Adónde va "Volver" si la pestaña no tiene historial ni se puede cerrar (URL pegada). */
+  rutaRespaldo: string
 }
 
 /**
- * Comprobante de un pago (HU-15), como documento imprimible (docs/arquitectura-frontend.md →
+ * Comprobante de un pago (HU-15), como hoja de impresión (docs/arquitectura-frontend.md →
  * Documentos imprimibles). Se imprime solo una vez, cuando están el comprobante, los datos del
- * centro y el logo. Sin los datos del centro no se imprime: un documento oficial sin encabezado no
- * sirve. Los importes son los de la API, sin sumar nada.
+ * centro, la sesión y el logo; "Imprimir" lo repite. Sin los datos del centro no se imprime: un
+ * documento oficial sin encabezado no sirve. Los importes son los de la API, sin sumar nada.
  */
-export function ComprobantePago({ pagoId, rutaVolver }: ComprobantePagoProps) {
+export function ComprobantePago({ pagoId, rutaRespaldo }: ComprobantePagoProps) {
   const id = /^\d+$/.test(pagoId) ? Number(pagoId) : 0
   // Sin pegarle a la API: ni al comprobante ni al centro.
-  if (!Number.isSafeInteger(id) || id <= 0) return <PagoNoExiste rutaVolver={rutaVolver} />
-  return <ComprobanteDelPago pagoId={id} rutaVolver={rutaVolver} />
+  if (!Number.isSafeInteger(id) || id <= 0) return <PagoNoExiste rutaRespaldo={rutaRespaldo} />
+  return <ComprobanteDelPago pagoId={id} rutaRespaldo={rutaRespaldo} />
 }
 
-function ComprobanteDelPago({ pagoId, rutaVolver }: { pagoId: number; rutaVolver: string }) {
+function ComprobanteDelPago({ pagoId, rutaRespaldo }: { pagoId: number; rutaRespaldo: string }) {
   const comprobante = useComprobante(pagoId)
   const centro = useCentro()
+  // "Emitido por" es quien imprime; quien registró el pago va en el pie (decisión T-111).
+  const emitidoPor = useNombreSesion()
   const [logoListo, setLogoListo] = useState(false)
 
-  useImprimirCuandoEsteListo(!!comprobante.data && !!centro.data && logoListo)
+  const datos =
+    comprobante.data && centro.data && emitidoPor !== null
+      ? { comprobante: comprobante.data, centro: centro.data, emitidoPor }
+      : null
+  const listo = !!datos && logoListo
+  useImprimirCuandoEsteListo(listo)
 
   // El 404 no se reintenta: con el primer fallo ya se sabe que el pago no existe.
-  if (comprobante.failureReason?.status === 404) return <PagoNoExiste rutaVolver={rutaVolver} />
+  if (comprobante.failureReason?.status === 404) {
+    return <PagoNoExiste rutaRespaldo={rutaRespaldo} />
+  }
 
   const error = comprobante.error
     ? {
@@ -67,15 +91,12 @@ function ComprobanteDelPago({ pagoId, rutaVolver }: { pagoId: number; rutaVolver
         }
       : null
 
-  const datos =
-    comprobante.data && centro.data ? { comprobante: comprobante.data, centro: centro.data } : null
-
   return (
-    <main className="bg-background min-h-screen">
-      <BarraDeAcciones rutaVolver={rutaVolver} puedeImprimir={!!datos && logoListo} />
+    <>
+      <BarraDeAcciones rutaRespaldo={rutaRespaldo} puedeImprimir={listo} />
 
       {error && (
-        <div className="mx-auto max-w-[190mm] px-10">
+        <div className="mx-auto max-w-[190mm]">
           <Alert variant="destructive">
             <AlertCircle className="size-4" />
             <AlertDescription className="text-destructive flex flex-wrap items-center justify-between gap-3">
@@ -94,143 +115,142 @@ function ComprobanteDelPago({ pagoId, rutaVolver }: { pagoId: number; rutaVolver
 
       {!error && datos && (
         <DocumentoOficial
-          titulo={`Comprobante de pago N° ${datos.comprobante.numeroComprobante}`}
-          emitidoPor={`${datos.comprobante.registradoPor.nombre} ${datos.comprobante.registradoPor.apellido}`}
+          titulo="Comprobante de pago"
+          referencia={textoNumero(datos.comprobante.numeroComprobante)}
+          emitidoPor={datos.emitidoPor}
           centro={datos.centro}
           onLogoListo={() => setLogoListo(true)}
         >
           <ContenidoComprobante comprobante={datos.comprobante} />
         </DocumentoOficial>
       )}
-    </main>
+    </>
   )
 }
 
 function ContenidoComprobante({ comprobante }: { comprobante: Comprobante }) {
   const { alumno, turnos } = comprobante
   return (
-    <div className="space-y-6 text-sm">
-      <dl className="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1">
-        <dt className="font-semibold">Fecha de pago</dt>
-        <dd>{fechaDocumento(comprobante.fechaPago)}</dd>
-        <dt className="font-semibold">Alumno</dt>
-        <dd>
-          {alumno.nombre} {alumno.apellido} · DNI {alumno.dni}
-        </dd>
-        <dt className="font-semibold">Forma de pago</dt>
-        <dd>{comprobante.formaPago.nombre}</dd>
-      </dl>
+    <div className="space-y-5">
+      <SeccionImpresa>
+        <Campos>
+          <Campo label="Alumno" valor={`${alumno.nombre} ${alumno.apellido}`} />
+          <Campo label="DNI" valor={alumno.dni} />
+          <Campo label="Fecha de pago" valor={fechaDocumento(comprobante.fechaPago)} />
+          <Campo label="Forma de pago" valor={comprobante.formaPago.nombre} />
+        </Campos>
+      </SeccionImpresa>
 
-      <table className="w-full border-collapse">
-        <caption className="sr-only">
-          {textoNumeroComprobante(comprobante.numeroComprobante)}
-        </caption>
-        <thead>
-          <tr className="border-b border-black/40 text-left">
-            <th className="py-2 pr-3 font-semibold">Fecha</th>
-            <th className="py-2 pr-3 font-semibold">Horario</th>
-            <th className="py-2 pr-3 font-semibold">Materia</th>
-            <th className="py-2 pr-3 font-semibold">Profesor</th>
-            <th className="py-2 text-right font-semibold">Importe</th>
-          </tr>
-        </thead>
+      <TablaImpresa titulo={textoNumeroComprobante(comprobante.numeroComprobante)}>
+        <EncabezadosImpresos>
+          <EncabezadoImpreso>Fecha</EncabezadoImpreso>
+          <EncabezadoImpreso>Horario</EncabezadoImpreso>
+          <EncabezadoImpreso>Materia</EncabezadoImpreso>
+          <EncabezadoImpreso>Profesor</EncabezadoImpreso>
+          <EncabezadoImpreso numerica>Importe</EncabezadoImpreso>
+        </EncabezadosImpresos>
         <tbody>
           {turnos.map((turno) => (
-            <tr key={`${turno.turnoId}|${turno.fecha}`} className="border-b border-black/10">
-              <td className="py-2 pr-3">{fechaDocumento(turno.fecha)}</td>
-              <td className="py-2 pr-3">{textoHorario(turno.horaInicio, turno.horaFin)}</td>
-              <td className="py-2 pr-3">{turno.materia.nombre}</td>
-              <td className="py-2 pr-3">
+            <FilaImpresa key={`${turno.turnoId}|${turno.fecha}`}>
+              <CeldaImpresa className="whitespace-nowrap tabular-nums">
+                {fechaDocumento(turno.fecha)}
+              </CeldaImpresa>
+              <CeldaImpresa className="whitespace-nowrap tabular-nums">
+                {rangoHoras(turno.horaInicio, turno.horaFin)}
+              </CeldaImpresa>
+              <CeldaImpresa>{turno.materia.nombre}</CeldaImpresa>
+              <CeldaImpresa>
                 {turno.profesor.nombre} {turno.profesor.apellido}
-              </td>
-              <td className="py-2 text-right tabular-nums">{formatearPesos(turno.importe)}</td>
-            </tr>
+              </CeldaImpresa>
+              <CeldaImpresa numerica>{formatearPesos(turno.importe)}</CeldaImpresa>
+            </FilaImpresa>
           ))}
         </tbody>
-        <tfoot>
-          <tr className="border-t border-black/40">
-            <th scope="row" colSpan={4} className="py-2 pr-3 text-right font-semibold">
-              Total
-            </th>
-            <td className="py-2 text-right font-semibold tabular-nums">
-              {formatearPesos(comprobante.total)}
-            </td>
-          </tr>
-        </tfoot>
-      </table>
+      </TablaImpresa>
 
-      {(comprobante.montoRecibido !== null || comprobante.vuelto !== null) && (
-        <dl className="ml-auto grid w-fit grid-cols-[auto_auto] gap-x-6 gap-y-1">
-          {comprobante.montoRecibido !== null && (
-            <>
-              <dt className="font-semibold">Monto recibido</dt>
-              <dd className="text-right tabular-nums">
-                {formatearPesos(comprobante.montoRecibido)}
-              </dd>
-            </>
-          )}
-          {comprobante.vuelto !== null && (
-            <>
-              <dt className="font-semibold">Vuelto</dt>
-              <dd className="text-right tabular-nums">{formatearPesos(comprobante.vuelto)}</dd>
-            </>
-          )}
-        </dl>
-      )}
+      <CierreImpreso>
+        <Totales comprobante={comprobante} />
 
-      {comprobante.observaciones && (
-        <div>
-          <p className="font-semibold">Observaciones</p>
-          <p className="whitespace-pre-line">{comprobante.observaciones}</p>
-        </div>
-      )}
+        {comprobante.observaciones && (
+          <SeccionImpresa>
+            <Campo
+              label="Observaciones"
+              valor={<span className="whitespace-pre-line">{comprobante.observaciones}</span>}
+            />
+          </SeccionImpresa>
+        )}
 
-      <p className="text-black/70">{textoRegistradoEl(comprobante.registradoEl)}</p>
+        <footer className="border-t border-black/20 pt-3 text-xs">
+          <p className="text-black/70">
+            {textoRegistradoPor(comprobante.registradoPor, comprobante.registradoEl)}
+          </p>
+          <p className="mt-1 text-black/50">Comprobante interno de pago · No válido como factura</p>
+        </footer>
+      </CierreImpreso>
     </div>
   )
 }
 
-/** "Imprimir" y "Cerrar", solo en pantalla (`data-no-imprimir`). */
+/** El total, destacado, y lo que se recibió y se devolvió, si se informó. Todo de la API. */
+function Totales({ comprobante }: { comprobante: Comprobante }) {
+  const { total, montoRecibido, vuelto } = comprobante
+  return (
+    <dl className="ml-auto w-72 rounded-xl border border-black/10 bg-black/1.5 px-6 py-5">
+      <div className="flex items-baseline justify-between gap-6">
+        <dt className="text-dorado text-[11px] font-bold tracking-widest uppercase">Total</dt>
+        <dd className="text-2xl font-semibold text-black tabular-nums">{formatearPesos(total)}</dd>
+      </div>
+      {(montoRecibido !== null || vuelto !== null) && (
+        <div className="mt-3 space-y-1 border-t border-black/10 pt-3 text-sm">
+          {montoRecibido !== null && (
+            <div className="flex items-baseline justify-between gap-6">
+              <dt className="text-black/70">Monto recibido</dt>
+              <dd className="tabular-nums">{formatearPesos(montoRecibido)}</dd>
+            </div>
+          )}
+          {vuelto !== null && (
+            <div className="flex items-baseline justify-between gap-6">
+              <dt className="text-black/70">Vuelto</dt>
+              <dd className="tabular-nums">{formatearPesos(vuelto)}</dd>
+            </div>
+          )}
+        </div>
+      )}
+    </dl>
+  )
+}
+
+/**
+ * "Volver" y, a su derecha, "Imprimir": si se cancela el diálogo que se abre solo, es la forma de
+ * volver a imprimir. Sólo en pantalla (`data-no-imprimir` de `BotonVolverImprimir`).
+ */
 function BarraDeAcciones({
-  rutaVolver,
+  rutaRespaldo,
   puedeImprimir,
 }: {
-  rutaVolver: string
+  rutaRespaldo: string
   puedeImprimir: boolean
 }) {
-  const router = useRouter()
-
-  // Una pestaña que abrió la app (el enlace del diálogo) se puede cerrar; si el usuario entró por
-  // URL, el navegador no la cierra y se vuelve a la pantalla de pagos.
-  const cerrar = () => {
-    window.close()
-    if (!window.closed) router.push(rutaVolver)
-  }
-
   return (
-    <div data-no-imprimir className="mx-auto flex max-w-[190mm] justify-end gap-2 px-10 pt-6">
-      <Button variant="outline" onClick={cerrar}>
-        <X />
-        Cerrar
-      </Button>
-      <Button onClick={() => window.print()} disabled={!puedeImprimir}>
+    <BotonVolverImprimir rutaRespaldo={rutaRespaldo}>
+      <Button size="sm" onClick={() => window.print()} disabled={!puedeImprimir}>
         <Printer />
         Imprimir
       </Button>
-    </div>
+    </BotonVolverImprimir>
   )
 }
 
-function PagoNoExiste({ rutaVolver }: { rutaVolver: string }) {
+function PagoNoExiste({ rutaRespaldo }: { rutaRespaldo: string }) {
   return (
-    <main className="bg-background min-h-screen">
-      <BarraDeAcciones rutaVolver={rutaVolver} puedeImprimir={false} />
+    <>
+      <BarraDeAcciones rutaRespaldo={rutaRespaldo} puedeImprimir={false} />
       <EmptyState
         icon={SearchX}
         title="El pago no existe"
         description="Puede que el enlace sea incorrecto."
       />
-    </main>
+    </>
   )
 }
 
