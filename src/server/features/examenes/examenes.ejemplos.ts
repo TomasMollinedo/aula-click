@@ -43,6 +43,7 @@ export const ejemploItemProximo = {
   observaciones: 'Trae calculadora y formulario',
   pasado: false,
   diasRestantes: 10,
+  administrable: true,
   createdAt: '2026-09-22T13:45:00.000Z',
   updatedAt: '2026-09-22T13:45:00.000Z',
   createdBy: ejemploAuditoriaProfesor,
@@ -57,6 +58,7 @@ const ejemploItemPasado = {
   observaciones: null,
   pasado: true,
   diasRestantes: null,
+  administrable: true,
   createdAt: '2026-07-10T09:00:00.000Z',
   updatedAt: '2026-07-10T09:00:00.000Z',
   createdBy: ejemploAuditoriaMesa,
@@ -93,6 +95,17 @@ export const ejemploErrorPendiente = {
     code: 'EXAMEN_PENDIENTE',
     message: 'Ya hay un examen pendiente de esa materia: edítelo en vez de cargar uno nuevo',
     details: { id: 5, tipo: 'PARCIAL', fecha: '2026-10-15' },
+  },
+} satisfies ErrorResponse
+
+/** 409 del service: el alumno no tiene turnos vigentes de esa materia. */
+export const ejemploErrorMateriaSinTurnos = {
+  error: {
+    code: 'MATERIA_SIN_TURNOS',
+    message: 'El alumno no tiene turnos próximos de esa materia',
+    details: [
+      { path: ['materiaId'], message: 'El alumno no tiene turnos próximos de esa materia' },
+    ],
   },
 } satisfies ErrorResponse
 

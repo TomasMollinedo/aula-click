@@ -2,6 +2,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { NotFoundError } from '@/server/errors'
 import { materiasDelProfesorConAlumno } from '@/server/features/turnos/ocurrencias.condiciones'
+import { contarVigentesPorMateria } from '@/server/features/turnos/turnos.condiciones'
 import type { Actor } from '@/server/shared/actor'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import type {
@@ -177,6 +178,21 @@ export const examenesRepository = {
    */
   materiasDictadas(profesorId: number, alumnoId: number) {
     return materiasDelProfesorConAlumno(prisma, { profesorId, alumnoId })
+  },
+
+  /**
+   * Ids de las materias en las que el alumno tiene algún turno **vigente** (al menos una fecha no
+   * cancelada de `fechaHoy` en adelante; docs/convenciones-backend.md → Turno vigente). Con
+   * `profesorId`, sólo los turnos con ese profesor. Es la lectura de `turnos.condiciones.ts`
+   * (T-39), con el cliente de Prisma de esta feature: la regla no se reescribe acá.
+   */
+  async materiasConTurnoVigente(
+    alumnoId: number,
+    fechaHoy: string,
+    profesorId?: number,
+  ): Promise<number[]> {
+    const grupos = await contarVigentesPorMateria(prisma, { fechaHoy, alumnoId, profesorId })
+    return grupos.map((grupo) => grupo.materiaId)
   },
 }
 

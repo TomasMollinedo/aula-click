@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { Suspense, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { useQuery } from '@tanstack/react-query'
 
@@ -18,7 +18,8 @@ import { rangoHoras } from '@/utils/horas'
 
 // Hoja de impresión de la agenda diaria (HU-11, T-60): `DocumentoOficial` con todas las filas del
 // día (no sólo la página visible) y los datos del centro (`useCentro`, T-64). Se imprime sola al
-// cargar (`useImprimirCuandoEsteListo`).
+// cargar (`useImprimirCuandoEsteListo`). Suspense: la hoja lee la fecha y los filtros de la URL con
+// useSearchParams, y la ruta no tiene segmentos dinámicos (sin él, `next build` falla).
 
 const PAGE_SIZE_MAXIMO = 100
 
@@ -38,6 +39,14 @@ async function listarAgendaCompleta(
 }
 
 export default function ImprimirAgendaPage() {
+  return (
+    <Suspense>
+      <HojaAgenda />
+    </Suspense>
+  )
+}
+
+function HojaAgenda() {
   const searchParams = useSearchParams()
   const fecha = searchParams.get('fecha') ?? ''
   const profesorIdParam = searchParams.get('profesorId')

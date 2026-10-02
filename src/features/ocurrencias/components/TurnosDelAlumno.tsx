@@ -6,13 +6,20 @@ import { AlertCircle, CalendarX2 } from 'lucide-react'
 
 import { EstadoPagoBadge } from '@/components/turno/estado-pago-badge'
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
+import { ESTADO_TURNO, type EstadoTurno } from '@/components/turno/indicadores-turno'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { EmptyState } from '@/components/ui/empty-state'
-import { Input } from '@/components/ui/input'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -29,19 +36,21 @@ import { rangoHoras } from '@/utils/horas'
 
 import { useDetalleEnUrl } from '../hooks/use-detalle-en-url'
 import { useOcurrenciasDelAlumno } from '../hooks/use-ocurrencias-del-alumno'
+import {
+  MESES_DEL_ANIO,
+  TODO_EL_ANIO,
+  type FiltroMes,
+  nombreDelMes,
+  rangoDelFiltro,
+} from '../meses-del-anio'
 
 const COLUMNAS = 7
+const TODOS_LOS_ESTADOS = 'TODOS'
+type FiltroEstado = typeof TODOS_LOS_ESTADOS | EstadoTurno
 
 /** Clave de una ocurrencia en la selección: `turnoId` se repite entre fechas de un recurrente. */
 function clave(o: OcurrenciaDeAlumno): string {
   return `${o.turnoId}|${o.fecha}`
-}
-
-/** `YYYY-MM-DD` de hoy más `dias` (puede ser negativo). */
-function fechaMasDias(dias: number): string {
-  const fecha = new Date()
-  fecha.setDate(fecha.getDate() + dias)
-  return fecha.toISOString().slice(0, 10)
 }
 
 export type TurnosDelAlumnoProps = {
@@ -56,16 +65,23 @@ export type TurnosDelAlumnoProps = {
     onListo: () => void
   }) => ReactNode
   /**
-   * "Generar PDF" de los turnos ya filtrados (no es de ningún ticket, se agregó aparte de T-60).
-   * Recibe el mismo rango que se está viendo, para que el PDF coincida con la pantalla.
+   * "Generar PDF" de los turnos ya filtrados (no es de ningún ticket, se agregó aparte de T-60;
+   * T-67 le sumó el estado y la selección tildada). Con turnos tildados, el PDF es sólo esos; si
+   * no, es todo lo que se ve en pantalla (mes + estado).
    */
-  renderPdf?: (seleccion: { alumnoId: number; desde: string; hasta: string }) => ReactNode
+  renderPdf?: (seleccion: {
+    alumnoId: number
+    desde: string
+    hasta: string
+    estado: EstadoTurno | null
+    seleccionadas: OcurrenciaDeAlumno[]
+  }) => ReactNode
 }
 
 /**
  * Pestaña "Turnos" de la ficha del alumno (HU-02): sus ocurrencias, con casilla de selección en
- * las `cancelable` (lo decide la API: una pagada no se puede tildar), clic para abrir el detalle y
- * un rango de fechas elegible (por defecto, 30 días atrás y 8 semanas adelante). El estado de pago
+ * las `cancelable` (lo decide la API: una pagada no se puede tildar), clic para abrir el detalle, un
+ * mes del año en curso a elegir (o todo el año, T-66/T-67) y un filtro por estado. El estado de pago
  * es el de la API; en una cancelada no se muestra.
  */
 export function TurnosDelAlumno({
@@ -73,25 +89,42 @@ export function TurnosDelAlumno({
   renderAccionesSeleccion,
   renderPdf,
 }: TurnosDelAlumnoProps) {
-  const [desde, setDesde] = useState(() => fechaMasDias(-30))
-  const [hasta, setHasta] = useState(() => fechaMasDias(56))
-  const rangoInvertido = hasta < desde
+  const anio = useMemo(() => new Date().getFullYear(), [])
+  const [mes, setMes] = useState<FiltroMes>(() => new Date().getMonth())
+  const [estadoFiltro, setEstadoFiltro] = useState<FiltroEstado>(TODOS_LOS_ESTADOS)
+  const { desde, hasta } = rangoDelFiltro(anio, mes)
 
-  const { data, isLoading, isError, error, refetch } = useOcurrenciasDelAlumno(
-    { alumnoId, desde, hasta },
-    { enabled: !rangoInvertido },
+  const { data, isLoading, isError, error, refetch } = useOcurrenciasDelAlumno({
+    alumnoId,
+    desde,
+    hasta,
+  })
+  const datosFiltrados = useMemo(
+    () =>
+      (data ?? []).filter((o) => estadoFiltro === TODOS_LOS_ESTADOS || o.estado === estadoFiltro),
+    [data, estadoFiltro],
   )
   const { hrefDetalle, marcarAbiertoConLink } = useDetalleEnUrl()
   const router = useRouter()
   const [seleccion, setSeleccion] = useState<Set<string>>(new Set())
 
-  const cancelables = useMemo(() => (data ?? []).filter((o) => o.cancelable), [data])
+  const cancelables = useMemo(() => datosFiltrados.filter((o) => o.cancelable), [datosFiltrados])
   const todasTildadas = cancelables.length > 0 && seleccion.size === cancelables.length
 
   const ocurrenciasSeleccionadas = useMemo(
     () => cancelables.filter((o) => seleccion.has(clave(o))),
     [cancelables, seleccion],
   )
+
+  function cambiarMes(valor: string) {
+    setMes(valor === TODO_EL_ANIO ? TODO_EL_ANIO : Number(valor))
+    setSeleccion(new Set())
+  }
+
+  function cambiarEstado(valor: string) {
+    setEstadoFiltro(valor === TODOS_LOS_ESTADOS ? TODOS_LOS_ESTADOS : (valor as EstadoTurno))
+    setSeleccion(new Set())
+  }
 
   function alternar(o: OcurrenciaDeAlumno) {
     setSeleccion((anterior) => {
@@ -116,32 +149,37 @@ export function TurnosDelAlumno({
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-2">
-          <Input
-            type="date"
-            value={desde}
-            onChange={(e) => {
-              setDesde(e.target.value)
-              setSeleccion(new Set())
-            }}
-            aria-label="Desde"
-            className="h-9 w-40"
-          />
-          <span className="text-muted-foreground">-</span>
-          <Input
-            type="date"
-            value={hasta}
-            onChange={(e) => {
-              setHasta(e.target.value)
-              setSeleccion(new Set())
-            }}
-            aria-label="Hasta"
-            className="h-9 w-40"
-          />
           {cancelables.length > 0 && (
             <Button variant="outline" size="sm" onClick={alternarTodas}>
               {todasTildadas ? 'Quitar selección' : 'Seleccionar todos'}
             </Button>
           )}
+          <Select value={String(mes)} onValueChange={cambiarMes}>
+            <SelectTrigger aria-label="Mes" className="h-9 w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODO_EL_ANIO}>Todo el año</SelectItem>
+              {MESES_DEL_ANIO.map((m) => (
+                <SelectItem key={m} value={String(m)}>
+                  {nombreDelMes(m)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <Select value={estadoFiltro} onValueChange={cambiarEstado}>
+            <SelectTrigger aria-label="Filtrar por estado" className="h-9 w-44">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS_LOS_ESTADOS}>Todos los estados</SelectItem>
+              {(Object.keys(ESTADO_TURNO) as EstadoTurno[]).map((estado) => (
+                <SelectItem key={estado} value={estado}>
+                  {ESTADO_TURNO[estado].etiqueta}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         <div className="flex flex-wrap items-center gap-3">
           {cancelables.length > 0 &&
@@ -150,18 +188,18 @@ export function TurnosDelAlumno({
               ocurrencias: ocurrenciasSeleccionadas,
               onListo: () => setSeleccion(new Set()),
             })}
-          {data && data.length > 0 && renderPdf?.({ alumnoId, desde, hasta })}
+          {datosFiltrados.length > 0 &&
+            renderPdf?.({
+              alumnoId,
+              desde,
+              hasta,
+              estado: estadoFiltro === TODOS_LOS_ESTADOS ? null : estadoFiltro,
+              seleccionadas: ocurrenciasSeleccionadas,
+            })}
         </div>
       </div>
 
-      {rangoInvertido ? (
-        <Alert variant="destructive">
-          <AlertCircle className="size-4" />
-          <AlertDescription className="text-destructive">
-            “Hasta” tiene que ser posterior a “Desde”.
-          </AlertDescription>
-        </Alert>
-      ) : isError ? (
+      {isError ? (
         <Alert variant="destructive">
           <AlertCircle className="size-4" />
           <AlertDescription className="text-destructive flex flex-wrap items-center justify-between gap-3">
@@ -197,8 +235,8 @@ export function TurnosDelAlumno({
                     </TableCell>
                   </TableRow>
                 ))
-              ) : data && data.length > 0 ? (
-                data.map((turno) => (
+              ) : datosFiltrados.length > 0 ? (
+                datosFiltrados.map((turno) => (
                   <TableRow
                     key={clave(turno)}
                     className="relative cursor-pointer"
@@ -253,7 +291,7 @@ export function TurnosDelAlumno({
                     <EmptyState
                       icon={CalendarX2}
                       title="Sin turnos"
-                      description="Este alumno no tiene turnos en el rango elegido."
+                      description="Este alumno no tiene turnos en el período elegido."
                       className="py-16"
                     />
                   </TableCell>

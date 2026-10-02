@@ -1,5 +1,6 @@
 'use client'
 
+import type { ReactNode } from 'react'
 import Link from 'next/link'
 import { CalendarCheck, CalendarX, Eye, Plus, UserRoundPlus } from 'lucide-react'
 
@@ -34,6 +35,11 @@ type ConfirmacionTurnoProps = {
   onVerDetalle: () => void
   onRegistrarOtro: () => void
   onRegistrarOtroMismoAlumno: () => void
+  /**
+   * "Generar PDF" de cada tramo creado (no es de ningún ticket: T-69, aparte de T-60). Uno por
+   * tramo, igual que "Ver detalle": un alta recurrente puede crear varios.
+   */
+  renderPdf?: (tramo: { turnoId: number; fecha: string }) => ReactNode
 }
 
 /**
@@ -47,6 +53,7 @@ export function ConfirmacionTurno({
   onVerDetalle,
   onRegistrarOtro,
   onRegistrarOtroMismoAlumno,
+  renderPdf,
 }: ConfirmacionTurnoProps) {
   const [primero] = alta.turnos
   const horas = agruparTurnosPorHora(alta.turnos)
@@ -120,18 +127,21 @@ export function ConfirmacionTurno({
                     className="flex flex-wrap items-center justify-between gap-2 text-sm"
                   >
                     <span className="text-muted-foreground">{textoRangoTurno(tramo)}</span>
-                    <Link
-                      href={hrefDetalle(tramo.id, tramo.fechaInicio)}
-                      scroll={false}
-                      onClick={(e) => {
-                        if (!e.metaKey && !e.ctrlKey && !e.shiftKey) onVerDetalle()
-                      }}
-                      className="text-cobalto inline-flex items-center gap-1 font-medium hover:underline"
-                    >
-                      <Eye className="size-3.5" aria-hidden />
-                      Ver detalle
-                      <span className="sr-only"> del turno {textoRangoTurno(tramo)}</span>
-                    </Link>
+                    <div className="flex items-center gap-3">
+                      {renderPdf?.({ turnoId: tramo.id, fecha: tramo.fechaInicio })}
+                      <Link
+                        href={hrefDetalle(tramo.id, tramo.fechaInicio)}
+                        scroll={false}
+                        onClick={(e) => {
+                          if (!e.metaKey && !e.ctrlKey && !e.shiftKey) onVerDetalle()
+                        }}
+                        className="text-cobalto inline-flex items-center gap-1 font-medium hover:underline"
+                      >
+                        <Eye className="size-3.5" aria-hidden />
+                        Ver detalle
+                        <span className="sr-only"> del turno {textoRangoTurno(tramo)}</span>
+                      </Link>
+                    </div>
                   </li>
                 ))}
               </ul>

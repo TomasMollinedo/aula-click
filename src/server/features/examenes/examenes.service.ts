@@ -24,11 +24,14 @@ const MENSAJE_ALUMNO_NO_ENCONTRADO = 'Alumno no encontrado'
 const MENSAJE_MATERIA_NO_ENCONTRADA = 'Materia no encontrada'
 const MENSAJE_MATERIA_INACTIVA = 'La materia está inactiva: no se le puede cargar un examen'
 const MENSAJE_MATERIA_AJENA = 'No dicta esa materia a este alumno'
+const MENSAJE_MATERIA_SIN_TURNOS = 'El alumno no tiene turnos próximos de esa materia'
 const MENSAJE_PENDIENTE =
   'Ya hay un examen pendiente de esa materia: edítelo en vez de cargar uno nuevo'
 
 /** Código del 409 al cargar o editar un examen de una materia inactiva (`contrato-api.md`). */
 export const CODIGO_MATERIA_INACTIVA = 'MATERIA_INACTIVA'
+/** Código del 409 al cargar o mover un examen a una materia sin turnos vigentes del alumno. */
+export const CODIGO_MATERIA_SIN_TURNOS = 'MATERIA_SIN_TURNOS'
 /** Código del 409 al cargar o mover un examen a una materia con un pendiente (HU-17). */
 export const CODIGO_EXAMEN_PENDIENTE = 'EXAMEN_PENDIENTE'
 
@@ -60,13 +63,14 @@ export function crearExamenesService({
     | 'actualizar'
     | 'darDeBaja'
     | 'materiasDictadas'
+    | 'materiasConTurnoVigente'
   >
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   materiasRepository: Pick<MateriasRepository, 'listarActivas' | 'buscarPorIds'>
   profesoresRepository: Pick<ProfesoresRepository, 'buscarIdPorUsuario'>
   reloj?: Reloj
 }) {
-  function aItem(examen: ExamenGuardado, fechaHoy: string): ExamenItem {
+  function aItem(examen: ExamenGuardado, fechaHoy: string, administrable: boolean): ExamenItem {
     const pasado = examen.fecha < fechaHoy
     return {
       id: examen.id,
@@ -76,6 +80,7 @@ export function crearExamenesService({
       observaciones: examen.observaciones,
       pasado,
       diasRestantes: pasado ? null : diasEntre(fechaHoy, examen.fecha),
+      administrable,
       createdAt: examen.createdAt,
       updatedAt: examen.updatedAt,
       createdBy: examen.createdBy,
@@ -129,6 +134,39 @@ export function crearExamenesService({
     }
   }
 
+  /**
+   * Ids de las materias en las que se le puede cargar un examen nuevo al alumno: las de sus turnos
+   * vigentes (alguna fecha no cancelada de hoy en adelante). `PROFESOR`: sólo las de los turnos que
+   * tiene con él.
+   */
+  async function materiasConTurno(
+    actor: Actor,
+    alumnoId: number,
+    fechaHoy: string,
+  ): Promise<number[]> {
+    if (actor.role !== 'PROFESOR') return repository.materiasConTurnoVigente(alumnoId, fechaHoy)
+    const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
+    return profesorId === null
+      ? []
+      : repository.materiasConTurnoVigente(alumnoId, fechaHoy, profesorId)
+  }
+
+  /** El alumno sin turnos vigentes de esa materia → 409 `MATERIA_SIN_TURNOS` (`materiaId`). */
+  async function exigirTurnoVigente(
+    actor: Actor,
+    alumnoId: number,
+    materiaId: number,
+    fechaHoy: string,
+  ): Promise<void> {
+    const materiaIds = await materiasConTurno(actor, alumnoId, fechaHoy)
+    if (!materiaIds.includes(materiaId)) {
+      throw new ConflictError(MENSAJE_MATERIA_SIN_TURNOS, {
+        code: CODIGO_MATERIA_SIN_TURNOS,
+        details: [{ path: ['materiaId'], message: MENSAJE_MATERIA_SIN_TURNOS }],
+      })
+    }
+  }
+
   /** Un examen `ACTIVO` pendiente (fecha `>= hoy`) de la misma materia → 409 con el existente. */
   async function exigirSinPendiente(
     alumnoId: number,
@@ -146,28 +184,47 @@ export function crearExamenesService({
   }
 
   return {
-    /** `{ proximos[], pasados[] }` del alumno: próximos por fecha ascendente, pasados al revés. */
-    async listar(alumnoId: number): Promise<ExamenesListado> {
+    /**
+     * `{ proximos[], pasados[] }` del alumno: próximos por fecha ascendente, pasados al revés.
+     * `administrable` dice si el actor puede editarlo y darlo de baja: mesa de entradas, todos; el
+     * profesor, los de las materias que le dicta al alumno (la misma regla que `exigirMateriaPropia`).
+     */
+    async listar(alumnoId: number, actor: Actor): Promise<ExamenesListado> {
       const fechaHoy = hoy(reloj)
       const examenes = await repository.listarDelAlumno(alumnoId)
-      const proximos = examenes.filter((examen) => examen.fecha >= fechaHoy)
-      const pasados = examenes.filter((examen) => examen.fecha < fechaHoy).reverse()
+      let propias: Set<number> | null = null
+      if (actor.role === 'PROFESOR') {
+        const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
+        const materias =
+          profesorId === null ? [] : await repository.materiasDictadas(profesorId, alumnoId)
+        propias = new Set(materias.map((materia) => materia.id))
+      }
+      const item = (examen: ExamenGuardado) =>
+        aItem(examen, fechaHoy, propias === null || propias.has(examen.materiaId))
       return {
-        proximos: proximos.map((examen) => aItem(examen, fechaHoy)),
-        pasados: pasados.map((examen) => aItem(examen, fechaHoy)),
+        proximos: examenes.filter((examen) => examen.fecha >= fechaHoy).map(item),
+        pasados: examenes
+          .filter((examen) => examen.fecha < fechaHoy)
+          .reverse()
+          .map(item),
       }
     },
 
-    /** Materias ofrecibles para cargarle un examen a ese alumno: catálogo o las que le dicta. */
+    /**
+     * Materias ofrecibles para cargarle un examen nuevo a ese alumno: las activas en las que tiene
+     * algún turno vigente (para el profesor, con él), por nombre.
+     */
     async materiasOfrecibles(alumnoId: number, actor: Actor): Promise<MateriasExamenSelector> {
-      if (actor.role !== 'PROFESOR') return materiasRepository.listarActivas()
-      const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
-      return profesorId === null ? [] : repository.materiasDictadas(profesorId, alumnoId)
+      const materiaIds = await materiasConTurno(actor, alumnoId, hoy(reloj))
+      if (materiaIds.length === 0) return []
+      const activas = await materiasRepository.listarActivas()
+      return activas.filter((materia) => materiaIds.includes(materia.id))
     },
 
     /**
      * Alta de un examen (HU-17). Chequeos, en orden: alumno (404), materia activa (404/409),
-     * materia propia si es `PROFESOR` (403) y sin un pendiente de la misma materia (409). Una fecha
+     * materia propia si es `PROFESOR` (403), con algún turno vigente del alumno en esa materia (409)
+     * y sin un pendiente de la misma materia (409). Una fecha
      * pasada se acepta (`pasado: true` en la respuesta, para el aviso del front).
      */
     async crear(datos: CrearExamen, actor: Actor): Promise<ExamenDetalle> {
@@ -177,6 +234,7 @@ export function crearExamenesService({
 
       await exigirMateriaActiva(datos.materiaId)
       await exigirMateriaPropia(actor, datos.alumnoId, datos.materiaId)
+      await exigirTurnoVigente(actor, datos.alumnoId, datos.materiaId, fechaHoy)
       await exigirSinPendiente(datos.alumnoId, datos.materiaId, fechaHoy)
 
       const examen = await repository.crear(datos, actor)
@@ -184,7 +242,9 @@ export function crearExamenesService({
     },
 
     /**
-     * Edición parcial. Si cambia la materia, se revalida que esté activa; si cambia la materia o la
+     * Edición parcial. Si cambia la materia, se revalida que esté activa y, si es otra que la que
+     * tenía, que el alumno tenga algún turno vigente en ella (la propia se conserva aunque ya no
+     * tenga turnos); si cambia la materia o la
      * fecha, se vuelve a chequear el pendiente (sin contar el propio examen). El permiso de
      * `PROFESOR` se chequea contra la materia resultante (la nueva, si cambia).
      */
@@ -196,6 +256,9 @@ export function crearExamenesService({
       const materiaId = cambios.materiaId ?? actual.materiaId
       if (cambios.materiaId !== undefined) await exigirMateriaActiva(materiaId)
       await exigirMateriaPropia(actor, actual.alumnoId, materiaId)
+      if (materiaId !== actual.materiaId) {
+        await exigirTurnoVigente(actor, actual.alumnoId, materiaId, fechaHoy)
+      }
       if (cambios.materiaId !== undefined || cambios.fecha !== undefined) {
         await exigirSinPendiente(actual.alumnoId, materiaId, fechaHoy, id)
       }

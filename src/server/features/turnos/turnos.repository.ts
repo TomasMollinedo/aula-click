@@ -186,11 +186,12 @@ async function leerSnapshot(
 
 export const turnosRepository = {
   /**
-   * Cantidad de turnos vigentes por materia, filtrable por profesor (el del bloque) y materias.
-   * Solo vienen las materias con al menos un turno vigente.
+   * Cantidad de turnos vigentes por materia, filtrable por alumno, profesor (el del bloque) y
+   * materias. Solo vienen las materias con al menos un turno vigente.
    */
   async contarVigentesPorMateria(filtro: {
     fechaHoy: string
+    alumnoId?: number
     profesorId?: number
     materiaIds?: number[]
   }): Promise<TurnosVigentesPorMateria[]> {

@@ -40,8 +40,14 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
           <TurnosDelAlumno
             alumnoId={alumno.id}
             renderAccionesSeleccion={(seleccion) => <AccionCancelarVarios {...seleccion} />}
-            renderPdf={({ alumnoId, desde, hasta }) => (
-              <AccionPdfTurnosAlumno alumnoId={alumnoId} desde={desde} hasta={hasta} />
+            renderPdf={({ alumnoId, desde, hasta, estado, seleccionadas }) => (
+              <AccionPdfTurnosAlumno
+                alumnoId={alumnoId}
+                desde={desde}
+                hasta={hasta}
+                estado={estado}
+                seleccionadas={seleccionadas}
+              />
             )}
           />
         )}
