@@ -178,7 +178,8 @@ export function AlumnoDetalle({
       {TABS.filter((t) => disponibles[t]).length === 1 ? (
         <DatosAlumno alumno={alumno} />
       ) : (
-        <Tabs value={tab} onValueChange={cambiarTab} className="space-y-6">
+        // `relative`: el selector Calendario / Lista de "Turnos" se ubica al borde derecho de las pestañas.
+        <Tabs value={tab} onValueChange={cambiarTab} className="relative space-y-6">
           {/* Con cuatro tabs, en mobile la barra se desplaza sola en lugar de desbordar la página. */}
           <div className="max-w-full overflow-x-auto">
             <TabsList>

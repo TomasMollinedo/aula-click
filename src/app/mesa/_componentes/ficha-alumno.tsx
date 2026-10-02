@@ -3,6 +3,7 @@
 import { Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
+import { AgendaDelAlumno } from '@/features/agendas/components/AgendaDelAlumno'
 import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
 import { AccionCancelarVarios } from '@/features/cancelaciones/components/AccionCancelarVarios'
 import { PagosDelAlumno } from '@/features/cuentas/components/PagosDelAlumno'
@@ -29,8 +30,9 @@ export function FichaAlumno({ alumnoId }: { alumnoId: string }) {
 
 function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
   // El detalle de un turno abierto desde "Turnos" o "Pagos" (`?detalle=&fecha=`): mismo patrón que las
-  // agendas (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia).
-  const { detalle, cerrar } = useDetalleEnUrl()
+  // agendas (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia). En el calendario de
+  // "Turnos" `?fecha=` es la semana que se ve: al cerrar el detalle se conserva.
+  const { detalle, cerrar } = useDetalleEnUrl({ fechaEsDeLaPantalla: true })
   // Abierto desde "Pagos" (`?tab=pagos`), el detalle solo ofrece "Registrar pago".
   const enPagos = useSearchParams().get('tab') === 'pagos'
 
@@ -40,19 +42,22 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
         alumnoId={alumnoId}
         rutaBase="/mesa/alumnos"
         renderTurnos={(alumno) => (
-          <TurnosDelAlumno
-            alumnoId={alumno.id}
-            renderAccionesSeleccion={(seleccion) => <AccionCancelarVarios {...seleccion} />}
-            renderPdf={({ alumnoId, desde, hasta, estado, seleccionadas }) => (
-              <AccionPdfTurnosAlumno
-                alumnoId={alumnoId}
-                desde={desde}
-                hasta={hasta}
-                estado={estado}
-                seleccionadas={seleccionadas}
-              />
-            )}
-          />
+          // Calendario por defecto y la lista de turnos como segunda vista.
+          <AgendaDelAlumno alumnoId={alumno.id}>
+            <TurnosDelAlumno
+              alumnoId={alumno.id}
+              renderAccionesSeleccion={(seleccion) => <AccionCancelarVarios {...seleccion} />}
+              renderPdf={({ alumnoId, desde, hasta, estado, seleccionadas }) => (
+                <AccionPdfTurnosAlumno
+                  alumnoId={alumnoId}
+                  desde={desde}
+                  hasta={hasta}
+                  estado={estado}
+                  seleccionadas={seleccionadas}
+                />
+              )}
+            />
+          </AgendaDelAlumno>
         )}
         renderExamenes={(alumno) => <ExamenesDelAlumno alumnoId={alumno.id} rol="MESA_ENTRADAS" />}
         renderPagos={(alumno) => (

@@ -17,8 +17,12 @@ type AgendaConModoProps = {
   children: ReactNode
   /** Lo que se ve en el modo "Calendario" (recibe los filtros de la URL). */
   renderCalendario: (filtros: FiltrosAgenda) => ReactNode
-  /** Compone `app/` el detalle de un turno (`?detalle=&fecha=`): vale para los dos modos. */
-  renderDetalle: RenderDetalleOcurrencia
+  /**
+   * Compone `app/` el detalle de un turno (`?detalle=&fecha=`): vale para los dos modos. Sin él, la
+   * agenda solo arma los links al detalle y lo monta quien la contiene (la ficha del alumno, que
+   * tiene un solo detalle para todas sus pestañas).
+   */
+  renderDetalle?: RenderDetalleOcurrencia
   /** Junto al selector, por ejemplo el botón del PDF de la agenda diaria. */
   acciones?: ReactNode
   /**
@@ -31,7 +35,7 @@ type AgendaConModoProps = {
 }
 
 /**
- * Lo que comparten las tres agendas (diaria, de un profesor y "Mi agenda"): el selector
+ * Lo que comparten las agendas (diaria, de un profesor, "Mi agenda" y los turnos de un alumno): el selector
  * "Calendario / Lista" cuyo modo va en la URL y por defecto es el calendario (HU-19), el detalle del
  * turno abierto desde la URL y el lugar para las acciones del encabezado. Los filtros de estado y
  * prioridad (HU-18) viven en la URL (`useFiltrosAgenda`) y valen en los dos modos: en los dos van
@@ -72,7 +76,7 @@ export function AgendaConModo({
 
         {modo === 'calendario' ? renderCalendario(filtros) : children}
 
-        {detalle && renderDetalle({ ...detalle, onCerrar: cerrar })}
+        {detalle && renderDetalle?.({ ...detalle, onCerrar: cerrar })}
       </div>
     </DetalleAgendaProvider>
   )
