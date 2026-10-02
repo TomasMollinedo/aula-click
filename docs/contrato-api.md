@@ -850,11 +850,11 @@ A completar por T-61 (opcional).
 
 Los datos del centro para el encabezado de los documentos oficiales (turno, agenda, comprobante — HU-11, HU-15, T-60). Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
 
-**`GET /api/v1/centro`**: `{ "nombre", "direccion", "telefono" }`, los tres `string`.
+**`GET /api/v1/centro`**: `{ "nombre", "direccion", "telefono" }`, los tres `string`. `nombre` es el de la organización que emite los documentos (Nexo Académico), no el del sistema (Aula Click).
 
 ```json
 {
-  "nombre": "Aula Click",
+  "nombre": "Nexo Académico",
   "direccion": "Los Tarcos 300, Tres Cerritos",
   "telefono": "3875631032"
 }

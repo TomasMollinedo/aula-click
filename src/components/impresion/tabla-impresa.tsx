@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { cn } from '@/utils/cn'
 
 // Tabla de un documento imprimible que puede ocupar varias hojas (el comprobante de pago: hasta
-// 200 turnos). Mismo lenguaje que `Campo`: encabezados dorados en mayúsculas, filas con un
+// 200 turnos). Mismo lenguaje que `Campo`: encabezados en cobalto y en mayúsculas, filas con un
 // separador suave e importes a la derecha. `data-tabla-impresa` y `data-no-partir` son los ganchos
 // de `src/app/impresion.css`: el encabezado se repite en cada hoja y ninguna fila se parte.
 
@@ -20,7 +20,7 @@ export function TablaImpresa({ titulo, children }: { titulo: string; children: R
 export function EncabezadosImpresos({ children }: { children: ReactNode }) {
   return (
     <thead>
-      <tr className="border-dorado/50 border-b-2 text-left">{children}</tr>
+      <tr className="border-cobalto/40 border-b-2 text-left">{children}</tr>
     </thead>
   )
 }
@@ -37,7 +37,7 @@ export function EncabezadoImpreso({
     <th
       scope="col"
       className={cn(
-        'text-dorado py-2 text-[11px] font-bold tracking-wide uppercase',
+        'text-cobalto py-2 text-[11px] font-bold tracking-wide uppercase',
         numerica ? 'text-right' : 'pr-3',
       )}
     >

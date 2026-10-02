@@ -16,6 +16,16 @@
   }
 
   /*
+   * Por defecto el navegador no imprime los fondos ("Gráficos de fondo" apagado): sin esto se
+   * pierden las tarjetas suaves de las secciones y las filas alternadas de las tablas. Solo afecta
+   * a la hoja (`DocumentoOficial`), no al resto de la app.
+   */
+  [data-documento-oficial] {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /*
    * AppShell fija el layout al tamaño de la pantalla (`fixed inset-0`) y scrollea el contenido
    * (`overflow-y-auto` en el <main>) para navegar la app. Al imprimir eso le impide partirse en
    * varias hojas: el navegador trata todo como una única "página" con scroll propio. Acá se

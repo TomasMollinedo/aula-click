@@ -71,7 +71,7 @@ export function Campos({ children }: { children: ReactNode }) {
 export function Campo({ label, valor }: { label: string; valor: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-dorado text-[10px] font-bold tracking-widest uppercase">{label}</dt>
+      <dt className="text-cobalto text-[10px] font-bold tracking-widest uppercase">{label}</dt>
       <dd className="mt-1 text-[15px] text-black">{valor ?? '—'}</dd>
     </div>
   )

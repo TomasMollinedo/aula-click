@@ -197,7 +197,7 @@ function Totales({ comprobante }: { comprobante: Comprobante }) {
   return (
     <dl className="ml-auto w-72 rounded-xl border border-black/10 bg-black/1.5 px-6 py-5">
       <div className="flex items-baseline justify-between gap-6">
-        <dt className="text-dorado text-[11px] font-bold tracking-widest uppercase">Total</dt>
+        <dt className="text-cobalto text-[11px] font-bold tracking-widest uppercase">Total</dt>
         <dd className="text-2xl font-semibold text-black tabular-nums">{formatearPesos(total)}</dd>
       </div>
       {(montoRecibido !== null || vuelto !== null) && (
