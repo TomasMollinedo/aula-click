@@ -238,7 +238,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               <Field
                 label="Monto recibido"
                 htmlFor="pago-montoRecibido"
-                optional
+                required
                 error={errors.montoRecibido?.message}
               >
                 <Input
@@ -254,7 +254,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
                   {...register('montoRecibido')}
                 />
                 <p id="pago-montoRecibido-ayuda" className="text-muted-foreground text-xs">
-                  Si lo cargás, te mostramos el vuelto
+                  Lo que entrega el alumno: con eso calculamos el vuelto
                 </p>
               </Field>
 

@@ -548,8 +548,10 @@ model FormaPago {
 
 // Un pago de un alumno, que puede incluir una o varias de sus ocurrencias (PagoTurno) y genera
 // un único comprobante. numeroComprobante es correlativo y no se repite (HU-15).
-// montoRecibido es opcional y, si viene, es >= importeTotal: lo valida la API (el CHECK en la base
-// queda pendiente, decisión T-50). El vuelto lo calcula y lo devuelve la API: no se guarda.
+// montoRecibido es obligatorio en un pago en efectivo (única forma de pago hoy) y >= importeTotal:
+// lo valida la API (el CHECK en la base queda pendiente, decisión T-50). La columna sigue nullable
+// para otras formas de pago y para los pagos anteriores a esa regla. El vuelto lo calcula y lo
+// devuelve la API: no se guarda.
 // estado queda sin uso en este sprint: todo pago nace VIGENTE; la anulación llega en el próximo.
 model Pago {
   id                Int        @id @default(autoincrement())

@@ -58,13 +58,13 @@ export type SnapshotPago = {
 export type PedidoPago = {
   alumnoId: number
   ocurrencias: readonly OcurrenciaPedida[]
-  montoRecibido: number | null
+  montoRecibido: number
 }
 
 export type LineaPago = { turnoId: number; fecha: string; importe: number }
 
 /** Resultado del cobro. Los importes, en pesos con hasta dos decimales. */
-export type PlanPago = { lineas: LineaPago[]; total: number; vuelto: number | null }
+export type PlanPago = { lineas: LineaPago[]; total: number; vuelto: number }
 
 const centavos = (importe: number) => Math.round(importe * 100)
 const clave = (turnoId: number, fecha: string) => `${turnoId}|${fecha}`
@@ -82,7 +82,12 @@ export function sumarImportes(importes: readonly number[]): number {
   return importes.reduce((suma, importe) => suma + centavos(importe), 0) / 100
 }
 
-/** `montoRecibido - total` en centavos, o `null` si no se informó el monto. No se guarda. */
+/**
+ * `montoRecibido - total` en centavos. No se guarda. `null` sin monto recibido: sólo le pasa al
+ * comprobante de un pago anterior a que el monto fuera obligatorio.
+ */
+export function calcularVuelto(montoRecibido: number, total: number): number
+export function calcularVuelto(montoRecibido: number | null, total: number): number | null
 export function calcularVuelto(montoRecibido: number | null, total: number): number | null {
   return montoRecibido === null ? null : (centavos(montoRecibido) - centavos(total)) / 100
 }
@@ -126,7 +131,7 @@ function motivoNoCobrable(
  * 4. 400 `VALIDACION` en `montoRecibido` si es menor al total, con los dos importes en el mensaje.
  *
  * Si no lanza: una línea por ocurrencia, en el orden del pedido, con el precio vigente de su
- * materia; el total sumado en centavos; y el vuelto (`null` sin `montoRecibido`).
+ * materia; el total sumado en centavos; y el vuelto.
  */
 export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: string): PlanPago {
   const porClave = new Map(snapshot.ocurrencias.map((o) => [clave(o.turnoId, o.fecha), o]))
@@ -185,7 +190,7 @@ export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: 
     throw new ValidationError(mensaje, { details: [{ path: ['ocurrencias'], message: mensaje }] })
   }
 
-  if (pedido.montoRecibido !== null && centavos(pedido.montoRecibido) < centavos(total)) {
+  if (centavos(pedido.montoRecibido) < centavos(total)) {
     const mensaje = `El monto recibido (${formatearPesos(pedido.montoRecibido)}) es menor al total (${formatearPesos(total)})`
     throw new ValidationError(mensaje, { details: [{ path: ['montoRecibido'], message: mensaje }] })
   }

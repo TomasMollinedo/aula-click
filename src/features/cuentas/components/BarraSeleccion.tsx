@@ -42,7 +42,8 @@ type BarraSeleccionProps = AccionesDeLaBarra & {
  * siempre: sin selección dice "Ningún turno seleccionado" y los botones quedan deshabilitados; con
  * selección, el total a pagar va destacado (grande y en negrita), con la cantidad de turnos. El
  * total es la suma de los importes de la API (`resumenSeleccion`); el real sale de la respuesta
- * del pago.
+ * del pago. A la izquierda van "Seleccionar todos los adeudados" y "Quitar selección"; a la
+ * derecha, el total a pagar al lado de "Registrar pago". La copia flotante usa el mismo orden.
  *
  * **Copia flotante.** Cuando al scrollear las listas la barra deja de verse y hay algo tildado, la
  * misma barra aparece flotando abajo, para registrar el pago sin volver al principio: una bolita
@@ -147,32 +148,7 @@ function Contenido({
 
   return (
     <>
-      {/* Siempre montado: un aria-live que aparece junto con su contenido no se anuncia. */}
-      <div aria-live={anunciar ? 'polite' : undefined} aria-atomic={anunciar} className="min-w-0">
-        {vacia ? (
-          <p className="text-sm font-medium">Ningún turno seleccionado</p>
-        ) : (
-          <>
-            <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-              Total a pagar · {textoTurnosSeleccionados(resumen.cantidad)}
-            </p>
-            {/*
-              Resaltado: letras blancas sobre el verde de los importes (`confirmado`), grande y en
-              negrita. Es lo que se va a cobrar. Sin total (algún turno sin precio) va en el color
-              de aviso, no en verde.
-            */}
-            <p
-              className={cn(
-                'mt-1 inline-block rounded-md px-2.5 py-0.5 text-2xl leading-tight font-bold text-white tabular-nums',
-                resumen.total === null ? 'bg-urgente' : 'bg-confirmado',
-              )}
-            >
-              {textoTotalAPagar(resumen)}
-            </p>
-            {sinPrecio && <p className="text-urgente text-xs font-medium">{sinPrecio}</p>}
-          </>
-        )}
-      </div>
+      {/* A la izquierda, las acciones sobre la selección. */}
       <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
         {onSeleccionarTodos && (
           <Button
@@ -189,8 +165,42 @@ function Contenido({
           <X />
           Quitar selección
         </Button>
+      </div>
+      {/* A la derecha, lo que se va a cobrar pegado al botón que lo cobra. */}
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
+        {/* Siempre montado: un aria-live que aparece junto con su contenido no se anuncia. */}
+        <div
+          aria-live={anunciar ? 'polite' : undefined}
+          aria-atomic={anunciar}
+          className="min-w-0 sm:text-right"
+        >
+          {vacia ? (
+            <p className="text-sm font-medium">Ningún turno seleccionado</p>
+          ) : (
+            <>
+              <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+                Total a pagar · {textoTurnosSeleccionados(resumen.cantidad)}
+              </p>
+              {/*
+                Resaltado: letras blancas sobre el verde de los importes (`confirmado`), grande y en
+                negrita. Es lo que se va a cobrar. Sin total (algún turno sin precio) va en el color
+                de aviso, no en verde.
+              */}
+              <p
+                className={cn(
+                  'mt-1 inline-block rounded-md px-2.5 py-0.5 text-2xl leading-tight font-bold text-white tabular-nums',
+                  resumen.total === null ? 'bg-urgente' : 'bg-confirmado',
+                )}
+              >
+                {textoTotalAPagar(resumen)}
+              </p>
+              {sinPrecio && <p className="text-urgente text-xs font-medium">{sinPrecio}</p>}
+            </>
+          )}
+        </div>
         <Button
           type="button"
+          className="shrink-0"
           onClick={(e) => onRegistrar(e.currentTarget)}
           disabled={vacia || enEspera}
         >

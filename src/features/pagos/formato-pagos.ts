@@ -54,10 +54,10 @@ export function textoNumeroComprobante(numeroComprobante: number): string {
 }
 
 /**
- * `'Vuelto: $ 3.000,00'`, o `null` si no se informó el monto recibido. Un vuelto de 0 se muestra
- * (`'Vuelto: $ 0,00'`): el monto se informó y era justo. Sirve para la respuesta y el comprobante.
+ * `'Vuelto: $ 3.000,00'`. Un vuelto de 0 se muestra (`'Vuelto: $ 0,00'`): el monto era justo.
+ * `null` sin vuelto: solo un pago anterior a que el monto recibido fuera obligatorio.
  */
-export function textoVuelto(pago: Pick<PagoRegistrado, 'vuelto'>): string | null {
+export function textoVuelto(pago: { vuelto: number | null }): string | null {
   return pago.vuelto === null ? null : `Vuelto: ${formatearPesos(pago.vuelto)}`
 }
 

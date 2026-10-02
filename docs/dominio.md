@@ -100,7 +100,7 @@ HU-12 (T-39). Reemplaza a HU-04 en cuanto a quién administra el catálogo.
 Modelo de datos (T-29); las reglas completas de cobro las fija HU-15 (registrar un pago) y HU-16 (deuda del alumno), cada una en su propia tarea.
 
 - Un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
-- El monto recibido (`Pago.montoRecibido`) es opcional; si se informa, tiene que ser >= el importe total. El vuelto lo calcula y lo devuelve la API: no se guarda (T-49).
+- El monto recibido (`Pago.montoRecibido`) es obligatorio en un pago en efectivo, la única forma de pago disponible, y tiene que ser >= el importe total (T-112). El vuelto lo calcula y lo devuelve la API: no se guarda (T-49).
 - La forma de pago (`FormaPago`) es un catálogo con baja lógica; el seed carga **"Efectivo"**, único medio disponible en este sprint (el ABM completo es HU-23, fuera de alcance).
 - El importe de cada ocurrencia pagada (`PagoTurno.importeAplicado`) es el precio por hora **vigente** de la materia del turno (`Materia.precioHora`) al momento de registrar el pago: cambiar el precio de la materia después no modifica los pagos ya registrados.
 - Una ocurrencia se paga **una sola vez** (lo garantiza la base, T-49). La anulación de pagos queda para el próximo sprint: en este, todo pago nace `VIGENTE` y un turno pagado no se puede cancelar.
@@ -163,7 +163,7 @@ HU-15 (T-51). El modelo (un pago de un alumno con una o varias ocurrencias, comp
 - **Precio vigente:** el importe de cada ocurrencia es el precio por hora de su materia al registrar el pago (no lo manda el cliente). Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
 - **Todo o nada:** si alguna ocurrencia no se puede cobrar, no se registra ninguna y la API informa cuáles y por qué (no existe, cancelada, ya pagada, fuera de las 8 semanas o sin precio). Dos pagos simultáneos de la misma ocurrencia: sólo uno se registra.
 - **Fecha de pago:** obligatoria, hoy o anterior.
-- **Monto recibido y vuelto:** el monto recibido es opcional; si se informa, tiene que ser >= el total. El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**.
+- **Monto recibido y vuelto:** el pago es en efectivo, así que el monto recibido es **obligatorio**: mayor a 0 y >= el total. Sin él no se registra el pago (T-112). El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**.
 - **Comprobante:** muestra los datos **actuales** de cada turno (si una ocurrencia pagada se reprograma, reimprimirlo muestra la fecha, la hora y el profesor nuevos) y el importe que se cobró, que no cambia (T-63). La numeración es correlativa pero puede tener huecos (T-62).
 - Los importes, el total y el vuelto los calcula siempre la API; la UI sólo los muestra.
 

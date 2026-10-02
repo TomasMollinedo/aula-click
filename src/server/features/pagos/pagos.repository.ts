@@ -193,7 +193,7 @@ export const pagosRepository = {
             formaPagoId: formaPago.id,
             importeTotal: aDecimal(plan.total),
             fechaPago: fechaADate(entrada.fechaPago),
-            montoRecibido: entrada.montoRecibido === null ? null : aDecimal(entrada.montoRecibido),
+            montoRecibido: aDecimal(entrada.montoRecibido),
             observaciones: entrada.observaciones,
             createdById: actor.userId,
             updatedById: actor.userId,

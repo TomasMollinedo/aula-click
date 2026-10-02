@@ -33,7 +33,8 @@ export function crearPagosService({
     /**
      * Registra el pago de una o varias ocurrencias de un alumno, todo o nada. Chequeos, en orden
      * (el primero que falla gana):
-     * 1. El body ya lo validó Zod (400).
+     * 1. El body ya lo validó Zod (400), incluido que venga `montoRecibido` (el pago es en
+     *    efectivo).
      * 2. `fechaPago` posterior a hoy → 400 en `fechaPago`.
      * 3. Alumno inexistente → 404 (su estado no importa: una deuda se cobra igual).
      * 4. Chequeo previo sin lock (`planificarPago` sobre el snapshot): ocurrencia de otro alumno
@@ -53,7 +54,7 @@ export function crearPagosService({
       const alumno = await alumnosRepository.buscarPorId(datos.alumnoId)
       if (!alumno) throw new NotFoundError('Alumno no encontrado')
 
-      const montoRecibido = datos.montoRecibido ?? null
+      const { montoRecibido } = datos
       const pedido: PedidoPago = {
         alumnoId: datos.alumnoId,
         ocurrencias: datos.ocurrencias,

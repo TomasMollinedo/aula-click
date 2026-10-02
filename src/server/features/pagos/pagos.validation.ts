@@ -4,7 +4,8 @@ import { fechaISO, horaHHmm, importe, textoOpcional } from '@/server/shared/zod'
 
 // Schemas Zod de entrada, salida y params de pagos (HU-15, T-51). Son la fuente del OpenAPI. Sin
 // reglas de negocio: qué ocurrencias se pueden cobrar, el total, el tope de `montoRecibido` y el
-// vuelto los decide el service con `pagos.reglas.ts`.
+// vuelto los decide el service con `pagos.reglas.ts`. `montoRecibido` es obligatorio porque todo
+// pago es en efectivo (única forma de pago): el día que haya otra, pasa a depender de la forma.
 
 /** Máximo de ocurrencias en un pago (decisión T-64). */
 export const MAX_OCURRENCIAS_POR_PAGO = 200
@@ -22,7 +23,7 @@ const idPositivo = (description: string, example: number) =>
  */
 const montoRecibidoEntrada = importe('El monto recibido').openapi({
   description:
-    'Monto que entregó el alumno, en pesos: mayor a 0, con hasta dos decimales y >= al total (lo valida la API con el precio vigente). Opcional: `null` u omitido = no se informó',
+    'Monto que entregó el alumno, en pesos: obligatorio (el pago es en efectivo), mayor a 0, con hasta dos decimales y >= al total (lo valida la API con el precio vigente)',
   example: 35000,
 })
 
@@ -67,7 +68,7 @@ export const registrarPagoSchema = z
       description: 'Fecha del pago (AAAA-MM-DD): hoy o anterior',
       example: '2026-10-05',
     }),
-    montoRecibido: montoRecibidoEntrada.nullable().optional(),
+    montoRecibido: montoRecibidoEntrada,
     observaciones: textoOpcional(
       OBSERVACIONES_MAX,
       'Observaciones del pago, hasta 500 caracteres',
@@ -85,12 +86,9 @@ export const pagoRegistradoSchema = z
     numeroComprobante: z.number().int().openapi({ example: 1024 }),
     cantidad: z.number().int().openapi({ description: 'Ocurrencias pagadas', example: 4 }),
     total: z.number().openapi({ description: 'Importe total en pesos', example: 32000 }),
-    montoRecibido: z.number().nullable().openapi({
-      description: 'Monto recibido en pesos, o `null` si no se informó',
-      example: 35000,
-    }),
-    vuelto: z.number().nullable().openapi({
-      description: '`montoRecibido - total`, o `null` sin monto recibido. No se guarda',
+    montoRecibido: z.number().openapi({ description: 'Monto recibido en pesos', example: 35000 }),
+    vuelto: z.number().openapi({
+      description: '`montoRecibido - total`. No se guarda',
       example: 3000,
     }),
   })
@@ -137,9 +135,12 @@ export const comprobanteSchema = z
       description: 'Ordenados por fecha, hora de inicio y turno',
     }),
     total: z.number(),
-    montoRecibido: z.number().nullable(),
+    montoRecibido: z.number().nullable().openapi({
+      description: '`null` sólo en un pago anterior a que el monto recibido fuera obligatorio',
+    }),
     vuelto: z.number().nullable().openapi({
-      description: 'Recalculado (`montoRecibido - total`), nunca leído de la base',
+      description:
+        'Recalculado (`montoRecibido - total`), nunca leído de la base; `null` sin monto recibido',
     }),
     formaPago: referencia,
     observaciones: z.string().nullable(),
@@ -160,6 +161,6 @@ export type EntradaPago = {
   alumnoId: number
   ocurrencias: OcurrenciaPedida[]
   fechaPago: string
-  montoRecibido: number | null
+  montoRecibido: number
   observaciones: string | null
 }

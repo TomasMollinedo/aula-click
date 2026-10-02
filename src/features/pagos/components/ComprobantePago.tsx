@@ -191,7 +191,10 @@ function ContenidoComprobante({ comprobante }: { comprobante: Comprobante }) {
   )
 }
 
-/** El total, destacado, y lo que se recibió y se devolvió, si se informó. Todo de la API. */
+/**
+ * El total, destacado, y lo que se recibió y se devolvió. Todo de la API. Sin monto recibido (un
+ * pago anterior a que fuera obligatorio) solo va el total.
+ */
 function Totales({ comprobante }: { comprobante: Comprobante }) {
   const { total, montoRecibido, vuelto } = comprobante
   return (

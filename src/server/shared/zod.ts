@@ -265,12 +265,15 @@ export const IMPORTE_MAX = 99_999_999.99
 /**
  * Importe en pesos (convenciones-backend.md → Importes). Entrada y salida: número JSON mayor a 0,
  * con hasta dos decimales y hasta `IMPORTE_MAX` (`8000`, `8000.5`, `8000.25`). `etiqueta` es el
- * sujeto de los mensajes (`"El monto recibido"` → "El monto recibido debe ser mayor a 0"). Sin
- * `.openapi()`: lo agrega cada campo con su descripción. Acepta `.nullable()` / `.optional()`.
+ * sujeto de los mensajes (`"El monto recibido"` → "El monto recibido debe ser mayor a 0"; si falta
+ * o es `null`, "El monto recibido es obligatorio"). Sin `.openapi()`: lo agrega cada campo con su
+ * descripción. Acepta `.nullable()` / `.optional()`.
  */
 export function importe(etiqueta: string) {
   return z
-    .number({ error: 'Debe ser un número' })
+    .number({
+      error: (issue) => (issue.input == null ? `${etiqueta} es obligatorio` : 'Debe ser un número'),
+    })
     .positive({ error: `${etiqueta} debe ser mayor a 0` })
     .max(IMPORTE_MAX, { error: `${etiqueta} no puede superar ${IMPORTE_MAX}` })
     .refine((valor) => IMPORTE_FORMATO.test(String(valor)), {
