@@ -631,7 +631,54 @@ A completar por T-53.
 
 ## Exámenes
 
-A completar por T-55.
+Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de los turnos (HU-18, `examenes.condiciones.ts`, T-31). Roles: `MESA_ENTRADAS` y `PROFESOR` en los cinco endpoints. "Eliminar" un examen es darlo de baja (`PATCH /{id}/baja`): nada se borra.
+
+**`GET /api/v1/examenes?alumnoId`**: exámenes `ACTIVO` del alumno, separados en `proximos` (fecha de hoy en adelante, orden ascendente, con `diasRestantes`) y `pasados` (sin `diasRestantes`). Cada uno trae su materia y la auditoría **con el rol** (`MESA_ENTRADAS` o `PROFESOR`) de quien lo cargó y de quien lo modificó por última vez.
+
+```json
+{
+  "proximos": [
+    {
+      "id": 5,
+      "materia": { "id": 3, "nombre": "Matemática" },
+      "fecha": "2026-10-15",
+      "tipo": "PARCIAL",
+      "observaciones": "Trae calculadora y formulario",
+      "pasado": false,
+      "diasRestantes": 10,
+      "createdAt": "2026-09-22T13:45:00.000Z",
+      "updatedAt": "2026-09-22T13:45:00.000Z",
+      "createdBy": {
+        "id": "usr_prof_01",
+        "nombre": "Luis",
+        "apellido": "Gómez",
+        "role": "PROFESOR"
+      },
+      "updatedBy": {
+        "id": "usr_prof_01",
+        "nombre": "Luis",
+        "apellido": "Gómez",
+        "role": "PROFESOR"
+      }
+    }
+  ],
+  "pasados": []
+}
+```
+
+**`GET /api/v1/examenes/materias?alumnoId`**: materias ofrecibles para cargarle un examen a ese alumno. Mesa de entradas: activas del catálogo. Profesor: sólo las que le dicta a ese alumno (`materiasDelProfesorConAlumno`, T-29/T-30); sin turnos activos con ese profesor, la lista viene vacía.
+
+**`POST /api/v1/examenes`**: `{ alumnoId, materiaId, fecha, tipo, observaciones? }`. `tipo` es uno de `PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`; `observaciones`, hasta 500 caracteres. Devuelve el detalle (`201`), con `pasado: true` si `fecha` ya pasó (se acepta igual, es sólo un aviso del front).
+
+**`PATCH /api/v1/examenes/{id}`**: edición parcial de `materiaId`, `fecha`, `tipo` y `observaciones` (sin `alumnoId`: un examen no cambia de alumno). Si cambia `materiaId` o `fecha`, se vuelve a chequear el examen pendiente de la materia resultante, sin contar este examen.
+
+**`PATCH /api/v1/examenes/{id}/baja`**: baja lógica ("eliminar" en la HU, con confirmación del front). Sin body.
+
+- Reglas del alta y la edición:
+  - Materia inexistente → 404; inactiva → 409 `MATERIA_INACTIVA`.
+  - **Un examen pendiente por materia:** si el alumno ya tiene un examen `ACTIVO` con fecha `>= hoy` en la misma materia → 409 `EXAMEN_PENDIENTE`, con el existente (`{ id, tipo, fecha }`, sin arreglo) en `details`, para ofrecer editarlo. Un examen pasado no cuenta: después de la fecha, se puede cargar el siguiente.
+  - **Profesor:** sólo puede cargar, editar o dar de baja un examen de una materia que le dicta a ese alumno; si no, 403 `SIN_PERMISO`.
+- Errores comunes a los cinco endpoints: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `MESA_ENTRADAS` o `PROFESOR`, o un usuario inhabilitado.
 
 ## Tablero
 
