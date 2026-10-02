@@ -1,7 +1,7 @@
 'use client'
 
 import { AlertCircle, History, SearchX } from 'lucide-react'
-import { type ReactNode, useId } from 'react'
+import { type ComponentProps, type ReactNode, useId } from 'react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ import {
 import { Skeleton } from '@/components/ui/skeleton'
 import { Trazabilidad } from '@/components/ui/trazabilidad'
 import type { Auditoria } from '@/types'
+import { cn } from '@/utils/cn'
 import type { ApiError } from '@/utils/fetch-json'
 
 type DetalleModalProps = {
@@ -33,11 +34,29 @@ type DetalleModalProps = {
   textoNoEncontrado?: string
   /** Quién creó el registro y quién lo modificó por última vez. */
   auditoria?: Auditoria
-  /** Acciones además de "Cerrar" (por ejemplo, un link a la edición). */
+  /**
+   * Acciones además de "Cerrar" (por ejemplo, un link a la edición), cada una un
+   * `DetalleModalAccion`. Cada acción aporta al pie **un solo elemento** (o ninguno): el pie
+   * cuenta sus hijos para repartirlos en columnas.
+   */
   acciones?: ReactNode
   /** Los datos del registro, normalmente un `<Datos>` con sus `<Dato>`. */
   children?: ReactNode
 }
+
+/**
+ * Botón del pie de un `DetalleModal` ("Cerrar" y cada acción): un `Button` con el alto y el relleno
+ * fijos, así todos miden lo mismo y solo cambia la `variant`. El ancho lo pone el pie.
+ */
+function DetalleModalAccion({ className, ...props }: Omit<ComponentProps<typeof Button>, 'size'>) {
+  return <Button size="lg" className={cn('min-w-36 px-3', className)} {...props} />
+}
+
+// El pie reparte los botones en columnas iguales según cuántos haya (se cuentan con `:has()`): hasta
+// dos, a la derecha con su ancho; cuatro, en 2 × 2; el resto, de a tres por fila. En pantallas
+// angostas van apilados (`PanelFooter`).
+const PIE =
+  'sm:grid sm:grid-cols-3 sm:has-[>:nth-child(4):last-child]:grid-cols-2 sm:has-[>:nth-child(-n+2):last-child]:flex'
 
 /**
  * Detalle de solo lectura de una entidad sencilla, como modal sobre la pantalla actual (sin página
@@ -117,14 +136,14 @@ function DetalleModal({
         )}
       </PanelBody>
 
-      <PanelFooter>
-        <Button variant="outline" size="lg" onClick={onCerrar}>
+      <PanelFooter className={PIE}>
+        <DetalleModalAccion variant="outline" onClick={onCerrar}>
           Cerrar
-        </Button>
+        </DetalleModalAccion>
         {hayDatos && acciones}
       </PanelFooter>
     </Panel>
   )
 }
 
-export { DetalleModal }
+export { DetalleModal, DetalleModalAccion }

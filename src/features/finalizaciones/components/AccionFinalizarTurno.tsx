@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CalendarOff } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { DetalleModalAccion } from '@/components/ui/detalle-modal'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import { useInvalidarOcurrencias } from '@/features/ocurrencias/hooks/use-invalidar-ocurrencias'
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
@@ -59,9 +60,10 @@ export function AccionFinalizarTurno({ ocurrencia }: AccionFinalizarTurnoProps) 
 
   return (
     <>
-      <Button type="button" variant="outline" onClick={() => setAbierto(true)}>
+      <DetalleModalAccion type="button" variant="outline" onClick={() => setAbierto(true)}>
+        <CalendarOff />
         Finalizar turno
-      </Button>
+      </DetalleModalAccion>
       <FinalizarTurnoDialog
         open={abierto}
         ocurrencia={ocurrencia}

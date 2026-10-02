@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { Ban } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { DetalleModalAccion } from '@/components/ui/detalle-modal'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip'
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 
@@ -30,29 +31,32 @@ export function AccionCancelarTurno({ ocurrencia }: AccionCancelarTurnoProps) {
       <TooltipProvider delayDuration={200}>
         <Tooltip>
           <TooltipTrigger asChild>
-            {/* El botón deshabilitado no recibe hover ni foco: el span sí. */}
-            <span tabIndex={0} className="inline-flex" aria-describedby={ID_MOTIVO}>
-              <Button type="button" variant="cancelado" disabled>
+            {/* El botón deshabilitado no recibe hover ni foco: el span sí. Es el único elemento
+                que esta acción aporta al pie (`DetalleModal`), y el botón lo ocupa entero. */}
+            <span tabIndex={0} className="flex" aria-describedby={ID_MOTIVO}>
+              <DetalleModalAccion type="button" variant="cancelado" className="flex-1" disabled>
+                <Ban />
                 Cancelar turno
-              </Button>
+              </DetalleModalAccion>
+              {/* Siempre en el DOM: el contenido del tooltip sólo existe mientras está abierto. */}
+              <span id={ID_MOTIVO} className="sr-only">
+                {texto}
+              </span>
             </span>
           </TooltipTrigger>
-          {/* A la vista sólo con hover o foco: quien no ve lo lee del texto de abajo. */}
+          {/* A la vista sólo con hover o foco: quien no ve lo lee del texto de arriba. */}
           <TooltipContent aria-hidden>{texto}</TooltipContent>
         </Tooltip>
-        {/* Siempre en el DOM: el contenido del tooltip sólo existe mientras está abierto. */}
-        <span id={ID_MOTIVO} className="sr-only">
-          {texto}
-        </span>
       </TooltipProvider>
     )
   }
 
   return (
     <>
-      <Button type="button" variant="cancelado" onClick={() => setAbierto(true)}>
+      <DetalleModalAccion type="button" variant="cancelado" onClick={() => setAbierto(true)}>
+        <Ban />
         Cancelar turno
-      </Button>
+      </DetalleModalAccion>
       <CancelarTurnosDialog
         open={abierto}
         ocurrencias={[ocurrencia]}
