@@ -845,7 +845,47 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
 
 ## Tablero
 
-A completar por T-61 (opcional).
+HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
+
+**`GET /api/v1/tablero?desde&hasta`** — rol `GERENTE`.
+
+- `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos, **los dos obligatorios** (la UI traduce "Hoy", "Esta semana", "Este mes" o un rango a estas dos fechas).
+- 400 `VALIDACION` si falta alguno o no es una fecha real (`details` en su campo), y con `details` sobre `hasta` si `hasta` es anterior a `desde` ("La fecha hasta no puede ser anterior a la fecha desde") o si el período supera los **366 días**, extremos incluidos ("El período no puede superar los 366 días").
+- Errores: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `GERENTE`.
+
+```json
+{
+  "periodo": { "desde": "2026-09-28", "hasta": "2026-10-04" },
+  "hoy": "2026-10-02",
+  "turnos": {
+    "total": 48,
+    "cancelados": { "cantidad": 6, "porcentaje": 12.5 },
+    "sinRegistrar": { "cantidad": 26, "porcentaje": 54.2 },
+    "agendados": { "cantidad": 16, "porcentaje": 33.3 },
+    "asistio": { "disponible": false },
+    "noAsistio": { "disponible": false }
+  },
+  "ocupacion": { "turnos": 42, "capacidad": 64, "porcentaje": 65.6 },
+  "alumnos": { "nuevos": 3, "atendidos": { "disponible": false } },
+  "materiasConMasDemanda": [
+    { "materia": { "id": 2, "nombre": "Matemática" }, "cantidad": 15 },
+    { "materia": { "id": 7, "nombre": "Física" }, "cantidad": 9 }
+  ],
+  "profesoresConMasActividad": { "disponible": false },
+  "pagos": { "totalCobrado": 96000, "totalAdeudado": 296000.5 }
+}
+```
+
+- `periodo`: el período pedido. `hoy`: la fecha de hoy en la zona del negocio con la que se calculó toda la respuesta; es la fecha de `pagos.totalAdeudado` y la que separa "sin registrar" de "agendados".
+- `turnos.total`: ocurrencias del período, **incluidas las canceladas**. `cancelados`, `sinRegistrar` y `agendados` traen `cantidad` y `porcentaje` sobre `total`. Los estados son sólo los de la definición F; van como claves, sin textos.
+- **`turnos.agendados` es `null`** si el período no incluye fechas futuras (`hasta` anterior a `hoy`): la UI no muestra el indicador. Si `hasta` es hoy o posterior viene con su cantidad, que puede ser 0.
+- **Indicadores que dependen de la asistencia** (HU-22, próximo sprint; definición F): `turnos.asistio`, `turnos.noAsistio`, `alumnos.atendidos` y `profesoresConMasActividad` son **exactamente `{ "disponible": false }`**, sin `valor` ni otra clave, y no se calculan con ningún sustituto. La UI muestra "Disponible cuando se registre la asistencia".
+- `ocupacion`: `turnos` son las ocurrencias no canceladas del período y `capacidad` la suma de la capacidad efectiva de cada **clase** (una hora de un bloque en una fecha con al menos un turno no cancelado; las horas sin turnos no cuentan). `ocupacion.turnos` es lo mismo que `cupo.ocupados` de las agendas, sumado sobre todas las clases del período, y `capacidad` lo mismo que `cupo.capacidad`. El `porcentaje` **no se recorta a 100**: si a un profesor o a un aula le bajaron la capacidad, puede superarlo.
+- `alumnos.nuevos`: alumnos dados de alta en el período (en hora de Salta), aunque después se hayan dado de baja.
+- `materiasConMasDemanda`: hasta 5, por cantidad de turnos **no cancelados** del período, descendente; en empate, por nombre y después por `id`. `[]` si no hay ninguno.
+- `pagos.totalCobrado`: suma de los pagos vigentes con **fecha de pago** dentro del período.
+- **`pagos.totalAdeudado` es la deuda a la fecha (`hoy`), no la del período**: no cambia al cambiar `desde` y `hasta`, y coincide con el `totalAdeudado` de `GET /cuentas/adeudados` sin filtros (misma implementación, ver Cuentas).
+- **Porcentajes:** número JSON de 0 a 100 redondeado a **un decimal** (1 de 3 → `33.3`), sin `%`; `0` si la base es 0. No se ajustan para que sumen 100 (tres tercios dan 99.9). Los importes van en pesos como número JSON, sin formato.
 
 ## Centro
 

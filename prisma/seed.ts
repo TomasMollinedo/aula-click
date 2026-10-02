@@ -1,5 +1,6 @@
 // Seed de desarrollo: roles, un usuario por rol (salvo ALUMNO, que llega con el portal en el
-// Sprint 3), materias y aulas de ejemplo. Idempotente: todo es upsert por clave natural.
+// Sprint 3), materias con precio, aulas, la forma de pago "Efectivo" y una materia asignada al
+// profesor. Idempotente: todo es upsert por clave natural.
 //
 // Se corre con `pnpm db:seed` (Prisma 7 no lo ejecuta solo después de `migrate dev`).
 // Es la única excepción, fuera de los repositories, que usa Prisma directo (AGENTS.md, regla 3).
@@ -15,10 +16,14 @@ const ROLES = [
   {
     id: 'MESA_ENTRADAS',
     nombre: 'Mesa de entradas',
-    descripcion: 'Gestiona alumnos, profesores, materias y turnos',
+    descripcion: 'Gestiona alumnos, profesores, horarios, turnos y pagos; consulta las materias',
   },
   { id: 'PROFESOR', nombre: 'Profesor', descripcion: 'Consulta su agenda y sus alumnos' },
-  { id: 'GERENTE', nombre: 'Gerente', descripcion: 'Crea los usuarios y consulta indicadores' },
+  {
+    id: 'GERENTE',
+    nombre: 'Gerente',
+    descripcion: 'Administra el catálogo de materias y sus precios, y consulta el tablero',
+  },
   { id: 'ALUMNO', nombre: 'Alumno', descripcion: 'Accede al portal del alumno' },
 ]
 
@@ -120,7 +125,7 @@ async function main() {
     })
   }
 
-  await upsertUsuario({
+  const mesa = await upsertUsuario({
     role: 'MESA_ENTRADAS',
     email: c.SEED_MESA_ENTRADAS_EMAIL,
     password: c.SEED_MESA_ENTRADAS_PASSWORD,
@@ -139,7 +144,7 @@ async function main() {
     dni: '28333444',
     telefono: '3874333444',
   })
-  await prisma.profesor.upsert({
+  const fichaProfesor = await prisma.profesor.upsert({
     where: { usuarioId: profesor.id },
     create: {
       usuarioId: profesor.id,
@@ -160,6 +165,10 @@ async function main() {
     telefono: '3874555666',
   })
 
+  // Materias: alta del gerente (HU-12), siempre con precio. Si una ya existía sin precio (base
+  // anterior a HU-12), se le carga el suyo y se reactiva: ninguna materia del seed queda sin precio.
+  // Una que ya tiene precio no se toca (si el gerente le cambió el precio o la dio de baja, queda).
+  let preciosCargados = 0
   for (const { nombre, precioHora } of MATERIAS) {
     const busqueda = normalizarBusqueda(nombre)
     await prisma.materia.upsert({
@@ -167,10 +176,32 @@ async function main() {
       create: { nombre, busqueda, precioHora, createdById: gerente.id, updatedById: gerente.id },
       update: {},
     })
+    const { count } = await prisma.materia.updateMany({
+      where: { busqueda, precioHora: null },
+      data: { precioHora, estado: 'ACTIVO', updatedById: gerente.id },
+    })
+    preciosCargados += count
   }
 
-  // Una materia sin precio no se ofrece hasta que el gerente le cargue uno y la reactive (HU-12).
-  // Lo hace el seed y no la migración (decisión T-50: migraciones sólo generadas por Prisma).
+  // El profesor del seed dicta Matemática (lo asigna mesa de entradas, HU-05): así se le puede
+  // cargar horario y turnos sin preparar nada a mano. Si después se la quitaron, no se reasigna.
+  const matematica = await prisma.materia.findUniqueOrThrow({
+    where: { busqueda: normalizarBusqueda('Matemática') },
+  })
+  await prisma.asignacionMateria.upsert({
+    where: { profesorId_materiaId: { profesorId: fichaProfesor.id, materiaId: matematica.id } },
+    create: {
+      profesorId: fichaProfesor.id,
+      materiaId: matematica.id,
+      createdById: mesa.id,
+      updatedById: mesa.id,
+    },
+    update: {},
+  })
+
+  // Otras materias sin precio (cargadas a mano antes de HU-12): no se ofrecen hasta que el gerente
+  // les cargue uno y las reactive. Lo hace el seed y no la migración (decisión T-50: migraciones
+  // sólo generadas por Prisma).
   const sinPrecio = await prisma.materia.updateMany({
     where: { precioHora: null, estado: 'ACTIVO' },
     data: { estado: 'INACTIVO', updatedById: gerente.id },
@@ -193,7 +224,8 @@ async function main() {
   }
 
   console.log(
-    `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias, ` +
+    `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias ` +
+      `(${preciosCargados} con precio recién cargado), Matemática asignada al profesor, ` +
       `${AULAS.length} aulas y ${FORMAS_PAGO.length} forma(s) de pago; ` +
       `${sinPrecio.count} materia(s) sin precio pasadas a INACTIVO.`,
   )

@@ -1,6 +1,6 @@
 import type { ClienteOcurrencias } from '@/server/features/turnos/ocurrencias.condiciones'
 import { SELECT_USUARIO_AUDITORIA, type UsuarioAuditoria } from '@/server/shared/auditoria'
-import { dateAFecha } from '@/server/shared/fechas'
+import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 
 // Lo que otras features necesitan del cobro sin importar `pagos.reglas.ts` ni el repository (de otra
 // feature solo se importan `*.repository` y `*.condiciones`, lo hace cumplir ESLint, y un repository
@@ -11,6 +11,7 @@ import { dateAFecha } from '@/server/shared/fechas'
 //   en centavos como el total de un pago.
 // - `ocurrencias`: el detalle de un turno ofrece "Registrar pago" con ese mismo tope y, si ya está
 //   pagado, muestra los datos de su pago (`leerPagoDeOcurrencia`).
+// - `tablero` (T-61): el total cobrado en un período (`totalCobradoEntre`).
 //
 // El tope y la suma sólo se re-exportan: la implementación es la de `pagos.reglas.ts`.
 
@@ -51,4 +52,24 @@ export async function leerPagoDeOcurrencia(
     registradoPor: fila.createdBy,
     registradoEl: fila.createdAt.toISOString(),
   }
+}
+
+/**
+ * Total cobrado en `[desde, hasta]` (`YYYY-MM-DD`, extremos incluidos): la suma de `importeTotal`
+ * de los pagos `VIGENTE` por su **fecha de pago** (`fechaPago`, no `createdAt`), en pesos; 0 si no
+ * hay ninguno. Una consulta. Lo usa el tablero del gerente (T-61).
+ */
+export async function totalCobradoEntre(
+  client: ClienteOcurrencias,
+  { desde, hasta }: { desde: string; hasta: string },
+): Promise<number> {
+  const { _sum } = await client.pago.aggregate({
+    where: {
+      estado: 'VIGENTE',
+      fechaPago: { gte: fechaADate(desde), lte: fechaADate(hasta) },
+    },
+    _sum: { importeTotal: true },
+  })
+  // La base suma en `Decimal`, que es exacto: no hay error de coma flotante que acumular.
+  return _sum.importeTotal ? _sum.importeTotal.toNumber() : 0
 }

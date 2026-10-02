@@ -1,21 +1,29 @@
-// Seed de PRUEBA para ejercitar `GET /api/v1/turnos/agenda` (T-23) a mano, con Swagger UI o
-// Postman. NO es el seed de desarrollo (`prisma/seed.ts`, que corre `pnpm db:seed`): este es un
+// Seed de PRUEBA para ejercitar la agenda diaria (`GET /api/v1/agendas/diaria`, T-23/T-57) a
+// mano, con Swagger UI o Postman: un caso chico y predecible, con un resultado conocido para cada
+// filtro. NO es el seed de desarrollo (`prisma/seed.ts`, que corre `pnpm db:seed`): este es un
 // script aparte, pensado para correrse y volver a correrse las veces que haga falta.
 //
-// Requiere que el seed de desarrollo ya haya corrido (`pnpm db:seed`): reutiliza el usuario
-// GERENTE, las materias y las aulas que ese seed crea; no los duplica.
+// Requiere que el seed de desarrollo ya haya corrido (`pnpm db:seed`): reutiliza el usuario de
+// mesa de entradas, las materias y las aulas que ese seed crea; no los duplica.
 //
 // Idempotente por "limpiar y recrear": cada corrida borra únicamente lo que creó una corrida
-// anterior de ESTE script (identificable por el dominio de email @agenda-demo.local) y lo vuelve
-// a crear con fechas relativas a "hoy", para que la agenda de hoy siempre tenga datos aunque haya
-// pasado un día desde la última corrida. Nunca toca al profesor, los alumnos ni los turnos que
-// vos hayas cargado a mano o por la API.
+// anterior de ESTE script (identificable por el dominio de email @agenda-demo.local), con todo lo
+// que cuelga de sus turnos (cancelaciones, pagos, finalizaciones, exámenes), y lo vuelve a crear
+// con fechas relativas a "hoy", para que la agenda de hoy siempre tenga datos. Nunca toca los
+// profesores, alumnos ni turnos que hayas cargado a mano, por la API o con `seed-datos-demo.ts`.
+//
+// Respeta las reglas de `docs/dominio.md`: lo carga mesa de entradas; cada bloque es una hora en
+// punto en un aula libre a esa hora (se leen los bloques que ya existen, de cualquier seed); la
+// materia del turno está activa, con precio y asignada al profesor; una sesión única tiene "temas
+// a trabajar" (HU-08); el recurrente tiene `serieId` (T-103); y la cancelación es una
+// `CancelacionTurno` de esa ocurrencia (el turno sigue `ACTIVO`).
 //
 // Cómo correrlo:
 //   pnpm exec tsx prisma/seed-agenda-demo.ts            crea (o recrea) los datos de prueba
 //   pnpm exec tsx prisma/seed-agenda-demo.ts --limpiar   solo borra, no vuelve a crear nada
 import 'dotenv/config'
 import { randomUUID } from 'node:crypto'
+import { hashPassword } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { normalizarBusqueda } from '@/server/shared/busqueda'
 import { dateAFecha, diaSemanaISO, fechaADate, hoy } from '@/server/shared/fechas'
@@ -25,12 +33,18 @@ import { horaAMinutos } from '@/server/shared/zod'
 // con cuentas reales o con las del seed de desarrollo (`@aulaclick.local`).
 const DOMINIO_DEMO = 'agenda-demo.local'
 
+/** Contraseña de los profesores de prueba (>= 8 caracteres, como exige Better Auth). */
+const PASSWORD_DEMO = 'demo-1234'
+
+// `aula` es la preferida: si a esa hora está ocupada (por ejemplo, por `seed-datos-demo.ts`), se
+// usa otra libre.
 const PROFESORES_DEMO = [
   { nombre: 'Valentina', apellido: 'Cruz', dni: '99900101', materia: 'Matemática', aula: 'Aula 1' },
   { nombre: 'Sofía', apellido: 'Ramírez', dni: '99900102', materia: 'Física', aula: 'Aula 2' },
   { nombre: 'Diego', apellido: 'Torres', dni: '99900103', materia: 'Química', aula: 'Aula 3' },
 ] as const
 
+// Todos mayores de edad, con su email y su teléfono (dominio.md → Alumnos).
 const ALUMNOS_DEMO = [
   { nombre: 'Julieta', apellido: 'Fernández', dni: '99900201', fechaNacimiento: '2001-03-12' },
   { nombre: 'Bruno', apellido: 'Suárez', dni: '99900202', fechaNacimiento: '1999-11-30' },
@@ -49,56 +63,89 @@ function sumarDias(fecha: string, dias: number): string {
 
 /** Actor y catálogo que ya deja el seed de desarrollo. Falla con un mensaje claro si falta algo. */
 async function requisitos() {
-  const gerente = await prisma.usuario.findFirst({ where: { role: 'GERENTE' } })
+  // Mesa de entradas carga alumnos, horarios, asignaciones y turnos (no el gerente).
+  const mesa = await prisma.usuario.findFirst({
+    where: {
+      role: 'MESA_ENTRADAS',
+      estado: 'ACTIVO',
+      email: { not: { endsWith: `@${DOMINIO_DEMO}` } },
+    },
+  })
+  // Sólo materias que se pueden asignar y cobrar: activas y con precio (HU-12).
   const materias = await prisma.materia.findMany({
-    where: { busqueda: { in: PROFESORES_DEMO.map((p) => normalizarBusqueda(p.materia)) } },
+    where: {
+      busqueda: { in: PROFESORES_DEMO.map((p) => normalizarBusqueda(p.materia)) },
+      estado: 'ACTIVO',
+      precioHora: { not: null },
+    },
   })
-  const aulas = await prisma.aula.findMany({
-    where: { nombre: { in: PROFESORES_DEMO.map((p) => p.aula) } },
-  })
+  const aulas = await prisma.aula.findMany({ where: { estado: 'ACTIVO' }, orderBy: { id: 'asc' } })
 
-  if (!gerente || materias.length < 3 || aulas.length < 3) {
+  if (!mesa || materias.length < PROFESORES_DEMO.length || aulas.length === 0) {
     throw new Error(
-      'Faltan datos del seed de desarrollo (usuario GERENTE, materias o aulas). ' +
-        'Corré primero `pnpm db:seed` y volvé a intentar.',
+      'Faltan datos del seed de desarrollo (usuario de mesa de entradas, materias activas con ' +
+        'precio o aulas). Corré primero `pnpm db:seed` y volvé a intentar.',
     )
   }
 
   const materiaPorNombre = new Map(materias.map((m) => [m.busqueda, m]))
-  const aulaPorNombre = new Map(aulas.map((a) => [a.nombre, a]))
-  return { gerente, materiaPorNombre, aulaPorNombre }
+  return { mesa, materiaPorNombre, aulas }
 }
 
-/** Borra únicamente lo que creó una corrida anterior de este script (dominio `@agenda-demo.local`). */
+/**
+ * Borra únicamente lo que creó una corrida anterior de este script (dominio `@agenda-demo.local`),
+ * con todo lo que cuelga de sus turnos y alumnos: las FK son `onDelete: Restrict`, así que si
+ * cancelaste o cobraste uno de sus turnos desde la app, sin esto la limpieza fallaría.
+ */
 async function limpiar() {
   const emailsProfesores = PROFESORES_DEMO.map((p) => emailDe(p.nombre, p.apellido))
   const emailsAlumnos = ALUMNOS_DEMO.map((a) => emailDe(a.nombre, a.apellido))
 
-  const usuariosDemo = await prisma.usuario.findMany({
-    where: { email: { in: emailsProfesores } },
-    select: { id: true },
-  })
-  const usuarioIds = usuariosDemo.map((u) => u.id)
-  const profesoresDemo = await prisma.profesor.findMany({
-    where: { usuarioId: { in: usuarioIds } },
-    select: { id: true },
-  })
-  const profesorIds = profesoresDemo.map((p) => p.id)
-  const alumnosDemo = await prisma.alumno.findMany({
-    where: { email: { in: emailsAlumnos } },
-    select: { id: true },
-  })
-  const alumnoIds = alumnosDemo.map((a) => a.id)
+  const usuarioIds = (
+    await prisma.usuario.findMany({
+      where: { email: { in: emailsProfesores } },
+      select: { id: true },
+    })
+  ).map((u) => u.id)
+  const profesorIds = (
+    await prisma.profesor.findMany({
+      where: { usuarioId: { in: usuarioIds } },
+      select: { id: true },
+    })
+  ).map((p) => p.id)
+  const alumnoIds = (
+    await prisma.alumno.findMany({ where: { email: { in: emailsAlumnos } }, select: { id: true } })
+  ).map((a) => a.id)
+  const turnoIds = (
+    await prisma.turno.findMany({
+      where: {
+        OR: [
+          { bloqueAgenda: { profesorId: { in: profesorIds } } },
+          { alumnoId: { in: alumnoIds } },
+        ],
+      },
+      select: { id: true },
+    })
+  ).map((t) => t.id)
+  const pagoIds = (
+    await prisma.pago.findMany({ where: { alumnoId: { in: alumnoIds } }, select: { id: true } })
+  ).map((p) => p.id)
 
-  // Orden que respeta las FK (onDelete: Restrict): turnos y asignaciones antes que sus dueños.
-  await prisma.turno.deleteMany({
-    where: {
-      OR: [{ bloqueAgenda: { profesorId: { in: profesorIds } } }, { alumnoId: { in: alumnoIds } }],
-    },
+  // Orden que respeta las FK: lo que cuelga de un turno o un pago, el turno y el pago, y después
+  // asignaciones, bloques, profesores, cuentas y alumnos.
+  await prisma.examen.deleteMany({ where: { alumnoId: { in: alumnoIds } } })
+  await prisma.pagoTurno.deleteMany({
+    where: { OR: [{ turnoId: { in: turnoIds } }, { pagoId: { in: pagoIds } }] },
   })
+  await prisma.pago.deleteMany({ where: { id: { in: pagoIds } } })
+  await prisma.cancelacionTurno.deleteMany({ where: { turnoId: { in: turnoIds } } })
+  await prisma.finalizacionRecurrencia.deleteMany({ where: { turnoId: { in: turnoIds } } })
+  await prisma.turno.deleteMany({ where: { id: { in: turnoIds } } })
   await prisma.asignacionMateria.deleteMany({ where: { profesorId: { in: profesorIds } } })
   await prisma.bloqueAgenda.deleteMany({ where: { profesorId: { in: profesorIds } } })
   await prisma.profesor.deleteMany({ where: { id: { in: profesorIds } } })
+  await prisma.session.deleteMany({ where: { userId: { in: usuarioIds } } })
+  await prisma.account.deleteMany({ where: { userId: { in: usuarioIds } } })
   await prisma.usuario.deleteMany({ where: { id: { in: usuarioIds } } })
   await prisma.alumno.deleteMany({ where: { id: { in: alumnoIds } } })
 
@@ -108,15 +155,18 @@ async function limpiar() {
 }
 
 async function crear() {
-  const { gerente, materiaPorNombre, aulaPorNombre } = await requisitos()
-  const actor = gerente.id
+  const { mesa, materiaPorNombre, aulas } = await requisitos()
+  const auditoria = { createdById: mesa.id, updatedById: mesa.id }
+  const hash = await hashPassword(PASSWORD_DEMO)
 
-  // --- Profesores demo, cada uno con su materia asignada (dominio.md: la materia del turno debe
-  // estar asignada al profesor del bloque) ---
-  const profesores = new Map<string, { id: number; materiaId: number; aulaId: number }>()
+  // --- Profesores demo, con su cuenta (pueden entrar a "Mi agenda") y su materia asignada
+  // (dominio.md: la materia del turno debe estar asignada al profesor del bloque) ---
+  const profesores = new Map<
+    string,
+    { id: number; materiaId: number; aulaPreferida: string; apellido: string }
+  >()
   for (const datos of PROFESORES_DEMO) {
     const materia = materiaPorNombre.get(normalizarBusqueda(datos.materia))!
-    const aula = aulaPorNombre.get(datos.aula)!
     const usuario = await prisma.usuario.create({
       data: {
         id: randomUUID(),
@@ -126,10 +176,18 @@ async function crear() {
         busqueda: normalizarBusqueda(`${datos.apellido} ${datos.nombre} ${datos.dni}`),
         telefono: '3870000000',
         email: emailDe(datos.nombre, datos.apellido),
+        emailVerified: true,
         role: 'PROFESOR',
-        // Sin Account/contraseña: alcanza con que exista para el bloque y el turno; no hace
-        // falta poder iniciar sesión como este profesor para probar la agenda (la consulta mesa
-        // de entradas).
+      },
+    })
+    // Cada profesor tiene su cuenta (dominio.md → Roles): Account 'credential' con el hash de auth.ts.
+    await prisma.account.create({
+      data: {
+        id: randomUUID(),
+        providerId: 'credential',
+        accountId: usuario.id,
+        userId: usuario.id,
+        password: hash,
       },
     })
     const profesor = await prisma.profesor.create({
@@ -141,14 +199,14 @@ async function crear() {
       },
     })
     await prisma.asignacionMateria.create({
-      data: {
-        profesorId: profesor.id,
-        materiaId: materia.id,
-        createdById: actor,
-        updatedById: actor,
-      },
+      data: { profesorId: profesor.id, materiaId: materia.id, ...auditoria },
     })
-    profesores.set(datos.apellido, { id: profesor.id, materiaId: materia.id, aulaId: aula.id })
+    profesores.set(datos.apellido, {
+      id: profesor.id,
+      materiaId: materia.id,
+      aulaPreferida: datos.aula,
+      apellido: datos.apellido,
+    })
   }
 
   // --- Alumnos demo ---
@@ -164,8 +222,7 @@ async function crear() {
         telefono: '3870000000',
         email: emailDe(datos.nombre, datos.apellido),
         observaciones: 'Alumno de prueba (seed-agenda-demo.ts): se puede borrar sin problema.',
-        createdById: actor,
-        updatedById: actor,
+        ...auditoria,
       },
     })
     alumnos.set(datos.apellido, alumno.id)
@@ -181,33 +238,54 @@ async function crear() {
   const ramirez = profesores.get('Ramírez')!
   const torres = profesores.get('Torres')!
 
+  // Un aula no puede tener dos bloques activos a la misma hora el mismo día (dominio.md → Bloques):
+  // se parte de los bloques que ya hay en la base y se suman los que se crean acá.
+  const aulaOcupada = new Set(
+    (
+      await prisma.bloqueAgenda.findMany({
+        where: { estado: 'ACTIVO' },
+        select: { aulaId: true, diaSemana: true, horaInicio: true },
+      })
+    ).map((b) => `${b.aulaId}|${b.diaSemana}|${b.horaInicio}`),
+  )
+
   async function crearBloque(
     profesor: typeof cruz,
     diaSemana: number,
     horaInicio: string,
     horaFin: string,
   ) {
+    const inicio = horaAMinutos(horaInicio)
+    const libre = (aulaId: number) => !aulaOcupada.has(`${aulaId}|${diaSemana}|${inicio}`)
+    const preferida = aulas.find((a) => a.nombre === profesor.aulaPreferida)
+    const aula = preferida && libre(preferida.id) ? preferida : aulas.find((a) => libre(a.id))
+    if (!aula) {
+      throw new Error(
+        `No hay ningún aula libre el día ${diaSemana} a las ${horaInicio} para ${profesor.apellido}.`,
+      )
+    }
+    aulaOcupada.add(`${aula.id}|${diaSemana}|${inicio}`)
     return prisma.bloqueAgenda.create({
       data: {
         profesorId: profesor.id,
-        aulaId: profesor.aulaId,
+        aulaId: aula.id,
         diaSemana,
-        horaInicio: horaAMinutos(horaInicio),
+        horaInicio: inicio,
         horaFin: horaAMinutos(horaFin),
-        createdById: actor,
-        updatedById: actor,
+        ...auditoria,
       },
     })
   }
 
-  // Un bloque por cada fecha en la que va a haber un turno, con el día de la semana que le
-  // corresponde a esa fecha (dominio.md: la fecha del turno coincide con el día del bloque).
+  // Un bloque (una hora en punto) por cada fecha en la que va a haber un turno, con el día de la
+  // semana que le corresponde a esa fecha (dominio.md: la fecha del turno coincide con el día del
+  // bloque).
   const bloqueHoy1 = await crearBloque(cruz, diaSemanaISO(hoyStr), '09:00', '10:00')
   const bloqueHoy2 = await crearBloque(cruz, diaSemanaISO(hoyStr), '10:00', '11:00')
   const bloqueHoyOtroProfesor = await crearBloque(ramirez, diaSemanaISO(hoyStr), '09:00', '10:00')
   const bloqueManana = await crearBloque(torres, diaSemanaISO(mañana), '11:00', '12:00')
   const bloquePasadoManana = await crearBloque(cruz, diaSemanaISO(pasadoMañana), '14:00', '15:00')
-  const bloqueRango = await crearBloque(ramirez, diaSemanaISO(hoyStr), '16:00', '17:00')
+  const bloqueRecurrente = await crearBloque(ramirez, diaSemanaISO(hoyStr), '16:00', '17:00')
 
   type DatosTurno = {
     bloqueAgendaId: number
@@ -215,43 +293,56 @@ async function crear() {
     materiaId: number
     fechaInicio: string
     fechaFin?: string
-    estado?: 'ACTIVO' | 'CANCELADO'
     observaciones?: string
+    temas?: string
   }
   async function crearTurno(datos: DatosTurno) {
+    const recurrente = datos.fechaFin !== undefined && datos.fechaFin !== datos.fechaInicio
     return prisma.turno.create({
       data: {
         bloqueAgendaId: datos.bloqueAgendaId,
         alumnoId: datos.alumnoId,
         materiaId: datos.materiaId,
-        tipo:
-          datos.fechaFin && datos.fechaFin !== datos.fechaInicio ? 'RECURRENTE' : 'SESION_UNICA',
+        tipo: recurrente ? 'RECURRENTE' : 'SESION_UNICA',
         fechaInicio: fechaADate(datos.fechaInicio),
         fechaFin: fechaADate(datos.fechaFin ?? datos.fechaInicio),
-        estado: datos.estado ?? 'ACTIVO',
         observaciones: datos.observaciones ?? null,
-        createdById: actor,
-        updatedById: actor,
+        // "Temas a trabajar" (HU-08): obligatorio en una sesión única, opcional en un recurrente.
+        temas: datos.temas ?? (recurrente ? null : 'Repaso general de la unidad'),
+        // Todo alta recurrente es una serie (decisión T-103); una sesión única no tiene.
+        serieId: recurrente ? randomUUID() : null,
+        ...auditoria,
       },
     })
   }
 
-  // 1. Hoy, 09:00, Cruz/Matemática/Aula 1 — aparece en la agenda de hoy sin filtros.
+  // 1. Hoy, 09:00, Cruz/Matemática — aparece en la agenda de hoy como "Agendado".
   await crearTurno({
     bloqueAgendaId: bloqueHoy1.id,
     alumnoId: alumnos.get('Fernández')!,
     materiaId: cruz.materiaId,
     fechaInicio: hoyStr,
+    temas: 'Ecuaciones de segundo grado',
   })
 
-  // 2. Hoy, 10:00, Cruz/Matemática/Aula 1, pero CANCELADO — no debe aparecer nunca.
-  await crearTurno({
+  // 2. Hoy, 10:00, Cruz/Matemática, con la ocurrencia CANCELADA: desde el Sprint 2 se registra una
+  //    CancelacionTurno de esa fecha y el turno sigue ACTIVO (HU-13). La agenda la muestra con
+  //    estado "Cancelado" y sin prioridad; con `estado=AGENDADO` no aparece.
+  const cancelado = await crearTurno({
     bloqueAgendaId: bloqueHoy2.id,
     alumnoId: alumnos.get('Suárez')!,
     materiaId: cruz.materiaId,
     fechaInicio: hoyStr,
-    estado: 'CANCELADO',
-    observaciones: 'Cancelado a propósito: no debe aparecer en la agenda.',
+    observaciones: 'Cancelado a propósito: aparece en la agenda como cancelado.',
+  })
+  await prisma.cancelacionTurno.create({
+    data: {
+      turnoId: cancelado.id,
+      fechaOcurrencia: fechaADate(hoyStr),
+      motivo: 'CANCELACION_ALUMNO',
+      detalle: 'El alumno avisó que no viene (seed-agenda-demo.ts).',
+      createdById: mesa.id,
+    },
   })
 
   // 3. Hoy, 09:00 (misma hora que el 1, otro profesor) — prueba el orden "por hora y, dentro de
@@ -263,7 +354,7 @@ async function crear() {
     fechaInicio: hoyStr,
   })
 
-  // 4. Mañana, Torres/Química/Aula 3 — prueba el filtro `fecha` (no aparece en la agenda de hoy).
+  // 4. Mañana, Torres/Química — prueba el filtro `fecha` (no aparece en la agenda de hoy).
   await crearTurno({
     bloqueAgendaId: bloqueManana.id,
     alumnoId: alumnos.get('Ibarra')!,
@@ -271,7 +362,7 @@ async function crear() {
     fechaInicio: mañana,
   })
 
-  // 5. Pasado mañana, Cruz/Matemática/Aula 1 — otra fecha más para probar el filtro `fecha`.
+  // 5. Pasado mañana, Cruz/Matemática — otra fecha más para probar el filtro `fecha`.
   await crearTurno({
     bloqueAgendaId: bloquePasadoManana.id,
     alumnoId: alumnos.get('Fernández')!,
@@ -279,54 +370,41 @@ async function crear() {
     fechaInicio: pasadoMañana,
   })
 
-  // 6. "Rango" (fechaInicio distinta de fechaFin, tipo RECURRENTE): NINGÚN endpoint de este
-  //    sprint crea un turno así (T-21 sólo crea SESION_UNICA, T-30). Está acá para ejercitar a
-  //    mano la lectura genérica de `condicionTurnoEnFecha` (turnos.repository.ts): aparece hoy,
-  //    y también si consultás `fecha` = hoy + 7 o + 14 días (la misma semana del día de hoy),
-  //    pero no en un día de semana distinto ni después del 21/09 desde hoy.
+  // 6. Recurrente semanal de hoy a hoy + 21 (cuatro ocurrencias, con `serieId`): aparece hoy y
+  //    también con `fecha` = hoy + 7, + 14 o + 21; no en otro día de la semana ni después.
   await crearTurno({
-    bloqueAgendaId: bloqueRango.id,
+    bloqueAgendaId: bloqueRecurrente.id,
     alumnoId: alumnos.get('Suárez')!,
     materiaId: ramirez.materiaId,
     fechaInicio: hoyStr,
     fechaFin: en3Semanas,
-    observaciones:
-      'Turno de prueba con rango (no lo crea ninguna API todavía): ejercita la lectura genérica ' +
-      'de condicionTurnoEnFecha. Aparece hoy y cada 7 días hasta ' +
-      en3Semanas +
-      '.',
+    observaciones: `Recurrente de prueba: aparece hoy y cada 7 días hasta ${en3Semanas}.`,
   })
 
-  console.log(`Datos de prueba listos para la agenda (hoy = ${hoyStr}):`)
-  console.log(`  GET /api/v1/turnos/agenda                          → 3 turnos (hoy)`)
-  console.log(`  GET /api/v1/turnos/agenda?fecha=${mañana}          → 1 turno (Torres, Química)`)
+  // Resultados esperados (la agenda incluye las canceladas, con su estado).
+  const enAulaDeRamirez = [bloqueHoy1, bloqueHoy2, bloqueHoyOtroProfesor, bloqueRecurrente].filter(
+    (b) => b.aulaId === bloqueHoyOtroProfesor.aulaId,
+  ).length
+  const url = '/api/v1/agendas/diaria'
+  console.log(`Datos de prueba listos para la agenda diaria (hoy = ${hoyStr}):`)
+  console.log(`  GET ${url}                       → 4 ocurrencias (1 cancelada)`)
+  console.log(`  GET ${url}?estado=AGENDADO       → 3 (sin la cancelada)`)
+  console.log(`  GET ${url}?fecha=${mañana}       → 1 (Torres, Química)`)
+  console.log(`  GET ${url}?fecha=${pasadoMañana}       → 1 (Cruz, Matemática)`)
+  console.log(`  GET ${url}?materiaId=${cruz.materiaId}    → Matemática: 2 hoy (una cancelada)`)
   console.log(
-    `  GET /api/v1/turnos/agenda?fecha=${pasadoMañana}          → 1 turno (Cruz, Matemática)`,
+    `  GET ${url}?aulaId=${bloqueHoyOtroProfesor.aulaId}       → ${enAulaDeRamirez} hoy en esa aula`,
   )
+  console.log(`  GET ${url}?q=ramirez             → por nombre de profesor: 2 (Ramírez)`)
+  console.log(`  GET ${url}?q=suarez              → por nombre de alumno: 2 (una cancelada)`)
+  console.log(`  GET ${url}?profesorId=${ramirez.id}      → vista personal de Ramírez: 2`)
   console.log(
-    `  GET /api/v1/turnos/agenda?materiaId=${cruz.materiaId}    → filtra por Matemática (hoy: 1)`,
+    `  GET ${url}?profesorId=${ramirez.id}&q=cruz → vacío: con profesorId, q sólo busca alumnos`,
   )
+  console.log(`  GET ${url}?fecha=${sumarDias(hoyStr, 7)} → el recurrente, otra vez`)
   console.log(
-    `  GET /api/v1/turnos/agenda?aulaId=${ramirez.aulaId}       → filtra por Aula de Ramírez (hoy: 2)`,
+    `Los profesores entran con su email @${DOMINIO_DEMO} y la contraseña "${PASSWORD_DEMO}".`,
   )
-  console.log(
-    `  GET /api/v1/turnos/agenda?q=ramirez     → busca por nombre de profesor (hoy: 2, Ramírez)`,
-  )
-  console.log(
-    '  GET /api/v1/turnos/agenda?q=suarez      → busca por nombre de alumno ' +
-      '(hoy: 1; Suárez tiene un turno cancelado y uno con rango, el cancelado nunca aparece)',
-  )
-  console.log(
-    `  GET /api/v1/turnos/agenda?profesorId=${ramirez.id}      → vista personal de Ramírez (hoy: 2)`,
-  )
-  console.log(
-    `  GET /api/v1/turnos/agenda?profesorId=${ramirez.id}&q=cruz → ` +
-      'vacío: con profesorId, q ya no busca por nombre de profesor',
-  )
-  console.log(
-    `  GET /api/v1/turnos/agenda?fecha=${sumarDias(hoyStr, 7)} → el turno con rango, otra vez`,
-  )
-  console.log('El turno CANCELADO nunca debería aparecer, en ningún filtro.')
 }
 
 async function main() {
