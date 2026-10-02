@@ -24,13 +24,15 @@ export function DetalleTurno({ turnoId, fecha, onCerrar }: SolicitudDetalleOcurr
       renderComprobante={(pago) => (
         <EnlaceComprobante pagoId={pago.pagoId} numeroComprobante={pago.numeroComprobante} />
       )}
+      renderAccionesEncabezado={(ocurrencia) => (
+        <AccionPdfTurno turnoId={ocurrencia.turnoId} fecha={ocurrencia.fecha} />
+      )}
       renderAcciones={(ocurrencia) => (
         <>
           <AccionReprogramarTurno ocurrencia={ocurrencia} />
           <AccionCancelarTurno ocurrencia={ocurrencia} />
           <AccionFinalizarTurno ocurrencia={ocurrencia} />
           <AccionRegistrarPago ocurrencia={ocurrencia} />
-          <AccionPdfTurno turnoId={ocurrencia.turnoId} fecha={ocurrencia.fecha} />
         </>
       )}
     />

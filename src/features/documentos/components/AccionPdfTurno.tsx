@@ -4,7 +4,6 @@ import type { ComponentProps } from 'react'
 import { Printer } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
-import { DetalleModalAccion } from '@/components/ui/detalle-modal'
 
 export type AccionPdfTurnoProps = {
   turnoId: number
@@ -33,12 +32,15 @@ function EnlacePdfTurno({ turnoId, fecha, ...props }: AccionPdfTurnoProps & Comp
   )
 }
 
-/** "Generar PDF" de un turno (HU-11, T-60) en el pie de su detalle. */
+/**
+ * "Generar PDF" de un turno (HU-11, T-60) en el encabezado de su detalle, al lado de la cruz de
+ * cerrar (por eso mide lo mismo que ella y no es un `DetalleModalAccion`, que es del pie).
+ */
 export function AccionPdfTurno(props: AccionPdfTurnoProps) {
   return (
-    <DetalleModalAccion variant="accent" asChild>
+    <Button variant="accent" asChild>
       <EnlacePdfTurno {...props} />
-    </DetalleModalAccion>
+    </Button>
   )
 }
 

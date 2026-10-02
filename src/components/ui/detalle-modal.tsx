@@ -40,6 +40,13 @@ type DetalleModalProps = {
    * cuenta sus hijos para repartirlos en columnas.
    */
   acciones?: ReactNode
+  /** Acciones del encabezado, al lado de la cruz de cerrar (por ejemplo, "Generar PDF"). */
+  accionesEncabezado?: ReactNode
+  /**
+   * Se cierra solo con la cruz del encabezado, que va destacada: el pie no lleva "Cerrar" y, si no
+   * hay acciones, no se muestra.
+   */
+  soloCruz?: boolean
   /** Los datos del registro, normalmente un `<Datos>` con sus `<Dato>`. */
   children?: ReactNode
 }
@@ -58,9 +65,14 @@ function DetalleModalAccion({ className, ...props }: Omit<ComponentProps<typeof 
 const PIE =
   'sm:grid sm:grid-cols-3 sm:has-[>:nth-child(4):last-child]:grid-cols-2 sm:has-[>:nth-child(-n+2):last-child]:flex'
 
+// La cruz cuando es la única forma de cerrar (`soloCruz`): con borde, más oscura y más grande.
+const CRUZ_DESTACADA =
+  'border-input text-foreground hover:border-oscuro/50 border bg-background shadow-sm [&_svg]:size-5 [&_svg]:stroke-[2.5]'
+
 /**
  * Detalle de solo lectura de una entidad sencilla, como modal sobre la pantalla actual (sin página
- * propia): encabezado, los datos, la trazabilidad (auditoría) y el pie con "Cerrar" y las acciones.
+ * propia): encabezado, los datos, la trazabilidad (auditoría) y el pie con "Cerrar" y las acciones
+ * (con `soloCruz`, sin "Cerrar": solo la cruz del encabezado).
  * Resuelve también la carga y los errores del pedido, así cada feature solo arma sus datos.
  * Se cierra con un clic afuera: no hay nada que perder (docs/arquitectura-frontend.md).
  */
@@ -74,6 +86,8 @@ function DetalleModal({
   textoNoEncontrado = 'No se encontró el registro',
   auditoria,
   acciones,
+  accionesEncabezado,
+  soloCruz = false,
   children,
 }: DetalleModalProps) {
   const hayDatos = !cargando && !error
@@ -81,7 +95,10 @@ function DetalleModal({
 
   return (
     <Panel mode="modal" onClose={onCerrar} className="max-w-xl">
-      <PanelHeader>
+      <PanelHeader
+        actions={hayDatos && accionesEncabezado}
+        closeClassName={soloCruz ? CRUZ_DESTACADA : undefined}
+      >
         <div className="min-w-0">
           <PanelTitle>{titulo}</PanelTitle>
           <PanelDescription>{cargando ? 'Cargando…' : (descripcion ?? 'Detalle')}</PanelDescription>
@@ -136,10 +153,13 @@ function DetalleModal({
         )}
       </PanelBody>
 
-      <PanelFooter className={PIE}>
-        <DetalleModalAccion variant="outline" onClick={onCerrar}>
-          Cerrar
-        </DetalleModalAccion>
+      {/* Sin "Cerrar", el pie puede quedar sin botones (cada acción decide si se muestra): no se ve. */}
+      <PanelFooter className={cn(PIE, soloCruz && 'empty:hidden!')}>
+        {!soloCruz && (
+          <DetalleModalAccion variant="outline" onClick={onCerrar}>
+            Cerrar
+          </DetalleModalAccion>
+        )}
         {hayDatos && acciones}
       </PanelFooter>
     </Panel>
