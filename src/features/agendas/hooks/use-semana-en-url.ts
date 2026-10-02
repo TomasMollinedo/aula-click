@@ -18,17 +18,25 @@ function fechaDeHoy(): string {
  * se mantienen. `fecha` es el lunes de la semana (la fecha de la URL puede ser cualquier día de
  * ella: la de la lista por día, o la de un turno abierto); sin `fecha`, la semana de hoy. Una fecha
  * inválida cae en la semana de hoy.
+ *
+ * `fechaPorDefecto` cambia cuál es esa semana "sin `fecha`" (la ficha del alumno abre en la de su
+ * próximo turno): esa semana es la que no se escribe en la URL, y volver a la de hoy sí se escribe.
  */
-export function useSemanaEnUrl() {
+export function useSemanaEnUrl({ fechaPorDefecto }: { fechaPorDefecto?: string } = {}) {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
   const hoy = fechaDeHoy()
+  const porDefecto = fechaPorDefecto ?? hoy
 
-  const fecha = normalizarFecha('semana', parsearFecha(searchParams.get('fecha'), hoy))
+  const fecha = normalizarFecha('semana', parsearFecha(searchParams.get('fecha'), porDefecto))
 
   function cambiar(nueva: string) {
-    const params = paramsDeSemana(new URLSearchParams(searchParams.toString()), nueva, fechaDeHoy())
+    const params = paramsDeSemana(
+      new URLSearchParams(searchParams.toString()),
+      nueva,
+      fechaPorDefecto ?? fechaDeHoy(),
+    )
     const qs = params.toString()
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }
