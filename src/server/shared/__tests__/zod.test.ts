@@ -361,6 +361,8 @@ describe('importe', () => {
     [1e-7, 'El monto puede tener hasta dos decimales'],
     [100_000_000, `El monto no puede superar ${IMPORTE_MAX}`],
     ['8000', 'Debe ser un número'],
+    [undefined, 'El monto es obligatorio'],
+    [null, 'El monto es obligatorio'],
   ])('rechaza %s con el mensaje en español', (valor, esperado) => {
     expect(mensaje(monto.safeParse(valor))).toBe(esperado)
   })

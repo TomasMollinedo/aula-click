@@ -54,16 +54,26 @@ describe('parsearMonto', () => {
 })
 
 describe('pagoFormSchema', () => {
-  const valido = { fechaPago: '2026-10-05', montoRecibido: '', observaciones: '' }
+  const valido = { fechaPago: '2026-10-05', montoRecibido: '35000', observaciones: '' }
 
   function errores(valores: Record<string, unknown>) {
     const resultado = pagoFormSchema.safeParse(valores)
     return resultado.success ? [] : resultado.error.issues.map((i) => [i.path[0], i.message])
   }
 
-  it('acepta el formulario mínimo y sin montoRecibido ni observaciones', () => {
+  it('acepta el formulario mínimo, sin observaciones', () => {
     expect(errores(valido)).toEqual([])
-    expect(errores({ fechaPago: '2026-10-05' })).toEqual([])
+    expect(errores({ fechaPago: '2026-10-05', montoRecibido: '35000' })).toEqual([])
+  })
+
+  it('montoRecibido obligatorio: vacío, solo espacios o ausente no pasan', () => {
+    expect(errores({ ...valido, montoRecibido: '' })).toEqual([
+      ['montoRecibido', 'Campo obligatorio'],
+    ])
+    expect(errores({ ...valido, montoRecibido: '   ' })).toEqual([
+      ['montoRecibido', 'Campo obligatorio'],
+    ])
+    expect(errores({ fechaPago: '2026-10-05' })).toEqual([['montoRecibido', 'Campo obligatorio']])
   })
 
   it('fechaPago obligatoria y con formato válido (no valida que no sea futura)', () => {
@@ -126,13 +136,12 @@ describe('armarRegistrarPago', () => {
     })
   })
 
-  it('sin monto: se omite (no se informó)', () => {
+  it('un monto que no se puede leer nunca se omite: viaja 0 y la API lo rechaza', () => {
     const body = armarRegistrarPago(12, OCURRENCIAS, {
       fechaPago: '2026-10-05',
       montoRecibido: '  ',
     })
-    expect(body).not.toHaveProperty('montoRecibido')
-    expect(body).not.toHaveProperty('observaciones')
+    expect(body.montoRecibido).toBe(0)
   })
 
   it('monto con coma y puntos de miles: número JSON', () => {
@@ -147,11 +156,16 @@ describe('armarRegistrarPago', () => {
     expect(
       armarRegistrarPago(12, OCURRENCIAS, {
         fechaPago: '2026-10-05',
+        montoRecibido: '35000',
         observaciones: '  Efectivo  ',
       }).observaciones,
     ).toBe('Efectivo')
     expect(
-      armarRegistrarPago(12, OCURRENCIAS, { fechaPago: '2026-10-05', observaciones: '   ' }),
+      armarRegistrarPago(12, OCURRENCIAS, {
+        fechaPago: '2026-10-05',
+        montoRecibido: '35000',
+        observaciones: '   ',
+      }),
     ).not.toHaveProperty('observaciones')
   })
 })

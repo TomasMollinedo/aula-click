@@ -70,6 +70,7 @@ function pago(parcial: Partial<RegistrarPago> = {}): RegistrarPago {
     alumnoId: 12,
     ocurrencias: [{ turnoId: 41, fecha: '2026-10-12' }],
     fechaPago: '2026-10-05',
+    montoRecibido: 50000,
     ...parcial,
   }
 }
@@ -84,7 +85,7 @@ async function errorDe(promesa: Promise<unknown>): Promise<AppError> {
 }
 
 describe('registrar: camino feliz', () => {
-  it('un turno: registra y responde cantidad, total, montoRecibido y vuelto null', async () => {
+  it('un turno: registra y responde cantidad, total, montoRecibido y vuelto', async () => {
     const res = await service.registrar(pago(), actor)
 
     expect(res).toEqual({
@@ -92,15 +93,15 @@ describe('registrar: camino feliz', () => {
       numeroComprobante: 1024,
       cantidad: 1,
       total: 8000,
-      montoRecibido: null,
-      vuelto: null,
+      montoRecibido: 50000,
+      vuelto: 42000,
     })
     expect(memoria.repository.registrar).toHaveBeenCalledWith(
       {
         alumnoId: 12,
         ocurrencias: [{ turnoId: 41, fecha: '2026-10-12' }],
         fechaPago: '2026-10-05',
-        montoRecibido: null,
+        montoRecibido: 50000,
         observaciones: null,
       },
       expect.any(Function),
@@ -154,11 +155,6 @@ describe('registrar: camino feliz', () => {
 
   it('montoRecibido igual al total → vuelto 0', async () => {
     expect((await service.registrar(pago({ montoRecibido: 8000 }), actor)).vuelto).toBe(0)
-  })
-
-  it('montoRecibido null equivale a no informarlo', async () => {
-    const res = await service.registrar(pago({ montoRecibido: null }), actor)
-    expect(res).toMatchObject({ montoRecibido: null, vuelto: null })
   })
 
   it('una SIN_REGISTRAR (pasada) se cobra', async () => {
@@ -420,9 +416,17 @@ describe('obtenerComprobante', () => {
     ])
   })
 
-  it('sin montoRecibido, vuelto null', async () => {
+  it('un pago anterior a que el monto fuera obligatorio (sin montoRecibido): vuelto null', async () => {
     const { pagoId } = await service.registrar(pago(), actor)
-    expect((await service.obtenerComprobante(pagoId)).vuelto).toBeNull()
+    const guardado = await memoria.repository.buscarComprobante(pagoId)
+    memoria.repository.buscarComprobante.mockResolvedValueOnce(
+      guardado && { ...guardado, montoRecibido: null },
+    )
+
+    expect(await service.obtenerComprobante(pagoId)).toMatchObject({
+      montoRecibido: null,
+      vuelto: null,
+    })
   })
 
   it('un cambio de precio posterior no cambia el comprobante de un pago ya registrado', async () => {

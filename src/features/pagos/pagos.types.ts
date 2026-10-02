@@ -13,8 +13,8 @@ export type RegistrarPago = {
   /** Pares `(turnoId, fecha)` en el orden en que se muestran (los errores vuelven por posición). */
   ocurrencias: { turnoId: number; fecha: string }[]
   fechaPago: string
-  /** Omitido = no se informó. */
-  montoRecibido?: number
+  /** Obligatorio: el pago es en efectivo. */
+  montoRecibido: number
   /** Omitido = sin observaciones. */
   observaciones?: string
 }
@@ -25,10 +25,9 @@ export type PagoRegistrado = {
   numeroComprobante: number
   cantidad: number
   total: number
-  /** `null` si no se informó el monto. */
-  montoRecibido: number | null
-  /** `montoRecibido - total`, o `null` sin monto recibido. */
-  vuelto: number | null
+  montoRecibido: number
+  /** `montoRecibido - total`. */
+  vuelto: number
 }
 
 /** Una ocurrencia pagada, con los datos **actuales** de su turno y el importe que se cobró. */
@@ -51,7 +50,9 @@ export type Comprobante = {
   /** Ordenados por fecha, hora de inicio y turno. */
   turnos: TurnoComprobante[]
   total: number
+  /** `null` solo en un pago anterior a que el monto recibido fuera obligatorio. */
   montoRecibido: number | null
+  /** `montoRecibido - total`, o `null` sin monto recibido. */
   vuelto: number | null
   formaPago: Referencia
   observaciones: string | null

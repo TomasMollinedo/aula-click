@@ -34,9 +34,10 @@ function snapshot(
   return { ocurrencias, precios: new Map(precios) }
 }
 
+/** Por defecto, un monto recibido que alcanza para cualquier total (el tope de un importe). */
 function pedido(
   ocurrencias: { turnoId: number; fecha: string }[],
-  montoRecibido: number | null = null,
+  montoRecibido = 99_999_999.99,
 ): PedidoPago {
   return { alumnoId: 12, ocurrencias, montoRecibido }
 }
@@ -96,10 +97,13 @@ describe('planificarPago', () => {
           [7, 9500.25],
         ],
       ),
-      pedido([
-        { turnoId: 57, fecha: '2026-10-07' },
-        { turnoId: 41, fecha: '2026-10-12' },
-      ]),
+      pedido(
+        [
+          { turnoId: 57, fecha: '2026-10-07' },
+          { turnoId: 41, fecha: '2026-10-12' },
+        ],
+        20000,
+      ),
       HOY,
     )
 
@@ -109,7 +113,7 @@ describe('planificarPago', () => {
         { turnoId: 41, fecha: '2026-10-12', importe: 8000 },
       ],
       total: 17500.25,
-      vuelto: null,
+      vuelto: 2499.75,
     })
   })
 

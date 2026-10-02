@@ -56,7 +56,7 @@ export const registrarPagoRoute = createRoute({
       content: { 'application/json': { schema: pagoRegistradoSchema, example: ejemploRegistrado } },
     },
     400: respuestaError(
-      'Datos inválidos (VALIDACION): formato, ocurrencias repetidas, `fechaPago` posterior a hoy, ocurrencias de otro alumno, total mayor al máximo o `montoRecibido` menor al total',
+      'Datos inválidos (VALIDACION): formato, ocurrencias repetidas, `montoRecibido` ausente, `fechaPago` posterior a hoy, ocurrencias de otro alumno, total mayor al máximo o `montoRecibido` menor al total',
       ejemploErrorMonto,
     ),
     ...errores,

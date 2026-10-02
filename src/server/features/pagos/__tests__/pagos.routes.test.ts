@@ -138,6 +138,8 @@ describe('POST /pagos', () => {
       ['ocurrencias', 0, 'fecha'],
     ],
     ['sin fechaPago', { ...body, fechaPago: undefined }, ['fechaPago']],
+    ['sin montoRecibido', { ...body, montoRecibido: undefined }, ['montoRecibido']],
+    ['montoRecibido null', { ...body, montoRecibido: null }, ['montoRecibido']],
     ['montoRecibido 0', { ...body, montoRecibido: 0 }, ['montoRecibido']],
     ['montoRecibido con tres decimales', { ...body, montoRecibido: 100.005 }, ['montoRecibido']],
     [

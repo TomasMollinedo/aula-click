@@ -581,7 +581,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 - `ocurrencias`: de 1 a 200 pares `(turnoId, fecha)` sin repetir (un repetido: 400 en `["ocurrencias", <posición>]`). Todas del alumno.
 - `fechaPago`: `YYYY-MM-DD`, obligatoria, hoy o anterior (400 en `["fechaPago"]`).
-- `montoRecibido`: opcional (`null` u omitido = no se informó). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`; si viene, >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)").
+- `montoRecibido`: **obligatorio** (el pago es en efectivo; decisión T-112): omitido o `null`, 400 `VALIDACION` en `["montoRecibido"]` ("El monto recibido es obligatorio"). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`, y >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)").
 - `observaciones`: opcional, hasta 500 caracteres; `""` o `null` = sin observaciones.
 - La forma de pago no viaja: es "Efectivo" (única en este sprint).
 
@@ -598,7 +598,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 }
 ```
 
-`montoRecibido` y `vuelto` son `null` si no se informó el monto. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000,00" y "Vuelto: $ 3.000,00". El vuelto no se guarda.
+`montoRecibido` y `vuelto` siempre vienen (un vuelto de 0 es un pago justo). Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000,00" y "Vuelto: $ 3.000,00". El vuelto no se guarda.
 
 **Errores del `POST`**, en este orden (el primero que falla gana):
 
@@ -648,6 +648,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 ```
 
 - `turnos`: ordenados por fecha, hora de inicio y `turnoId`, con los datos **actuales** de su turno (una ocurrencia pagada que se reprogramó muestra su fecha, hora y profesor nuevos) e `importe` = lo que se cobró (no cambia si después cambia el precio de la materia).
+- `montoRecibido`: `null` sólo en un pago anterior a que el monto fuera obligatorio (T-112).
 - `vuelto`: recalculado en cada lectura (`montoRecibido - total`); `null` sin monto recibido.
 - `registradoPor` es un `UsuarioAuditoria`; `registradoEl`, un instante ISO 8601 en UTC.
 - `numeroComprobante` es correlativo y único, pero puede tener huecos (decisión T-62).

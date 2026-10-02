@@ -5,10 +5,10 @@ import type { OcurrenciaACobrar } from '@/types/pago'
 
 import type { RegistrarPago } from './pagos.types'
 
-// Schema del formulario de registrar un pago: solo formato (docs/arquitectura-frontend.md →
-// Formularios). Que la fecha de pago no sea futura, que el monto recibido alcance el total y qué
-// turnos se pueden cobrar los decide la API, y sus 400 se muestran en el campo. Las ocurrencias no
-// son campos: llegan de quien abre el diálogo.
+// Schema del formulario de registrar un pago: solo formato y campos obligatorios
+// (docs/arquitectura-frontend.md → Formularios). Que la fecha de pago no sea futura, que el monto
+// recibido alcance el total y qué turnos se pueden cobrar los decide la API, y sus 400 se muestran
+// en el campo. Las ocurrencias no son campos: llegan de quien abre el diálogo.
 
 const FECHA_FORMATO = /^\d{4}-\d{2}-\d{2}$/
 const MAX_OBSERVACIONES = 500
@@ -74,22 +74,18 @@ const fechaPagoSchema = z
   )
 
 /**
- * Vacío = no se informa. Si viene, se lee con `parsearMonto` (que ya exige hasta dos decimales) y
- * tiene que ser mayor a 0. No se compara con el total: ese 400 lo da la API en el campo.
+ * Obligatorio: el pago es en efectivo y con el monto recibido la API calcula el vuelto. Se lee con
+ * `parsearMonto` (que ya exige hasta dos decimales) y tiene que ser mayor a 0. No se compara con el
+ * total: ese 400 lo da la API en el campo.
  */
 const montoRecibidoSchema = z
-  .string()
-  .optional()
-  .refine((v) => !v?.trim() || parsearMonto(v) !== null, {
+  .string({ message: 'Campo obligatorio' })
+  .refine((v) => v.trim() !== '', { message: 'Campo obligatorio', abort: true })
+  .refine((v) => parsearMonto(v) !== null, {
     message: 'Monto inválido: usá números con hasta dos decimales (por ejemplo 32.000 o 32000,50)',
+    abort: true,
   })
-  .refine(
-    (v) => {
-      const monto = v ? parsearMonto(v) : null
-      return monto === null || monto > 0
-    },
-    { message: 'Debe ser mayor a 0' },
-  )
+  .refine((v) => (parsearMonto(v) ?? 0) > 0, { message: 'Debe ser mayor a 0' })
 
 const observacionesSchema = z
   .string()
@@ -121,22 +117,25 @@ export function valoresInicialesPago(hoy: string): PagoFormValues {
 /**
  * Body del `POST /pagos`. Las ocurrencias van como pares `(turnoId, fecha)` **en el mismo orden en
  * que se muestran**: la API devuelve sus errores por posición (`path: ['ocurrencias', i]`) y
- * `errores-pagos.ts` los resuelve contra esa misma lista. El monto vacío se omite (no se informó) y
- * las observaciones van sin espacios alrededor, omitidas si quedan vacías.
+ * `errores-pagos.ts` los resuelve contra esa misma lista. Las observaciones van sin espacios
+ * alrededor, omitidas si quedan vacías.
+ *
+ * `valores` ya pasó por `pagoFormSchema`, así que el monto se puede leer. Si no se pudiera, viaja
+ * `0`: la API lo rechaza con su 400 en el campo y nunca se registra un pago sin monto.
  */
 export function armarRegistrarPago(
   alumnoId: number,
   ocurrencias: readonly Pick<OcurrenciaACobrar, 'turnoId' | 'fecha'>[],
   valores: PagoFormValues,
 ): RegistrarPago {
-  const montoRecibido = parsearMonto(valores.montoRecibido ?? '')
+  const montoRecibido = parsearMonto(valores.montoRecibido) ?? 0
   const observaciones = valores.observaciones?.trim()
 
   return {
     alumnoId,
     ocurrencias: ocurrencias.map(({ turnoId, fecha }) => ({ turnoId, fecha })),
     fechaPago: valores.fechaPago,
-    ...(montoRecibido !== null ? { montoRecibido } : {}),
+    montoRecibido,
     ...(observaciones ? { observaciones } : {}),
   }
 }
