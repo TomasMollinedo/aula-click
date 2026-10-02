@@ -35,7 +35,7 @@ export function BotonPdfAgenda({ fecha, filtros }: BotonPdfAgendaProps) {
   }
 
   const searchParams = new URLSearchParams({ fecha, profesorId: String(filtros.profesorId) })
-  if (filtros.estado) searchParams.set('estado', filtros.estado)
+  if (filtros.incluirCancelados) searchParams.set('incluirCancelados', 'true')
   if (filtros.prioridad) searchParams.set('prioridad', filtros.prioridad)
 
   return (

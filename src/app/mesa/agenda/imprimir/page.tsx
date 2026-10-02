@@ -12,7 +12,7 @@ import type { AgendaItem, AgendaListadoParams } from '@/features/agendas/agendas
 import { authClient } from '@/features/auth/auth-client'
 import { useCentro } from '@/features/centro/hooks/use-centro'
 import { useImprimirCuandoEsteListo } from '@/hooks/use-imprimir'
-import type { EstadoOcurrencia, PrioridadOcurrencia } from '@/types/ocurrencia'
+import type { PrioridadOcurrencia } from '@/types/ocurrencia'
 import { fechaConDia } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 
@@ -51,12 +51,12 @@ function HojaAgenda() {
   const fecha = searchParams.get('fecha') ?? ''
   const profesorIdParam = searchParams.get('profesorId')
   const profesorId = profesorIdParam ? Number(profesorIdParam) : undefined
-  const estado = (searchParams.get('estado') as EstadoOcurrencia | null) ?? undefined
+  const incluirCancelados = searchParams.get('incluirCancelados') === 'true' || undefined
   const prioridad = (searchParams.get('prioridad') as PrioridadOcurrencia | null) ?? undefined
 
   const agenda = useQuery({
-    queryKey: ['agendas', 'imprimir', { fecha, profesorId, estado, prioridad }],
-    queryFn: () => listarAgendaCompleta({ fecha, profesorId, estado, prioridad }),
+    queryKey: ['agendas', 'imprimir', { fecha, profesorId, incluirCancelados, prioridad }],
+    queryFn: () => listarAgendaCompleta({ fecha, profesorId, incluirCancelados, prioridad }),
   })
   const centro = useCentro()
   const { data: session } = authClient.useSession()
@@ -90,7 +90,7 @@ function HojaAgenda() {
   const filtros = [
     profesorId != null &&
       `Profesor: ${primerProfesor ? `${primerProfesor.nombre} ${primerProfesor.apellido}` : `#${profesorId}`}`,
-    estado && `Estado: ${ESTADO_TURNO[estado].etiqueta}`,
+    incluirCancelados && 'Incluye cancelados',
     prioridad && `Prioridad: ${ETIQUETA_PRIORIDAD[prioridad]}`,
   ].filter((texto): texto is string => Boolean(texto))
 
@@ -98,7 +98,7 @@ function HojaAgenda() {
     <>
       <BotonVolverImprimir />
       <DocumentoOficial
-        titulo="Agenda diaria"
+        titulo="Agenda"
         emitidoPor={emitidoPor}
         centro={centro.data}
         onLogoListo={() => setLogoListo(true)}

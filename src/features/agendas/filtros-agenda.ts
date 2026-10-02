@@ -1,39 +1,40 @@
 import type { FiltrosAgenda } from '@/types/agenda'
-import type { EstadoOcurrencia, PrioridadOcurrencia } from '@/types/ocurrencia'
+import type { PrioridadOcurrencia } from '@/types/ocurrencia'
 
-// Los filtros de las agendas en la URL (`?profesorId=&estado=&prioridad=`). Funciones puras: este
-// es el único lugar que conoce los nombres de los parámetros y sus valores válidos.
+// Los filtros de las agendas en la URL (`?profesorId=&incluirCancelados=true&prioridad=`). Funciones
+// puras: este es el único lugar que conoce los nombres de los parámetros y sus valores válidos.
 
-export const ESTADOS_FILTRO: readonly EstadoOcurrencia[] = [
-  'AGENDADO',
-  'CANCELADO',
-  'SIN_REGISTRAR',
-]
 export const PRIORIDADES_FILTRO: readonly PrioridadOcurrencia[] = ['ALTA', 'MEDIA', 'BAJA']
 
-export const FILTROS_VACIOS: FiltrosAgenda = { profesorId: null, estado: null, prioridad: null }
+export const FILTROS_VACIOS: FiltrosAgenda = {
+  profesorId: null,
+  incluirCancelados: false,
+  prioridad: null,
+}
 
 /** `true` si hay algún filtro puesto (para el mensaje de "sin resultados" de las listas). */
 export function hayFiltrosActivos(filtros: FiltrosAgenda): boolean {
-  return filtros.profesorId !== null || filtros.estado !== null || filtros.prioridad !== null
+  return filtros.profesorId !== null || filtros.incluirCancelados || filtros.prioridad !== null
 }
 
-/** Los filtros de estado y prioridad como parámetros de la API (lo vacío no se manda). */
-export function paramsDeEstadoYPrioridad(filtros: FiltrosAgenda): {
-  estado?: EstadoOcurrencia
+/** Los filtros de cancelados y prioridad como parámetros de la API (lo vacío no se manda). */
+export function paramsDeCanceladosYPrioridad(filtros: FiltrosAgenda): {
+  incluirCancelados?: boolean
   prioridad?: PrioridadOcurrencia
 } {
-  return { estado: filtros.estado ?? undefined, prioridad: filtros.prioridad ?? undefined }
+  return {
+    incluirCancelados: filtros.incluirCancelados || undefined,
+    prioridad: filtros.prioridad ?? undefined,
+  }
 }
 
 /** Un valor inválido (o ausente) es "sin filtro": la URL nunca rompe la pantalla. */
 export function leerFiltros(params: URLSearchParams): FiltrosAgenda {
   const profesorId = Number(params.get('profesorId'))
-  const estado = params.get('estado')
   const prioridad = params.get('prioridad')
   return {
     profesorId: Number.isInteger(profesorId) && profesorId > 0 ? profesorId : null,
-    estado: ESTADOS_FILTRO.find((e) => e === estado) ?? null,
+    incluirCancelados: params.get('incluirCancelados') === 'true',
     prioridad: PRIORIDADES_FILTRO.find((p) => p === prioridad) ?? null,
   }
 }
@@ -48,8 +49,8 @@ export function paramsConFiltros(params: URLSearchParams, filtros: FiltrosAgenda
   nuevos.delete('page')
   if (filtros.profesorId !== null) nuevos.set('profesorId', String(filtros.profesorId))
   else nuevos.delete('profesorId')
-  if (filtros.estado !== null) nuevos.set('estado', filtros.estado)
-  else nuevos.delete('estado')
+  if (filtros.incluirCancelados) nuevos.set('incluirCancelados', 'true')
+  else nuevos.delete('incluirCancelados')
   if (filtros.prioridad !== null) nuevos.set('prioridad', filtros.prioridad)
   else nuevos.delete('prioridad')
   return nuevos

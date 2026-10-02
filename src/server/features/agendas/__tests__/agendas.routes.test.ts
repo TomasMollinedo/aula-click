@@ -131,7 +131,7 @@ describe('GET /agendas/diaria', () => {
     ])
   })
 
-  it('filtra por prioridad y por estado: los pasa al service y devuelve sólo lo que cumple', async () => {
+  it('filtra por prioridad y por cancelados: los pasa al service y devuelve sólo lo que cumple', async () => {
     repository.leerOcurrencias.mockResolvedValue([
       OCURRENCIA,
       { ...OCURRENCIA, turnoId: 16, alumnoId: 13, estado: 'CANCELADO' },
@@ -141,9 +141,15 @@ describe('GET /agendas/diaria', () => {
     expect(altas.status).toBe(200)
     expect((await altas.json()).data).toEqual([])
 
-    const canceladas = await pedir('/diaria?fecha=2099-01-05&estado=CANCELADO')
-    const { data } = await canceladas.json()
+    const sinCanceladas = await pedir('/diaria?fecha=2099-01-05')
+    expect((await sinCanceladas.json()).data).toEqual([
+      expect.objectContaining({ turnoId: 15, estado: 'AGENDADO' }),
+    ])
+
+    const conCanceladas = await pedir('/diaria?fecha=2099-01-05&incluirCancelados=true')
+    const { data } = await conCanceladas.json()
     expect(data).toEqual([
+      expect.objectContaining({ turnoId: 15, estado: 'AGENDADO' }),
       expect.objectContaining({ turnoId: 16, estado: 'CANCELADO', prioridad: null, examen: null }),
     ])
   })
@@ -154,7 +160,7 @@ describe('GET /agendas/diaria', () => {
     ['materiaId no numérico', '?materiaId=abc'],
     ['aulaId cero', '?aulaId=0'],
     ['profesorId negativo', '?profesorId=-1'],
-    ['estado desconocido', '?estado=ACTIVO'],
+    ['incluirCancelados inválido', '?incluirCancelados=si'],
     ['prioridad desconocida', '?prioridad=URGENTE'],
     ['q de más de 100 caracteres', `?q=${'a'.repeat(101)}`],
     ['pageSize mayor a 100', '?pageSize=101'],
@@ -228,7 +234,7 @@ describe('GET /agendas/propia', () => {
     ['hasta inexistente', '?hasta=2099-02-30'],
     ['hasta anterior a desde', '?desde=2099-01-05&hasta=2099-01-04'],
     ['rango mayor al máximo', '?desde=2099-01-05&hasta=2099-02-05'],
-    ['estado desconocido', '?estado=ACTIVO'],
+    ['incluirCancelados inválido', '?incluirCancelados=si'],
     ['prioridad desconocida', '?prioridad=URGENTE'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
     const res = await pedir(`/propia${query}`)
@@ -330,9 +336,9 @@ describe('GET /agendas/centro', () => {
     )
   })
 
-  it('pasa profesor, materia y aula al motor y filtra por estado y prioridad', async () => {
+  it('pasa profesor, materia y aula al motor y filtra por cancelados y prioridad', async () => {
     await pedir(
-      '/centro?desde=2099-01-05&hasta=2099-01-11&profesorId=3&materiaId=2&aulaId=1&estado=AGENDADO&prioridad=ALTA',
+      '/centro?desde=2099-01-05&hasta=2099-01-11&profesorId=3&materiaId=2&aulaId=1&incluirCancelados=true&prioridad=ALTA',
     )
 
     expect(repository.leerOcurrencias).toHaveBeenCalledWith(
@@ -348,7 +354,7 @@ describe('GET /agendas/centro', () => {
     ['hasta anterior a desde', '?desde=2099-01-05&hasta=2099-01-04'],
     ['rango mayor a 31 días', '?desde=2099-01-05&hasta=2099-02-05'],
     ['profesorId cero', '?desde=2099-01-05&hasta=2099-01-11&profesorId=0'],
-    ['estado desconocido', '?desde=2099-01-05&hasta=2099-01-11&estado=ACTIVO'],
+    ['incluirCancelados inválido', '?desde=2099-01-05&hasta=2099-01-11&incluirCancelados=si'],
     ['prioridad desconocida', '?desde=2099-01-05&hasta=2099-01-11&prioridad=URGENTE'],
   ])('%s → 400 VALIDACION', async (_caso, query) => {
     const res = await pedir(`/centro${query}`)
@@ -463,8 +469,8 @@ describe('OpenAPI de las agendas', () => {
     const parametros = doc.paths['/api/v1/agendas/propia']?.get?.parameters ?? []
     expect(parametros.map((parametro) => (parametro as { name: string }).name).sort()).toEqual([
       'desde',
-      'estado',
       'hasta',
+      'incluirCancelados',
       'prioridad',
     ])
   })

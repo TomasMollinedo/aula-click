@@ -3,7 +3,7 @@
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 import type { ApiError } from '@/utils/fetch-json'
 
-import { hayFiltrosActivos, paramsDeEstadoYPrioridad } from '../filtros-agenda'
+import { hayFiltrosActivos, paramsDeCanceladosYPrioridad } from '../filtros-agenda'
 import { useAgendaPropia } from '../hooks/use-agenda-propia'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useRangoAgendaEnUrl } from '../hooks/use-rango-agenda-en-url'
@@ -51,7 +51,7 @@ export function AgendaPropiaListado({ renderDetalle }: AgendaPropiaListadoProps)
 function ListaAgendaPropia() {
   const { vista, fecha, rango, hoy, cambiar } = useRangoAgendaEnUrl({ vistaPorDefecto: 'dia' })
   const { filtros } = useFiltrosAgenda()
-  const query = useAgendaPropia({ ...rango, ...paramsDeEstadoYPrioridad(filtros) })
+  const query = useAgendaPropia({ ...rango, ...paramsDeCanceladosYPrioridad(filtros) })
 
   return (
     <AgendaPorRango

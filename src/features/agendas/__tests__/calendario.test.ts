@@ -5,6 +5,7 @@ import {
   agruparClases,
   armarSemana,
   cantidadCancelados,
+  cantidadPorPrioridad,
   claveDeCelda,
   disponibilidadDeClase,
   etiquetaDeHora,
@@ -185,6 +186,18 @@ describe('textos de la clase', () => {
     expect(cantidadCancelados(clase)).toBe(1)
   })
 
+  it('cantidadPorPrioridad cuenta alta y media; baja, sin prioridad y cancelados no suman', () => {
+    const [clase] = agruparClases([
+      item({ turnoId: 1, prioridad: 'ALTA' }),
+      item({ turnoId: 2, prioridad: 'ALTA' }),
+      item({ turnoId: 3, prioridad: 'MEDIA' }),
+      item({ turnoId: 4, prioridad: 'BAJA' }),
+      item({ turnoId: 5, prioridad: null }),
+      item({ turnoId: 6, estado: 'CANCELADO', prioridad: null }),
+    ])
+    expect(cantidadPorPrioridad(clase)).toEqual({ alta: 2, media: 1 })
+  })
+
   it('horaDe y etiquetaDeHora', () => {
     expect(horaDe('08:00')).toBe(8)
     expect(horaDe('14:00')).toBe(14)
@@ -193,7 +206,7 @@ describe('textos de la clase', () => {
 })
 
 describe('filtros del calendario', () => {
-  const filtros = { profesorId: 7, estado: 'AGENDADO', prioridad: null } as const
+  const filtros = { profesorId: 7, incluirCancelados: true, prioridad: null } as const
   const rango = { desde: '2026-10-05', hasta: '2026-10-11' }
 
   it('el centro filtra por profesor; las agendas de un profesor, no', () => {
@@ -207,7 +220,7 @@ describe('filtros del calendario', () => {
       origen: { tipo: 'centro' },
       ...rango,
       profesorId: 7,
-      estado: 'AGENDADO',
+      incluirCancelados: true,
       prioridad: undefined,
     })
   })
@@ -215,7 +228,7 @@ describe('filtros del calendario', () => {
   it('un ?profesorId= en la URL no llega a la agenda de un profesor', () => {
     const params = paramsDelCalendario({ tipo: 'propia' }, rango, filtros)
     expect(params.profesorId).toBeUndefined()
-    expect(params.estado).toBe('AGENDADO')
+    expect(params.incluirCancelados).toBe(true)
   })
 })
 
@@ -224,11 +237,11 @@ describe('paramsDeSemana', () => {
 
   it('guarda el lunes de la semana elegida y conserva los demás parámetros', () => {
     const params = paramsDeSemana(
-      new URLSearchParams('modo=calendario&estado=AGENDADO'),
+      new URLSearchParams('modo=calendario&incluirCancelados=true'),
       '2026-10-15',
       HOY,
     )
-    expect(params.toString()).toBe('modo=calendario&estado=AGENDADO&fecha=2026-10-12')
+    expect(params.toString()).toBe('modo=calendario&incluirCancelados=true&fecha=2026-10-12')
   })
 
   it('la semana de hoy no se escribe y saca la fecha que había', () => {

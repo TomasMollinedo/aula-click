@@ -198,7 +198,7 @@ Todos los endpoints son de `MESA_ENTRADAS`. En `turnos` quedan la disponibilidad
 | `GET /api/v1/turnos/materias`        | `GET /api/v1/agendas/materias` | `MESA_ENTRADAS` |
 | `GET /api/v1/turnos/aulas`           | `GET /api/v1/agendas/aulas`    | `MESA_ENTRADAS` |
 
-Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backend.md` → Ocurrencias) y **muestran todas, también las canceladas** (HU-13, T-57: se siguen viendo con su estado; antes de T-57 no salían). Una ocurrencia posterior al fin efectivo de una serie finalizada no existe y no sale.
+Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backend.md` → Ocurrencias) y **muestran las agendadas y las sin registrar; las canceladas sólo con `incluirCancelados=true`** (HU-13, T-57: se siguen viendo con su estado). Una ocurrencia posterior al fin efectivo de una serie finalizada no existe y no sale.
 
 ### La ocurrencia de una agenda
 
@@ -237,16 +237,16 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 - `prioridad` (`ALTA`, `MEDIA`, `BAJA`) y `examen` (el que la determina, T-31): `null` en una ocurrencia **cancelada**; `examen` también es `null` si no hay un examen próximo. Es la misma regla que el detalle y las ocurrencias del alumno.
 - `cupo` (`{ ocupados, capacidad }`, HU-19): el de la **clase** (`fecha` + `bloqueAgendaId`), el mismo para todas las ocurrencias de esa clase. `capacidad` es la efectiva de la hora, `min(profesor.capacidad, aula.capacidad)`, y `ocupados` cuenta los turnos que ocupan lugar (los cancelados no) con la misma regla que el alta de turnos. **No depende de los filtros** de la agenda: con un filtro que deja ver un solo turno de la clase, `cupo` sigue siendo el de la clase entera. La clase está llena si `ocupados >= capacidad`.
 - **No hay `fechaOriginal` ni `reprogramada`**: un turno reprogramado es un turno más, en su fecha y bloque nuevos (definiciones A y B). Tampoco hay `id` ni el `estado: "ACTIVO"` de antes: `estado` es el de la ocurrencia y el id es `turnoId`.
-- **Filtros `estado` y `prioridad`**, opcionales y combinables entre sí y con los demás filtros de cada agenda. `prioridad` deja afuera las canceladas (no tienen). Valores inválidos: 400 `VALIDACION`.
+- **Filtros `incluirCancelados` y `prioridad`**, opcionales y combinables entre sí y con los demás filtros de cada agenda. `incluirCancelados` es `true` o `false`: sin el parámetro (o en `false`) salen las agendadas y las sin registrar; con `true` salen además las canceladas. No hay un filtro por estado suelto. `prioridad` deja afuera las canceladas (no tienen). Valores inválidos: 400 `VALIDACION`.
 
 ### Agenda diaria
 
-**`GET /api/v1/agendas/diaria?fecha&page&pageSize&materiaId&aulaId&profesorId&estado&prioridad&q`** (rol `MESA_ENTRADAS`): las ocurrencias de una fecha (sin `fecha`, hoy), paginadas (decisión T-35).
+**`GET /api/v1/agendas/diaria?fecha&page&pageSize&materiaId&aulaId&profesorId&incluirCancelados&prioridad&q`** (rol `MESA_ENTRADAS`): las ocurrencias de una fecha (sin `fecha`, hoy), paginadas (decisión T-35).
 
-- Filtros: `materiaId`, `aulaId`, `profesorId` (vista personal de ese profesor, T-42), `estado`, `prioridad` y `q` (T-36: todas las palabras en el nombre del alumno o todas en el del profesor; con `profesorId`, sólo en el del alumno). El total de `meta` es el de lo filtrado.
+- Filtros: `materiaId`, `aulaId`, `profesorId` (vista personal de ese profesor, T-42), `incluirCancelados`, `prioridad` y `q` (T-36: todas las palabras en el nombre del alumno o todas en el del profesor; con `profesorId`, sólo en el del alumno). El total de `meta` es el de lo filtrado.
 - Orden: hora de inicio, dentro de la hora por profesor (apellido y nombre) y por id del turno.
 - Ítem: el de "La ocurrencia de una agenda", con `profesor`.
-- Errores: 400 `VALIDACION` (fecha, ids, `estado`, `prioridad`, `q` de más de 100 caracteres, paginación); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+- Errores: 400 `VALIDACION` (fecha, ids, `incluirCancelados`, `prioridad`, `q` de más de 100 caracteres, paginación); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
 ### Selectores de la agenda
 
@@ -254,31 +254,31 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 
 ### Agenda propia del profesor
 
-**`GET /api/v1/agendas/propia?desde&hasta&estado&prioridad`** (rol `PROFESOR`, sólo lectura): los turnos del profesor **de la sesión** para un día o un rango. El profesor sale de la sesión, **nunca de un parámetro**: no hay forma de pedir la agenda de otro, y un `profesorId` en el query se ignora.
+**`GET /api/v1/agendas/propia?desde&hasta&incluirCancelados&prioridad`** (rol `PROFESOR`, sólo lectura): los turnos del profesor **de la sesión** para un día o un rango. El profesor sale de la sesión, **nunca de un parámetro**: no hay forma de pedir la agenda de otro, y un `profesorId` en el query se ignora.
 
 - `desde` (`YYYY-MM-DD`, opcional): primer día. Sin `desde`, hoy. `hasta` (opcional): último día, incluido; sin `hasta`, el mismo día que `desde` (la vista por día). Se admiten fechas pasadas.
 - Devuelve un **arreglo sin paginar** (decisión T-43), ordenado por fecha y, dentro del día, por hora de inicio e id del turno.
 - Cada ítem es una **ocurrencia**, no un turno: un recurrente aparece una vez por cada fecha del rango que cae en el día de su bloque, así que `turnoId` se repite. Es el de "La ocurrencia de una agenda", **sin `profesor`**.
-- Errores: 400 `VALIDACION` si una fecha tiene formato inválido, si `hasta` es anterior a `desde`, si el rango supera los **31 días** (`details` sobre `hasta`) o si `estado` o `prioridad` no son válidos; 404 `NO_ENCONTRADO` si el usuario de la sesión no tiene ficha de profesor; 403 para cualquier rol que no sea `PROFESOR`.
+- Errores: 400 `VALIDACION` si una fecha tiene formato inválido, si `hasta` es anterior a `desde`, si el rango supera los **31 días** (`details` sobre `hasta`) o si `incluirCancelados` o `prioridad` no son válidos; 404 `NO_ENCONTRADO` si el usuario de la sesión no tiene ficha de profesor; 403 para cualquier rol que no sea `PROFESOR`.
 
 ### Agenda de un profesor (mesa de entradas)
 
-**`GET /api/v1/agendas/profesor?profesorId&desde&hasta&estado&prioridad`** (rol `MESA_ENTRADAS`, sólo lectura; decisión T-44): la agenda de cualquier profesor para un día o un rango, para la vista semanal de la ficha del profesor (HU-02).
+**`GET /api/v1/agendas/profesor?profesorId&desde&hasta&incluirCancelados&prioridad`** (rol `MESA_ENTRADAS`, sólo lectura; decisión T-44): la agenda de cualquier profesor para un día o un rango, para la vista semanal de la ficha del profesor (HU-02).
 
-- `profesorId` (obligatorio): el profesor. `desde`, `hasta`, `estado` y `prioridad` funcionan igual que en la agenda propia (mismos defaults y mismo tope de 31 días).
-- La respuesta tiene **exactamente la forma de "Agenda propia del profesor"** (arreglo sin paginar de ocurrencias `turnoId` + `fecha`, mismo orden, con las canceladas y sin `profesor`): el frontend reutiliza el mismo tipo.
+- `profesorId` (obligatorio): el profesor. `desde`, `hasta`, `incluirCancelados` y `prioridad` funcionan igual que en la agenda propia (mismos defaults y mismo tope de 31 días).
+- La respuesta tiene **exactamente la forma de "Agenda propia del profesor"** (arreglo sin paginar de ocurrencias `turnoId` + `fecha`, mismo orden, con las canceladas si se piden y sin `profesor`): el frontend reutiliza el mismo tipo.
 - Un profesor **inactivo** también se puede consultar: sus turnos históricos siguen existiendo.
 - Errores: 400 `VALIDACION` por los mismos motivos que la agenda propia y además si `profesorId` falta o no es un entero positivo; 404 `NO_ENCONTRADO` si el profesor no existe (se decide antes que el rango); 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
 ### Agenda del centro (mesa de entradas)
 
-**`GET /api/v1/agendas/centro?desde&hasta&profesorId?&materiaId?&aulaId?&estado?&prioridad?`** (rol `MESA_ENTRADAS`, sólo lectura; T-57, decisión T-68): las ocurrencias de **todos los profesores** en un rango, para el calendario semanal de la agenda del centro (HU-19).
+**`GET /api/v1/agendas/centro?desde&hasta&profesorId?&materiaId?&aulaId?&incluirCancelados?&prioridad?`** (rol `MESA_ENTRADAS`, sólo lectura; T-57, decisión T-68): las ocurrencias de **todos los profesores** en un rango, para el calendario semanal de la agenda del centro (HU-19).
 
 - `desde` y `hasta` (`YYYY-MM-DD`, extremos incluidos) son **obligatorios**. El rango no puede superar los **31 días** ni estar invertido (400 `VALIDACION` sobre `hasta`).
-- Filtros opcionales y combinables: `profesorId`, `materiaId`, `aulaId`, `estado` y `prioridad`. Un `profesorId` que no existe no es 404: devuelve un arreglo vacío.
-- Devuelve un **arreglo sin paginar**, ordenado por fecha, hora de inicio, profesor (apellido y nombre) e id del turno. Ítem: el de "La ocurrencia de una agenda", con `profesor`. Incluye las canceladas.
+- Filtros opcionales y combinables: `profesorId`, `materiaId`, `aulaId`, `incluirCancelados` y `prioridad`. Un `profesorId` que no existe no es 404: devuelve un arreglo vacío.
+- Devuelve un **arreglo sin paginar**, ordenado por fecha, hora de inicio, profesor (apellido y nombre) e id del turno. Ítem: el de "La ocurrencia de una agenda", con `profesor`. Las canceladas salen sólo con `incluirCancelados=true`.
 - **Agrupar por clase (`fecha` + `bloqueAgendaId`) lo hace el cliente**: la API no devuelve clases.
-- Errores: 400 `VALIDACION` si falta `desde` o `hasta`, si una fecha o un id es inválido, si `estado` o `prioridad` no son válidos, si `hasta` es anterior a `desde` o si el rango supera los 31 días; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
+- Errores: 400 `VALIDACION` si falta `desde` o `hasta`, si una fecha o un id es inválido, si `incluirCancelados` o `prioridad` no son válidos, si `hasta` es anterior a `desde` o si el rango supera los 31 días; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
 ## Ocurrencias
 

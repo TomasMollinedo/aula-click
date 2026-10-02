@@ -48,7 +48,7 @@ export const listarAgendaRoute = createRoute({
   tags,
   summary: 'Agenda diaria del centro',
   description:
-    'Ocurrencias de una fecha (por defecto hoy), con alumno, profesor, materia, aula, estado, estado de pago y prioridad. Incluye las canceladas (con su estado y sin prioridad). Paginada (decisión T-35); filtrable por materia, aula, profesor (vista personal de su agenda, decisión T-42), estado, prioridad y `q` (búsqueda por nombre de alumno o profesor, o sólo de alumno con `profesorId`, decisión T-36). Ordenada por hora y, dentro de la hora, por profesor.',
+    'Ocurrencias de una fecha (por defecto hoy), con alumno, profesor, materia, aula, estado, estado de pago y prioridad. Las canceladas salen sólo con `incluirCancelados=true` (con su estado y sin prioridad). Paginada (decisión T-35); filtrable por materia, aula, profesor (vista personal de su agenda, decisión T-42), `incluirCancelados`, prioridad y `q` (búsqueda por nombre de alumno o profesor, o sólo de alumno con `profesorId`, decisión T-36). Ordenada por hora y, dentro de la hora, por profesor.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: agendaQuerySchema },
   responses: {
@@ -69,7 +69,7 @@ export const listarAgendaPropiaRoute = createRoute({
   tags,
   summary: 'Agenda propia del profesor',
   description:
-    'Turnos del profesor **de la sesión** (sale del `Actor`, nunca de un parámetro) para un día o un rango: una entrada por cada ocurrencia, también las canceladas, con alumno, materia, aula, horario, estado, estado de pago y prioridad. Filtrable por estado y prioridad. Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango no puede superar los 31 días. Sin paginar (decisión T-43), ordenada por fecha y, dentro del día, por hora. Sólo lectura.',
+    'Turnos del profesor **de la sesión** (sale del `Actor`, nunca de un parámetro) para un día o un rango: una entrada por cada ocurrencia (las canceladas sólo con `incluirCancelados=true`), con alumno, materia, aula, horario, estado, estado de pago y prioridad. Filtrable por `incluirCancelados` y prioridad. Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango no puede superar los 31 días. Sin paginar (decisión T-43), ordenada por fecha y, dentro del día, por hora. Sólo lectura.',
   middleware: [requireAuth(), requireRole('PROFESOR')] as const,
   request: { query: agendaPropiaQuerySchema },
   responses: {
@@ -96,7 +96,7 @@ export const listarAgendaProfesorRoute = createRoute({
   tags,
   summary: 'Agenda de un profesor',
   description:
-    'Turnos del profesor `profesorId` para un día o un rango, para la ficha del profesor (HU-02): misma forma y mismos filtros que `/agendas/propia` (una entrada por ocurrencia, también las canceladas, sin datos del profesor). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango no puede superar los 31 días. Sin paginar (decisiones T-43 y T-44), ordenada por fecha y, dentro del día, por hora. Un profesor inactivo también se puede consultar. Sólo lectura.',
+    'Turnos del profesor `profesorId` para un día o un rango, para la ficha del profesor (HU-02): misma forma y mismos filtros que `/agendas/propia` (una entrada por ocurrencia, las canceladas sólo con `incluirCancelados=true`, sin datos del profesor). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango no puede superar los 31 días. Sin paginar (decisiones T-43 y T-44), ordenada por fecha y, dentro del día, por hora. Un profesor inactivo también se puede consultar. Sólo lectura.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: agendaProfesorQuerySchema },
   responses: {
@@ -120,7 +120,7 @@ export const listarAgendaCentroRoute = createRoute({
   tags,
   summary: 'Agenda del centro para un rango',
   description:
-    'Ocurrencias de **todos los profesores** entre `desde` y `hasta` (ambos obligatorios, máximo 31 días), para el calendario semanal de la agenda del centro (HU-19). Incluye las canceladas (con su estado y sin prioridad). Filtrable por profesor, materia, aula, estado y prioridad. Sin paginar, ordenada por fecha, hora, profesor y turno. Agrupar por clase (fecha + `bloqueAgendaId`) lo hace el cliente. Sólo lectura.',
+    'Ocurrencias de **todos los profesores** entre `desde` y `hasta` (ambos obligatorios, máximo 31 días), para el calendario semanal de la agenda del centro (HU-19). Las canceladas salen sólo con `incluirCancelados=true` (con su estado y sin prioridad). Filtrable por profesor, materia, aula, `incluirCancelados` y prioridad. Sin paginar, ordenada por fecha, hora, profesor y turno. Agrupar por clase (fecha + `bloqueAgendaId`) lo hace el cliente. Sólo lectura.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: agendaCentroQuerySchema },
   responses: {

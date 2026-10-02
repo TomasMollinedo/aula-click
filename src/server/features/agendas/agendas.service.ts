@@ -28,8 +28,8 @@ import type {
 
 // Reglas de las agendas. No conoce HTTP ni Prisma: lanza AppError o sus subclases. Las ocurrencias
 // salen del motor de `turnos` y la prioridad del de `examenes` (vía el repository) y acá sólo se
-// filtran, ordenan y paginan. Las agendas muestran **todas** las ocurrencias, también las canceladas
-// (HU-13: se siguen viendo con su estado; T-57 cambió el criterio de T-23); una cancelada no tiene
+// filtran, ordenan y paginan. Las agendas muestran las agendadas y las sin registrar, y las canceladas
+// sólo con `incluirCancelados` (HU-13: se siguen viendo con su estado); una cancelada no tiene
 // prioridad. Sólo los selectores de materias y aulas siguen contando las no canceladas. De
 // profesores y aulas solo lee, por sus repositories.
 
@@ -53,8 +53,8 @@ type ConPrioridad = { ocurrencia: Ocurrencia; prioridad: PrioridadDeTurno | null
 /** Una ocurrencia con su prioridad y el cupo de su clase (el de todos los turnos de la clase). */
 type ConCupo = ConPrioridad & { cupo: Cupo }
 
-/** Filtros de estado y prioridad, comunes a las cuatro agendas. */
-type FiltroEstadoYPrioridad = { estado?: Ocurrencia['estado']; prioridad?: Prioridad }
+/** Filtros de cancelados y prioridad, comunes a las cuatro agendas. */
+type FiltroEstadoYPrioridad = { incluirCancelados?: 'true' | 'false'; prioridad?: Prioridad }
 
 /** Fecha, hora, profesor (apellido y nombre, vía su `busqueda`) e id del turno. */
 function porFechaHoraYProfesor(a: ConPrioridad, b: ConPrioridad): number {
@@ -124,17 +124,16 @@ export function crearAgendasService({
   }
 
   /**
-   * Aplica los filtros de estado y de prioridad y le suma a cada ocurrencia su prioridad (HU-18).
-   * Una sola consulta de prioridades para todas las no canceladas (las canceladas no tienen y no se
-   * piden). Filtrar por prioridad deja afuera las canceladas. Mantiene el orden que recibe.
+   * Aplica los filtros de cancelados y de prioridad y le suma a cada ocurrencia su prioridad
+   * (HU-18). Sin `incluirCancelados` quedan sólo las agendadas y las sin registrar. Una sola
+   * consulta de prioridades para todas las no canceladas (las canceladas no tienen y no se piden).
+   * Filtrar por prioridad deja afuera las canceladas. Mantiene el orden que recibe.
    */
   async function conPrioridades(
     ocurrencias: readonly Ocurrencia[],
-    { estado, prioridad }: FiltroEstadoYPrioridad,
+    { incluirCancelados, prioridad }: FiltroEstadoYPrioridad,
   ): Promise<ConPrioridad[]> {
-    const candidatas = ocurrencias.filter(
-      (ocurrencia) => estado === undefined || ocurrencia.estado === estado,
-    )
+    const candidatas = incluirCancelados === 'true' ? ocurrencias : ocurrencias.filter(noCancelada)
     const prioridades = await repository.leerPrioridades(
       candidatas
         .filter(noCancelada)
@@ -198,7 +197,7 @@ export function crearAgendasService({
      * las canceladas, con su estado y sin prioridad (T-57). `profesorId` (decisión T-42) da la vista
      * personal de ese profesor ese día. `q` (T-36) busca por palabras (`terminosDeBusqueda`) en el
      * nombre del alumno o en el del profesor, nunca mezcladas; con `profesorId`, sólo en el del
-     * alumno. `estado` y `prioridad` filtran y se combinan con todo lo anterior. Ordenada por hora
+     * alumno. `incluirCancelados` y `prioridad` filtran y se combinan con todo lo anterior. Ordenada por hora
      * de inicio, dentro de la hora por profesor (apellido y nombre, vía su `busqueda`) y por id del
      * turno; paginada.
      */
@@ -236,7 +235,7 @@ export function crearAgendasService({
      * Agenda del centro (T-57), para el calendario semanal de mesa de entradas: las ocurrencias de
      * **todos los profesores** en `[desde, hasta]`, incluidas las canceladas. El rango es
      * obligatorio, tiene que estar en orden y no superar `MAX_DIAS_AGENDA` días (400 en `hasta`).
-     * Filtra por profesor, materia, aula, estado y prioridad, combinables. Sin paginar; ordenada por
+     * Filtra por profesor, materia, aula, cancelados y prioridad, combinables. Sin paginar; ordenada por
      * fecha, hora, profesor y id del turno. Agrupar por clase (fecha + bloque) es presentación.
      */
     async listarAgendaDelCentro(query: AgendaCentroQuery): Promise<AgendaCentroListado> {
@@ -258,7 +257,7 @@ export function crearAgendasService({
     /**
      * Agenda propia del profesor de la sesión (HU-10, T-25), de sólo lectura: una entrada por cada
      * ocurrencia de sus turnos dentro del rango (también las canceladas, T-57), con alumno, materia,
-     * aula, horario, estado, pago y prioridad. `estado` y `prioridad` filtran.
+     * aula, horario, estado, pago y prioridad. `incluirCancelados` y `prioridad` filtran.
      *
      * - El profesor sale del `Actor` (`buscarIdPorUsuario`), **nunca de un parámetro**: nadie puede
      *   pedir la agenda de otro. Si el usuario no tiene ficha de profesor → 404.

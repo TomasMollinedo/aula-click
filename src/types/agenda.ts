@@ -1,4 +1,4 @@
-import type { EstadoOcurrencia, PrioridadOcurrencia } from './ocurrencia'
+import type { PrioridadOcurrencia } from './ocurrencia'
 
 // Filtros de las agendas (T-35). Viven en la URL (`useFiltrosAgenda` de `features/agendas`) y los
 // reciben la lista, el calendario semanal y el PDF de la agenda: `features/documentos` no puede
@@ -6,6 +6,7 @@ import type { EstadoOcurrencia, PrioridadOcurrencia } from './ocurrencia'
 
 export type FiltrosAgenda = {
   profesorId: number | null
-  estado: EstadoOcurrencia | null
+  /** Además de las agendadas y las sin registrar, trae las canceladas. */
+  incluirCancelados: boolean
   prioridad: PrioridadOcurrencia | null
 }

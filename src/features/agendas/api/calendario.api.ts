@@ -10,7 +10,7 @@ import { listarAgendaPropia, listarAgendaProfesor } from './agendas.api'
 export function listarAgendaCentro(params: AgendaCentroParams): Promise<CalendarioItem[]> {
   const searchParams = new URLSearchParams({ desde: params.desde, hasta: params.hasta })
   if (params.profesorId != null) searchParams.set('profesorId', String(params.profesorId))
-  if (params.estado) searchParams.set('estado', params.estado)
+  if (params.incluirCancelados) searchParams.set('incluirCancelados', 'true')
   if (params.prioridad) searchParams.set('prioridad', params.prioridad)
 
   return fetchJson<CalendarioItem[]>(`/api/v1/agendas/centro?${searchParams.toString()}`)

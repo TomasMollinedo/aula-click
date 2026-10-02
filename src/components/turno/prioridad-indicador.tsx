@@ -46,6 +46,43 @@ function Marca({ prioridad, className }: { prioridad: Prioridad; className?: str
   )
 }
 
+/**
+ * Cuántos turnos de un conjunto (una clase) tienen una prioridad: el punto de color y el número,
+ * sin la palabra, para ir al lado de otro dato. El texto completo queda para el lector de pantalla
+ * y el tooltip nativo, así el color no es el único canal. No se monta con `cantidad` 0.
+ */
+export function PrioridadContador({
+  prioridad,
+  cantidad,
+  className,
+}: {
+  prioridad: Prioridad
+  cantidad: number
+  className?: string
+}) {
+  if (cantidad === 0) return null
+
+  const texto = `${cantidad === 1 ? '1 turno' : `${cantidad} turnos`} con prioridad ${ETIQUETA_PRIORIDAD[prioridad].toLowerCase()}`
+
+  return (
+    <span
+      data-slot="prioridad-contador"
+      title={texto}
+      className={cn(
+        'inline-flex shrink-0 items-center gap-1 font-semibold tabular-nums',
+        className,
+      )}
+    >
+      <span
+        aria-hidden
+        className={cn('size-2.5 shrink-0 rounded-full', COLOR_PRIORIDAD[prioridad])}
+      />
+      <span aria-hidden>{cantidad}</span>
+      <span className="sr-only">{texto}</span>
+    </span>
+  )
+}
+
 export function PrioridadIndicador({
   prioridad,
   examen,

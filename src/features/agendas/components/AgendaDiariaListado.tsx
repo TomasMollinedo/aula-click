@@ -11,7 +11,7 @@ import { PaginationControls } from '@/components/ui/pagination'
 import type { FiltrosAgenda } from '@/types/agenda'
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 
-import { hayFiltrosActivos, paramsDeEstadoYPrioridad } from '../filtros-agenda'
+import { hayFiltrosActivos, paramsDeCanceladosYPrioridad } from '../filtros-agenda'
 import { useAgenda } from '../hooks/use-agenda'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { AgendaConModo } from './AgendaConModo'
@@ -78,7 +78,7 @@ export function AgendaDiariaListado({ renderDetalle, renderPdf }: AgendaDiariaLi
   const query = useAgenda({
     fecha,
     profesorId: profesorId ?? undefined,
-    ...paramsDeEstadoYPrioridad(filtros),
+    ...paramsDeCanceladosYPrioridad(filtros),
     page,
   })
   const meta = query.data?.meta
