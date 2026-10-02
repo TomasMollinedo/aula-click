@@ -21,6 +21,14 @@ const formatoSalta = new Intl.DateTimeFormat('en-US', {
 // Reloj del sistema: el único `new Date()` sin argumentos de todo src/server/.
 const relojDelSistema: Reloj = () => new Date()
 
+/**
+ * El instante actual, del reloj del servidor (`reloj` inyectable para los tests). Para lo que
+ * necesita la hora además del día: la fecha de emisión de un documento.
+ */
+export function ahora(reloj: Reloj = relojDelSistema): Date {
+  return reloj()
+}
+
 /** Fecha de hoy en `America/Argentina/Salta`, como `YYYY-MM-DD`. */
 export function hoy(reloj: Reloj = relojDelSistema): string {
   const partes = formatoSalta.formatToParts(reloj())

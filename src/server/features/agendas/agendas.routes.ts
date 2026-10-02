@@ -1,4 +1,4 @@
-import { createRoute } from '@hono/zod-openapi'
+import { createRoute, z } from '@hono/zod-openapi'
 import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
@@ -14,6 +14,7 @@ import {
   agendaCentroListadoSchema,
   agendaCentroQuerySchema,
   agendaListadoSchema,
+  agendaPdfQuerySchema,
   agendaProfesorQuerySchema,
   agendaPropiaListadoSchema,
   agendaPropiaQuerySchema,
@@ -60,6 +61,28 @@ export const listarAgendaRoute = createRoute({
     },
     400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
     ...errores,
+  },
+})
+
+export const agendaPdfRoute = createRoute({
+  method: 'get',
+  path: '/diaria/pdf',
+  tags,
+  summary: 'Agenda diaria de un profesor, en PDF',
+  description:
+    'La agenda de un profesor en una fecha (por defecto hoy) como documento oficial en PDF (A4): **todas** las ocurrencias del día, sin paginar, con los mismos filtros (`incluirCancelados`, `prioridad`) y el mismo orden que `GET /agendas/diaria`. `profesorId` es obligatorio (la agenda de todo el centro no tiene PDF) y no acepta `q`, `materiaId`, `aulaId` ni paginación. Archivo `agenda-<fecha>-<apellido>-<nombre>.pdf`. Los errores responden JSON.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: agendaPdfQuerySchema },
+  responses: {
+    200: {
+      description: 'El PDF de la agenda',
+      content: { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } },
+    },
+    400: respuestaError(
+      '`profesorId` faltante o inválido, o `fecha`, `incluirCancelados` o `prioridad` inválidos (VALIDACION)',
+    ),
+    ...errores,
+    404: respuestaError('El profesor no existe (NO_ENCONTRADO)'),
   },
 })
 
@@ -184,6 +207,7 @@ export const listarAulasConTurnoRoute = createRoute({
 
 export const agendasRoutes = createRouter()
   .openapi(listarAgendaRoute, agendasController.listarAgenda)
+  .openapi(agendaPdfRoute, agendasController.agendaPdf)
   .openapi(listarAgendaPropiaRoute, agendasController.listarAgendaPropia)
   .openapi(listarAgendaProfesorRoute, agendasController.listarAgendaDeProfesor)
   .openapi(listarAgendaCentroRoute, agendasController.listarAgendaDelCentro)

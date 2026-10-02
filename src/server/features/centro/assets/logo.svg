@@ -1,5 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="3 7 114 91" role="img">
   <title>Nexo Académico</title>
+  <!-- Los PDF usan este mismo dibujo traducido a react-pdf (../centro.logo-pdf.tsx):
+       SI CAMBIA UNO, CAMBIA EL OTRO. -->
   <!-- Libro abierto (azul del sidebar) -->
   <g fill="none" stroke="#1a1e33" stroke-linecap="round" stroke-linejoin="round">
     <path d="M60 94 C46 86 27 83 7 84 V30" stroke-width="5"/>

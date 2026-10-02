@@ -7,7 +7,7 @@ import { hrefComprobante } from '../rutas-pagos'
 
 /**
  * Los turnos que la API no dejó cobrar (409 `TURNOS_NO_COBRABLES` o 400 de otro alumno), una línea
- * por turno con el `message` de la API. Uno ya pagado enlaza a su comprobante, en otra pestaña.
+ * por turno con el `message` de la API. Uno ya pagado enlaza al PDF de su comprobante, en otra pestaña.
  */
 export function TurnosRechazados({
   mensaje,
@@ -36,7 +36,7 @@ export function TurnosRechazados({
                   >
                     Ver comprobante
                     <ExternalLink className="size-3" aria-hidden />
-                    <span className="sr-only">(se abre en otra pestaña)</span>
+                    <span className="sr-only">(abre el PDF en otra pestaña)</span>
                   </a>
                 </>
               )}

@@ -1,4 +1,4 @@
-import { createRoute } from '@hono/zod-openapi'
+import { createRoute, z } from '@hono/zod-openapi'
 import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
@@ -88,6 +88,27 @@ export const obtenerComprobanteRoute = createRoute({
   },
 })
 
+export const obtenerComprobantePdfRoute = createRoute({
+  method: 'get',
+  path: '/{id}/pdf',
+  tags,
+  summary: 'Comprobante de un pago, en PDF',
+  description:
+    'El comprobante como documento oficial en PDF (A4), con los mismos datos que `GET /pagos/{id}`. Se abre en el visor del navegador (`Content-Disposition: inline`, archivo `comprobante-<número>.pdf`) y no se guarda en caché (`Cache-Control: no-store`). "Emitido por" es el usuario de la sesión y la fecha de emisión, la del servidor en la hora del negocio. Los errores responden JSON, como el resto de la API.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: pagoIdParamsSchema },
+  responses: {
+    200: {
+      description: 'El PDF del comprobante',
+      content: { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } },
+    },
+    400: respuestaError('Id inválido (VALIDACION)'),
+    ...errores,
+    404: respuestaError('El pago no existe (NO_ENCONTRADO)'),
+  },
+})
+
 export const pagosRoutes = createRouter()
   .openapi(registrarPagoRoute, pagosController.registrar)
   .openapi(obtenerComprobanteRoute, pagosController.obtenerComprobante)
+  .openapi(obtenerComprobantePdfRoute, pagosController.obtenerComprobantePdf)

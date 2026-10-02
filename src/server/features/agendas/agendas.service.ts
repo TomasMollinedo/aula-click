@@ -8,6 +8,7 @@ import { claveOcupacion } from '@/server/features/turnos/ocurrencias.condiciones
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
+import type { AgendaDocumento, TurnoDeAgendaDocumento } from './agendas.documentos'
 import type { AgendasRepository, Cupo, Ocurrencia, PrioridadDeTurno } from './agendas.repository'
 import { validarRangoAgenda } from './agendas.reglas'
 import type {
@@ -15,6 +16,7 @@ import type {
   AgendaCentroQuery,
   AgendaItem,
   AgendaListado,
+  AgendaPdfQuery,
   AgendaProfesorQuery,
   AgendaPropiaItem,
   AgendaPropiaListado,
@@ -100,6 +102,24 @@ function aAgendaItem(conCupo: ConCupo): AgendaItem {
   }
 }
 
+/** Fila del PDF de la agenda: lo que el documento muestra de la ocurrencia, campo por campo. */
+function aTurnoDeDocumento({ ocurrencia }: ConPrioridad): TurnoDeAgendaDocumento {
+  return {
+    turnoId: ocurrencia.turnoId,
+    fecha: ocurrencia.fecha,
+    horaInicio: minutosAHora(ocurrencia.horaInicio),
+    horaFin: minutosAHora(ocurrencia.horaFin),
+    alumno: { nombre: ocurrencia.alumno.nombre, apellido: ocurrencia.alumno.apellido },
+    profesor: { nombre: ocurrencia.profesor.nombre, apellido: ocurrencia.profesor.apellido },
+    materia: { nombre: ocurrencia.materia.nombre },
+    aula: { nombre: ocurrencia.aula.nombre },
+    estado: ocurrencia.estado,
+  }
+}
+
+/** Los filtros de la agenda diaria, sin la paginación: lo que decide qué ocurrencias salen. */
+type FiltrosAgendaDiaria = Omit<AgendaQuery, 'page' | 'pageSize'>
+
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
  * reales; los tests, con falsos y un reloj fijo (`reloj` opcional; por defecto el del sistema, vía
@@ -112,7 +132,10 @@ export function crearAgendasService({
   reloj,
 }: {
   repository: Pick<AgendasRepository, 'leerOcurrencias' | 'leerPrioridades' | 'leerCupos'>
-  profesoresRepository: Pick<ProfesoresRepository, 'buscarIdPorUsuario' | 'buscarConAsignaciones'>
+  profesoresRepository: Pick<
+    ProfesoresRepository,
+    'buscarIdPorUsuario' | 'buscarConAsignaciones' | 'buscarPorId'
+  >
   aulasRepository: Pick<AulasRepository, 'listar'>
   reloj?: Reloj
 }) {
@@ -172,6 +195,42 @@ export function crearAgendasService({
   }
 
   /**
+   * La agenda de un día, **completa**: lee las ocurrencias de la fecha (sin `fecha`, hoy), aplica
+   * la búsqueda `q`, los filtros de cancelados y prioridad (`conPrioridades`) y las ordena por hora
+   * de inicio, profesor e id del turno. Es el único lugar con esos filtros y ese orden: lo usan la
+   * agenda diaria, que después pagina, y su PDF, que las lleva todas.
+   */
+  async function agendaDelDia(
+    filtros: FiltrosAgendaDiaria,
+  ): Promise<{ fecha: string; ordenadas: ConPrioridad[] }> {
+    const terminos = terminosDeBusqueda(filtros.q)
+    const fecha = filtros.fecha ?? hoy(reloj)
+    const ocurrencias = await repository.leerOcurrencias(
+      {
+        desde: fecha,
+        hasta: fecha,
+        materiaId: filtros.materiaId,
+        aulaId: filtros.aulaId,
+        profesorId: filtros.profesorId,
+      },
+      reloj,
+    )
+    const buscadas =
+      terminos.length === 0
+        ? ocurrencias
+        : ocurrencias.filter(
+            (ocurrencia) =>
+              coinciden(ocurrencia.alumno.busqueda, terminos) ||
+              (filtros.profesorId === undefined &&
+                coinciden(ocurrencia.profesor.busqueda, terminos)),
+          )
+    return {
+      fecha,
+      ordenadas: (await conPrioridades(buscadas, filtros)).sort(porFechaHoraYProfesor),
+    }
+  }
+
+  /**
    * Agenda de un profesor ya resuelto, común a la agenda propia (T-43) y a la que consulta mesa de
    * entradas (T-44). Sin `desde`, hoy; sin `hasta`, el mismo día que `desde`. El rango tiene que
    * estar en orden y no superar `MAX_DIAS_AGENDA` días (400 en `hasta`). El motor ya las devuelve
@@ -202,32 +261,32 @@ export function crearAgendasService({
      * turno; paginada.
      */
     async listarAgenda(query: AgendaQuery): Promise<AgendaListado> {
-      const terminos = terminosDeBusqueda(query.q)
-      const fecha = query.fecha ?? hoy(reloj)
-      const ocurrencias = await repository.leerOcurrencias(
-        {
-          desde: fecha,
-          hasta: fecha,
-          materiaId: query.materiaId,
-          aulaId: query.aulaId,
-          profesorId: query.profesorId,
-        },
-        reloj,
-      )
-      const buscadas =
-        terminos.length === 0
-          ? ocurrencias
-          : ocurrencias.filter(
-              (ocurrencia) =>
-                coinciden(ocurrencia.alumno.busqueda, terminos) ||
-                (query.profesorId === undefined &&
-                  coinciden(ocurrencia.profesor.busqueda, terminos)),
-            )
-      const ordenadas = (await conPrioridades(buscadas, query)).sort(porFechaHoraYProfesor)
+      const { ordenadas } = await agendaDelDia(query)
       const { skip, take } = calcularSkipTake(query)
       return {
         data: (await conCupos(ordenadas.slice(skip, skip + take))).map(aAgendaItem),
         meta: armarMeta(query, ordenadas.length),
+      }
+    },
+
+    /**
+     * Lo que va en el PDF de la agenda diaria de un profesor (HU-11): **todas** las ocurrencias del
+     * día, sin paginar, con los mismos filtros y el mismo orden que `listarAgenda` (salen de
+     * `agendaDelDia`), más el profesor para el encabezado, aunque ese día no tenga turnos. Sin
+     * cupos: el documento no los muestra. Un profesor inexistente es 404; su estado no importa (uno
+     * inactivo conserva sus turnos históricos).
+     */
+    async agendaParaDocumento(query: AgendaPdfQuery): Promise<AgendaDocumento> {
+      const profesor = await profesoresRepository.buscarPorId(query.profesorId)
+      if (!profesor) throw new NotFoundError('Profesor no encontrado')
+
+      const { fecha, ordenadas } = await agendaDelDia(query)
+      return {
+        fecha,
+        profesor: { nombre: profesor.nombre, apellido: profesor.apellido },
+        incluyeCancelados: query.incluirCancelados === 'true',
+        prioridad: query.prioridad ?? null,
+        turnos: ordenadas.map(aTurnoDeDocumento),
       }
     },
 

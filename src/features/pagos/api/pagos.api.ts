@@ -1,6 +1,6 @@
 import { fetchJson } from '@/utils/fetch-json'
 
-import type { Comprobante, PagoRegistrado, RegistrarPago } from '../pagos.types'
+import type { PagoRegistrado, RegistrarPago } from '../pagos.types'
 
 const BASE = '/api/v1/pagos'
 
@@ -11,9 +11,4 @@ export function registrarPago(datos: RegistrarPago): Promise<PagoRegistrado> {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(datos),
   })
-}
-
-/** Datos del comprobante de un pago. */
-export function obtenerComprobante(pagoId: number): Promise<Comprobante> {
-  return fetchJson<Comprobante>(`${BASE}/${pagoId}`)
 }

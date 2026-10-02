@@ -1,13 +1,11 @@
-import { format, parseISO } from 'date-fns'
-
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
 import type { ResumenACobrar } from './a-cobrar'
 import type { PagoRegistrado } from './pagos.types'
 
-// Textos del registro de un pago y del comprobante (HU-15). Los importes del éxito, del vuelto y del
-// comprobante son los que devolvió la API, nunca los del resumen local.
+// Textos del registro de un pago (HU-15). Los importes del éxito y del vuelto son los que devolvió
+// la API, nunca los del resumen local.
 
 /** `'1 turno'` / `'4 turnos'`. */
 export function textoCantidad(cantidad: number): string {
@@ -43,7 +41,7 @@ export function textoExito(pago: Pick<PagoRegistrado, 'cantidad' | 'total'>): st
   return `Pago registrado: ${textoCantidad(pago.cantidad)} por ${formatearPesos(pago.total)}`
 }
 
-/** `'N° 1024'`: el número solo, junto al título del comprobante impreso. */
+/** `'N° 1024'`. */
 export function textoNumero(numeroComprobante: number): string {
   return `N° ${numeroComprobante}`
 }
@@ -59,21 +57,4 @@ export function textoNumeroComprobante(numeroComprobante: number): string {
  */
 export function textoVuelto(pago: { vuelto: number | null }): string | null {
   return pago.vuelto === null ? null : `Vuelto: ${formatearPesos(pago.vuelto)}`
-}
-
-/** Fecha de calendario en un documento: `'2026-10-05'` → `'05/10/2026'`. */
-export function fechaDocumento(fecha: string): string {
-  return format(parseISO(fecha), 'dd/MM/yyyy')
-}
-
-/**
- * Quién cargó el pago y cuándo, en el pie del comprobante: `'Registrado por Ana Pérez el
- * 05/10/2026 11:30'`. El instante es ISO 8601 (UTC) y se muestra en la hora local del navegador.
- */
-export function textoRegistradoPor(
-  usuario: { nombre: string; apellido: string },
-  instante: string,
-): string {
-  const cuando = format(parseISO(instante), 'dd/MM/yyyy HH:mm')
-  return `Registrado por ${usuario.nombre} ${usuario.apellido} el ${cuando}`
 }

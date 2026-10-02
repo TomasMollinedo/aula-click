@@ -1,7 +1,15 @@
 import type { RouteHandler } from '@hono/zod-openapi'
 import { alumnosRepository } from '@/server/features/alumnos/alumnos.repository'
+import { encabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
 import type { AppEnv } from '@/server/router'
-import type { obtenerComprobanteRoute, registrarPagoRoute } from './pagos.routes'
+import { respuestaPdf } from '@/server/shared/pdf/respuesta'
+import { nombreArchivoComprobante } from './pagos.formato'
+import { renderizarComprobantePdf } from './pagos.pdf'
+import type {
+  obtenerComprobantePdfRoute,
+  obtenerComprobanteRoute,
+  registrarPagoRoute,
+} from './pagos.routes'
 import { pagosRepository } from './pagos.repository'
 import { crearPagosService } from './pagos.service'
 
@@ -17,3 +25,23 @@ export const registrar: RouteHandler<typeof registrarPagoRoute, AppEnv> = async 
 
 export const obtenerComprobante: RouteHandler<typeof obtenerComprobanteRoute, AppEnv> = async (c) =>
   c.json(await pagosService.obtenerComprobante(c.req.valid('param').id), 200)
+
+/**
+ * El comprobante en PDF: los mismos datos que `obtenerComprobante`, sin consultas nuevas. "Emitido
+ * por" es quien lo pide (decisión T-111) y la fecha de emisión, la del servidor.
+ */
+export const obtenerComprobantePdf: RouteHandler<
+  typeof obtenerComprobantePdfRoute,
+  AppEnv
+> = async (c) => {
+  const comprobante = await pagosService.obtenerComprobante(c.req.valid('param').id)
+  const pdf = await renderizarComprobantePdf({
+    comprobante,
+    ...encabezadoDeDocumento(c.get('user')),
+  })
+  const { cuerpo, headers } = respuestaPdf(
+    pdf,
+    nombreArchivoComprobante(comprobante.numeroComprobante),
+  )
+  return c.body(cuerpo, 200, headers)
+}

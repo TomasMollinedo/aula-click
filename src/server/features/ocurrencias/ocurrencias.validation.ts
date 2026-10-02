@@ -201,6 +201,74 @@ export const ocurrenciasDelAlumnoQuerySchema = z.object({
 
 export type OcurrenciasDelAlumnoQuery = z.infer<typeof ocurrenciasDelAlumnoQuerySchema>
 
+// ---------------------------------------------------------------------------------------------
+// GET /ocurrencias/pdf?alumnoId&desde?&hasta?&estado?&seleccion?
+// ---------------------------------------------------------------------------------------------
+
+/** Tope de claves de `seleccion`: acota el largo de la URL (cada clave ocupa unos 15 caracteres). */
+export const MAX_SELECCION = 400
+
+export const MENSAJE_SELECCION_FORMATO =
+  'Cada turno de la selección debe ser turnoId:fecha (por ejemplo 31:2026-09-28), separados por comas'
+export const MENSAJE_SELECCION_REPETIDA = 'La selección no puede repetir un turno'
+export const MENSAJE_SELECCION_EXCEDIDA = `La selección no puede tener más de ${MAX_SELECCION} turnos`
+
+const ID_DE_TURNO = /^[1-9]\d*$/
+
+/**
+ * `seleccion` del PDF de los turnos de un alumno: las ocurrencias tildadas en la lista, como
+ * `turnoId:fecha` separadas por comas. Sale como la lista de claves, ya validada: formato exacto
+ * (id entero positivo y fecha real), sin repetidos y hasta `MAX_SELECCION`.
+ */
+const seleccionDeTurnos = z
+  .string()
+  .transform((valor, ctx) => {
+    const claves = valor.split(',')
+    if (claves.length > MAX_SELECCION) {
+      ctx.addIssue({ code: 'custom', message: MENSAJE_SELECCION_EXCEDIDA })
+      return z.NEVER
+    }
+    const formatoValido = claves.every((clave) => {
+      const [turnoId, fecha, ...resto] = clave.split(':')
+      return (
+        resto.length === 0 &&
+        turnoId !== undefined &&
+        ID_DE_TURNO.test(turnoId) &&
+        fechaISO.safeParse(fecha).success
+      )
+    })
+    if (!formatoValido) {
+      ctx.addIssue({ code: 'custom', message: MENSAJE_SELECCION_FORMATO })
+      return z.NEVER
+    }
+    if (new Set(claves).size !== claves.length) {
+      ctx.addIssue({ code: 'custom', message: MENSAJE_SELECCION_REPETIDA })
+      return z.NEVER
+    }
+    return claves
+  })
+  .openapi({
+    type: 'string',
+    param: { name: 'seleccion', in: 'query' },
+    description: `Las ocurrencias a incluir, como turnoId:fecha separadas por comas, sin repetir y hasta ${MAX_SELECCION}. Con seleccion el documento trae sólo esas (las que estén en el rango) y se ignora estado`,
+    example: '31:2026-09-28,31:2026-10-05',
+  })
+
+/** Query del PDF de los turnos de un alumno: la de `GET /ocurrencias` más qué turnos van. */
+export const turnosDelAlumnoPdfQuerySchema = ocurrenciasDelAlumnoQuerySchema.extend({
+  estado: z
+    .enum(ESTADOS_OCURRENCIA)
+    .optional()
+    .openapi({
+      param: { name: 'estado', in: 'query' },
+      description: 'Sólo los turnos en ese estado. Sin estado, todos. Se ignora si hay seleccion',
+      example: 'AGENDADO',
+    }),
+  seleccion: seleccionDeTurnos.optional(),
+})
+
+export type TurnosDelAlumnoPdfQuery = z.infer<typeof turnosDelAlumnoPdfQuerySchema>
+
 /** Ítem de `GET /ocurrencias`: una ocurrencia del alumno, con lo mínimo para listarla. */
 export const ocurrenciaDelAlumnoItemSchema = z
   .object({

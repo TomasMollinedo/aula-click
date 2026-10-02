@@ -39,7 +39,7 @@ src/
 │   ├── router.ts                     # createRouter() y el tipo AppEnv
 │   ├── errors/                       # AppError y subclases, errorHandler, ErrorResponseSchema
 │   ├── middlewares/auth.ts           # requireAuth() + requireRole(...)
-│   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, auditoria, detalles (ver convenciones-backend.md)
+│   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, formato, auditoria, detalles y pdf/ (ver convenciones-backend.md)
 │   └── features/
 │       ├── turnos/ocurrencias.condiciones.ts  # motor de ocurrencias (T-30): lo consumen agendas y las features del Sprint 2
 │       ├── agendas/                          # agendas diaria, propia, de un profesor y del centro: sin tablas propias, leen ocurrencias y prioridades
@@ -52,6 +52,9 @@ src/
 │           ├── <dominio>.ejemplos.ts  # opcional: ejemplos del OpenAPI
 │           ├── <regla>.ts             # opcional: funciones puras de dominio (p. ej. alumnos/edad.ts)
 │           ├── <dominio>.condiciones.ts # opcional: condiciones y lecturas que otras features usan dentro de su transacción (turnos, examenes, cuentas, pagos)
+│           ├── <dominio>.pdf.tsx      # opcional: la plantilla del documento PDF de la feature (ver Documentos PDF)
+│           ├── <dominio>.documentos.ts # opcional: los tipos que el service le pasa a la plantilla y los nombres de archivo
+│           ├── <dominio>.formato.ts   # opcional: los textos propios de la feature para sus documentos
 │           └── __tests__/             # <dominio>.service.test.ts, <dominio>.routes.test.ts, <regla>.test.ts, <dominio>.repository.test.ts (excepcional)
 └── generated/prisma/                 # cliente generado: no se edita ni se commitea
 ```
@@ -312,6 +315,29 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 - En la base se guarda la **clave** del objeto, no la URL.
 - Para mostrar un archivo se genera una URL prefirmada de lectura, con TTL por defecto de 900 s (15 min), para que no venza mientras el usuario está en pantalla.
 - La foto del profesor (JPG/PNG, chica) sube por **multipart a la API**. El navegador no sube directo a MinIO.
+
+## Documentos PDF
+
+Los documentos oficiales los genera la API con `@react-pdf/renderer` (decisión T-121): cada uno es un endpoint `GET …/pdf` que devuelve el PDF ya armado. Hay cuatro: el comprobante de pago (`pagos`), el detalle de un turno y los turnos de un alumno (`ocurrencias`) y la agenda diaria de un profesor (`agendas`). El contrato (URLs, parámetros, headers, nombres de archivo y errores) está en `contrato-api.md` → Documentos PDF.
+
+- **Primitivas comunes: `src/server/shared/pdf/`.** Presentación sin significado de negocio, como el resto de `shared/`:
+  - `documento.tsx`: `DocumentoOficialPdf`, la hoja A4 con el encabezado (logo y datos del centro, "Emitido por", fecha de emisión) y el título con su referencia. Los metadatos salen de acá: `title` es el título con la referencia, y `author`, `creator` y `producer` son el nombre del centro (el nombre del sistema no aparece).
+  - `campos.tsx`: `SeccionPdf`, `CamposPdf`, `CampoPdf`, `DestacadoPdf` y `MensajePdf`. `tabla.tsx`: `TablaPdf` (con filas con separador o `alternada`, sin separador entre filas), `FilaPdf`, `CeldaPdf` y `CierrePdf`.
+  - `estilos.ts`: los tokens (colores, márgenes de la hoja, tamaños de texto). `fuentes.ts`: registra Geist. `renderizar.ts`: `renderizarPdf(elemento)`, que registra las fuentes y devuelve el `Buffer`. `respuesta.ts`: el helper de respuesta HTTP (ver más abajo).
+  - **Sin contexto ni hooks.** Un Route Handler de Next se compila con el React de servidor, que no tiene `createContext` ni `useContext`: las primitivas no los usan. Las columnas llegan a cada fila con `cloneElement`, así que **las filas son hijas directas de `TablaPdf`** (no se envuelven en otro componente), y el cierre de la tabla (totales y pie) es una prop de `TablaPdf` (`cierre`, armado con `CierrePdf`).
+- **Fuentes y logo.** Geist (400, 500, 600 y 700; licencia OFL) está en `src/server/shared/pdf/fuentes/` y se registra una sola vez por proceso: el PDF se arma sin red. El logo es `LogoCentroPdf` (`centro/centro.logo-pdf.tsx`), vectorial: es `centro/assets/logo.svg` (el que sirve `GET /centro/logo`) traducido a las primitivas de react-pdf, que no dibuja un SVG como imagen. **Los dos se mantienen en sincronía**: si cambia uno, cambia el otro. Las fuentes y el logo se leen con `process.cwd()`: funciona en `pnpm dev` y en `pnpm build && pnpm start`, pero un despliegue que no copie `src/` (por ejemplo `output: 'standalone'`) tiene que incluir `src/server/shared/pdf/fuentes/` y `src/server/features/centro/assets/`.
+- **Cómo llega cada feature a los datos del centro.** Por `centro.condiciones.ts`, que publica `DATOS_CENTRO`, `LogoCentroPdf` y `encabezadoDeDocumento` (de `centro.documento.tsx`). Es lo único que las otras features toman de `centro` (ver Dependencias entre features); no tiene consultas porque `centro` no tiene tabla. Los cuatro controllers llaman a `encabezadoDeDocumento(c.get('user'))` y le pasan el resultado a su plantilla.
+- **Cada documento vive en la feature dueña de sus datos** y reusa el service del JSON, **sin duplicar reglas**: el comprobante usa `pagosService.obtenerComprobante`; el detalle de un turno, el service de `ocurrencias`; los turnos de un alumno y la agenda tienen un método propio del service (`turnosDelAlumnoParaDocumento`, `agendaParaDocumento`) que comparte el pipeline con el listado JSON (en la agenda, `agendaDelDia`: el listado además pagina y calcula cupos, y el PDF no). Los archivos de un documento:
+  - `<feature>.pdf.tsx`: la plantilla (solo dibujo) y su `renderizar…Pdf`.
+  - `<feature>.documentos.ts`: los tipos que el service le pasa a la plantilla y los nombres de archivo.
+  - `<feature>.formato.ts`: los textos propios de la feature (`pagos.formato.ts`). Los de `ocurrencias` (etiquetas de estado, prioridad, tipo y período) están en `turnos/ocurrencias.formato.ts` y los publica `turnos/ocurrencias.condiciones.ts`.
+  - Una ruta `…/pdf` en `<feature>.routes.ts` (declarada con `createRoute()`, con el 200 como `application/pdf` y los errores en JSON) y su handler en el controller.
+- **El helper de respuesta.** `respuestaPdf(pdf, nombre)` (`shared/pdf/respuesta.ts`) devuelve el cuerpo y los headers comunes: `Content-Type: application/pdf`, `Content-Disposition: inline` con el nombre (`filename` y `filename*`), `Cache-Control: no-store` (son datos personales) y `X-Content-Type-Options: nosniff`. El controller hace `c.body(cuerpo, 200, headers)`. `nombreArchivoPdf` deja el nombre en ASCII, en minúsculas y con guiones (el `_` solo separa las dos fechas de un rango). Los errores (400, 401, 403, 404) siguen siendo JSON, como en cualquier endpoint.
+- **"Emitido por" y la fecha de emisión salen del servidor.** "Emitido por" es el usuario de la sesión; la fecha de emisión es la hora del servidor en `America/Argentina/Salta` (`fechaHoraDocumento(ahora(reloj))`, con `ahora(reloj?)` de `shared/fechas.ts`: el reloj es inyectable para los tests). Lo mismo vale para el "Registrado por … el …" del comprobante.
+- **Del diseño impreso a puntos.** Las plantillas replican el diseño que se imprimía desde el navegador, sin rediseñarlo: los tokens de `estilos.ts` son los de Tailwind pasados de píxeles a puntos con `px(n) = n × 0,75`, porque el navegador imprime a 96 dpi. Los bordes de 1 px son de 0,5 pt (`BORDE_FINO`) y los de 2 px, de 1,5 pt.
+- **Cómo se testea.** Un archivo por plantilla (`<feature>.pdf.test.ts`) que renderiza con datos de prueba y comprueba que el resultado empieza con `%PDF-`, la cantidad de páginas (con muchas filas la tabla ocupa más de una hoja y con pocas, una) y los metadatos; los helpers de lectura están en `shared/__tests__/pdf-inspeccion.ts` (`contarPaginas`, `metadato`, `idioma`) y no suman una dependencia. Las rutas se prueban en `<feature>.routes.test.ts` con el service mockeado: status, headers, validación, 401/403/404 y que el OpenAPI declare el `application/pdf`. Los formateadores y los nombres de archivo son funciones puras con su test.
+- **Para sumar un documento:** el método del service que arma los datos (reusando el del JSON); `<feature>.documentos.ts` con el tipo y el nombre de archivo; `<feature>.pdf.tsx` con la plantilla sobre `DocumentoOficialPdf`; la ruta y el handler; y los tests de arriba. El encabezado sale de `encabezadoDeDocumento`: no se arma otro.
+- **Configuración de Next.** No hace falta `serverExternalPackages`: `@react-pdf/renderer` funciona en el Route Handler sin configuración extra (`pnpm build` y `pnpm start` lo verifican). La versión está fijada (`4.9.0`, sin `^`), porque una actualización puede mover el dibujo.
 
 ## Tests
 

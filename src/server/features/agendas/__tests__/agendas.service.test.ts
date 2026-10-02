@@ -86,6 +86,7 @@ function crearRepositories() {
     profesoresRepository: {
       buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
       buscarConAsignaciones: vi.fn<ProfesoresRepository['buscarConAsignaciones']>(),
+      buscarPorId: vi.fn<ProfesoresRepository['buscarPorId']>(),
     },
     aulasRepository: { listar: vi.fn<AulasRepository['listar']>() },
   }
@@ -989,5 +990,142 @@ describe('cupo de la clase', () => {
     })
 
     expect(agenda[0]?.cupo).toEqual({ ocupados: 1, capacidad: 4 })
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// agendaParaDocumento (el PDF de la agenda diaria de un profesor)
+// ---------------------------------------------------------------------------------------------
+
+describe('agendaParaDocumento', () => {
+  /** El profesor 4, como lo devuelve `profesoresRepository.buscarPorId` (sólo importa el nombre). */
+  const PROFESOR = { id: 4, nombre: 'Ana', apellido: 'Pérez' } as NonNullable<
+    Awaited<ReturnType<ProfesoresRepository['buscarPorId']>>
+  >
+
+  // Un día cargado, desordenado a propósito: 25 turnos en 5 horas, con canceladas y prioridades.
+  const HORAS = [600, 480, 720, 540, 660]
+  const delDia = Array.from({ length: 25 }, (_, i) =>
+    ocurrencia({
+      turnoId: 100 - i,
+      fecha: HOY,
+      bloqueAgendaId: 10 + (i % 5),
+      horaInicio: HORAS[i % 5]!,
+      horaFin: HORAS[i % 5]! + 60,
+      alumnoId: 20 + i,
+      estado: i % 6 === 0 ? 'CANCELADO' : 'AGENDADO',
+      alumno: { id: 20 + i, nombre: `Alumno${i}`, apellido: 'Díaz', busqueda: `diaz alumno${i}` },
+    }),
+  )
+
+  beforeEach(() => {
+    repos.profesoresRepository.buscarPorId.mockResolvedValue(PROFESOR)
+    repos.repository.leerOcurrencias.mockResolvedValue(delDia)
+    // Prioridad ALTA para los alumnos pares, BAJA para los impares.
+    repos.repository.leerPrioridades.mockImplementation(
+      async (items) =>
+        new Map(
+          items.map(({ alumnoId, materiaId, fecha }) => [
+            `${alumnoId}-${materiaId}-${fecha}`,
+            { prioridad: alumnoId % 2 === 0 ? ('ALTA' as const) : ('BAJA' as const) },
+          ]),
+        ),
+    )
+  })
+
+  /** Todas las páginas de `listarAgenda`, una atrás de la otra. */
+  async function todasLasPaginas(filtros: Parameters<typeof service.listarAgenda>[0]) {
+    const filas = []
+    for (let page = 1; ; page++) {
+      const { data, meta } = await service.listarAgenda({ ...filtros, page })
+      filas.push(...data)
+      if (page >= meta.totalPages) return filas
+    }
+  }
+
+  it.each([
+    ['sin filtros', {}],
+    ['con las canceladas', { incluirCancelados: 'true' as const }],
+    ['por prioridad', { prioridad: 'ALTA' as const }],
+    [
+      'con las canceladas y por prioridad',
+      { incluirCancelados: 'true' as const, prioridad: 'BAJA' as const },
+    ],
+  ])(
+    'trae todas las filas del día en el mismo orden que las páginas de `listarAgenda` (%s)',
+    async (_caso, filtros) => {
+      const paginas = await todasLasPaginas({ profesorId: 4, page: 1, pageSize: 4, ...filtros })
+      const documento = await service.agendaParaDocumento({ profesorId: 4, ...filtros })
+
+      expect(paginas.length).toBeGreaterThan(4)
+      expect(documento.turnos.map((t) => [t.turnoId, t.fecha])).toEqual(
+        paginas.map((t) => [t.turnoId, t.fecha]),
+      )
+      // Y cada fila dice lo mismo que la de la agenda.
+      expect(documento.turnos).toEqual(
+        paginas.map((item) => ({
+          turnoId: item.turnoId,
+          fecha: item.fecha,
+          horaInicio: item.horaInicio,
+          horaFin: item.horaFin,
+          alumno: { nombre: item.alumno.nombre, apellido: item.alumno.apellido },
+          profesor: { nombre: item.profesor.nombre, apellido: item.profesor.apellido },
+          materia: { nombre: item.materia.nombre },
+          aula: { nombre: item.aula.nombre },
+          estado: item.estado,
+        })),
+      )
+    },
+  )
+
+  it('devuelve el día, el profesor y los filtros para el encabezado; sin fecha, hoy', async () => {
+    const documento = await service.agendaParaDocumento({
+      profesorId: 4,
+      incluirCancelados: 'true',
+      prioridad: 'ALTA',
+    })
+
+    expect(documento).toMatchObject({
+      fecha: HOY,
+      profesor: { nombre: 'Ana', apellido: 'Pérez' },
+      incluyeCancelados: true,
+      prioridad: 'ALTA',
+    })
+    expect(repos.repository.leerOcurrencias).toHaveBeenCalledWith(
+      { desde: HOY, hasta: HOY, materiaId: undefined, aulaId: undefined, profesorId: 4 },
+      relojFijo,
+    )
+  })
+
+  it('con fecha, la respeta; sin filtros, no incluye canceladas ni filtra por prioridad', async () => {
+    const documento = await service.agendaParaDocumento({ profesorId: 4, fecha: '2026-09-28' })
+
+    expect(documento).toMatchObject({
+      fecha: '2026-09-28',
+      incluyeCancelados: false,
+      prioridad: null,
+    })
+    expect(documento.turnos.every((turno) => turno.estado !== 'CANCELADO')).toBe(true)
+  })
+
+  it('no calcula los cupos: el documento no los muestra', async () => {
+    await service.agendaParaDocumento({ profesorId: 4 })
+    expect(repos.repository.leerCupos).not.toHaveBeenCalled()
+  })
+
+  it('sin turnos ese día, devuelve el profesor igual', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([])
+
+    const documento = await service.agendaParaDocumento({ profesorId: 4 })
+    expect(documento.turnos).toEqual([])
+    expect(documento.profesor).toEqual({ nombre: 'Ana', apellido: 'Pérez' })
+  })
+
+  it('un profesor inexistente → 404, sin leer la agenda', async () => {
+    repos.profesoresRepository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.agendaParaDocumento({ profesorId: 99 }))
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repos.repository.leerOcurrencias).not.toHaveBeenCalled()
   })
 })

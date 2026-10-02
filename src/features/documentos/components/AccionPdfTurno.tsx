@@ -1,9 +1,11 @@
 'use client'
 
 import type { ComponentProps } from 'react'
-import { Printer } from 'lucide-react'
+import { FileText } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
+
+import { hrefPdfTurno } from '../rutas-documentos'
 
 export type AccionPdfTurnoProps = {
   turnoId: number
@@ -12,22 +14,17 @@ export type AccionPdfTurnoProps = {
 }
 
 /**
- * El enlace a la hoja de impresión de un turno, en una pestaña nueva: así la pantalla de origen
- * queda intacta en la pestaña original (cancelar o cerrar el diálogo de imprimir del navegador no
- * se puede detectar: no hay forma de "volver sola"). Sólo necesita `turnoId` y `fecha`: la hoja
- * (`app/mesa/turnos/[turnoId]/imprimir`) trae el resto con `useOcurrencia`. El resto de las props
- * son las que le pasa el botón que lo envuelve (`asChild`).
+ * El enlace al PDF de un turno (`hrefPdfTurno`), en una pestaña nueva: el navegador lo abre en su
+ * visor y la pantalla de origen queda intacta en la pestaña original. Sólo necesita `turnoId` y
+ * `fecha`: el documento lo arma la API. El resto de las props son las que le pasa el botón que lo
+ * envuelve (`asChild`).
  */
 function EnlacePdfTurno({ turnoId, fecha, ...props }: AccionPdfTurnoProps & ComponentProps<'a'>) {
   return (
-    <a
-      href={`/mesa/turnos/${turnoId}/imprimir?fecha=${fecha}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      {...props}
-    >
-      <Printer />
+    <a href={hrefPdfTurno({ turnoId, fecha })} target="_blank" rel="noopener noreferrer" {...props}>
+      <FileText />
       Generar PDF
+      <span className="sr-only">(abre el PDF en otra pestaña)</span>
     </a>
   )
 }
