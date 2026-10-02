@@ -140,7 +140,7 @@ Todas reciben el cliente (`prisma` o el `tx` de quien llama) y de Prisma sólo i
 
 `leerSeries` (series con fin efectivo y fechas canceladas) es interno de `turnos`: lo usan el motor, `turnos.condiciones` y `turnos.repository`.
 
-`turnos/turnos.condiciones.ts` (T-39, mismas firmas desde el Sprint 1): `contarVigentesPorMateria(client, { fechaHoy, profesorId?, materiaIds? })`, `contarVigentesPorBloques(client, bloqueAgendaIds, fechaHoy)`, `listarVigentesPorProfesor(client, profesorId, fechaHoy)` y `ocupacionMaximaPorFila(client, profesorId, fechaHoy)`.
+`turnos/turnos.condiciones.ts` (T-39, mismas firmas desde el Sprint 1): `contarVigentesPorMateria(client, { fechaHoy, alumnoId?, profesorId?, materiaIds? })` (`alumnoId` lo usa `examenes` para las materias en las que el alumno tiene turnos vigentes), `contarVigentesPorBloques(client, bloqueAgendaIds, fechaHoy)`, `listarVigentesPorProfesor(client, profesorId, fechaHoy)` y `ocupacionMaximaPorFila(client, profesorId, fechaHoy)`.
 
 ## Concurrencia en la capacidad de un bloque
 

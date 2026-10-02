@@ -219,6 +219,62 @@ describe('contarVigentesPorMateria', () => {
   })
 })
 
+describe('contarVigentesPorMateria por alumno', () => {
+  it('sólo los turnos vigentes de ese alumno; con profesorId, sólo los que tiene con él', async () => {
+    sembrar([
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        alumnoId: 12,
+        materiaId: 2,
+        fechaInicio: '2026-09-28',
+        fechaFin: null,
+      },
+      {
+        id: 2,
+        bloqueAgendaId: 20,
+        alumnoId: 12,
+        materiaId: 7,
+        fechaInicio: '2026-09-28',
+        fechaFin: null,
+      },
+      // Otro alumno: no cuenta.
+      {
+        id: 3,
+        bloqueAgendaId: 10,
+        alumnoId: 99,
+        materiaId: 9,
+        fechaInicio: '2026-09-28',
+        fechaFin: null,
+      },
+      // Del alumno, pero finalizado: ya no es vigente.
+      {
+        id: 4,
+        bloqueAgendaId: 11,
+        alumnoId: 12,
+        materiaId: 5,
+        fechaInicio: '2026-09-07',
+        fechaFin: null,
+        finalizadaDesde: '2026-09-14',
+      },
+    ])
+
+    expect(
+      await turnosRepository.contarVigentesPorMateria({ fechaHoy: HOY, alumnoId: 12 }),
+    ).toEqual([
+      { materiaId: 2, cantidad: 1 },
+      { materiaId: 7, cantidad: 1 },
+    ])
+    expect(
+      await turnosRepository.contarVigentesPorMateria({
+        fechaHoy: HOY,
+        alumnoId: 12,
+        profesorId: 3,
+      }),
+    ).toEqual([{ materiaId: 2, cantidad: 1 }])
+  })
+})
+
 describe('vigente con el motor de ocurrencias (T-30)', () => {
   it('una serie finalizada o con todo lo restante cancelado no es vigente; una sin fin sí', async () => {
     sembrar([
