@@ -186,7 +186,7 @@ function TurnoDeClase({
 
   return (
     <li className="hover:bg-muted/70 relative flex flex-col gap-0.5 rounded-md px-2 py-1.5">
-      {/* Nombre y estado en una sola línea: el nombre se recorta si no entra, el estado no. */}
+      {/* Nombre y, solo si está cancelado, su estado: agendado y sin registrar no se muestran. */}
       <span className="flex items-center justify-between gap-2">
         <Link
           href={hrefDetalle(turno.turnoId, turno.fecha)}
@@ -202,9 +202,11 @@ function TurnoDeClase({
         >
           {turno.alumno.apellido}, {turno.alumno.nombre}
         </Link>
-        <span className="shrink-0">
-          <EstadoTurnoBadge estado={turno.estado} />
-        </span>
+        {cancelado && (
+          <span className="shrink-0">
+            <EstadoTurnoBadge estado={turno.estado} />
+          </span>
+        )}
       </span>
       {/* La materia solo si la clase mezcla; la prioridad va a su lado en la misma línea. */}
       {(mostrarMateria || turno.prioridad) && (

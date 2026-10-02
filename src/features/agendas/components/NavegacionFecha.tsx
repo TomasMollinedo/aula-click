@@ -47,7 +47,7 @@ export function NavegacionFecha({
   // `flex-wrap`: la etiqueta de una semana ("Semana del 28/09 al 04/10") es bastante más larga
   // que el nombre de un día, así que en pantallas angostas envuelve en vez de desbordar.
   return (
-    <div className="flex flex-wrap items-center gap-2">
+    <div className="flex shrink-0 flex-wrap items-center gap-2">
       <Button
         variant="outline"
         size="icon"

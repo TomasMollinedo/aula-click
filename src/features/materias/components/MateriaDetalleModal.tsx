@@ -5,9 +5,8 @@ import Link from 'next/link'
 import { Pencil, Undo2, Trash2 } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Dato, Datos } from '@/components/ui/datos'
-import { DetalleModal } from '@/components/ui/detalle-modal'
+import { DetalleModal, DetalleModalAccion } from '@/components/ui/detalle-modal'
 
 import { useMateria } from '../hooks/use-materia'
 import { ConfirmarBajaMateria } from './ConfirmarBajaMateria'
@@ -70,22 +69,25 @@ export function MateriaDetalleModal({
           puedeEscribir &&
           materia && (
             <>
-              <Button size="lg" variant="accent" asChild>
+              <DetalleModalAccion variant="accent" asChild>
                 <Link href={hrefEditar} onClick={onEditar} scroll={false}>
                   <Pencil />
                   Editar
                 </Link>
-              </Button>
+              </DetalleModalAccion>
               {activa ? (
-                <Button size="lg" variant="destructive" onClick={() => setConfirmando('baja')}>
+                <DetalleModalAccion variant="destructive" onClick={() => setConfirmando('baja')}>
                   <Trash2 />
                   Dar de baja
-                </Button>
+                </DetalleModalAccion>
               ) : (
-                <Button size="lg" variant="confirmado" onClick={() => setConfirmando('reactivar')}>
+                <DetalleModalAccion
+                  variant="confirmado"
+                  onClick={() => setConfirmando('reactivar')}
+                >
                   <Undo2 />
                   Reactivar
-                </Button>
+                </DetalleModalAccion>
               )}
             </>
           )

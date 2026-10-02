@@ -18,7 +18,7 @@ export default function PagosPage() {
       <Suspense>
         <PagosGlobal
           renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
-          renderDetalle={(detalle) => <DetalleTurno {...detalle} />}
+          renderDetalle={(detalle) => <DetalleTurno {...detalle} soloPago />}
         />
       </Suspense>
     </div>

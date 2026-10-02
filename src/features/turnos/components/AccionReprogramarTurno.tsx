@@ -1,8 +1,9 @@
 'use client'
 
 import { useState } from 'react'
+import { CalendarClock } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { DetalleModalAccion } from '@/components/ui/detalle-modal'
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 
 import { ReprogramarTurnoDialog } from './ReprogramarTurnoDialog'
@@ -21,9 +22,10 @@ export function AccionReprogramarTurno({ ocurrencia }: AccionReprogramarTurnoPro
 
   return (
     <>
-      <Button type="button" variant="outline" onClick={() => setAbierto(true)}>
+      <DetalleModalAccion type="button" variant="outline" onClick={() => setAbierto(true)}>
+        <CalendarClock />
         Reprogramar
-      </Button>
+      </DetalleModalAccion>
       <ReprogramarTurnoDialog
         open={abierto}
         ocurrencia={ocurrencia}

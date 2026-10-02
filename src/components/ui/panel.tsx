@@ -65,13 +65,17 @@ function Panel({
   )
 }
 
-/** Encabezado: título y descripción a la izquierda; `actions` y el botón de cerrar a la derecha. */
+/**
+ * Encabezado: título y descripción a la izquierda; `actions` y el botón de cerrar a la derecha.
+ * `closeClassName` ajusta ese botón (por ejemplo, para destacarlo cuando es la única forma de cerrar).
+ */
 function PanelHeader({
   className,
   actions,
+  closeClassName,
   children,
   ...props
-}: ComponentProps<'header'> & { actions?: ReactNode }) {
+}: ComponentProps<'header'> & { actions?: ReactNode; closeClassName?: string }) {
   return (
     <header
       data-slot="panel-header"
@@ -81,7 +85,7 @@ function PanelHeader({
       <div className="flex min-w-0 flex-1 items-center gap-3">{children}</div>
       <div className="flex shrink-0 items-center gap-2">
         {actions}
-        <PanelClose />
+        <PanelClose className={closeClassName} />
       </div>
     </header>
   )
