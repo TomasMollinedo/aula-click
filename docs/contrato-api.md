@@ -341,7 +341,7 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
 
 **`GET /api/v1/ocurrencias?alumnoId&desde?&hasta?`** (rol `MESA_ENTRADAS`): las ocurrencias del alumno en `[desde, hasta]`, para la pestaña "Turnos" de su ficha (HU-02). Incluye las canceladas (a diferencia de las agendas): se siguen viendo con su estado.
 
-- `alumnoId` (obligatorio). `desde`/`hasta` (`YYYY-MM-DD`, opcionales, extremos incluidos): sin `desde`, 30 días atrás de hoy; sin `hasta`, 8 semanas (56 días) adelante. El rango pedido no puede exceder esa misma ventana (30 atrás / 56 adelante de hoy), ni venir invertido.
+- `alumnoId` (obligatorio). `desde`/`hasta` (`YYYY-MM-DD`, opcionales, extremos incluidos): sin `desde`, el 1 de enero del año en curso; sin `hasta`, el 31 de diciembre (T-66: antes era un rango relativo a hoy, 30 días atrás / 56 adelante). El rango pedido no puede salir del año en curso, ni venir invertido.
 - Devuelve un **arreglo sin paginar**, ordenado por fecha y hora.
 
   ```json

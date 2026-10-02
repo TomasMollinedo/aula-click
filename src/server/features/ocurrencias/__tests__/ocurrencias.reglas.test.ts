@@ -2,8 +2,6 @@ import { describe, expect, it } from 'vitest'
 import { ValidationError } from '@/server/errors'
 import {
   ACCIONES_SIN_PERMISO,
-  DIAS_ADELANTE_POR_DEFECTO,
-  DIAS_ATRAS_POR_DEFECTO,
   MENSAJE_FUERA_DE_VENTANA,
   MENSAJE_RANGO_INVERTIDO,
   calcularAcciones,
@@ -28,17 +26,22 @@ function errorDe(accion: () => unknown): unknown {
 const HOY = '2026-09-22'
 
 describe('ventanaOcurrencias', () => {
-  it('30 días atrás y 8 semanas (56 días) adelante de hoy', () => {
+  it('el año en curso completo, del 1 de enero al 31 de diciembre', () => {
     expect(ventanaOcurrencias(HOY)).toEqual({
-      desde: '2026-08-23',
-      hasta: '2026-11-17',
+      desde: '2026-01-01',
+      hasta: '2026-12-31',
     })
+  })
+
+  it('el mismo año para cualquier fecha de ese año, incluidos sus bordes', () => {
+    expect(ventanaOcurrencias('2026-01-01')).toEqual({ desde: '2026-01-01', hasta: '2026-12-31' })
+    expect(ventanaOcurrencias('2026-12-31')).toEqual({ desde: '2026-01-01', hasta: '2026-12-31' })
   })
 })
 
 describe('validarRangoOcurrencias', () => {
-  it('acepta el rango por defecto y cualquier sub-rango dentro de la ventana', () => {
-    expect(() => validarRangoOcurrencias('2026-08-23', '2026-11-17', HOY)).not.toThrow()
+  it('acepta el rango por defecto y cualquier sub-rango dentro del año en curso', () => {
+    expect(() => validarRangoOcurrencias('2026-01-01', '2026-12-31', HOY)).not.toThrow()
     expect(() => validarRangoOcurrencias(HOY, HOY, HOY)).not.toThrow()
   })
 
@@ -50,25 +53,20 @@ describe('validarRangoOcurrencias', () => {
     ])
   })
 
-  it('`desde` anterior a la ventana: 400 sobre `hasta`', () => {
-    const error = errorDe(() => validarRangoOcurrencias('2026-08-22', HOY, HOY))
+  it('`desde` del año anterior: 400 sobre `hasta`', () => {
+    const error = errorDe(() => validarRangoOcurrencias('2025-12-31', HOY, HOY))
     expect(error).toBeInstanceOf(ValidationError)
     expect((error as ValidationError).details).toEqual([
       { path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA },
     ])
   })
 
-  it('`hasta` posterior a la ventana: 400 sobre `hasta`', () => {
-    const error = errorDe(() => validarRangoOcurrencias(HOY, '2026-11-18', HOY))
+  it('`hasta` del año siguiente: 400 sobre `hasta`', () => {
+    const error = errorDe(() => validarRangoOcurrencias(HOY, '2027-01-01', HOY))
     expect(error).toBeInstanceOf(ValidationError)
     expect((error as ValidationError).details).toEqual([
       { path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA },
     ])
-  })
-
-  it('los valores por defecto son también los bordes de la ventana', () => {
-    expect(DIAS_ATRAS_POR_DEFECTO).toBe(30)
-    expect(DIAS_ADELANTE_POR_DEFECTO).toBe(56)
   })
 })
 

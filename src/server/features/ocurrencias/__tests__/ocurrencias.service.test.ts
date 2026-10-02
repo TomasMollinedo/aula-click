@@ -373,11 +373,11 @@ describe('listarDelAlumno', () => {
     repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
   })
 
-  it('sin desde/hasta, usa la ventana por defecto (30 días atrás, 56 adelante)', async () => {
+  it('sin desde/hasta, usa la ventana por defecto (el año en curso completo)', async () => {
     await service.listarDelAlumno({ alumnoId: 12 })
 
     expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledWith(
-      { desde: '2026-08-23', hasta: '2026-11-17', alumnoId: 12 },
+      { desde: '2026-01-01', hasta: '2026-12-31', alumnoId: 12 },
       relojFijo,
     )
   })
@@ -402,7 +402,7 @@ describe('listarDelAlumno', () => {
 
   it('un rango fuera de la ventana → 400 sobre `hasta`', async () => {
     const error = await errorDe(
-      service.listarDelAlumno({ alumnoId: 12, desde: '2026-08-01', hasta: '2026-09-30' }),
+      service.listarDelAlumno({ alumnoId: 12, desde: '2025-08-01', hasta: '2025-09-30' }),
     )
     expect(error).toBeInstanceOf(ValidationError)
     expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA }])

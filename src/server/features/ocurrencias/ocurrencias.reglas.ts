@@ -1,5 +1,4 @@
 import { ValidationError } from '@/server/errors'
-import { fechaADate } from '@/server/shared/fechas'
 import type { EstadoOcurrencia, TipoTurno } from '@/server/features/turnos/ocurrencias.condiciones'
 
 // Reglas puras de `ocurrencias`: sin Prisma y sin `hoy()` (lo recibe quien llama). El estado de
@@ -7,31 +6,18 @@ import type { EstadoOcurrencia, TipoTurno } from '@/server/features/turnos/ocurr
 // Por eso "cancelar" y "registrarPago" no miran si la ocurrencia está pagada ni pendiente, aunque
 // el ticket original (T-43) lo pida: es una simplificación consciente, no un olvido.
 
-/** Días hacia atrás y hacia adelante del rango por defecto de `GET /ocurrencias` (T-43). */
-export const DIAS_ATRAS_POR_DEFECTO = 30
-export const DIAS_ADELANTE_POR_DEFECTO = 56
-
 export const MENSAJE_RANGO_INVERTIDO = '`hasta` no puede ser anterior a `desde`'
-export const MENSAJE_FUERA_DE_VENTANA = `El rango no puede exceder ${DIAS_ATRAS_POR_DEFECTO} días atrás ni ${DIAS_ADELANTE_POR_DEFECTO} días adelante de hoy`
-
-const MS_POR_DIA = 24 * 60 * 60 * 1000
-
-function sumarDias(fecha: string, dias: number): string {
-  const fecha2 = new Date(fechaADate(fecha).getTime() + dias * MS_POR_DIA)
-  return fecha2.toISOString().slice(0, 10)
-}
+export const MENSAJE_FUERA_DE_VENTANA = 'El rango tiene que estar dentro del año en curso'
 
 /**
- * Ventana permitida de `GET /ocurrencias` (definición del ticket: "por defecto desde 30 días
- * atrás hasta 8 semanas adelante, rango máximo acotado, como las agendas"): los valores por
- * defecto son también los bordes de la ventana — no hay un tercer número de tope escrito en
- * ningún lado, así que se toma la ventana descripta como el máximo permitido.
+ * Ventana permitida de `GET /ocurrencias` (T-43, acotada al año en curso por T-66: antes era un
+ * rango relativo a hoy, 30 días atrás / 56 adelante): cualquier fecha entre el 1 de enero y el 31
+ * de diciembre del año de `fechaHoy`. Los valores por defecto (sin `desde`/`hasta`) son también los
+ * bordes de la ventana, como antes.
  */
 export function ventanaOcurrencias(fechaHoy: string): { desde: string; hasta: string } {
-  return {
-    desde: sumarDias(fechaHoy, -DIAS_ATRAS_POR_DEFECTO),
-    hasta: sumarDias(fechaHoy, DIAS_ADELANTE_POR_DEFECTO),
-  }
+  const anio = fechaHoy.slice(0, 4)
+  return { desde: `${anio}-01-01`, hasta: `${anio}-12-31` }
 }
 
 /**

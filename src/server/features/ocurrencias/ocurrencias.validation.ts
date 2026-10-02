@@ -150,13 +150,13 @@ export const ocurrenciasDelAlumnoQuerySchema = z.object({
     }),
   desde: fechaISO.optional().openapi({
     param: { name: 'desde', in: 'query' },
-    description: 'Primer día del rango (YYYY-MM-DD). Sin `desde`, 30 días atrás de hoy',
-    example: '2026-08-30',
+    description: 'Primer día del rango (YYYY-MM-DD). Sin `desde`, el 1 de enero del año en curso',
+    example: '2026-01-01',
   }),
   hasta: fechaISO.optional().openapi({
     param: { name: 'hasta', in: 'query' },
-    description: 'Último día del rango, incluido. Sin `hasta`, 8 semanas adelante de hoy',
-    example: '2026-11-24',
+    description: 'Último día del rango, incluido. Sin `hasta`, el 31 de diciembre del año en curso',
+    example: '2026-12-31',
   }),
 })
 
