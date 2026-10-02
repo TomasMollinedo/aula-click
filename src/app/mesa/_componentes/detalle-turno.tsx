@@ -26,7 +26,7 @@ export function DetalleTurno({ turnoId, fecha, onCerrar }: SolicitudDetalleOcurr
           <AccionCancelarTurno ocurrencia={ocurrencia} />
           <AccionFinalizarTurno ocurrencia={ocurrencia} />
           <AccionRegistrarPago ocurrencia={ocurrencia} />
-          <AccionPdfTurno ocurrencia={ocurrencia} />
+          <AccionPdfTurno turnoId={ocurrencia.turnoId} fecha={ocurrencia.fecha} />
         </>
       )}
     />
