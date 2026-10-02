@@ -158,10 +158,9 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
         )
       ) : (
         cuenta && (
-          // Sin `overflow` en la tarjeta: la barra queda fija al scrollear (ver `BarraSeleccion`).
+          // Sin `overflow` en la tarjeta: la barra flota abajo al scrollear (ver `BarraSeleccion`).
           <Card className="gap-0 p-0">
             <BarraSeleccion
-              className="border-border border-b px-6 py-4"
               resumen={resumen}
               onSeleccionarTodos={
                 cuenta.adeudados
@@ -177,55 +176,55 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
                 )
               }
               enEspera={enEspera}
-            />
+            >
+              <div className="overflow-hidden rounded-b-2xl">
+                {cuenta.adeudados && (
+                  <SeccionOcurrencias
+                    id="cuenta-adeudados"
+                    titulo="Turnos adeudados"
+                    tituloRef={refugioRef}
+                  >
+                    {cuenta.adeudados.length === 0 ? (
+                      <SinFilas>{textoSinFilas('adeudados', filtros)}</SinFilas>
+                    ) : (
+                      <OcurrenciasTabla
+                        etiqueta="Turnos adeudados"
+                        filas={cuenta.adeudados}
+                        conEstado
+                        seleccion={seleccion}
+                        onAlternar={alternarFila}
+                        onVerDetalle={verDetalle}
+                        enEspera={enEspera}
+                      />
+                    )}
+                  </SeccionOcurrencias>
+                )}
 
-            <div className="overflow-hidden rounded-b-2xl">
-              {cuenta.adeudados && (
-                <SeccionOcurrencias
-                  id="cuenta-adeudados"
-                  titulo="Turnos adeudados"
-                  tituloRef={refugioRef}
-                >
-                  {cuenta.adeudados.length === 0 ? (
-                    <SinFilas>{textoSinFilas('adeudados', filtros)}</SinFilas>
-                  ) : (
-                    <OcurrenciasTabla
-                      etiqueta="Turnos adeudados"
-                      filas={cuenta.adeudados}
-                      conEstado
-                      seleccion={seleccion}
-                      onAlternar={alternarFila}
-                      onVerDetalle={verDetalle}
-                      enEspera={enEspera}
-                    />
-                  )}
-                </SeccionOcurrencias>
-              )}
-
-              {cuenta.proximos && (
-                <SeccionOcurrencias
-                  id="cuenta-proximos"
-                  titulo="Próximos turnos"
-                  // El refugio del foco es el título de la primera sección que se ve.
-                  tituloRef={cuenta.adeudados ? undefined : refugioRef}
-                  aviso={avisoDelTope(filtros, cuenta.limiteCobro)}
-                  className={cn(cuenta.adeudados && 'border-border border-t')}
-                >
-                  {cuenta.proximos.length === 0 ? (
-                    <SinFilas>{textoSinFilas('proximos', filtros)}</SinFilas>
-                  ) : (
-                    <OcurrenciasTabla
-                      etiqueta="Próximos turnos"
-                      filas={cuenta.proximos}
-                      seleccion={seleccion}
-                      onAlternar={alternarFila}
-                      onVerDetalle={verDetalle}
-                      enEspera={enEspera}
-                    />
-                  )}
-                </SeccionOcurrencias>
-              )}
-            </div>
+                {cuenta.proximos && (
+                  <SeccionOcurrencias
+                    id="cuenta-proximos"
+                    titulo="Próximos turnos"
+                    // El refugio del foco es el título de la primera sección que se ve.
+                    tituloRef={cuenta.adeudados ? undefined : refugioRef}
+                    aviso={avisoDelTope(filtros, cuenta.limiteCobro)}
+                    className={cn(cuenta.adeudados && 'border-border border-t')}
+                  >
+                    {cuenta.proximos.length === 0 ? (
+                      <SinFilas>{textoSinFilas('proximos', filtros)}</SinFilas>
+                    ) : (
+                      <OcurrenciasTabla
+                        etiqueta="Próximos turnos"
+                        filas={cuenta.proximos}
+                        seleccion={seleccion}
+                        onAlternar={alternarFila}
+                        onVerDetalle={verDetalle}
+                        enEspera={enEspera}
+                      />
+                    )}
+                  </SeccionOcurrencias>
+                )}
+              </div>
+            </BarraSeleccion>
           </Card>
         )
       )}

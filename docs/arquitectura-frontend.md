@@ -169,7 +169,7 @@ src/
 │   │       ├── ComboboxBuscador.tsx, FiltroAlumno.tsx, FiltroProfesor.tsx   # selector con buscador (solo UI) y sus dos usos
 │   │       ├── SeccionOcurrencias.tsx  # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
 │   │       ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx  # filas con casilla y "Ver detalle"; el importe destacado
-│   │       ├── BarraSeleccion.tsx      # resumen y acciones de la selección; fija arriba al scrollear (sticky)
+│   │       ├── BarraSeleccion.tsx      # resumen y acciones de la selección; envuelve las listas y flota abajo cuando deja de verse
 │   │       └── TotalDestacado.tsx      # el total con su etiqueta y los filtros activos
 │   ├── cancelaciones/                  # HU-13 (T-46): cancelar uno o varios turnos
 │   │   ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts

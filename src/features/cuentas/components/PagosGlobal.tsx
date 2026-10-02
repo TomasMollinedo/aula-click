@@ -303,54 +303,54 @@ export function PagosGlobal({ renderRegistrarPago, renderDetalle }: PagosGlobalP
           </Alert>
         )
       ) : (
-        // Sin `overflow` en la tarjeta: la barra queda fija al scrollear (ver `BarraSeleccion`).
+        // Sin `overflow` en la tarjeta: la barra flota abajo al scrollear (ver `BarraSeleccion`).
         <Card className="gap-0 p-0">
-          {conBarra && (
-            <BarraSeleccion
-              className="border-border border-b px-6 py-4"
-              resumen={resumen}
-              onSeleccionarTodos={
-                adeudados.data?.aplica ? () => void seleccionarTodosLosAdeudados() : undefined
-              }
-              seleccionarTodosDeshabilitado={
-                adeudados.data?.meta.total === 0 || todosLosAdeudados.cargando
-              }
-              onQuitar={() => setSeleccion(quitarTodos())}
-              onRegistrar={(boton) =>
-                alumnoId !== null &&
-                abrir({ alumnoId, ocurrencias: ordenarPorFecha(seleccion) }, boton)
-              }
-              enEspera={enEspera}
-            />
-          )}
+          <BarraSeleccion
+            mostrar={conBarra}
+            resumen={resumen}
+            onSeleccionarTodos={
+              adeudados.data?.aplica ? () => void seleccionarTodosLosAdeudados() : undefined
+            }
+            seleccionarTodosDeshabilitado={
+              adeudados.data?.meta.total === 0 || todosLosAdeudados.cargando
+            }
+            onQuitar={() => setSeleccion(quitarTodos())}
+            onRegistrar={(boton) =>
+              alumnoId !== null &&
+              abrir({ alumnoId, ocurrencias: ordenarPorFecha(seleccion) }, boton)
+            }
+            enEspera={enEspera}
+          >
+            <div className={cn('overflow-hidden rounded-b-2xl', !conBarra && 'rounded-t-2xl')}>
+              <SeccionGlobal
+                id="pagos-adeudados"
+                titulo="Turnos adeudados"
+                tituloRef={seVenAdeudados ? refugioRef : undefined}
+                query={adeudados}
+                page={paginas.adeudados}
+                onPageChange={(p) => cambiarPagina('adeudados', p)}
+                textoVacio={textoSinFilas('adeudados', filtros)}
+                renderTabla={(datos, espera) =>
+                  tabla('Turnos adeudados', datos, 'adeudados', espera)
+                }
+              />
 
-          <div className={cn('overflow-hidden rounded-b-2xl', !conBarra && 'rounded-t-2xl')}>
-            <SeccionGlobal
-              id="pagos-adeudados"
-              titulo="Turnos adeudados"
-              tituloRef={seVenAdeudados ? refugioRef : undefined}
-              query={adeudados}
-              page={paginas.adeudados}
-              onPageChange={(p) => cambiarPagina('adeudados', p)}
-              textoVacio={textoSinFilas('adeudados', filtros)}
-              renderTabla={(datos, espera) => tabla('Turnos adeudados', datos, 'adeudados', espera)}
-            />
-
-            <SeccionGlobal
-              id="pagos-proximos"
-              titulo="Próximos turnos"
-              tituloRef={seVenAdeudados ? undefined : refugioRef}
-              query={proximos}
-              page={paginas.proximos}
-              onPageChange={(p) => cambiarPagina('proximos', p)}
-              textoVacio={textoSinFilas('proximos', filtros)}
-              aviso={
-                proximos.data?.aplica ? avisoDelTope(filtros, proximos.data.limiteCobro) : null
-              }
-              className={cn(seVenAdeudados && 'border-border border-t')}
-              renderTabla={(datos, espera) => tabla('Próximos turnos', datos, 'proximos', espera)}
-            />
-          </div>
+              <SeccionGlobal
+                id="pagos-proximos"
+                titulo="Próximos turnos"
+                tituloRef={seVenAdeudados ? undefined : refugioRef}
+                query={proximos}
+                page={paginas.proximos}
+                onPageChange={(p) => cambiarPagina('proximos', p)}
+                textoVacio={textoSinFilas('proximos', filtros)}
+                aviso={
+                  proximos.data?.aplica ? avisoDelTope(filtros, proximos.data.limiteCobro) : null
+                }
+                className={cn(seVenAdeudados && 'border-border border-t')}
+                renderTabla={(datos, espera) => tabla('Próximos turnos', datos, 'proximos', espera)}
+              />
+            </div>
+          </BarraSeleccion>
         </Card>
       )}
 

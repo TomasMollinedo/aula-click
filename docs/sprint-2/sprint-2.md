@@ -903,7 +903,7 @@ El alcance y la actualización de arriba quedan como se escribieron; lo que sigu
 - **Leyenda del alumno.** Sólo en la vista global, bajo el filtro de alumno y mientras no hay uno elegido: "Elegí un alumno para realizar varios pagos a la vez".
 - **Importe.** En las dos vistas se ve como el precio por hora del listado de materias (verde, grande, semibold; "Sin precio" como etiqueta).
 - **Calendario.** El botón que deja la fecha vacía ("Sin fecha de inicio", "Sin fecha de fin") tiene borde, color e ícono. Vale para todo el que use `CalendarioFecha` con `textoVaciar` (también el alta de turnos).
-- **Barra de selección fija.** Queda arriba al scrollear las listas, en las dos vistas, para registrar el pago de lo tildado sin volver al principio.
+- **Barra de selección flotante.** En las dos vistas, cuando al scrollear las listas la barra deja de verse y hay turnos tildados, aparece flotando abajo (con una animación corta y a medio centímetro del borde), para registrar el pago de lo tildado sin volver al principio. Al volver a verse la de arriba, la de abajo se va.
 - **Pago de una fila.** El botón de cada fila es el azul y dice "Registrar pago único".
 - **"Seleccionar todos los adeudados" en la vista global**, con un alumno filtrado: tilda los adeudados de todas las páginas, con los filtros activos (decisión T-102).
 - **Limpiar filtros reutilizable.** El botón es `LimpiarFiltros` de `components/ui/`, con el contorno más grueso, para que lo usen las demás pantallas con filtros.
