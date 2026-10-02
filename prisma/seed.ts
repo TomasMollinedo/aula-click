@@ -132,7 +132,7 @@ async function main() {
     nombre: 'Laura',
     apellido: 'Gómez',
     dni: '30111222',
-    telefono: '3874111222',
+    telefono: '(387) 15-411-1222',
   })
 
   const profesor = await upsertUsuario({
@@ -142,7 +142,7 @@ async function main() {
     nombre: 'Martín',
     apellido: 'Pérez',
     dni: '28333444',
-    telefono: '3874333444',
+    telefono: '(387) 15-433-3444',
   })
   const fichaProfesor = await prisma.profesor.upsert({
     where: { usuarioId: profesor.id },
@@ -162,7 +162,7 @@ async function main() {
     nombre: 'Ana',
     apellido: 'Rodríguez',
     dni: '25555666',
-    telefono: '3874555666',
+    telefono: '(387) 15-455-5666',
   })
 
   // Materias: alta del gerente (HU-12), siempre con precio. Si una ya existía sin precio (base

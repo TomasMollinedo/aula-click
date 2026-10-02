@@ -12,6 +12,9 @@ export const MAX_DIAS_TABLERO = 366
 /** Cuántas materias trae "Materias con más demanda" (HU-21). */
 export const MAX_MATERIAS_TABLERO = 5
 
+/** Cuántos profesores trae "Profesores con más turnos" (HU-21). */
+export const MAX_PROFESORES_TABLERO = 5
+
 // El mismo texto que `MENSAJE_RANGO_INVERTIDO` de `cuentas.validation.ts`. No se importa: de otra
 // feature solo se importan `*.repository` y `*.condiciones` (lo hace cumplir ESLint).
 export const MENSAJE_RANGO_INVERTIDO = 'La fecha hasta no puede ser anterior a la fecha desde'
@@ -22,6 +25,7 @@ const MS_POR_DIA = 24 * 60 * 60 * 1000
 /** Lo que las reglas miran de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
 export type OcurrenciaTablero = Pick<Ocurrencia, 'fecha' | 'estado' | 'bloqueAgendaId'> & {
   materia: Pick<Ocurrencia['materia'], 'id' | 'nombre'>
+  profesor: Pick<Ocurrencia['profesor'], 'id' | 'nombre' | 'apellido'>
 }
 
 export type Conteo = { cantidad: number; porcentaje: number }
@@ -131,6 +135,41 @@ export function materiasConMasDemanda(
         a.materia.id - b.materia.id,
     )
     .slice(0, MAX_MATERIAS_TABLERO)
+}
+
+export type ProfesorConMasTurnos = {
+  profesor: { id: number; nombre: string; apellido: string }
+  cantidad: number
+}
+
+/**
+ * Los `MAX_PROFESORES_TABLERO` profesores con más ocurrencias **no canceladas** del período: cada
+ * una es un alumno con un turno en una hora del profesor. Orden: cantidad descendente; en empate,
+ * apellido y nombre ascendentes (`localeCompare` con `'es'`) y después `id`.
+ */
+export function profesoresConMasTurnos(
+  ocurrencias: readonly OcurrenciaTablero[],
+): ProfesorConMasTurnos[] {
+  const porProfesor = new Map<number, ProfesorConMasTurnos>()
+  for (const { profesor, estado } of ocurrencias) {
+    if (estado === 'CANCELADO') continue
+    const item = porProfesor.get(profesor.id)
+    if (item) item.cantidad += 1
+    else
+      porProfesor.set(profesor.id, {
+        profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
+        cantidad: 1,
+      })
+  }
+  return [...porProfesor.values()]
+    .sort(
+      (a, b) =>
+        b.cantidad - a.cantidad ||
+        a.profesor.apellido.localeCompare(b.profesor.apellido, 'es') ||
+        a.profesor.nombre.localeCompare(b.profesor.nombre, 'es') ||
+        a.profesor.id - b.profesor.id,
+    )
+    .slice(0, MAX_PROFESORES_TABLERO)
 }
 
 // Se crea una sola vez. Las partes numéricas no dependen del formato del locale.

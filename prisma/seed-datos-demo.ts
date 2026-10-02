@@ -6,10 +6,15 @@
 // tres usuarios, las materias base y las aulas): este es un script aparte y **lo necesita
 // corrido antes**, porque reutiliza sus roles, sus aulas y su usuario de mesa de entradas.
 //
-// Idempotente por "limpiar y recrear": cada corrida borra sólo lo que creó una corrida anterior
-// de ESTE script (identificable por el dominio de email `@datos-demo.local`) y lo vuelve a crear
-// con fechas relativas a hoy. Nunca toca los alumnos, profesores, bloques ni turnos que hayas
-// cargado a mano, por la API o con los otros seeds.
+// Los datos que se ven en la app (nombres, emails, teléfonos, observaciones) son verosímiles y no
+// mencionan el seed. Lo que crea este script lo carga `CARGADOR`: una usuaria de mesa de entradas
+// **sin cuenta** (nadie puede iniciar sesión con ella), así que en la auditoría se ve como una
+// persona más y ningún dato cargado desde la app queda a su nombre.
+//
+// Idempotente por "limpiar y recrear": cada corrida borra sólo lo que creó `CARGADOR` (profesores y
+// alumnos, con todo lo que cuelga de ellos; y lo que dejó la versión anterior de este script, con
+// emails `@datos-demo.local`) y lo vuelve a crear con fechas relativas a hoy. Nunca toca los
+// alumnos, profesores, bloques ni turnos que hayas cargado a mano, por la API o con otros seeds.
 //
 // Todo lo que genera respeta las reglas de `docs/dominio.md`, así que la app no queda en un
 // estado que los endpoints rechazarían:
@@ -52,8 +57,29 @@ import { minutosAHora } from '@/server/shared/zod'
 // Parámetros del centro que se genera
 // ---------------------------------------------------------------------------------------------
 
-/** Dominio reservado: es lo que identifica (y permite limpiar) lo que crea este script. */
-const DOMINIO = 'datos-demo.local'
+/** Dominio de la versión anterior de este script: se limpia por si quedó algo. */
+const DOMINIO_ANTERIOR = 'datos-demo.local'
+
+/**
+ * Usuarias de mesa de entradas del centro de demo, sin cuenta (no pueden iniciar sesión). Se
+ * buscan por DNI y no se borran nunca: `CARGADOR` es quien carga todo (y lo que identifica qué
+ * limpiar); `REPROGRAMADORA` es otra persona de mesa, la que hizo las reprogramaciones.
+ * `seed-pagos-demo.ts` usa el DNI de `CARGADOR` para encontrar a estos alumnos.
+ */
+const CARGADOR = {
+  nombre: 'Sofía',
+  apellido: 'Ibarra',
+  dni: '30458127',
+  email: 'sofia.ibarra@gmail.com',
+  telefono: '(387) 15-430-2218',
+}
+const REPROGRAMADORA = {
+  nombre: 'Florencia',
+  apellido: 'Arias',
+  dni: '31702846',
+  email: 'florencia.arias@hotmail.com',
+  telefono: '(387) 15-512-7734',
+}
 
 /** Contraseña de todos los profesores de demo (>= 8 caracteres, como exige Better Auth). */
 const PASSWORD_DEMO = 'demo-1234'
@@ -183,10 +209,10 @@ const MATERIAS_DEMO = [
     descripcion: 'Probabilidad y estadística descriptiva',
     precioHora: '8500.00',
   },
-  { nombre: 'Latín', descripcion: 'Materia sin demanda: queda inactiva', precioHora: '6000.00' },
+  { nombre: 'Latín', descripcion: 'Sin inscriptos este cuatrimestre', precioHora: '6000.00' },
   {
     nombre: 'Filosofía',
-    descripcion: 'Materia sin demanda: queda inactiva',
+    descripcion: 'Sin inscriptos este cuatrimestre',
     precioHora: '6000.00',
   },
 ]
@@ -318,14 +344,36 @@ function primeraFechaDelDia(diaSemana: number, desde: string): string {
   return sumarDias(desde, (diaSemana - diaSemanaISO(desde) + 7) % 7)
 }
 
-/** Teléfono válido para la API: sólo dígitos (código de Salta + 7 dígitos). */
+/** Celular de Salta como lo escribe la gente: `(387) 15-4xx-xxxx` (válido para la API). */
 function telefono(azar: Azar): string {
-  return `387${String(azar.entero(4000000, 5999999))}`
+  return `(387) 15-${azar.entero(400, 599)}-${String(azar.entero(0, 9999)).padStart(4, '0')}`
 }
 
+const PROVEEDORES_EMAIL = ['gmail.com', 'hotmail.com', 'yahoo.com.ar', 'outlook.com']
+
+/** Email verosímil y único (`n` lo desambigua entre homónimos). */
 function emailDe(nombre: string, apellido: string, n: number): string {
   const limpio = (texto: string) => normalizarBusqueda(texto).replace(/ /g, '')
-  return `${limpio(nombre)}.${limpio(apellido)}${n}@${DOMINIO}`
+  const proveedor = PROVEEDORES_EMAIL[n % PROVEEDORES_EMAIL.length]
+  return `${limpio(nombre)}.${limpio(apellido)}${n}@${proveedor}`
+}
+
+/**
+ * Busca por DNI (o crea) una usuaria de mesa de entradas sin cuenta: sin `Account` no hay
+ * contraseña, así que nadie puede iniciar sesión con ella.
+ */
+async function asegurarUsuariaDeMesa(datos: typeof CARGADOR) {
+  return prisma.usuario.upsert({
+    where: { dni: datos.dni },
+    create: {
+      id: randomUUID(),
+      ...datos,
+      busqueda: busquedaDe(datos.nombre, datos.apellido, datos.dni),
+      emailVerified: true,
+      role: 'MESA_ENTRADAS',
+    },
+    update: {},
+  })
 }
 
 function busquedaDe(nombre: string, apellido: string, dni: string): string {
@@ -337,8 +385,11 @@ function busquedaDe(nombre: string, apellido: string, dni: string): string {
 // ---------------------------------------------------------------------------------------------
 
 async function limpiar() {
+  const cargador = await prisma.usuario.findUnique({ where: { dni: CARGADOR.dni } })
+  const delCargador = cargador ? [{ createdById: cargador.id }] : []
+  const anterior = { email: { endsWith: `@${DOMINIO_ANTERIOR}` } }
   const usuarios = await prisma.usuario.findMany({
-    where: { email: { endsWith: `@${DOMINIO}` } },
+    where: { OR: [...delCargador.map((c) => ({ ...c, role: 'PROFESOR' })), anterior] },
     select: { id: true },
   })
   const usuarioIds = usuarios.map((u) => u.id)
@@ -348,7 +399,7 @@ async function limpiar() {
   })
   const profesorIds = profesores.map((p) => p.id)
   const alumnos = await prisma.alumno.findMany({
-    where: { email: { endsWith: `@${DOMINIO}` } },
+    where: { OR: [...delCargador, anterior] },
     select: { id: true },
   })
   const alumnoIds = alumnos.map((a) => a.id)
@@ -405,14 +456,12 @@ async function limpiar() {
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Lo que tiene que existir de antes (`pnpm db:seed`): los actores, las aulas y la forma de pago.
- * Mesa de entradas carga lo operativo (alumnos, horarios, turnos, pagos); el gerente, las materias
- * (HU-12: el alta de materias es sólo suya).
+ * Lo que tiene que existir de antes (`pnpm db:seed`): el gerente, las aulas y la forma de pago.
+ * Mesa de entradas (`CARGADOR`) carga lo operativo (alumnos, horarios, turnos, pagos); el gerente,
+ * las materias (HU-12: el alta de materias es sólo suya).
  */
 async function requisitos() {
-  const actor = await prisma.usuario.findFirst({
-    where: { role: 'MESA_ENTRADAS', email: { not: { endsWith: `@${DOMINIO}` } } },
-  })
+  const actor = await asegurarUsuariaDeMesa(CARGADOR)
   const gerente = await prisma.usuario.findFirst({ where: { role: 'GERENTE' } })
   const aulas = await prisma.aula.findMany({
     where: { estado: 'ACTIVO' },
@@ -490,6 +539,9 @@ async function crear(azar: Azar) {
       emailVerified: true,
       role: 'PROFESOR',
       estado: i < CANTIDAD_PROFESORES_ACTIVOS ? ('ACTIVO' as const) : ('INACTIVO' as const),
+      // Los da de alta mesa de entradas (T-22): es lo que identifica qué limpiar.
+      createdById: actorId,
+      updatedById: actorId,
     }
   })
   await prisma.usuario.createMany({ data: usuariosData })
@@ -780,7 +832,7 @@ async function crear(azar: Azar) {
           tipo: 'RECURRENTE',
           fechaInicio: fechaADate(desdeSegundoTramo),
           fechaFin: null,
-          observaciones: 'Segundo tramo del mismo recurrente (dato de demo, T-29).',
+          observaciones: 'Retoma después de dos semanas sin lugar en el horario.',
           temas: azar.chance(0.4) ? azar.de(TEMAS) : null,
           serieId: primerTramo.serieId,
         })
@@ -892,7 +944,7 @@ async function crear(azar: Azar) {
         turnoId: paraCancelar.id,
         fechaOcurrencia: paraCancelar.fechaInicio,
         motivo: 'CANCELACION_ALUMNO',
-        detalle: 'Cancelado a pedido del alumno (dato de demo, T-29).',
+        detalle: 'Avisó que no puede venir por un turno médico.',
         createdById: actorId,
       },
     })
@@ -900,29 +952,8 @@ async function crear(azar: Azar) {
 
   // 2. Reprogramaciones (HU-20), aplicando a mano lo que hará la API (T-49): se edita el turno,
   //    sin tabla propia, y quién lo movió queda en su auditoría de modificación. Las hace otro
-  //    usuario de mesa de entradas, para que se vea distinto del creador.
-  const modificador = await prisma.usuario.create({
-    data: {
-      id: randomUUID(),
-      nombre: 'Sofía',
-      apellido: 'Demo',
-      dni: '31999001',
-      busqueda: busquedaDe('Sofía', 'Demo', '31999001'),
-      telefono: telefono(azar),
-      email: `mesa.demo@${DOMINIO}`,
-      emailVerified: true,
-      role: 'MESA_ENTRADAS',
-    },
-  })
-  await prisma.account.create({
-    data: {
-      id: randomUUID(),
-      providerId: 'credential',
-      accountId: modificador.id,
-      userId: modificador.id,
-      password: hash,
-    },
-  })
+  //    usuario de mesa de entradas (`REPROGRAMADORA`), para que se vea distinto del creador.
+  const modificador = await asegurarUsuariaDeMesa(REPROGRAMADORA)
   const auditoriaModificador = { createdById: modificador.id, updatedById: modificador.id }
   // Los turnos de la cancelación y de los ejemplos de prioridad no se mueven: siguen como están.
   const reservados = new Set(
@@ -1069,7 +1100,7 @@ async function crear(azar: Azar) {
         turnoId: paraFinalizar.id,
         fechaDesde: fechaADate(sumarDias(fechaStr(paraFinalizar.fechaInicio), 14)),
         motivo: 'CANCELACION_ALUMNO',
-        detalle: 'El alumno deja de venir (dato de demo, HU-14).',
+        detalle: 'Aprobó el parcial y deja de venir.',
         createdById: actorId,
       },
     })
@@ -1102,7 +1133,7 @@ async function crear(azar: Azar) {
         fechaPago: fechaADate(fechaHoy),
         // Paga con un monto redondo mayor al total, para ver el vuelto (se calcula, no se guarda).
         montoRecibido: (Math.ceil((Number(total) + 1) / 5000) * 5000).toFixed(2),
-        observaciones: 'Pago de demo con dos ocurrencias (T-29).',
+        observaciones: 'Abona dos clases atrasadas.',
         ...auditoria,
       },
     })
@@ -1135,10 +1166,12 @@ async function crear(azar: Azar) {
   )
   console.log(`  ${cancelaciones.length} ocurrencias canceladas al azar (pasadas y futuras)`)
   console.log('')
-  console.log(`Los profesores entran con su email @${DOMINIO} y la contraseña "${PASSWORD_DEMO}".`)
+  console.log(`Los profesores entran con su email y la contraseña "${PASSWORD_DEMO}".`)
   const ejemplo = usuariosData[0]
   if (ejemplo) console.log(`  por ejemplo: ${ejemplo.email}`)
-  console.log(`  mesa de entradas de demo (hizo las reprogramaciones): ${modificador.email}`)
+  console.log(
+    `  cargó todo: ${CARGADOR.nombre} ${CARGADOR.apellido}; reprogramó: ${modificador.nombre} ${modificador.apellido} (sin cuenta)`,
+  )
   const conHorario = bloques[0]
   if (conHorario) {
     console.log(
