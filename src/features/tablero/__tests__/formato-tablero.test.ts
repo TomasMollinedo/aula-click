@@ -4,6 +4,7 @@ import {
   anchoDeBarra,
   formatearCantidad,
   formatearPorcentaje,
+  nombreDeProfesor,
   rotuloALaFecha,
   rotuloDelPeriodo,
   textoPeriodo,
@@ -66,6 +67,12 @@ describe('anchoDeBarra', () => {
 
   it('sin máximo, 0', () => {
     expect(anchoDeBarra(0, 0)).toBe(0)
+  })
+})
+
+describe('nombreDeProfesor', () => {
+  it('apellido, nombre', () => {
+    expect(nombreDeProfesor({ apellido: 'Gómez', nombre: 'Ana' })).toBe('Gómez, Ana')
   })
 })
 

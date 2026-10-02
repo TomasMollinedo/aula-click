@@ -28,7 +28,11 @@ let turnoId = 0
 function ocurrencia(
   fecha: string,
   estado: Ocurrencia['estado'],
-  { bloqueAgendaId = 10, materiaId = 2 }: { bloqueAgendaId?: number; materiaId?: number } = {},
+  {
+    bloqueAgendaId = 10,
+    materiaId = 2,
+    profesorId = 3,
+  }: { bloqueAgendaId?: number; materiaId?: number; profesorId?: number } = {},
 ): Ocurrencia {
   turnoId += 1
   return {
@@ -38,7 +42,7 @@ function ocurrencia(
     diaSemana: 1,
     horaInicio: 540,
     horaFin: 600,
-    profesorId: 3,
+    profesorId,
     aulaId: 1,
     alumnoId: turnoId,
     materiaId,
@@ -47,7 +51,12 @@ function ocurrencia(
     pago: { estado: 'PENDIENTE' },
     serie: { serieId: null, fechaInicio: fecha, fechaFin: fecha, finEfectivo: fecha },
     alumno: { id: turnoId, nombre: `Alumno${turnoId}`, apellido: 'Paz', busqueda: 'paz' },
-    profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez', busqueda: 'gomez ana' },
+    profesor: {
+      id: profesorId,
+      nombre: profesorId === 3 ? 'Ana' : 'Luis',
+      apellido: profesorId === 3 ? 'Gómez' : 'Pérez',
+      busqueda: 'gomez ana',
+    },
     materia: { id: materiaId, nombre: NOMBRES[materiaId] ?? `Materia ${materiaId}` },
     aula: { id: 1, nombre: 'Aula 1' },
   }
@@ -118,7 +127,7 @@ describe('período y hoy', () => {
       ocupacion: { turnos: 0, capacidad: 0, porcentaje: 0 },
       alumnos: { nuevos: 0, atendidos: { disponible: false } },
       materiasConMasDemanda: [],
-      profesoresConMasActividad: { disponible: false },
+      profesoresConMasTurnos: [],
       pagos: { totalCobrado: 0, totalAdeudado: 0 },
     })
     expect(repository.capacidadesDeBloques).toHaveBeenCalledExactlyOnceWith([])
@@ -186,7 +195,6 @@ describe('indicadores que dependen de la asistencia (HU-22)', () => {
     expect(tablero.turnos.asistio).toStrictEqual({ disponible: false })
     expect(tablero.turnos.noAsistio).toStrictEqual({ disponible: false })
     expect(tablero.alumnos.atendidos).toStrictEqual({ disponible: false })
-    expect(tablero.profesoresConMasActividad).toStrictEqual({ disponible: false })
   })
 })
 
@@ -291,6 +299,42 @@ describe('materias con más demanda', () => {
       { materia: { id: 3, nombre: 'Física' }, cantidad: 3 },
       { materia: { id: 5, nombre: 'Inglés' }, cantidad: 2 },
       { materia: { id: 6, nombre: 'Lengua' }, cantidad: 2 },
+    ])
+  })
+})
+
+describe('profesores con más turnos', () => {
+  const de = (
+    profesorId: number,
+    cantidad: number,
+    estado: Ocurrencia['estado'] = 'SIN_REGISTRAR',
+  ) => repetir(cantidad, () => ocurrencia('2026-09-28', estado, { profesorId }))
+
+  it('por turnos no cancelados del período, con nombre y apellido del profesor', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      ...de(3, 2),
+      ...de(7, 3),
+      // Ana tendría el primer puesto si las canceladas contaran.
+      ...de(3, 9, 'CANCELADO'),
+    ])
+
+    const { profesoresConMasTurnos } = await service.obtener(ESTA_SEMANA)
+
+    expect(profesoresConMasTurnos).toEqual([
+      { profesor: { id: 7, nombre: 'Luis', apellido: 'Pérez' }, cantidad: 3 },
+      { profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' }, cantidad: 2 },
+    ])
+  })
+
+  it('no trae el campo interno `busqueda` del profesor', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue(de(3, 1))
+
+    const { profesoresConMasTurnos } = await service.obtener(ESTA_SEMANA)
+
+    expect(Object.keys(profesoresConMasTurnos[0]?.profesor ?? {}).sort()).toEqual([
+      'apellido',
+      'id',
+      'nombre',
     ])
   })
 })

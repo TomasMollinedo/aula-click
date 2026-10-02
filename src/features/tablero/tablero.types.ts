@@ -4,7 +4,7 @@
 
 /**
  * Indicador que depende de la asistencia (HU-22, próximo sprint): es exactamente
- * `{ disponible: false }`, sin valor. La UI no lo reemplaza por ningún otro número.
+ * `{ disponible: false }`, sin valor. La pantalla no lo muestra.
  */
 export type IndicadorNoDisponible = { disponible: false }
 
@@ -13,6 +13,12 @@ export type Conteo = { cantidad: number; porcentaje: number }
 
 export type MateriaConDemanda = {
   materia: { id: number; nombre: string }
+  cantidad: number
+}
+
+export type ProfesorConMasTurnos = {
+  profesor: { id: number; nombre: string; apellido: string }
+  /** Turnos no cancelados del período en sus horas: alumnos con turno con ese profesor. */
   cantidad: number
 }
 
@@ -39,7 +45,8 @@ export type Tablero = {
   }
   alumnos: { nuevos: number; atendidos: IndicadorNoDisponible }
   materiasConMasDemanda: MateriaConDemanda[]
-  profesoresConMasActividad: IndicadorNoDisponible
+  /** Hasta 5, por turnos no cancelados del período (descendente). */
+  profesoresConMasTurnos: ProfesorConMasTurnos[]
   pagos: {
     totalCobrado: number
     /** A la fecha `hoy`, no del período. */

@@ -3,8 +3,6 @@ import { format, parseISO } from 'date-fns'
 // Textos del tablero: cómo se escriben los números y los períodos que manda la API. Solo
 // presentación: los cálculos (porcentajes, ocupación, qué cuenta cada indicador) los hace la API.
 
-export const TEXTO_NO_DISPONIBLE = 'Disponible cuando se registre la asistencia'
-
 const CANTIDAD = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 0 })
 const PORCENTAJE = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 })
 
@@ -47,6 +45,17 @@ export function rotuloALaFecha(hoy: string): string {
 /** El ancho (0 a 100) de la barra de una materia respecto de la que más demanda tiene. */
 export function anchoDeBarra(cantidad: number, maximo: number): number {
   return maximo <= 0 ? 0 : Math.round((cantidad / maximo) * 100)
+}
+
+/** `{ apellido: 'Gómez', nombre: 'Ana' }` → `"Gómez, Ana"`, como en el resto de la app. */
+export function nombreDeProfesor({
+  apellido,
+  nombre,
+}: {
+  apellido: string
+  nombre: string
+}): string {
+  return `${apellido}, ${nombre}`
 }
 
 /** `1` → `"1 turno"`, `15` → `"15 turnos"`. */

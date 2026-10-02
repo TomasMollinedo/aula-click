@@ -5,6 +5,7 @@ import {
   instantesDelPeriodo,
   materiasConMasDemanda,
   ocupacion,
+  profesoresConMasTurnos,
   turnosPorEstado,
 } from './tablero.reglas'
 import type { Tablero, TableroQuery } from './tablero.validation'
@@ -72,7 +73,7 @@ export function crearTableroService({
         },
         alumnos: { nuevos: alumnosNuevos, atendidos: noDisponible() },
         materiasConMasDemanda: materiasConMasDemanda(ocurrencias),
-        profesoresConMasActividad: noDisponible(),
+        profesoresConMasTurnos: profesoresConMasTurnos(ocurrencias),
         pagos: { totalCobrado, totalAdeudado },
       }
     },
