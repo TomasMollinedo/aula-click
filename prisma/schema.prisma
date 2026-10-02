@@ -413,6 +413,13 @@ model Turno {
   // "Temas a trabajar" (HU-08): opcional en RECURRENTE, obligatorio en SESION_UNICA (lo valida la API).
   temas          String?
   estado         EstadoTurno @default(ACTIVO)
+  // Serie (decisión T-103): agrupa todo lo que se registró en un mismo alta RECURRENTE, es decir,
+  // todas sus horas (una fila por hora) y todos sus tramos (por fechas sin lugar, HU-08, o por una
+  // reprogramación, HU-20, cuyo tramo nuevo hereda el del original). Finalizar (HU-14) actúa sobre
+  // las filas con el mismo serieId y la misma hora (bloqueAgendaId). Null en una SESION_UNICA y en
+  // los recurrentes anteriores a esta columna: un recurrente sin serieId es una serie de una sola
+  // fila.
+  serieId        String?     @map("serie_id") @db.Uuid
 
   createdById String   @map("usuario_creador_id")
   updatedById String   @map("usuario_modificador_id")
@@ -432,6 +439,7 @@ model Turno {
   @@index([bloqueAgendaId, fechaInicio])
   @@index([alumnoId])
   @@index([materiaId])
+  @@index([serieId])
   @@index([createdById])
   @@index([updatedById])
   @@map("turno")
@@ -494,8 +502,9 @@ model CancelacionTurno {
 
 // Fin anticipado de una serie recurrente desde una fecha (HU-14): a lo sumo una por turno. No
 // modifica Turno.fechaFin: el fin efectivo es el menor entre fechaFin y el día anterior a
-// fechaDesde. Con tramos, se finaliza el tramo desde cuyo detalle se opera (la API avisa si hay
-// tramos posteriores; nada en el modelo vincula los tramos).
+// fechaDesde. Finalizar actúa por hora (decisión T-104): crea una fila, con la misma fechaDesde, en
+// cada turno de la serie (Turno.serieId) y de la misma hora (bloqueAgendaId) que tiene fechas
+// desde ahí. Las otras horas de la serie no se finalizan: la API las informa.
 model FinalizacionRecurrencia {
   id         Int               @id @default(autoincrement())
   turnoId    Int               @unique @map("turno_id")

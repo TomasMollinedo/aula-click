@@ -194,6 +194,7 @@ export const reprogramacionesRepository = {
               ...copia,
               bloqueAgendaId: ocurrencia.bloqueAgendaId,
               tipo: 'RECURRENTE',
+              serieId: plan.tramoNuevo.serieId,
               fechaInicio: fechaADate(plan.tramoNuevo.fechaInicio),
               fechaFin: plan.tramoNuevo.fechaFin && fechaADate(plan.tramoNuevo.fechaFin),
             },
@@ -206,6 +207,7 @@ export const reprogramacionesRepository = {
               ...copia,
               bloqueAgendaId: bloqueDestinoId,
               tipo: 'SESION_UNICA',
+              serieId: null,
               fechaInicio: fechaADate(fechaDestino),
               fechaFin: fechaADate(fechaDestino),
             },
@@ -227,6 +229,7 @@ export const reprogramacionesRepository = {
           ...(original.fechaFin === undefined
             ? {}
             : { fechaFin: original.fechaFin && fechaADate(original.fechaFin) }),
+          ...(original.serieId === undefined ? {} : { serieId: original.serieId }),
           updatedById: actor.userId,
         },
       })

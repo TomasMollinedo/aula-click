@@ -11,37 +11,57 @@ import {
 
 // Service de finalizaciones (T-47) contra el repository en memoria (`finalizaciones-en-memoria.ts`),
 // que ejecuta el `verificar` real bajo una cola como el lock del alumno. Reloj fijo: lunes
-// 05/10/2026 al mediodía en Salta. La serie 41 es la de los lunes de 9 a 10, del 05/10 al 30/11.
+// 05/10/2026 al mediodía en Salta. El turno 41 es el de los lunes de 9 a 10, del 05/10 al 30/11,
+// sin `serieId` (una serie de una sola fila); las series de varias filas están más abajo.
 
 const reloj = () => new Date('2026-10-05T15:00:00Z')
 const actor: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
 
 function turno(parcial: Partial<TurnoEnBase> = {}): TurnoEnBase {
   return {
-    id: 41,
-    alumnoId: 12,
-    materiaId: 3,
+    turnoId: 41,
+    serieId: null,
     bloqueAgendaId: 7,
+    alumnoId: 12,
     tipo: 'RECURRENTE',
     activo: true,
     fechaInicio: '2026-10-05',
     fechaFin: '2026-11-30',
     diaSemana: 1,
-    tieneFinalizacion: false,
+    horaInicio: 540,
+    horaFin: 600,
+    finalizadaDesde: null,
     ocurrencias: semanales('2026-10-05', '2026-11-30'),
     ...parcial,
   }
 }
 
-/** Un tramo posterior de la serie 41: mismos alumno, materia y hora, desde el 14/12. */
-function tramo(parcial: Partial<TurnoEnBase> = {}): TurnoEnBase {
-  return turno({
-    id: 58,
-    fechaInicio: '2026-12-14',
-    fechaFin: null,
-    ocurrencias: [],
-    ...parcial,
-  })
+const SERIE = '11111111-1111-4111-8111-111111111111'
+
+/**
+ * Un alta de dos horas (lunes de 9 a 11, del 05/10 al 30/11) con el 26/10 lleno en la hora de 9:
+ * la de 9 quedó en dos tramos (41: 05/10–19/10 y 58: 02/11–30/11) y la de 10, entera (42). Las
+ * tres filas comparten `serieId`. Con `serieId: null`, las mismas filas sin vincular (datos
+ * anteriores a la columna).
+ */
+function altaDeDosHoras(serieId: string | null = SERIE): TurnoEnBase[] {
+  return [
+    turno({ serieId, fechaFin: '2026-10-19', ocurrencias: semanales('2026-10-05', '2026-10-19') }),
+    turno({
+      turnoId: 58,
+      serieId,
+      fechaInicio: '2026-11-02',
+      ocurrencias: semanales('2026-11-02', '2026-11-30', 58),
+    }),
+    turno({
+      turnoId: 42,
+      serieId,
+      bloqueAgendaId: 8,
+      horaInicio: 600,
+      horaFin: 660,
+      ocurrencias: semanales('2026-10-05', '2026-11-30', 42, 600),
+    }),
+  ]
 }
 
 let base: TurnoEnBase[]
@@ -83,7 +103,7 @@ describe('previa', () => {
       pagadas: [],
       ultimaFechaPagada: null,
       fechaDesdeMinima: null,
-      otrosTramos: [],
+      otrasHoras: [],
     })
   })
 
@@ -97,31 +117,45 @@ describe('previa', () => {
     })
   })
 
-  it('con tramos posteriores del mismo alumno, materia y hora', async () => {
-    armar([turno(), tramo(), tramo({ id: 59, fechaInicio: '2027-03-01', fechaFin: '2027-06-28' })])
+  it('serie de dos horas con tramos: cuenta los dos tramos de la hora y avisa la otra hora', async () => {
+    armar(altaDeDosHoras())
 
-    const previa = await service.previa({ turnoId: 41, fechaDesde: '2026-10-19' })
-
-    expect(previa.otrosTramos).toEqual([
-      { turnoId: 58, fechaInicio: '2026-12-14', fechaFin: null },
-      { turnoId: 59, fechaInicio: '2027-03-01', fechaFin: '2027-06-28' },
-    ])
+    // 12/10 y 19/10 del primer tramo + 02/11 a 30/11 del segundo (el 26/10 no tiene turno).
+    expect(await service.previa({ turnoId: 41, fechaDesde: '2026-10-12' })).toEqual({
+      cantidad: 7,
+      desde: '2026-10-12',
+      hasta: '2026-11-30',
+      pagadas: [],
+      ultimaFechaPagada: null,
+      fechaDesdeMinima: null,
+      otrasHoras: [{ turnoId: 42, fecha: '2026-10-12', horaInicio: '10:00', horaFin: '11:00' }],
+    })
   })
 
-  it('un tramo de otra materia, de otro alumno, de otra hora, anterior o ya finalizado no aparece', async () => {
+  it('otrasHoras: no aparece una hora que termina antes de fechaDesde, ni otra serie del alumno', async () => {
+    const [a, b, hora10] = altaDeDosHoras()
     armar([
-      turno(),
-      tramo({ id: 60, materiaId: 4 }),
-      tramo({ id: 61, alumnoId: 13 }),
-      tramo({ id: 62, bloqueAgendaId: 8 }),
-      tramo({ id: 63, fechaInicio: '2026-09-07', fechaFin: '2026-09-28' }),
-      tramo({ id: 64, tieneFinalizacion: true }),
-      tramo({ id: 65, tipo: 'SESION_UNICA', fechaFin: '2026-12-14' }),
+      a,
+      b,
+      {
+        ...hora10,
+        fechaFin: '2026-10-19',
+        ocurrencias: semanales('2026-10-05', '2026-10-19', 42, 600),
+      },
+      // Otro alta del mismo alumno, a las 11: es otra serie.
+      turno({
+        turnoId: 70,
+        serieId: '22222222-2222-4222-8222-222222222222',
+        bloqueAgendaId: 9,
+        horaInicio: 660,
+        horaFin: 720,
+        ocurrencias: semanales('2026-10-05', '2026-11-30', 70, 660),
+      }),
     ])
 
-    const previa = await service.previa({ turnoId: 41, fechaDesde: '2026-10-19' })
+    const previa = await service.previa({ turnoId: 41, fechaDesde: '2026-11-02' })
 
-    expect(previa.otrosTramos).toEqual([])
+    expect(previa.otrasHoras).toEqual([])
   })
 
   it('con pagadas: van en la lista, no es un error', async () => {
@@ -146,7 +180,7 @@ describe('previa', () => {
     expect(await errorDe(service.previa({ turnoId: 41, fechaDesde: '2026-10-20' }))).toBeInstanceOf(
       ValidationError,
     )
-    armar([turno({ tieneFinalizacion: true })])
+    armar([turno({ finalizadaDesde: '2026-11-02' })])
     expect(await errorDe(service.previa({ turnoId: 41, fechaDesde: '2026-10-19' }))).toBeInstanceOf(
       ConflictError,
     )
@@ -191,12 +225,114 @@ describe('finalizar', () => {
     })
   })
 
-  it('se finaliza sólo el tramo pedido: los posteriores quedan sin finalizar', async () => {
-    armar([turno(), tramo()])
+  it('finalizar la hora de 9 con dos tramos libera los dos; la hora de 10 queda', async () => {
+    armar(altaDeDosHoras())
 
-    await service.finalizar(pedido(), actor)
+    const res = await service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor)
 
+    expect(res).toEqual({ turnoId: 41, cantidad: 7, desde: '2026-10-12', hasta: '2026-11-30' })
+    // Una finalización por tramo de la hora, con la misma fecha; ninguna en la hora de 10.
+    expect([...memoria.finalizaciones.keys()]).toEqual([41, 58])
+    expect(memoria.finalizaciones.get(58)).toEqual(memoria.finalizaciones.get(41))
+    expect(memoria.finalizaciones.get(41)?.fechaDesde).toBe('2026-10-12')
+    // Ningún `fechaFin` cambió.
+    expect(base.map((t) => t.fechaFin)).toEqual(['2026-10-19', '2026-11-30', '2026-11-30'])
+  })
+
+  it('después de finalizar la hora de 9, la de 10 se finaliza desde su detalle', async () => {
+    armar(altaDeDosHoras())
+    await service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor)
+
+    const previa = await service.previa({ turnoId: 42, fechaDesde: '2026-10-12' })
+    // La hora de 9 ya está finalizada: no se avisa.
+    expect(previa).toMatchObject({ cantidad: 8, hasta: '2026-11-30', otrasHoras: [] })
+
+    await service.finalizar(pedido({ turnoId: 42, fechaDesde: '2026-10-12' }), actor)
+    expect([...memoria.finalizaciones.keys()]).toEqual([41, 58, 42])
+  })
+
+  it('fechaDesde en un hueco entre tramos: es válida y finaliza sólo el tramo posterior', async () => {
+    armar(altaDeDosHoras())
+
+    const res = await service.finalizar(pedido({ fechaDesde: '2026-10-26' }), actor)
+
+    expect(res).toEqual({ turnoId: 41, cantidad: 5, desde: '2026-10-26', hasta: '2026-11-30' })
+    expect([...memoria.finalizaciones.keys()]).toEqual([58])
+    // El primer tramo no cambia, pero su hora ya cuenta como finalizada.
+    expect(
+      (await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor))).message,
+    ).toBe('El turno ya fue finalizado')
+  })
+
+  it('fechaDesde en el último tramo, operando desde el primero: finaliza sólo el último', async () => {
+    armar(altaDeDosHoras())
+
+    const res = await service.finalizar(pedido({ fechaDesde: '2026-11-09' }), actor)
+
+    expect(res).toEqual({ turnoId: 41, cantidad: 4, desde: '2026-11-09', hasta: '2026-11-30' })
+    expect([...memoria.finalizaciones.keys()]).toEqual([58])
+  })
+
+  it('un pagado en un tramo posterior → 409 TURNOS_PAGADOS, sin finalizar ningún tramo', async () => {
+    armar(altaDeDosHoras())
+    const ocurrencia = base[1]?.ocurrencias.find((o) => o.fecha === '2026-11-16')
+    if (ocurrencia) ocurrencia.pago = { estado: 'PAGADO', importeAplicado: 8500 }
+
+    const error = await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor))
+
+    expect(error.code).toBe('TURNOS_PAGADOS')
+    expect(error.details).toEqual({
+      ultimaFechaPagada: '2026-11-16',
+      fechaDesdeMinima: '2026-11-23',
+      pagadas: [{ fecha: '2026-11-16', horaInicio: '09:00', horaFin: '10:00', importe: 8500 }],
+    })
+    expect(memoria.finalizaciones.size).toBe(0)
+  })
+
+  it('un tramo de la hora ya finalizado → 409, también pidiéndolo desde el otro tramo', async () => {
+    const [a, b, hora10] = altaDeDosHoras()
+    armar([a, { ...b, finalizadaDesde: '2026-11-16' } as TurnoEnBase, hora10 as TurnoEnBase])
+
+    const error = await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.message).toBe('El turno ya fue finalizado')
+    expect(memoria.finalizaciones.size).toBe(0)
+  })
+
+  it('serieId nulo: se comporta como antes, sólo esa fila y sin aviso de otras horas', async () => {
+    armar(altaDeDosHoras(null))
+
+    const previa = await service.previa({ turnoId: 41, fechaDesde: '2026-10-12' })
+    expect(previa).toMatchObject({ cantidad: 2, hasta: '2026-10-19', otrasHoras: [] })
+
+    // El hueco ya no es de "su" serie: es posterior al fin de esa fila.
+    const error = await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-26' }), actor))
+    expect(error.details).toEqual([
+      { path: ['fechaDesde'], message: 'La fecha es posterior al fin del turno (19/10)' },
+    ])
+
+    await service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor)
     expect([...memoria.finalizaciones.keys()]).toEqual([41])
+  })
+
+  it('dos finalizaciones simultáneas de la misma hora desde tramos distintos: gana una sola', async () => {
+    armar(altaDeDosHoras())
+
+    const resultados = await Promise.allSettled([
+      service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor),
+      service.finalizar(pedido({ turnoId: 58, fechaDesde: '2026-11-09' }), actor),
+    ])
+
+    expect(resultados.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+    const rechazo = resultados.find((r) => r.status === 'rejected')
+    expect(((rechazo as PromiseRejectedResult).reason as AppError).message).toBe(
+      'El turno ya fue finalizado',
+    )
+    expect([...memoria.finalizaciones.values()].map((f) => f.fechaDesde)).toEqual([
+      '2026-10-12',
+      '2026-10-12',
+    ])
   })
 
   it('turno inexistente → 404, sin llamar a finalizar', async () => {

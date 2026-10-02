@@ -48,7 +48,7 @@ const OCURRENCIA = {
   tipo: 'RECURRENTE',
   estado: 'AGENDADO',
   pago: { estado: 'PENDIENTE' },
-  serie: { fechaInicio: '2099-01-05', fechaFin: null, finEfectivo: null },
+  serie: { serieId: null, fechaInicio: '2099-01-05', fechaFin: null, finEfectivo: null },
   alumno: { id: 12, nombre: 'Lucía', apellido: 'González', busqueda: 'gonzalez lucia 40123456' },
   profesor: { id: 3, nombre: 'Ana', apellido: 'Pérez', busqueda: 'perez ana 30111222' },
   materia: { id: 2, nombre: 'Matemática' },

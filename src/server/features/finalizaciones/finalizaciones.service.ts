@@ -25,25 +25,27 @@ export function crearFinalizacionesService({
 }) {
   return {
     /**
-     * Qué se libera si se finaliza el turno desde `fechaDesde`. Aplica los mismos 404, 409 y 400
+     * Qué se libera si se finaliza la hora del turno (todos sus tramos, decisión T-104) desde
+     * `fechaDesde`, y qué otras horas de la serie siguen agendadas. Aplica los mismos 404, 409 y 400
      * que `finalizar` (`validarFinalizacion`), salvo las pagadas: van en la lista (`pagadas`,
      * `ultimaFechaPagada`, `fechaDesdeMinima`) y no son un error.
      */
     async previa(query: PreviaFinalizacionQuery): Promise<PreviaFinalizacion> {
       const snapshot = await repository.leerSnapshot(query.turnoId, query.fechaDesde, reloj)
-      const turno = validarFinalizacion(snapshot, query.fechaDesde, hoy(reloj))
-      return armarPrevia(snapshot, turno, query.fechaDesde)
+      const conjunto = validarFinalizacion(snapshot, query.fechaDesde, hoy(reloj))
+      return armarPrevia(snapshot, conjunto, query.fechaDesde)
     },
 
     /**
-     * Finaliza un turno recurrente desde `fechaDesde`. Chequeos, en orden (el primero que falla
-     * gana):
+     * Finaliza un turno recurrente desde `fechaDesde`: la hora del turno pedido, en todos los
+     * tramos de su serie (decisión T-104). Las otras horas de la serie no se tocan. Chequeos, en
+     * orden (el primero que falla gana), sobre ese conjunto de filas:
      * 1. El body ya lo validó Zod (400): formato, `detalle` obligatorio con `OTRO`.
      * 2. Turno inexistente → 404.
      * 3. No es `RECURRENTE`, no está vigente (incluye `Turno.estado = CANCELADO`, anterior al
      *    Sprint 2) o ya fue finalizado → 409.
-     * 4. `fechaDesde` anterior a hoy, en otro día de la semana, no posterior a `fechaInicio` o
-     *    posterior al fin → 400 en `["fechaDesde"]`.
+     * 4. `fechaDesde` anterior a hoy, en otro día de la semana, no posterior al primer inicio o
+     *    posterior al último fin → 400 en `["fechaDesde"]`.
      * 5. Ocurrencias pagadas desde `fechaDesde` → 409 `TURNOS_PAGADOS`.
      * 6. `repository.finalizar`, que bloquea el alumno, relee y vuelve a decidir con la misma
      *    regla (2 a 5) antes de escribir.
@@ -56,13 +58,13 @@ export function crearFinalizacionesService({
       // No puede faltar: `planificarFinalizacion` lanza 404 si el turno no existe.
       const alumnoId = snapshot.turno?.alumnoId as number
 
-      const plan = await repository.finalizar(
+      const { previa } = await repository.finalizar(
         { turnoId, alumnoId, fechaDesde, motivo: datos.motivo, detalle: datos.detalle ?? null },
         (releido) => planificarFinalizacion(releido, fechaDesde, fechaHoy),
         actor,
         reloj,
       )
-      return { turnoId, cantidad: plan.cantidad, desde: plan.desde, hasta: plan.hasta }
+      return { turnoId, cantidad: previa.cantidad, desde: previa.desde, hasta: previa.hasta }
     },
   }
 }

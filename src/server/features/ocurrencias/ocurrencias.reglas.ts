@@ -53,24 +53,30 @@ export function validarRangoOcurrencias(desde: string, hasta: string, fechaHoy: 
   }
 }
 
-/** Datos de la serie que necesita `calcularAcciones`, sin el resto de la `Ocurrencia`. */
-export type SerieParaAcciones = {
+/**
+ * Una fila de la serie del turno que es de su **misma hora** (`serieId` y `bloqueAgendaId`,
+ * decisión T-103): el propio turno y sus otros tramos. Es el conjunto sobre el que actúa
+ * "Finalizar" (decisión T-104). Sin el resto de la fila: sólo lo que mira `calcularAcciones`.
+ */
+export type FilaDeLaHora = {
+  /** La guardada (finalizar no la modifica); `null` = sin fin. */
   fechaFin: string | null
-  finEfectivo: string | null
+  /** Tiene una `FinalizacionRecurrencia`. */
+  finalizada: boolean
+}
+
+/** Alguna fila de la hora tiene finalización: la hora ya se finalizó, desde cualquier tramo. */
+function estaFinalizada(filas: readonly FilaDeLaHora[]): boolean {
+  return filas.some((fila) => fila.finalizada)
 }
 
 /**
- * La serie ya tiene una `FinalizacionRecurrencia` aplicada: su fin efectivo quedó por debajo de
- * `fechaFin` (`finEfectivo` la única cuenta que los distingue — T-30). Sin finalización, son
- * iguales (los dos `null`, o los dos la misma fecha).
+ * La hora sigue vigente si alguna de sus filas no tiene `fechaFin` o no pasó todavía: el mismo
+ * criterio con el que `POST /finalizaciones` acepta el pedido (decisión T-75), así que si el botón
+ * se ve, el POST no rechaza por "no vigente".
  */
-function estaFinalizada(serie: SerieParaAcciones): boolean {
-  return serie.finEfectivo !== serie.fechaFin
-}
-
-/** Una serie recurrente sigue vigente si no tiene fin efectivo o si ese fin no pasó todavía. */
-function estaVigente(serie: SerieParaAcciones, fechaHoy: string): boolean {
-  return serie.finEfectivo === null || serie.finEfectivo >= fechaHoy
+function estaVigente(filas: readonly FilaDeLaHora[], fechaHoy: string): boolean {
+  return filas.some((fila) => fila.fechaFin === null || fila.fechaFin >= fechaHoy)
 }
 
 export type AccionSimple = { visible: boolean }
@@ -96,12 +102,16 @@ export const ACCIONES_SIN_PERMISO: Acciones = {
  * arriba del archivo):
  * - `cancelar`: agendada (que ya implica hoy o posterior: una ocurrencia pasada y no cancelada es
  *   `SIN_REGISTRAR`, nunca `AGENDADO` — `estadoDeOcurrencia` en `turnos.reglas.ts`).
- * - `finalizar`: recurrente, vigente y sin una finalización ya aplicada.
+ * - `finalizar`: recurrente, con su hora vigente y sin finalizar. Se mira el conjunto de
+ *   `filasDeLaHora` (todos los tramos de esa hora en su serie), no sólo la fila de la ocurrencia:
+ *   un tramo anterior de una hora ya finalizada en un tramo posterior no la ofrece, y la otra hora
+ *   de la misma serie sí. Sin filas (quien llama no la necesita), no visible.
  * - `reprogramar`: agendada, mismo criterio que cancelar.
  * - `registrarPago`: no cancelada.
  */
 export function calcularAcciones(
-  ocurrencia: { estado: EstadoOcurrencia; tipo: TipoTurno; serie: SerieParaAcciones },
+  ocurrencia: { estado: EstadoOcurrencia; tipo: TipoTurno },
+  filasDeLaHora: readonly FilaDeLaHora[],
   fechaHoy: string,
 ): Acciones {
   const agendada = ocurrencia.estado === 'AGENDADO'
@@ -110,8 +120,8 @@ export function calcularAcciones(
     finalizar: {
       visible:
         ocurrencia.tipo === 'RECURRENTE' &&
-        estaVigente(ocurrencia.serie, fechaHoy) &&
-        !estaFinalizada(ocurrencia.serie),
+        estaVigente(filasDeLaHora, fechaHoy) &&
+        !estaFinalizada(filasDeLaHora),
     },
     reprogramar: { visible: agendada },
     registrarPago: { visible: ocurrencia.estado !== 'CANCELADO' },

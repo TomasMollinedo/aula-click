@@ -5,7 +5,9 @@ import {
   type PrioridadDeTurno,
 } from '@/server/features/examenes/examenes.condiciones'
 import {
+  leerFilasDeLaSerie,
   leerOcurrencias,
+  type FilaDeSerie,
   type FiltroOcurrencias,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
@@ -18,7 +20,7 @@ import { dateAFecha, type Reloj } from '@/server/shared/fechas'
 // (lo único del turno que no trae `leerOcurrencias`, que no expone `busqueda` ni estos campos) se
 // leen acá directo, igual que `FinalizacionRecurrencia`, que tampoco expone ninguna otra feature.
 
-export type { Ocurrencia, PrioridadDeTurno }
+export type { FilaDeSerie, Ocurrencia, PrioridadDeTurno }
 
 export type Finalizacion = {
   fechaDesde: string
@@ -77,10 +79,25 @@ export const ocurrenciasRepository = {
     }
   },
 
-  /** La `FinalizacionRecurrencia` del turno, si tiene una (a lo sumo una por turno). */
-  async buscarFinalizacion(turnoId: number): Promise<Finalizacion | null> {
-    const fila = await prisma.finalizacionRecurrencia.findUnique({
-      where: { turnoId },
+  /**
+   * Las filas de la serie del turno que son de su **misma hora** (`serieId` y `bloqueAgendaId`,
+   * decisión T-103): el propio turno y sus otros tramos `RECURRENTE` `ACTIVO`. Es el conjunto
+   * sobre el que actúa "Finalizar" (decisión T-104). `[]` si el turno no existe.
+   */
+  async leerFilasDeLaHora(turnoId: number): Promise<FilaDeSerie[]> {
+    const serie = await leerFilasDeLaSerie(prisma, turnoId)
+    if (!serie) return []
+    return serie.filas.filter((fila) => fila.bloqueAgendaId === serie.turno.bloqueAgendaId)
+  },
+
+  /**
+   * La `FinalizacionRecurrencia` de alguno de esos turnos (los tramos de una misma hora, que se
+   * finalizan juntos con la misma `fechaDesde`, motivo y detalle), o `null` si ninguno tiene.
+   */
+  async buscarFinalizacion(turnoIds: number[]): Promise<Finalizacion | null> {
+    const fila = await prisma.finalizacionRecurrencia.findFirst({
+      where: { turnoId: { in: turnoIds } },
+      orderBy: { id: 'asc' },
       select: {
         fechaDesde: true,
         motivo: true,

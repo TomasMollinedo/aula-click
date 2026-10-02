@@ -46,7 +46,11 @@ export function crearOcurrenciasService({
   /**
    * Detalle de una ocurrencia (HU-02, HU-13 a HU-20): combina la ocurrencia calculada por el
    * motor (estado, cancelación, fin efectivo), lo que le falta del turno (DNI, observaciones,
-   * temas, auditoría), su finalización si la tiene y su prioridad.
+   * temas, auditoría), la finalización de su hora si la tiene y su prioridad.
+   *
+   * En un recurrente, "Finalizar" y `serie.finalizacion` se resuelven sobre las filas de su serie
+   * que son de la misma hora (todos sus tramos, decisiones T-103 y T-104): la finalización puede
+   * estar registrada en otro tramo de esa hora.
    *
    * `PROFESOR` sólo puede ver el turno si es suyo: si no, 403 con las cuatro acciones en `false`
    * (no se filtra antes: primero hay que saber de quién es el turno, y eso ya resuelve el 404).
@@ -69,8 +73,17 @@ export function crearOcurrenciasService({
     const datos = await repository.buscarDatosAdicionales(turnoId)
     if (!datos) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
 
+    const filasDeLaHora =
+      ocurrencia.tipo === 'RECURRENTE' ? await repository.leerFilasDeLaHora(turnoId) : []
+    const finalizadas = filasDeLaHora.filter((fila) => fila.finalizadaDesde !== null)
+    // Si el propio turno tiene finalización, es la suya; si no, la de otro tramo de su hora.
+    const propia = finalizadas.filter((fila) => fila.turnoId === turnoId)
     const finalizacion =
-      ocurrencia.tipo === 'RECURRENTE' ? await repository.buscarFinalizacion(turnoId) : null
+      finalizadas.length > 0
+        ? await repository.buscarFinalizacion(
+            (propia.length > 0 ? propia : finalizadas).map((fila) => fila.turnoId),
+          )
+        : null
 
     // El motor de T-30 solo trae el id de quién canceló (a diferencia de `alumno`/`profesor`, que
     // ya vienen resueltos): se busca el usuario acá, la única vez que hace falta.
@@ -98,7 +111,16 @@ export function crearOcurrenciasService({
           ) ?? null)
 
     const acciones =
-      actor.role === 'PROFESOR' ? ACCIONES_SIN_PERMISO : calcularAcciones(ocurrencia, fechaHoy)
+      actor.role === 'PROFESOR'
+        ? ACCIONES_SIN_PERMISO
+        : calcularAcciones(
+            ocurrencia,
+            filasDeLaHora.map((fila) => ({
+              fechaFin: fila.fechaFin,
+              finalizada: fila.finalizadaDesde !== null,
+            })),
+            fechaHoy,
+          )
 
     return {
       turnoId: ocurrencia.turnoId,
@@ -159,7 +181,8 @@ export function crearOcurrenciasService({
       tipo: ocurrencia.tipo,
       estado: ocurrencia.estado,
       prioridad,
-      cancelable: calcularAcciones(ocurrencia, fechaHoy).cancelar.habilitada,
+      // Sin las filas de la hora: acá sólo se usa `cancelar`, que no las mira.
+      cancelable: calcularAcciones(ocurrencia, [], fechaHoy).cancelar.habilitada,
     }
   }
 

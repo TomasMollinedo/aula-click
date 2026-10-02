@@ -2,17 +2,22 @@ import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import {
   MENSAJE_FECHA_PASADA,
   nombreDia,
+  type FilaDeSerie,
   type Ocurrencia,
-  type TipoTurno,
 } from '@/server/features/turnos/ocurrencias.condiciones'
 import { diaSemanaISO, sumarDias } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
-import type { PreviaFinalizacion, TramoPosterior } from './finalizaciones.validation'
+import type { OtraHora, PreviaFinalizacion } from './finalizaciones.validation'
 
-// Reglas puras de la finalización (HU-14, T-47): qué turno se puede finalizar, desde qué fecha y
-// qué se libera. Sin Prisma y sin `hoy()` adentro (lo recibe quien llama). Las usan el service
-// (chequeo previo, sin lock) y el repository (con lo releído bajo lock, como callback `verificar`):
-// una sola implementación.
+// Reglas puras de la finalización (HU-14, T-47; por hora desde la decisión T-104): qué se puede
+// finalizar, desde qué fecha y qué se libera. Sin Prisma y sin `hoy()` adentro (lo recibe quien
+// llama). Las usan el service (chequeo previo, sin lock) y el repository (con lo releído bajo lock,
+// como callback `verificar`): una sola implementación.
+//
+// Finalizar actúa sobre el **conjunto**: las filas de la serie del turno pedido (`Turno.serieId`,
+// decisión T-103) que son de su misma hora (`bloqueAgendaId`), en todos sus tramos. Las otras horas
+// de la serie no se finalizan: se informan (`otrasHoras`). Con `serieId` nulo el conjunto es sólo
+// el turno pedido.
 
 export const CODIGO_TURNOS_PAGADOS = 'TURNOS_PAGADOS'
 
@@ -36,38 +41,42 @@ export const mensajeTurnosPagados = (ultimaFechaPagada: string) =>
 export const mensajePagadosHastaElFinal = (ultimaFechaPagada: string) =>
   `Los turnos pagados llegan hasta el final de la serie (${diaMes(ultimaFechaPagada)}): no se puede finalizar`
 
-/** El turno (o tramo) que se quiere finalizar, como está guardado. */
-export type TurnoAFinalizar = {
-  id: number
-  alumnoId: number
-  tipo: TipoTurno
-  /** `Turno.estado = ACTIVO` (un `CANCELADO` es anterior al Sprint 2, decisión T-56). */
-  activo: boolean
-  fechaInicio: string
-  /** La guardada: finalizar no la modifica (definición C). */
-  fechaFin: string | null
-  /** Día de la semana (ISO) de su bloque. */
-  diaSemana: number
-  tieneFinalizacion: boolean
-}
+export type { FilaDeSerie }
 
 /** Lo que las reglas necesitan de una ocurrencia leída por el motor. */
 export type OcurrenciaDeLaSerie = Pick<
   Ocurrencia,
-  'fecha' | 'horaInicio' | 'horaFin' | 'estado'
+  'turnoId' | 'fecha' | 'horaInicio' | 'horaFin' | 'estado'
 > & {
   pago: Pick<Ocurrencia['pago'], 'estado' | 'importeAplicado'>
 }
 
 /**
- * Lo leído para decidir: el turno (`null` si no existe), sus ocurrencias desde la mayor entre hoy y `fechaDesde` hasta su
- * fin (o, sin fin, hasta la última fecha que importa: la del pedido o la del último pago) por
- * fecha, y los tramos posteriores.
+ * Lo leído para decidir: el turno pedido (`null` si no existe), las filas de su serie (todas sus
+ * horas y sus tramos: `leerFilasDeLaSerie`) y las ocurrencias de esas filas desde la mayor entre
+ * hoy y `fechaDesde`, por fecha (las anteriores no se usan: la vigencia sale de `fechaFin`).
  */
 export type SnapshotFinalizacion = {
-  turno: TurnoAFinalizar | null
+  turno: FilaDeSerie | null
+  filas: FilaDeSerie[]
   ocurrencias: OcurrenciaDeLaSerie[]
-  otrosTramos: TramoPosterior[]
+}
+
+/** Las filas de la hora que se finaliza (todos sus tramos), con sus extremos. */
+export type ConjuntoAFinalizar = {
+  turno: FilaDeSerie
+  filas: FilaDeSerie[]
+  /** El menor `fechaInicio` del conjunto. */
+  primerInicio: string
+  /** El mayor `fechaFin` guardado del conjunto; `null` si alguna fila no tiene fin. */
+  ultimoFin: string | null
+}
+
+/** Lo que decide `planificarFinalizacion`: lo que se libera y en qué turnos se registra. */
+export type PlanFinalizacion = {
+  previa: PreviaFinalizacion
+  /** Filas del conjunto con fechas desde `fechaDesde`: cada una lleva su `FinalizacionRecurrencia`. */
+  turnoIds: number[]
 }
 
 function errorDeFecha(mensaje: string): ValidationError {
@@ -75,59 +84,108 @@ function errorDeFecha(mensaje: string): ValidationError {
 }
 
 /**
- * Valida el pedido contra el snapshot y devuelve el turno. Lanza, en este orden (el primero que
- * falla gana):
+ * Valida el pedido contra el snapshot y devuelve el conjunto que se finaliza. Lanza, en este orden
+ * (el primero que falla gana):
  * 1. 404 si el turno no existe.
- * 2. 409 si no es `RECURRENTE`, si no está vigente o si ya tiene una finalización. **Vigente**
- *    acá es `ACTIVO` con `fechaFin` nula o `>= hoy`: el criterio con el que el detalle (T-43)
- *    muestra "Finalizar", no la regla completa de T-52 (una serie con todas sus fechas restantes
- *    canceladas se puede finalizar igual).
- * 3. 400 en `["fechaDesde"]` si es anterior a hoy, no cae en el día de la serie, no es posterior a
- *    `fechaInicio` o es posterior a `fechaFin`. Pasado esto, `fechaDesde` es una fecha de la serie.
+ * 2. 409 si no es `RECURRENTE`, si no está vigente o si ya está finalizado, **sobre el conjunto**:
+ *    - **Vigente** es que el turno pedido esté `ACTIVO` y alguna fila del conjunto tenga `fechaFin`
+ *      nula o `>= hoy`: el criterio con el que el detalle (T-43) muestra "Finalizar" (decisión
+ *      T-75), no la regla completa de T-52 (una serie con todas sus fechas restantes canceladas se
+ *      puede finalizar igual).
+ *    - **Ya finalizado** es que alguna fila del conjunto tenga finalización.
+ * 3. 400 en `["fechaDesde"]` si es anterior a hoy, no cae en el día de la serie, no es posterior al
+ *    primer inicio del conjunto o es posterior a su último fin. Una fecha que cae en un hueco entre
+ *    dos tramos es válida: se liberan las que siguen.
  */
 export function validarFinalizacion(
   snapshot: SnapshotFinalizacion,
   fechaDesde: string,
   fechaHoy: string,
-): TurnoAFinalizar {
+): ConjuntoAFinalizar {
   const { turno } = snapshot
   if (!turno) throw new NotFoundError(MENSAJE_TURNO_NO_ENCONTRADO)
 
   if (turno.tipo !== 'RECURRENTE') throw new ConflictError(MENSAJE_NO_RECURRENTE)
-  if (!turno.activo || (turno.fechaFin !== null && turno.fechaFin < fechaHoy)) {
-    throw new ConflictError(MENSAJE_NO_VIGENTE)
+  const filas = snapshot.filas.filter((fila) => fila.bloqueAgendaId === turno.bloqueAgendaId)
+  const vigente = filas.some((fila) => fila.fechaFin === null || fila.fechaFin >= fechaHoy)
+  if (!turno.activo || !vigente) throw new ConflictError(MENSAJE_NO_VIGENTE)
+  if (filas.some((fila) => fila.finalizadaDesde !== null)) {
+    throw new ConflictError(MENSAJE_YA_FINALIZADO)
   }
-  if (turno.tieneFinalizacion) throw new ConflictError(MENSAJE_YA_FINALIZADO)
+
+  const primerInicio = filas.reduce((min, f) => (f.fechaInicio < min ? f.fechaInicio : min), '9999')
+  const ultimoFin = filas.reduce<string | null>(
+    (max, f) => (max === null || f.fechaFin === null ? null : f.fechaFin > max ? f.fechaFin : max),
+    '',
+  )
 
   if (fechaDesde < fechaHoy) throw errorDeFecha(MENSAJE_FECHA_PASADA)
   if (diaSemanaISO(fechaDesde) !== turno.diaSemana) {
     throw errorDeFecha(mensajeOtroDia(turno.diaSemana))
   }
-  if (fechaDesde <= turno.fechaInicio) {
-    throw errorDeFecha(mensajeNoPosteriorAlInicio(turno.fechaInicio))
+  if (fechaDesde <= primerInicio) throw errorDeFecha(mensajeNoPosteriorAlInicio(primerInicio))
+  if (ultimoFin !== null && fechaDesde > ultimoFin) {
+    throw errorDeFecha(mensajePosteriorAlFin(ultimoFin))
   }
-  if (turno.fechaFin !== null && fechaDesde > turno.fechaFin) {
-    throw errorDeFecha(mensajePosteriorAlFin(turno.fechaFin))
-  }
-  return turno
+  return { turno, filas, primerInicio, ultimoFin }
 }
 
 /**
- * Qué se libera al finalizar desde `fechaDesde` (ya validada):
+ * Las otras horas de la serie que siguen agendadas desde `fechaDesde`: una por hora
+ * (`bloqueAgendaId`) distinta de la que se finaliza, si ninguna de sus filas tiene finalización y
+ * alguna tiene una ocurrencia desde `fechaDesde`. Cada una lleva esa primera ocurrencia
+ * (`turnoId` + `fecha`), que es la que abre su detalle. Una hora que termina antes de `fechaDesde`
+ * no se informa: no queda nada que avisar. Por hora de inicio.
+ */
+function otrasHorasDe(snapshot: SnapshotFinalizacion, conjunto: ConjuntoAFinalizar): OtraHora[] {
+  const finalizadas = new Set(
+    snapshot.filas.filter((f) => f.finalizadaDesde !== null).map((f) => f.bloqueAgendaId),
+  )
+  const horaDe = new Map(snapshot.filas.map((fila) => [fila.turnoId, fila.bloqueAgendaId]))
+  // Las ocurrencias vienen por fecha (y ya son `>= fechaDesde`): la primera de cada hora gana.
+  const primeras = new Map<number, OcurrenciaDeLaSerie>()
+  for (const ocurrencia of snapshot.ocurrencias) {
+    const hora = horaDe.get(ocurrencia.turnoId)
+    if (
+      hora === undefined ||
+      hora === conjunto.turno.bloqueAgendaId ||
+      finalizadas.has(hora) ||
+      primeras.has(hora)
+    ) {
+      continue
+    }
+    primeras.set(hora, ocurrencia)
+  }
+  return [...primeras.values()]
+    .sort((a, b) => a.horaInicio - b.horaInicio || a.turnoId - b.turnoId)
+    .map((o) => ({
+      turnoId: o.turnoId,
+      fecha: o.fecha,
+      horaInicio: minutosAHora(o.horaInicio),
+      horaFin: minutosAHora(o.horaFin),
+    }))
+}
+
+/**
+ * Qué se libera al finalizar la hora desde `fechaDesde` (ya validada), contando **todos los tramos
+ * del conjunto**:
  * - `cantidad`: las ocurrencias no canceladas (las canceladas ya están libres) desde `fechaDesde`;
- *   `null` si la serie no tiene fin.
- * - `desde` = `fechaDesde`; `hasta` = la última ocurrencia de la serie, o `null` si no tiene fin.
- * - `pagadas`: las pagadas desde `fechaDesde` (definición D), `ultimaFechaPagada` y
- *   `fechaDesdeMinima` (la ocurrencia siguiente a la última pagada; `null` si no hay pagadas o si
- *   esa fecha ya pasa el fin de la serie: no queda ninguna fecha para elegir).
+ *   `null` si algún tramo no tiene fin.
+ * - `desde` = `fechaDesde`; `hasta` = la última ocurrencia del conjunto, o `null` si no tiene fin.
+ * - `pagadas`: las pagadas desde `fechaDesde`, de cualquier tramo (definición D),
+ *   `ultimaFechaPagada` y `fechaDesdeMinima` (la semana siguiente a la última pagada; `null` si no
+ *   hay pagadas o si esa fecha ya pasa el último fin: no queda ninguna fecha para elegir).
+ * - `otrasHoras`: ver `otrasHorasDe`.
  */
 export function armarPrevia(
   snapshot: SnapshotFinalizacion,
-  turno: TurnoAFinalizar,
+  conjunto: ConjuntoAFinalizar,
   fechaDesde: string,
 ): PreviaFinalizacion {
-  const liberadas = snapshot.ocurrencias.filter((o) => o.fecha >= fechaDesde)
-  const sinFin = turno.fechaFin === null
+  const ids = new Set(conjunto.filas.map((fila) => fila.turnoId))
+  const liberadas = snapshot.ocurrencias.filter((o) => ids.has(o.turnoId) && o.fecha >= fechaDesde)
+  const { ultimoFin } = conjunto
+  const sinFin = ultimoFin === null
   const pagadas = liberadas
     .filter((o) => o.pago.estado === 'PAGADO')
     .map((o) => ({
@@ -146,24 +204,26 @@ export function armarPrevia(
     pagadas,
     ultimaFechaPagada,
     fechaDesdeMinima:
-      siguiente && (turno.fechaFin === null || siguiente <= turno.fechaFin) ? siguiente : null,
-    otrosTramos: snapshot.otrosTramos,
+      siguiente && (ultimoFin === null || siguiente <= ultimoFin) ? siguiente : null,
+    otrasHoras: otrasHorasDe(snapshot, conjunto),
   }
 }
 
 /**
- * Decide una finalización: `validarFinalizacion` y, si hay ocurrencias pagadas desde `fechaDesde`,
- * 409 `TURNOS_PAGADOS` con `details` `{ ultimaFechaPagada, fechaDesdeMinima, pagadas }` (no se
- * anulan pagos: hay que elegir una fecha posterior al último pagado). Si no lanza, devuelve la
- * previa, que es lo que se libera.
+ * Decide una finalización: `validarFinalizacion` y, si hay ocurrencias pagadas desde `fechaDesde`
+ * en cualquier tramo del conjunto, 409 `TURNOS_PAGADOS` con `details`
+ * `{ ultimaFechaPagada, fechaDesdeMinima, pagadas }` (no se anulan pagos: hay que elegir una fecha
+ * posterior al último pagado). Si no lanza, devuelve la previa (lo que se libera) y los turnos que
+ * llevan la finalización: las filas del conjunto con alguna fecha desde `fechaDesde` (`fechaFin`
+ * nula o `>= fechaDesde`). Un tramo que termina antes no cambia.
  */
 export function planificarFinalizacion(
   snapshot: SnapshotFinalizacion,
   fechaDesde: string,
   fechaHoy: string,
-): PreviaFinalizacion {
-  const turno = validarFinalizacion(snapshot, fechaDesde, fechaHoy)
-  const previa = armarPrevia(snapshot, turno, fechaDesde)
+): PlanFinalizacion {
+  const conjunto = validarFinalizacion(snapshot, fechaDesde, fechaHoy)
+  const previa = armarPrevia(snapshot, conjunto, fechaDesde)
   const { ultimaFechaPagada, fechaDesdeMinima, pagadas } = previa
   if (ultimaFechaPagada !== null) {
     throw new ConflictError(
@@ -173,5 +233,10 @@ export function planificarFinalizacion(
       { code: CODIGO_TURNOS_PAGADOS, details: { ultimaFechaPagada, fechaDesdeMinima, pagadas } },
     )
   }
-  return previa
+  return {
+    previa,
+    turnoIds: conjunto.filas
+      .filter((fila) => fila.fechaFin === null || fila.fechaFin >= fechaDesde)
+      .map((fila) => fila.turnoId),
+  }
 }

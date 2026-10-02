@@ -125,10 +125,18 @@ export type PlanReprogramacion = {
     bloqueAgendaId?: number
     fechaInicio?: string
     fechaFin?: string | null
+    /** `null` cuando el original pasa a sesión única: deja de ser parte de una serie (T-103). */
+    serieId?: null
   }
-  /** Tramo `RECURRENTE` nuevo (mismo bloque que el original), o `null`. */
-  tramoNuevo: { fechaInicio: string; fechaFin: string | null } | null
-  /** `SESION_UNICA` nueva en el destino con la fecha movida; `false` si se edita el original. */
+  /**
+   * Tramo `RECURRENTE` nuevo (mismo bloque que el original), o `null`. Hereda el `serieId` del
+   * original (decisión T-103; `null` si el original no lo tiene).
+   */
+  tramoNuevo: { fechaInicio: string; fechaFin: string | null; serieId: string | null } | null
+  /**
+   * `SESION_UNICA` nueva en el destino con la fecha movida (sin `serieId`: queda fuera de la
+   * serie); `false` si se edita el original.
+   */
   sesionNueva: boolean
   /** La `FinalizacionRecurrencia` del original pasa al tramo nuevo. */
   finalizacionAlTramo: boolean

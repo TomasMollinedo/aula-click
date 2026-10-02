@@ -3,6 +3,7 @@ import {
   bloquearAlumno,
   bloquearParaReserva,
   claveOcupacion,
+  leerFilasDeLaSerie,
   leerOcurrencias,
   materiasDelProfesorConAlumno,
   ocupacionEn,
@@ -10,7 +11,12 @@ import {
   superposicionesDelAlumno,
   type ClienteOcurrencias,
 } from '../ocurrencias.condiciones'
-import { crearTurnosEnMemoria, type BloqueDePrueba, type TurnoDePrueba } from './turnos-en-memoria'
+import {
+  crearTurnosEnMemoria,
+  d,
+  type BloqueDePrueba,
+  type TurnoDePrueba,
+} from './turnos-en-memoria'
 
 // Motor de ocurrencias (T-30). Excepcional, a nivel de consulta (como el test de T-23): el cliente
 // es un falso que aplica el `where` sobre una tabla en memoria (`turnos-en-memoria.ts`), así se
@@ -101,7 +107,7 @@ describe('leerOcurrencias', () => {
       tipo: 'RECURRENTE',
       estado: 'AGENDADO',
       pago: { estado: 'PENDIENTE' },
-      serie: { fechaInicio: '2026-10-05', fechaFin: null, finEfectivo: null },
+      serie: { serieId: null, fechaInicio: '2026-10-05', fechaFin: null, finEfectivo: null },
       alumno: {
         id: 12,
         nombre: 'Alumno12',
@@ -187,10 +193,42 @@ describe('leerOcurrencias', () => {
 
     expect(ocurrencias.map((o) => o.fecha)).toEqual(['2026-09-28', '2026-10-05', '2026-10-12'])
     expect(ocurrencias[0]?.serie).toEqual({
+      serieId: null,
       fechaInicio: '2026-09-28',
       fechaFin: null,
       finEfectivo: '2026-10-18',
     })
+  })
+
+  it('expone el serieId de la fila: los tramos y las horas de un alta lo comparten (T-103)', async () => {
+    const SERIE = '11111111-1111-4111-8111-111111111111'
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        serieId: SERIE,
+        fechaInicio: '2026-10-05',
+        fechaFin: '2026-10-05',
+      },
+      { id: 2, bloqueAgendaId: 10, serieId: SERIE, fechaInicio: '2026-10-19', fechaFin: null },
+      { id: 3, bloqueAgendaId: 11, serieId: SERIE, fechaInicio: '2026-10-05', fechaFin: null },
+      { id: 4, bloqueAgendaId: 20, fechaInicio: '2026-10-05', fechaFin: null }, // sin serie
+    ]
+    turnos[0] = { ...turnos[0], tipo: 'RECURRENTE' } as TurnoDePrueba
+
+    const ocurrencias = await leerOcurrencias(
+      cliente(),
+      { desde: '2026-10-05', hasta: '2026-10-19' },
+      reloj,
+    )
+
+    const porTurno = new Map(ocurrencias.map((o) => [o.turnoId, o.serie.serieId]))
+    expect([...porTurno]).toEqual([
+      [1, SERIE],
+      [4, null],
+      [3, SERIE],
+      [2, SERIE],
+    ])
   })
 
   it('finalización con fechaFin anterior a fechaDesde: manda fechaFin', async () => {
@@ -428,6 +466,7 @@ describe('superposicionesDelAlumno', () => {
 
     expect(fechasDe(choques)).toEqual([[1, '2026-10-19']])
     expect(choques[0]?.serie).toEqual({
+      serieId: null,
       fechaInicio: '2026-10-05',
       fechaFin: null,
       finEfectivo: null,
@@ -533,6 +572,111 @@ describe('materiasDelProfesorConAlumno', () => {
       },
       select: { id: true, nombre: true },
       orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+    })
+  })
+})
+
+describe('leerFilasDeLaSerie', () => {
+  const SERIE = '11111111-1111-4111-8111-111111111111'
+  const findUnique = vi.fn()
+  const findMany = vi.fn()
+  const clienteDeFilas = () =>
+    ({ turno: { findUnique, findMany } }) as unknown as ClienteOcurrencias
+
+  /** Una fila `turno` como la devuelve Prisma con el select de la lectura. */
+  const fila = (parcial: Record<string, unknown> = {}) => ({
+    id: 41,
+    serieId: SERIE,
+    bloqueAgendaId: 10,
+    alumnoId: 12,
+    tipo: 'RECURRENTE',
+    estado: 'ACTIVO',
+    fechaInicio: d('2026-10-05'),
+    fechaFin: d('2026-10-19'),
+    bloqueAgenda: { diaSemana: 1, horaInicio: 540, horaFin: 600 },
+    finalizacion: null,
+    ...parcial,
+  })
+
+  beforeEach(() => {
+    findUnique.mockReset()
+    findMany.mockReset()
+  })
+
+  it('turno inexistente: null, sin más consultas', async () => {
+    findUnique.mockResolvedValue(null)
+
+    expect(await leerFilasDeLaSerie(clienteDeFilas(), 99)).toBeNull()
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  it('con serieId: el turno y los RECURRENTE ACTIVO de su serie (todas sus horas y tramos)', async () => {
+    findUnique.mockResolvedValue(fila())
+    findMany.mockResolvedValue([
+      fila(),
+      fila({
+        id: 58,
+        fechaInicio: d('2026-11-02'),
+        fechaFin: null,
+        finalizacion: { fechaDesde: d('2026-11-16') },
+      }),
+      fila({
+        id: 42,
+        bloqueAgendaId: 11,
+        bloqueAgenda: { diaSemana: 1, horaInicio: 600, horaFin: 660 },
+      }),
+    ])
+
+    const serie = await leerFilasDeLaSerie(clienteDeFilas(), 41)
+
+    expect(findUnique.mock.calls[0]?.[0].where).toEqual({ id: 41 })
+    expect(findMany.mock.calls[0]?.[0]).toMatchObject({
+      where: { serieId: SERIE, tipo: 'RECURRENTE', estado: 'ACTIVO' },
+      orderBy: [{ bloqueAgenda: { horaInicio: 'asc' } }, { fechaInicio: 'asc' }, { id: 'asc' }],
+    })
+    expect(serie?.turno).toEqual({
+      turnoId: 41,
+      serieId: SERIE,
+      bloqueAgendaId: 10,
+      alumnoId: 12,
+      tipo: 'RECURRENTE',
+      activo: true,
+      fechaInicio: '2026-10-05',
+      fechaFin: '2026-10-19',
+      diaSemana: 1,
+      horaInicio: 540,
+      horaFin: 600,
+      finalizadaDesde: null,
+    })
+    expect(
+      serie?.filas.map((f) => [f.turnoId, f.bloqueAgendaId, f.fechaFin, f.finalizadaDesde]),
+    ).toEqual([
+      [41, 10, '2026-10-19', null],
+      [58, 10, null, '2026-11-16'],
+      [42, 11, '2026-10-19', null],
+    ])
+  })
+
+  it('serieId nulo: la serie es sólo ese turno, en una sola consulta', async () => {
+    findUnique.mockResolvedValue(fila({ serieId: null }))
+
+    const serie = await leerFilasDeLaSerie(clienteDeFilas(), 41)
+
+    expect(serie?.filas).toEqual([serie?.turno])
+    expect(findMany).not.toHaveBeenCalled()
+  })
+
+  it('una sesión única, o un turno CANCELADO, sin serieId: se devuelve el turno y ninguna fila', async () => {
+    findUnique.mockResolvedValue(fila({ serieId: null, tipo: 'SESION_UNICA' }))
+    expect(await leerFilasDeLaSerie(clienteDeFilas(), 41)).toMatchObject({
+      turno: { tipo: 'SESION_UNICA' },
+      filas: [],
+    })
+
+    findUnique.mockResolvedValue(fila({ serieId: null, estado: 'CANCELADO' }))
+    expect(await leerFilasDeLaSerie(clienteDeFilas(), 41)).toMatchObject({
+      turno: { activo: false },
+      filas: [],
     })
   })
 })

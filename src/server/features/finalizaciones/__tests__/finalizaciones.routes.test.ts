@@ -28,19 +28,26 @@ const HOY = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Argentina/Salt
 const body = { turnoId: 41, fechaDesde: HOY, motivo: 'CANCELACION_ALUMNO', detalle: 'Se muda' }
 
 function snapshot(pago: Record<string, unknown> = { estado: 'PENDIENTE' }) {
+  const turno = {
+    turnoId: 41,
+    serieId: null,
+    bloqueAgendaId: 7,
+    alumnoId: 12,
+    tipo: 'RECURRENTE',
+    activo: true,
+    fechaInicio: sumarDias(HOY, -7),
+    fechaFin: null,
+    diaSemana: diaSemanaISO(HOY),
+    horaInicio: 540,
+    horaFin: 600,
+    finalizadaDesde: null,
+  }
   return {
-    turno: {
-      id: 41,
-      alumnoId: 12,
-      tipo: 'RECURRENTE',
-      activo: true,
-      fechaInicio: sumarDias(HOY, -7),
-      fechaFin: null,
-      diaSemana: diaSemanaISO(HOY),
-      tieneFinalizacion: false,
-    },
-    ocurrencias: [{ fecha: HOY, horaInicio: 540, horaFin: 600, estado: 'AGENDADO', pago }],
-    otrosTramos: [],
+    turno,
+    filas: [turno],
+    ocurrencias: [
+      { turnoId: 41, fecha: HOY, horaInicio: 540, horaFin: 600, estado: 'AGENDADO', pago },
+    ],
   }
 }
 
@@ -102,7 +109,7 @@ describe('GET /finalizaciones/previa', () => {
       pagadas: [],
       ultimaFechaPagada: null,
       fechaDesdeMinima: null,
-      otrosTramos: [],
+      otrasHoras: [],
     })
     expect(repository.leerSnapshot.mock.calls[0]?.slice(0, 2)).toEqual([41, HOY])
   })
@@ -139,7 +146,7 @@ describe('GET /finalizaciones/previa', () => {
   })
 
   it('turno inexistente → 404 NO_ENCONTRADO', async () => {
-    repository.leerSnapshot.mockResolvedValue({ turno: null, ocurrencias: [], otrosTramos: [] })
+    repository.leerSnapshot.mockResolvedValue({ turno: null, filas: [], ocurrencias: [] })
 
     const res = await previa()
 

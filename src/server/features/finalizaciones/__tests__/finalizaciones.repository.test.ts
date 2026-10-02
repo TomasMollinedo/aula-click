@@ -2,14 +2,14 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ConflictError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { finalizacionesRepository } from '../finalizaciones.repository'
-import type { SnapshotFinalizacion } from '../finalizaciones.reglas'
-import type { EntradaFinalizacion, PreviaFinalizacion } from '../finalizaciones.validation'
+import type { PlanFinalizacion, SnapshotFinalizacion } from '../finalizaciones.reglas'
+import type { EntradaFinalizacion } from '../finalizaciones.validation'
 
 // Excepcional (arquitectura-backend.md → Tests): fija invariantes de atomicidad de la finalización
 // que el service no puede observar (T-47): el lock del alumno es lo primero de la transacción, si
-// `verificar` lanza no se escribe nada, nunca se modifica `Turno` y la P2002 del único se traduce.
-// Sin base: Prisma se reemplaza por un mock con `vi.hoisted`, y el error conocido de Prisma por
-// una clase equivalente.
+// `verificar` lanza no se escribe nada, nunca se modifica `Turno`, se inserta una finalización por
+// cada turno del plan y la P2002 del único se traduce. Sin base: Prisma se reemplaza por un mock
+// con `vi.hoisted`, y el error conocido de Prisma por una clase equivalente.
 
 const {
   transaction,
@@ -18,7 +18,8 @@ const {
   turnoFindMany,
   turnoUpdate,
   turnoUpdateMany,
-  finalizacionCreate,
+  pagoFindFirst,
+  finalizacionCreateMany,
   ErrorConocido,
 } = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -27,7 +28,8 @@ const {
   turnoFindMany: vi.fn(),
   turnoUpdate: vi.fn(),
   turnoUpdateMany: vi.fn(),
-  finalizacionCreate: vi.fn(),
+  pagoFindFirst: vi.fn(),
+  finalizacionCreateMany: vi.fn(),
   ErrorConocido: class extends Error {
     readonly code = 'P2002'
   },
@@ -47,26 +49,43 @@ const tx = {
     update: turnoUpdate,
     updateMany: turnoUpdateMany,
   },
-  finalizacionRecurrencia: { create: finalizacionCreate },
+  pagoTurno: { findFirst: pagoFindFirst },
+  finalizacionRecurrencia: { createMany: finalizacionCreateMany },
 }
 
 const fecha = (iso: string) => new Date(`${iso}T00:00:00.000Z`)
+const SERIE = '11111111-1111-4111-8111-111111111111'
 
+/** Una fila `turno` como la lee `leerFilasDeLaSerie` del motor. */
 function filaTurno(parcial: Record<string, unknown> = {}) {
   return {
     id: 41,
-    alumnoId: 12,
-    materiaId: 3,
+    serieId: null,
     bloqueAgendaId: 7,
+    alumnoId: 12,
     tipo: 'RECURRENTE',
     estado: 'ACTIVO',
     fechaInicio: fecha('2026-10-05'),
     fechaFin: fecha('2026-11-30'),
-    bloqueAgenda: { diaSemana: 1 },
+    bloqueAgenda: { diaSemana: 1, horaInicio: 540, horaFin: 600 },
     finalizacion: null,
-    pagoTurnos: [],
     ...parcial,
   }
+}
+
+const filaLeida = {
+  turnoId: 41,
+  serieId: null,
+  bloqueAgendaId: 7,
+  alumnoId: 12,
+  tipo: 'RECURRENTE',
+  activo: true,
+  fechaInicio: '2026-10-05',
+  fechaFin: '2026-11-30',
+  diaSemana: 1,
+  horaInicio: 540,
+  horaFin: 600,
+  finalizadaDesde: null,
 }
 
 const entrada: EntradaFinalizacion = {
@@ -76,14 +95,17 @@ const entrada: EntradaFinalizacion = {
   motivo: 'OTRO',
   detalle: 'Se muda',
 }
-const plan: PreviaFinalizacion = {
-  cantidad: 7,
-  desde: '2026-10-19',
-  hasta: '2026-11-30',
-  pagadas: [],
-  ultimaFechaPagada: null,
-  fechaDesdeMinima: null,
-  otrosTramos: [],
+const plan: PlanFinalizacion = {
+  previa: {
+    cantidad: 7,
+    desde: '2026-10-19',
+    hasta: '2026-11-30',
+    pagadas: [],
+    ultimaFechaPagada: null,
+    fechaDesdeMinima: null,
+    otrasHoras: [],
+  },
+  turnoIds: [41],
 }
 
 type Where = Record<string, unknown>
@@ -96,12 +118,13 @@ beforeEach(() => {
   queryRaw.mockResolvedValue([])
   turnoFindUnique.mockResolvedValue(filaTurno())
   turnoFindMany.mockResolvedValue([])
-  finalizacionCreate.mockResolvedValue({ id: 1 })
+  pagoFindFirst.mockResolvedValue(null)
+  finalizacionCreateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('finalizar', () => {
   it('bloquea el alumno antes de cualquier lectura, relee e inserta la FinalizacionRecurrencia', async () => {
-    const verificar = vi.fn<(snapshot: SnapshotFinalizacion) => PreviaFinalizacion>(() => plan)
+    const verificar = vi.fn<(snapshot: SnapshotFinalizacion) => PlanFinalizacion>(() => plan)
 
     const res = await finalizacionesRepository.finalizar(entrada, verificar, actor, reloj)
 
@@ -113,34 +136,43 @@ describe('finalizar', () => {
     const lock = queryRaw.mock.invocationCallOrder[0] ?? Infinity
     expect(lock).toBeLessThan(turnoFindUnique.mock.invocationCallOrder[0] ?? -1)
     expect(lock).toBeLessThan(turnoFindMany.mock.invocationCallOrder[0] ?? -1)
+    expect(lock).toBeLessThan(pagoFindFirst.mock.invocationCallOrder[0] ?? -1)
 
     expect(verificar).toHaveBeenCalledWith({
-      turno: {
-        id: 41,
-        alumnoId: 12,
-        tipo: 'RECURRENTE',
-        activo: true,
-        fechaInicio: '2026-10-05',
-        fechaFin: '2026-11-30',
-        diaSemana: 1,
-        tieneFinalizacion: false,
-      },
+      turno: filaLeida,
+      filas: [filaLeida],
       ocurrencias: [],
-      otrosTramos: [],
     })
     expect(verificar.mock.invocationCallOrder[0]).toBeLessThan(
-      finalizacionCreate.mock.invocationCallOrder[0] ?? -1,
+      finalizacionCreateMany.mock.invocationCallOrder[0] ?? -1,
     )
 
-    expect(finalizacionCreate).toHaveBeenCalledWith({
-      data: {
-        turnoId: 41,
-        fechaDesde: fecha('2026-10-19'),
-        motivo: 'OTRO',
-        detalle: 'Se muda',
-        createdById: 'usr_mesa',
-      },
+    expect(finalizacionCreateMany).toHaveBeenCalledWith({
+      data: [
+        {
+          turnoId: 41,
+          fechaDesde: fecha('2026-10-19'),
+          motivo: 'OTRO',
+          detalle: 'Se muda',
+          createdById: 'usr_mesa',
+        },
+      ],
     })
+  })
+
+  it('una FinalizacionRecurrencia por cada turno del plan, con la misma fechaDesde', async () => {
+    await finalizacionesRepository.finalizar(
+      entrada,
+      () => ({ ...plan, turnoIds: [41, 58] }),
+      actor,
+      reloj,
+    )
+
+    const { data } = finalizacionCreateMany.mock.calls[0]?.[0] as {
+      data: { turnoId: number; fechaDesde: Date }[]
+    }
+    expect(data.map((d) => d.turnoId)).toEqual([41, 58])
+    expect(data.every((d) => d.fechaDesde.getTime() === fecha('2026-10-19').getTime())).toBe(true)
   })
 
   it('nunca modifica el turno: fechaFin queda como estaba', async () => {
@@ -163,11 +195,11 @@ describe('finalizar', () => {
         reloj,
       ),
     ).rejects.toBe(error)
-    expect(finalizacionCreate).not.toHaveBeenCalled()
+    expect(finalizacionCreateMany).not.toHaveBeenCalled()
   })
 
   it('P2002 del único de turno_id → 409 "El turno ya fue finalizado"', async () => {
-    finalizacionCreate.mockRejectedValue(new ErrorConocido('Unique constraint failed'))
+    finalizacionCreateMany.mockRejectedValue(new ErrorConocido('Unique constraint failed'))
 
     const error = await finalizacionesRepository
       .finalizar(entrada, () => plan, actor, reloj)
@@ -181,7 +213,7 @@ describe('finalizar', () => {
 
   it('cualquier otro error se propaga tal cual', async () => {
     const original = new Error('boom')
-    finalizacionCreate.mockRejectedValue(original)
+    finalizacionCreateMany.mockRejectedValue(original)
 
     await expect(
       finalizacionesRepository.finalizar(entrada, () => plan, actor, reloj),
@@ -190,40 +222,56 @@ describe('finalizar', () => {
 })
 
 describe('snapshot (releído bajo lock)', () => {
-  it('con fechaFin: lee las ocurrencias del turno desde hoy hasta fechaFin, y los tramos posteriores', async () => {
-    turnoFindMany
-      .mockResolvedValueOnce([])
-      .mockResolvedValueOnce([{ id: 58, fechaInicio: fecha('2026-12-14'), fechaFin: null }])
-    const verificar = vi.fn<(snapshot: SnapshotFinalizacion) => PreviaFinalizacion>(() => plan)
-
-    await finalizacionesRepository.finalizar(entrada, verificar, actor, reloj)
+  it('sin serieId: la serie es sólo el turno; lee sus ocurrencias desde max(hoy, fechaDesde) hasta su fechaFin', async () => {
+    await finalizacionesRepository.finalizar(entrada, () => plan, actor, reloj)
 
     expect(turnoFindUnique).toHaveBeenCalledTimes(1)
-    expect(turnoFindMany).toHaveBeenCalledTimes(2)
-    // 1ª: el motor (`leerOcurrencias`), sólo este turno, en [max(hoy, fechaDesde), fechaFin].
+    // Una sola `findMany`: la del motor (`leerOcurrencias`), sólo este turno.
+    expect(turnoFindMany).toHaveBeenCalledTimes(1)
     expect(whereDe(0).id).toEqual({ in: [41] })
     expect(whereDe(0).fechaInicio).toEqual({ lte: fecha('2026-11-30') })
     expect(whereDe(0).OR).toEqual([{ fechaFin: null }, { fechaFin: { gte: fecha('2026-10-19') } }])
-    // 2ª: los tramos posteriores del mismo alumno, materia y hora, sin finalizar.
-    expect(whereDe(1)).toEqual({
-      tipo: 'RECURRENTE',
-      estado: 'ACTIVO',
-      alumnoId: 12,
-      materiaId: 3,
-      bloqueAgendaId: 7,
-      fechaInicio: { gt: fecha('2026-10-05') },
-      finalizacion: { is: null },
-      OR: [{ fechaFin: null }, { fechaFin: { gte: fecha('2026-10-19') } }],
+    expect(pagoFindFirst).toHaveBeenCalledWith({
+      where: { turnoId: { in: [41] } },
+      orderBy: { fechaOcurrencia: 'desc' },
+      select: { fechaOcurrencia: true },
     })
-    expect(verificar.mock.calls[0]?.[0].otrosTramos).toEqual([
-      { turnoId: 58, fechaInicio: '2026-12-14', fechaFin: null },
+  })
+
+  it('con serieId: lee las filas de la serie (todas sus horas y tramos) y las ocurrencias de todas', async () => {
+    turnoFindUnique.mockResolvedValue(filaTurno({ serieId: SERIE, fechaFin: fecha('2026-10-19') }))
+    turnoFindMany.mockResolvedValueOnce([
+      filaTurno({ serieId: SERIE, fechaFin: fecha('2026-10-19') }),
+      filaTurno({ id: 58, serieId: SERIE, fechaInicio: fecha('2026-11-02') }),
+      filaTurno({
+        id: 42,
+        serieId: SERIE,
+        bloqueAgendaId: 8,
+        bloqueAgenda: { diaSemana: 1, horaInicio: 600, horaFin: 660 },
+        finalizacion: { fechaDesde: fecha('2026-11-16') },
+      }),
+    ])
+    const verificar = vi.fn<(snapshot: SnapshotFinalizacion) => PlanFinalizacion>(() => plan)
+
+    await finalizacionesRepository.finalizar(entrada, verificar, actor, reloj)
+
+    // 1ª: las filas de la serie.
+    expect(whereDe(0)).toEqual({ serieId: SERIE, tipo: 'RECURRENTE', estado: 'ACTIVO' })
+    // 2ª: el motor, con los turnos de la serie, hasta el mayor fin guardado.
+    expect(whereDe(1).id).toEqual({ in: [41, 58, 42] })
+    expect(whereDe(1).fechaInicio).toEqual({ lte: fecha('2026-11-30') })
+    const snapshot = verificar.mock.calls[0]?.[0]
+    expect(snapshot?.turno).toMatchObject({ turnoId: 41, serieId: SERIE, fechaFin: '2026-10-19' })
+    expect(snapshot?.filas.map((f) => [f.turnoId, f.bloqueAgendaId, f.finalizadaDesde])).toEqual([
+      [41, 7, null],
+      [58, 7, null],
+      [42, 8, '2026-11-16'],
     ])
   })
 
   it('sin fin: el horizonte es la fecha del último pago si es posterior a fechaDesde', async () => {
-    turnoFindUnique.mockResolvedValue(
-      filaTurno({ fechaFin: null, pagoTurnos: [{ fechaOcurrencia: fecha('2026-11-09') }] }),
-    )
+    turnoFindUnique.mockResolvedValue(filaTurno({ fechaFin: null }))
+    pagoFindFirst.mockResolvedValue({ fechaOcurrencia: fecha('2026-11-09') })
 
     await finalizacionesRepository.finalizar(entrada, () => plan, actor, reloj)
 
@@ -231,28 +279,46 @@ describe('snapshot (releído bajo lock)', () => {
   })
 
   it('sin fin y sin pagos posteriores: el horizonte es fechaDesde', async () => {
-    turnoFindUnique.mockResolvedValue(
-      filaTurno({ fechaFin: null, pagoTurnos: [{ fechaOcurrencia: fecha('2026-10-05') }] }),
-    )
+    turnoFindUnique.mockResolvedValue(filaTurno({ fechaFin: null }))
+    pagoFindFirst.mockResolvedValue({ fechaOcurrencia: fecha('2026-10-05') })
 
     await finalizacionesRepository.finalizar(entrada, () => plan, actor, reloj)
 
     expect(whereDe(0).fechaInicio).toEqual({ lte: fecha('2026-10-19') })
   })
 
-  it('turno inexistente o ya finalizado: lo ve verificar', async () => {
-    const verificar = vi.fn<(snapshot: SnapshotFinalizacion) => PreviaFinalizacion>(() => plan)
+  it('una fechaDesde lejana en una serie sin fin no expande las semanas intermedias', async () => {
+    turnoFindUnique.mockResolvedValue(filaTurno({ fechaFin: null }))
+
+    await finalizacionesRepository.finalizar(
+      { ...entrada, fechaDesde: '2027-10-04' },
+      () => plan,
+      actor,
+      reloj,
+    )
+
+    // El rango leído es [fechaDesde, fechaDesde]: una sola fecha por turno.
+    expect(whereDe(0).fechaInicio).toEqual({ lte: fecha('2027-10-04') })
+    expect(whereDe(0).OR).toEqual([{ fechaFin: null }, { fechaFin: { gte: fecha('2027-10-04') } }])
+  })
+
+  it('turno inexistente, o que ya no es un recurrente activo: lo ve verificar', async () => {
+    const verificar = vi.fn<(snapshot: SnapshotFinalizacion) => PlanFinalizacion>(() => plan)
 
     turnoFindUnique.mockResolvedValue(null)
     await finalizacionesRepository.finalizar(entrada, verificar, actor, reloj)
-    expect(verificar).toHaveBeenLastCalledWith({ turno: null, ocurrencias: [], otrosTramos: [] })
+    expect(verificar).toHaveBeenLastCalledWith({ turno: null, filas: [], ocurrencias: [] })
     expect(turnoFindMany).not.toHaveBeenCalled()
 
-    turnoFindUnique.mockResolvedValue(filaTurno({ finalizacion: { id: 9 }, tipo: 'SESION_UNICA' }))
+    turnoFindUnique.mockResolvedValue(
+      filaTurno({ tipo: 'SESION_UNICA', finalizacion: { fechaDesde: fecha('2026-11-02') } }),
+    )
     await finalizacionesRepository.finalizar(entrada, verificar, actor, reloj)
-    expect(verificar.mock.lastCall?.[0].turno).toMatchObject({
-      tipo: 'SESION_UNICA',
-      tieneFinalizacion: true,
+    expect(verificar.mock.lastCall?.[0]).toMatchObject({
+      turno: { tipo: 'SESION_UNICA', finalizadaDesde: '2026-11-02' },
+      filas: [],
+      ocurrencias: [],
     })
+    expect(turnoFindMany).not.toHaveBeenCalled()
   })
 })

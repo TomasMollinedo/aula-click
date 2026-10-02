@@ -97,8 +97,17 @@ export type Ocurrencia = {
     createdById: string
     createdAt: string
   }
-  /** La serie (turno o tramo) a la que pertenece: `fechaFin` guardada y su fin efectivo. */
-  serie: { fechaInicio: string; fechaFin: string | null; finEfectivo: string | null }
+  /**
+   * La fila (turno o tramo) a la que pertenece: `fechaFin` guardada, su fin efectivo y el
+   * `serieId` que la agrupa con las otras horas y tramos de su alta (`null` en una sesión única y
+   * en un recurrente anterior a la columna, decisión T-103).
+   */
+  serie: {
+    serieId: string | null
+    fechaInicio: string
+    fechaFin: string | null
+    finEfectivo: string | null
+  }
   /**
    * `busqueda` (de `alumno` y de `profesor`) es un campo **interno**: sólo para filtrar por `q` y
    * ordenar igual que la base (decisión T-54). Nunca viaja en una respuesta.
@@ -235,6 +244,7 @@ function selectSerie(desde: string, hasta: string | null) {
     bloqueAgendaId: true,
     alumnoId: true,
     materiaId: true,
+    serieId: true,
     tipo: true,
     estado: true,
     fechaInicio: true,
@@ -287,6 +297,7 @@ export type Serie = SerieFechas & {
   bloqueAgendaId: number
   alumnoId: number
   materiaId: number
+  serieId: string | null
   tipo: TipoTurno
   fechaFin: string | null
   diaSemana: number
@@ -321,6 +332,7 @@ function aSerie(fila: FilaSerie): Serie {
     bloqueAgendaId: fila.bloqueAgendaId,
     alumnoId: fila.alumnoId,
     materiaId: fila.materiaId,
+    serieId: fila.serieId,
     tipo: fila.tipo,
     estado: fila.estado,
     fechaInicio: dateAFecha(fila.fechaInicio),
@@ -430,6 +442,7 @@ function aOcurrencia(serie: Serie, fecha: string, fechaHoy: string): Ocurrencia 
       : { estado: 'PENDIENTE' },
     ...(cancelacion ? { cancelacion } : {}),
     serie: {
+      serieId: serie.serieId,
       fechaInicio: serie.fechaInicio,
       fechaFin: serie.fechaFin,
       finEfectivo: serie.finEfectivo,
@@ -570,6 +583,90 @@ export async function superposicionesDelAlumno(
       return fecha === null ? [] : [aOcurrencia(serie, fecha, fechaHoy)]
     })
     .sort(porFechaHoraYTurno)
+}
+
+/**
+ * Una fila `turno` con lo que hace falta para operar sobre su serie (decisión T-103): la hora
+ * (`bloqueAgendaId`, en minutos), el rango **guardado** y, si tiene `FinalizacionRecurrencia`, su
+ * `fechaDesde`.
+ */
+export type FilaDeSerie = {
+  turnoId: number
+  serieId: string | null
+  bloqueAgendaId: number
+  alumnoId: number
+  tipo: TipoTurno
+  /** `Turno.estado = ACTIVO` (un `CANCELADO` es anterior al Sprint 2, decisión T-56). */
+  activo: boolean
+  fechaInicio: string
+  fechaFin: string | null
+  diaSemana: number
+  horaInicio: number
+  horaFin: number
+  /** `fechaDesde` de su finalización, o `null` si no tiene. */
+  finalizadaDesde: string | null
+}
+
+const SELECT_FILA_DE_SERIE = {
+  id: true,
+  serieId: true,
+  bloqueAgendaId: true,
+  alumnoId: true,
+  tipo: true,
+  estado: true,
+  fechaInicio: true,
+  fechaFin: true,
+  bloqueAgenda: { select: { diaSemana: true, horaInicio: true, horaFin: true } },
+  finalizacion: { select: { fechaDesde: true } },
+} satisfies Prisma.TurnoSelect
+
+function aFilaDeSerie(
+  fila: Prisma.TurnoGetPayload<{ select: typeof SELECT_FILA_DE_SERIE }>,
+): FilaDeSerie {
+  return {
+    turnoId: fila.id,
+    serieId: fila.serieId,
+    bloqueAgendaId: fila.bloqueAgendaId,
+    alumnoId: fila.alumnoId,
+    tipo: fila.tipo,
+    activo: fila.estado === 'ACTIVO',
+    fechaInicio: dateAFecha(fila.fechaInicio),
+    fechaFin: fila.fechaFin && dateAFecha(fila.fechaFin),
+    diaSemana: fila.bloqueAgenda.diaSemana,
+    horaInicio: fila.bloqueAgenda.horaInicio,
+    horaFin: fila.bloqueAgenda.horaFin,
+    finalizadaDesde: fila.finalizacion && dateAFecha(fila.finalizacion.fechaDesde),
+  }
+}
+
+/**
+ * El turno pedido (de cualquier tipo y estado) y las **filas de su serie** (decisión T-103): los
+ * turnos `RECURRENTE` `ACTIVO` con su mismo `serieId`, de todas sus horas y todos sus tramos, por
+ * hora, fecha de inicio e id. Con `serieId` nulo (sesión única o recurrente anterior a la columna)
+ * la serie es sólo ese turno, si es `RECURRENTE` `ACTIVO`. `null` si el turno no existe.
+ *
+ * No expande nada: las ocurrencias se piden a `leerOcurrencias` con los `turnoIds` de las filas.
+ * Dos consultas (una si `serieId` es nulo). La usan `finalizaciones` y `ocurrencias`.
+ */
+export async function leerFilasDeLaSerie(
+  client: ClienteOcurrencias,
+  turnoId: number,
+): Promise<{ turno: FilaDeSerie; filas: FilaDeSerie[] } | null> {
+  const fila = await client.turno.findUnique({
+    where: { id: turnoId },
+    select: SELECT_FILA_DE_SERIE,
+  })
+  if (!fila) return null
+  const turno = aFilaDeSerie(fila)
+  if (turno.serieId === null) {
+    return { turno, filas: turno.tipo === 'RECURRENTE' && turno.activo ? [turno] : [] }
+  }
+  const filas = await client.turno.findMany({
+    where: { serieId: turno.serieId, tipo: 'RECURRENTE', estado: 'ACTIVO' },
+    select: SELECT_FILA_DE_SERIE,
+    orderBy: [{ bloqueAgenda: { horaInicio: 'asc' } }, { fechaInicio: 'asc' }, { id: 'asc' }],
+  })
+  return { turno, filas: filas.map(aFilaDeSerie) }
 }
 
 /**
