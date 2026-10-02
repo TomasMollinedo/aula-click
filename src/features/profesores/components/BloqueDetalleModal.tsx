@@ -5,9 +5,8 @@ import { format } from 'date-fns'
 import { Pencil } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import { Dato, Datos } from '@/components/ui/datos'
-import { DetalleModal } from '@/components/ui/detalle-modal'
+import { DetalleModal, DetalleModalAccion } from '@/components/ui/detalle-modal'
 import { nombreDiaSemana } from '@/utils/dias-semana'
 import { ApiError } from '@/utils/fetch-json'
 import { rangoHoras } from '@/utils/horas'
@@ -64,12 +63,12 @@ export function BloqueDetalleModal({
       acciones={
         activo &&
         hrefEditar && (
-          <Button size="lg" variant="accent" asChild>
+          <DetalleModalAccion variant="accent" asChild>
             <Link href={hrefEditar} onClick={onEditar} scroll={false}>
               <Pencil />
               Editar
             </Link>
-          </Button>
+          </DetalleModalAccion>
         )
       }
     >

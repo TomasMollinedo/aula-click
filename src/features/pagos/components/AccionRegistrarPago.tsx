@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { type MouseEvent, useEffect, useRef, useState } from 'react'
 import { Banknote } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { DetalleModalAccion } from '@/components/ui/detalle-modal'
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 import type { SolicitudRegistrarPago } from '@/types/pago'
 
@@ -23,18 +23,20 @@ export type AccionRegistrarPagoProps = {
  * oculta, y el paso de éxito (o el rechazo) tiene que seguir en pantalla.
  *
  * Por lo mismo, al cerrarlo el botón que lo abrió puede no existir más y el foco quedaría fuera del
- * detalle: en ese caso va al modal que contiene esta acción (el detalle del turno). Corre después
- * del retorno de foco del `Dialog` (Radix lo hace en un `setTimeout` al desmontarse), así el del
- * botón gana cuando todavía sirve.
+ * detalle: en ese caso va al modal que contiene esta acción (el detalle del turno), que se guarda
+ * al abrir, mientras el botón todavía existe (así esta acción no suma al pie nada más que su
+ * botón). Corre después del retorno de foco del `Dialog` (Radix lo hace en un `setTimeout` al
+ * desmontarse), así el del botón gana cuando todavía sirve.
  */
 export function AccionRegistrarPago({ ocurrencia }: AccionRegistrarPagoProps) {
   const [solicitud, setSolicitud] = useState<Omit<SolicitudRegistrarPago, 'onCerrar'> | null>(null)
   const [cierres, setCierres] = useState(0)
-  // Siempre montado (`display: contents`: no cambia el pie): ubica el modal aunque no haya botón.
-  const anclaRef = useRef<HTMLSpanElement>(null)
+  const modalRef = useRef<HTMLElement | null>(null)
 
-  const abrir = () =>
+  const abrir = (evento: MouseEvent<HTMLButtonElement>) => {
+    modalRef.current = evento.currentTarget.closest<HTMLElement>('[role="dialog"]')
     setSolicitud({ alumnoId: ocurrencia.alumno.id, ocurrencias: [aCobrarDesdeDetalle(ocurrencia)] })
+  }
 
   const cerrar = () => {
     setSolicitud(null)
@@ -46,20 +48,20 @@ export function AccionRegistrarPago({ ocurrencia }: AccionRegistrarPagoProps) {
     const timeout = setTimeout(() => {
       const activo = document.activeElement
       if (activo && activo !== document.body && activo.isConnected) return
-      anclaRef.current?.closest<HTMLElement>('[role="dialog"]')?.focus()
+      modalRef.current?.focus()
     }, 0)
     return () => clearTimeout(timeout)
   }, [cierres])
 
   return (
-    <span ref={anclaRef} className="contents">
+    <>
       {ocurrencia.acciones.registrarPago.visible && (
-        <Button size="lg" onClick={abrir}>
+        <DetalleModalAccion type="button" onClick={abrir}>
           <Banknote />
           Registrar pago
-        </Button>
+        </DetalleModalAccion>
       )}
       {solicitud && <RegistrarPagoDialog {...solicitud} onCerrar={cerrar} />}
-    </span>
+    </>
   )
 }

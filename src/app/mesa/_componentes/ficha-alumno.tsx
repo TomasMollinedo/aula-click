@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 import { AgendaDelAlumno } from '@/features/agendas/components/AgendaDelAlumno'
 import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
@@ -28,10 +29,12 @@ export function FichaAlumno({ alumnoId }: { alumnoId: string }) {
 }
 
 function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
-  // El detalle de un turno abierto desde "Turnos" (`?detalle=&fecha=`): mismo patrón que las
+  // El detalle de un turno abierto desde "Turnos" o "Pagos" (`?detalle=&fecha=`): mismo patrón que las
   // agendas (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia). En el calendario de
   // "Turnos" `?fecha=` es la semana que se ve: al cerrar el detalle se conserva.
   const { detalle, cerrar } = useDetalleEnUrl({ fechaEsDeLaPantalla: true })
+  // Abierto desde "Pagos" (`?tab=pagos`), el detalle solo ofrece "Registrar pago".
+  const enPagos = useSearchParams().get('tab') === 'pagos'
 
   return (
     <>
@@ -64,7 +67,7 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
           />
         )}
       />
-      {detalle && <DetalleTurno {...detalle} onCerrar={cerrar} />}
+      {detalle && <DetalleTurno {...detalle} onCerrar={cerrar} soloPago={enPagos} />}
     </>
   )
 }
