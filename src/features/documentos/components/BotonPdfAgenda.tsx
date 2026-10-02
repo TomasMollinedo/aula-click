@@ -21,10 +21,18 @@ export type BotonPdfAgendaProps = {
  *
  * Sólo se muestra con un profesor elegido en el filtro: la agenda de todo el centro en un día
  * puede tener demasiados turnos para una sola hoja (decisión explícita, no está en el ticket
- * original). El PDF de un turno puntual sigue disponible siempre desde su detalle.
+ * original). El PDF de un turno puntual sigue disponible siempre desde su detalle. Sin profesor
+ * elegido, un aviso explica por qué no está el botón (T-68): sin esto no había forma de saber que
+ * la opción existe.
  */
 export function BotonPdfAgenda({ fecha, filtros }: BotonPdfAgendaProps) {
-  if (filtros.profesorId == null) return null
+  if (filtros.profesorId == null) {
+    return (
+      <p className="text-muted-foreground text-sm">
+        Filtrá por profesor para generar el PDF de su agenda
+      </p>
+    )
+  }
 
   const searchParams = new URLSearchParams({ fecha, profesorId: String(filtros.profesorId) })
   if (filtros.estado) searchParams.set('estado', filtros.estado)
