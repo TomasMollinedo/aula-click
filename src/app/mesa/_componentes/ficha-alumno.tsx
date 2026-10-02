@@ -1,6 +1,7 @@
 'use client'
 
 import { Suspense } from 'react'
+import { useSearchParams } from 'next/navigation'
 
 import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
 import { AccionCancelarVarios } from '@/features/cancelaciones/components/AccionCancelarVarios'
@@ -27,9 +28,11 @@ export function FichaAlumno({ alumnoId }: { alumnoId: string }) {
 }
 
 function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
-  // El detalle de un turno abierto desde "Turnos" (`?detalle=&fecha=`): mismo patrón que las
+  // El detalle de un turno abierto desde "Turnos" o "Pagos" (`?detalle=&fecha=`): mismo patrón que las
   // agendas (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia).
   const { detalle, cerrar } = useDetalleEnUrl()
+  // Abierto desde "Pagos" (`?tab=pagos`), el detalle solo ofrece "Registrar pago".
+  const enPagos = useSearchParams().get('tab') === 'pagos'
 
   return (
     <>
@@ -59,7 +62,7 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
           />
         )}
       />
-      {detalle && <DetalleTurno {...detalle} onCerrar={cerrar} />}
+      {detalle && <DetalleTurno {...detalle} onCerrar={cerrar} soloPago={enPagos} />}
     </>
   )
 }

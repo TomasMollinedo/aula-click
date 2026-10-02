@@ -2,8 +2,9 @@
 
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { CalendarOff } from 'lucide-react'
 
-import { Button } from '@/components/ui/button'
+import { DetalleModalAccion } from '@/components/ui/detalle-modal'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import { useInvalidarOcurrencias } from '@/features/ocurrencias/hooks/use-invalidar-ocurrencias'
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
@@ -17,7 +18,7 @@ export type AccionFinalizarTurnoProps = {
 }
 
 /**
- * "Finalizar turno" en el pie del detalle (HU-14, T-48). Se muestra según
+ * "Finalizar turno recurrente" en el pie del detalle (HU-14, T-48). Se muestra según
  * `ocurrencia.acciones.finalizar.visible`, que calcula la API: nunca con reglas propias.
  *
  * Después de finalizar, si la ocurrencia que muestra el detalle es de la fecha elegida en adelante,
@@ -59,9 +60,10 @@ export function AccionFinalizarTurno({ ocurrencia }: AccionFinalizarTurnoProps) 
 
   return (
     <>
-      <Button type="button" variant="outline" onClick={() => setAbierto(true)}>
-        Finalizar turno
-      </Button>
+      <DetalleModalAccion type="button" variant="outline" onClick={() => setAbierto(true)}>
+        <CalendarOff />
+        Finalizar turno recurrente
+      </DetalleModalAccion>
       <FinalizarTurnoDialog
         open={abierto}
         ocurrencia={ocurrencia}
