@@ -4,6 +4,7 @@ import { type ReactNode, useMemo, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { AlertCircle, CalendarX2 } from 'lucide-react'
 
+import { EstadoPagoBadge } from '@/components/turno/estado-pago-badge'
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -28,7 +29,7 @@ import { rangoHoras } from '@/utils/horas'
 import { useDetalleEnUrl } from '../hooks/use-detalle-en-url'
 import { useOcurrenciasDelAlumno } from '../hooks/use-ocurrencias-del-alumno'
 
-const COLUMNAS = 6
+const COLUMNAS = 7
 
 /** Clave de una ocurrencia en la selección: `turnoId` se repite entre fechas de un recurrente. */
 function clave(o: OcurrenciaDeAlumno): string {
@@ -50,8 +51,8 @@ export type TurnosDelAlumnoProps = {
 
 /**
  * Pestaña "Turnos" de la ficha del alumno (HU-02): sus ocurrencias, con casilla de selección en
- * las `cancelable` y clic para abrir el detalle. Sin columna de pago: T-43 no tiene de dónde
- * traerlo todavía (docs/contrato-api.md → Ocurrencias).
+ * las `cancelable` (lo decide la API: una pagada no se puede tildar) y clic para abrir el detalle.
+ * El estado de pago es el de la API; en una cancelada no se muestra.
  */
 export function TurnosDelAlumno({ alumnoId, renderAccionesSeleccion }: TurnosDelAlumnoProps) {
   const { data, isLoading, isError, error, refetch } = useOcurrenciasDelAlumno({ alumnoId })
@@ -127,6 +128,7 @@ export function TurnosDelAlumno({ alumnoId, renderAccionesSeleccion }: TurnosDel
               <TableHead>Materia</TableHead>
               <TableHead>Profesor</TableHead>
               <TableHead className="w-32">Estado</TableHead>
+              <TableHead className="w-28">Pago</TableHead>
               <TableHead className="w-40">Prioridad</TableHead>
             </TableRow>
           </TableHeader>
@@ -168,6 +170,19 @@ export function TurnosDelAlumno({ alumnoId, renderAccionesSeleccion }: TurnosDel
                   </TableCell>
                   <TableCell>
                     <EstadoTurnoBadge estado={turno.estado} />
+                  </TableCell>
+                  <TableCell>
+                    {/* Una cancelada nunca se cobró (la API manda PENDIENTE): "Pendiente" confundiría. */}
+                    {turno.estado === 'CANCELADO' ? (
+                      <span
+                        className="text-muted-foreground"
+                        aria-label="Sin pago: turno cancelado"
+                      >
+                        —
+                      </span>
+                    ) : (
+                      <EstadoPagoBadge estado={turno.estadoPago} />
+                    )}
                   </TableCell>
                   <TableCell>
                     {turno.prioridad && (

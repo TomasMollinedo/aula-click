@@ -10,11 +10,12 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { SolicitudRegistrarPago } from '@/types/pago'
 import { cn } from '@/utils/cn'
 
-import { type FilaDeCuenta, aCobrar } from '../a-cobrar'
+import type { FilaDeCuenta } from '../a-cobrar'
 import { interpretarErrorCuenta } from '../errores-cuentas'
 import { type FiltrosCuenta as Filtros, aParams, hayFiltros } from '../filtros-cuenta'
 import { avisoDelTope, etiquetaTotal, textoFiltrosActivos, textoSinFilas } from '../formato-cuentas'
 import { useCuentaDelAlumno } from '../hooks/use-cuenta-del-alumno'
+import { useDetalleDeCuenta } from '../hooks/use-detalle-de-cuenta'
 import { useDialogoDePago } from '../hooks/use-dialogo-de-pago'
 import { useFiltrosCuenta } from '../hooks/use-filtros-cuenta'
 import { useNombresDeFiltros } from '../hooks/use-nombres-de-filtros'
@@ -48,6 +49,9 @@ export type PagosDelAlumnoProps = {
  * profesor, en la URL junto a `?tab=pagos`), y turnos adeudados y próximos con una sola selección
  * para cobrarlos juntos. Importes, totales y qué sección aplica al período los manda la API: una
  * sección que llega `null` no se muestra; el cliente solo suma lo tildado (`resumenSeleccion`).
+ *
+ * Un turno solo se cobra desde su detalle ("Ver detalle" de la fila); "Registrar pago" de la barra
+ * cobra lo tildado, sin pasar por el detalle.
  *
  * **Filtrar es podar:** la selección se poda contra la cuenta que se ve (lo cobrado, lo cancelado
  * y lo que un filtro saca de la vista salen de ella, porque no se cobra lo que no se ve), pero solo
@@ -94,10 +98,13 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
     alCerrar: () => {},
   })
 
+  // "Ver detalle" de una fila: el detalle lo monta `app/` para toda la ficha (el mismo que abre la
+  // pestaña "Turnos"); acá solo se abre. Lo que se haga adentro invalida la cuenta, y la poda saca
+  // de la selección lo que ya no esté.
+  const { abrir: verDetalle } = useDetalleDeCuenta({ refugioRef })
+
   const error = query.isError ? interpretarErrorCuenta(query.error) : null
   const alternarFila = (fila: FilaDeCuenta) => setSeleccion((actual) => alternar(actual, fila))
-  const cobrarFila = (fila: FilaDeCuenta, boton: HTMLButtonElement) =>
-    abrirDialogo({ alumnoId, ocurrencias: [aCobrar(fila)] }, boton)
 
   return (
     <div className="space-y-6">
@@ -188,7 +195,7 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
                       conEstado
                       seleccion={seleccion}
                       onAlternar={alternarFila}
-                      onCobrar={cobrarFila}
+                      onVerDetalle={verDetalle}
                       enEspera={enEspera}
                     />
                   )}
@@ -212,7 +219,7 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
                       filas={cuenta.proximos}
                       seleccion={seleccion}
                       onAlternar={alternarFila}
-                      onCobrar={cobrarFila}
+                      onVerDetalle={verDetalle}
                       enEspera={enEspera}
                     />
                   )}

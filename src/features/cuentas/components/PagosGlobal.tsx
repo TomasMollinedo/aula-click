@@ -10,10 +10,11 @@ import { PaginationControls } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useToast } from '@/hooks/use-toast'
 import type { PaginatedResponse } from '@/types'
+import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
 import type { SolicitudRegistrarPago } from '@/types/pago'
 import { cn } from '@/utils/cn'
 
-import { type FilaDeCuenta, aCobrar } from '../a-cobrar'
+import type { FilaDeCuenta } from '../a-cobrar'
 import type { OcurrenciaDeCuentaGlobal } from '../cuentas.types'
 import { interpretarErrorCuenta } from '../errores-cuentas'
 import {
@@ -25,6 +26,7 @@ import {
 } from '../filtros-cuenta'
 import { avisoDelTope, etiquetaTotal, textoFiltrosActivos, textoSinFilas } from '../formato-cuentas'
 import { useAdeudados } from '../hooks/use-adeudados'
+import { useDetalleDeCuenta } from '../hooks/use-detalle-de-cuenta'
 import { type AperturaDePago, useDialogoDePago } from '../hooks/use-dialogo-de-pago'
 import { useFiltrosCuenta } from '../hooks/use-filtros-cuenta'
 import { useNombresDeFiltros } from '../hooks/use-nombres-de-filtros'
@@ -53,6 +55,11 @@ export type PagosGlobalProps = {
    * necesita `RegistrarPagoDialog`.
    */
   renderRegistrarPago: (pago: SolicitudRegistrarPago) => ReactNode
+  /**
+   * El detalle de un turno ("Ver detalle" de cada fila, `?detalle=&fecha=`). Lo compone `app/` con
+   * el `DetalleTurno` del segmento, igual que en las agendas.
+   */
+  renderDetalle: RenderDetalleOcurrencia
 }
 
 const FILAS_VACIAS: readonly FilaDeCuenta[] = []
@@ -64,7 +71,9 @@ const FILAS_VACIAS: readonly FilaDeCuenta[] = []
  * (`?alumnoId=&desde=&hasta=&materiaId=&profesorId=&pageAdeudados=&pageProximos=`, con
  * `router.replace`). Una sección con `aplica: false` no se muestra.
  *
- * - Sin alumno filtrado, se cobra de a un turno (la acción de cada fila, con el alumno de la fila).
+ * - Un turno solo se cobra desde su detalle: "Ver detalle" de cada fila abre el detalle del turno
+ *   (`renderDetalle`, en la URL junto a los filtros y las páginas). Sin alumno filtrado es la única
+ *   forma de cobrar, porque un pago es de un solo alumno.
  * - Con alumno filtrado, además, casillas en las dos tablas y una barra de selección: adeudados y
  *   próximos se pueden cobrar juntos, y "Seleccionar todos los adeudados" tilda los de todas las
  *   páginas (los pide a la cuenta del alumno). La selección se conserva al paginar cualquiera de las dos y
@@ -72,13 +81,14 @@ const FILAS_VACIAS: readonly FilaDeCuenta[] = []
  *   al cerrar el diálogo, si alguna de las dos listas se volvió a pedir mientras estaba abierto
  *   (cambió su `dataUpdatedAt`) o se está volviendo a pedir (`isFetching`: registrar invalida sin
  *   esperar el refetch), hubo un pago o un 409 y se sacan las ocurrencias de esa solicitud
- *   (`quitar`); si no, se canceló y queda igual.
+ *   (`quitar`); si no, se canceló y queda igual. Al cerrar el detalle de un turno vale el mismo
+ *   criterio, con ese turno: pudo cobrarse, cancelarse o reprogramarse desde ahí.
  * - Mientras una tabla muestra filas de un filtro o una página anterior (`isPlaceholderData`), no
  *   se puede tildar ni cobrar en ella, ni registrar el pago de la selección.
  * - Si al cobrar la última fila de la última página una tabla queda fuera de rango, pasa a su
  *   última página.
  */
-export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
+export function PagosGlobal({ renderRegistrarPago, renderDetalle }: PagosGlobalProps) {
   const { filtros, paginas, cambiar, cambiarPagina, limpiar } = useFiltrosCuenta()
   const { alumnoId } = filtros
 
@@ -132,6 +142,13 @@ export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
   // propiedades leídas al renderizar, y sin eso el cierre vería valores viejos.
   const actualizado = { adeudados: adeudados.dataUpdatedAt, proximos: proximos.dataUpdatedAt }
   const pidiendo = adeudados.isFetching || proximos.isFetching
+  // `pidiendo`: el éxito se ve antes de que termine el refetch de la invalidación (el
+  // `useRegistrarPago` no la espera), así que cerrar enseguida todavía no cambió los datos.
+  const cambioDesde = (alAbrir: typeof actualizado) =>
+    pidiendo ||
+    actualizado.adeudados !== alAbrir.adeudados ||
+    actualizado.proximos !== alAbrir.proximos
+
   const actualizadoAlAbrir = useRef(actualizado)
   const {
     abrir: abrirDialogo,
@@ -140,14 +157,7 @@ export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
   } = useDialogoDePago<HTMLHeadingElement>({
     renderRegistrarPago,
     alCerrar: ({ ocurrencias }) => {
-      // `pidiendo`: el éxito se ve antes de que termine el refetch de la invalidación (el
-      // `useRegistrarPago` no la espera), así que cerrarlo enseguida todavía no cambió los datos.
-      const alAbrir = actualizadoAlAbrir.current
-      if (
-        pidiendo ||
-        actualizado.adeudados !== alAbrir.adeudados ||
-        actualizado.proximos !== alAbrir.proximos
-      ) {
+      if (cambioDesde(actualizadoAlAbrir.current)) {
         setSeleccion((actual) => quitar(actual, ocurrencias))
       }
     },
@@ -155,6 +165,27 @@ export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
   const abrir = (solicitud: AperturaDePago, boton: HTMLElement) => {
     actualizadoAlAbrir.current = actualizado
     abrirDialogo(solicitud, boton)
+  }
+
+  // "Ver detalle" de una fila. Lo que se haga en el detalle (cobrar, cancelar, reprogramar)
+  // invalida las dos listas: al cerrarlo, con el mismo criterio que el diálogo, ese turno sale de
+  // la selección.
+  const actualizadoAlAbrirDetalle = useRef(actualizado)
+  const {
+    abrir: abrirDetalle,
+    detalle,
+    cerrar: cerrarDetalle,
+  } = useDetalleDeCuenta({
+    refugioRef,
+    alCerrar: (ocurrencia) => {
+      if (cambioDesde(actualizadoAlAbrirDetalle.current)) {
+        setSeleccion((actual) => quitar(actual, [ocurrencia]))
+      }
+    },
+  })
+  const verDetalle = (fila: FilaDeCuenta, boton: HTMLButtonElement) => {
+    actualizadoAlAbrirDetalle.current = actualizado
+    abrirDetalle(fila, boton)
   }
 
   // Página fuera de rango (se cobró la última fila de la última página, o una URL vieja): cada
@@ -190,15 +221,7 @@ export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
       onAlternar={
         conAlumno ? (fila) => setSeleccion((actual) => alternar(actual, fila)) : undefined
       }
-      onCobrar={(fila, boton) =>
-        abrir(
-          {
-            alumnoId: 'alumno' in fila ? fila.alumno.id : (alumnoId ?? 0),
-            ocurrencias: [aCobrar(fila)],
-          },
-          boton,
-        )
-      }
+      onVerDetalle={verDetalle}
       enEspera={enEsperaDeLaTabla}
     />
   )
@@ -332,6 +355,7 @@ export function PagosGlobal({ renderRegistrarPago }: PagosGlobalProps) {
       )}
 
       {dialogo}
+      {detalle && renderDetalle({ ...detalle, onCerrar: cerrarDetalle })}
     </div>
   )
 }

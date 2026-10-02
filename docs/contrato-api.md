@@ -282,11 +282,11 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 
 El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectura desde la que se opera (cancelar, finalizar, reprogramar, registrar pago, T-44 en adelante). La API calcula qué acciones están permitidas en `acciones`; ninguna pantalla repite esas reglas.
 
-> **Sin `pago`.** El ticket original pedía un campo `pago` (`PENDIENTE`/`PAGADO`, importe, forma de pago, comprobante) y que `acciones.cancelar` viniera deshabilitado con "El turno está pagado: no se puede cancelar" en una ocurrencia pagada. Decisión explícita de este incremento: **no hay hoy una fuente de datos de `Pago` de la que traerlo**, así que ninguno de los dos sale. `acciones.cancelar` es `{ visible, habilitada }` sin `motivo`, y depende únicamente de si la ocurrencia está `AGENDADO`; no mira el pago para nada. Se retoma cuando `pagos` (T-51) esté disponible.
+El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago`), y las acciones lo tienen en cuenta (decisiones T-103 a T-105).
 
 ### Detalle de una ocurrencia
 
-**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas). `PROFESOR` sólo puede pedir un turno suyo: si no lo es, 403 con las cuatro acciones en `false`. Con `MESA_ENTRADAS` o con el profesor dueño del turno, el resto de la respuesta es igual — salvo `acciones`, que para `PROFESOR` siempre viene con las cuatro en `false` (el profesor no cancela, finaliza, reprograma ni registra pagos en este incremento; sólo lee).
+**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas). `PROFESOR` sólo puede pedir un turno suyo: si no lo es, 403. Con `MESA_ENTRADAS` o con el profesor dueño del turno, el resto de la respuesta es igual — salvo `acciones`, que para `PROFESOR` siempre viene con las cuatro en `false` (el profesor no cancela, finaliza, reprograma ni registra pagos en este incremento; sólo lee), y `pago`, que para `PROFESOR` es `null` (no ve pagos).
 
 ```json
 {
@@ -308,6 +308,7 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
   "observaciones": null,
   "temas": null,
   "cancelacion": null,
+  "pago": { "estado": "PENDIENTE", "importeVigente": 8000 },
   "prioridad": "ALTA",
   "examen": {
     "id": 8,
@@ -332,8 +333,29 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
 - `estado`: sólo `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (definición F de las PO: cancelada, o pasada sin cancelar, o de hoy en adelante).
 - `serie`: período del turno o tramo (`fechaInicio`, `fechaFin`, `null` sin fin) y, si tiene una, la `finalizacion` (`fechaDesde` es el fin efectivo, definición C, más `motivo`, `detalle`, `createdBy`, `createdAt`); `null` si no está finalizada. Sin sección de reprogramación: un turno reprogramado ya está en su fecha y bloque nuevos, y no muestra desde cuándo se movió (definición A).
 - `cancelacion`: `null` salvo `estado = "CANCELADO"` (`motivo`, `detalle`, `createdBy`, `createdAt`).
+- `pago`: `null` para `PROFESOR`. Para `MESA_ENTRADAS`, según su `estado`:
+  - `PENDIENTE`: `importeVigente`, el precio por hora vigente de la materia (lo que se cobraría hoy), o `null` si la materia no tiene precio. Una cancelada también viene `PENDIENTE` (nunca se cobró): la UI no muestra su pago.
+  - `PAGADO`: los datos de su pago, con los nombres de `GET /pagos/{id}`. `importe` es lo que se cobró (`importeAplicado`): no cambia si después cambia el precio de la materia.
+
+    ```json
+    {
+      "estado": "PAGADO",
+      "pagoId": 31,
+      "numeroComprobante": 1024,
+      "importe": 8000,
+      "formaPago": { "id": 1, "nombre": "Efectivo" },
+      "fechaPago": "2026-10-01",
+      "registradoPor": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+      "registradoEl": "2026-10-01T14:30:00.000Z"
+    }
+    ```
+
 - `prioridad` y `examen` (el examen que la determina, T-31): `null` en una ocurrencia cancelada.
-- `acciones`: `cancelar` sólo mira si está `AGENDADO` (agendada, hoy o posterior); `finalizar`, si el turno es `RECURRENTE`, la serie está vigente (sin fin efectivo, o no llegó todavía) y no tiene ya una finalización aplicada; `reprogramar`, igual que `cancelar`; `registrarPago`, si no está `CANCELADO`.
+- `acciones` (las calcula la API; ninguna pantalla repite estas reglas):
+  - `cancelar`: `{ visible, habilitada, motivo? }`. Visible si está `AGENDADO` (agendada, hoy o posterior). Si además está pagada, viene `habilitada: false` con `motivo: "El turno está pagado: no se puede cancelar"` (el mismo texto con el que `POST /cancelaciones` la rechaza); `motivo` sólo viene en ese caso.
+  - `finalizar`: si el turno es `RECURRENTE`, la serie está vigente (sin fin efectivo, o no llegó todavía) y no tiene ya una finalización aplicada. No mira el pago de esta ocurrencia: las pagadas de la serie se validan al finalizar (409 `TURNOS_PAGADOS`).
+  - `reprogramar`: si está `AGENDADO`. Una pagada se reprograma igual (el pago acompaña al turno).
+  - `registrarPago`: si no está `CANCELADO`, su pago está `PENDIENTE` y su fecha no pasa el tope de cobro de `POST /pagos` (hoy + 56 días; las pasadas no tienen tope). Una materia sin precio sí lo muestra: decide el 409 `SIN_PRECIO` del cobro.
 - `createdBy`/`updatedBy`: quién creó el turno y quién lo modificó por última vez. Si el turno se reprogramó, quien lo modificó es quien lo reprogramó (no hay un campo aparte).
 - Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` (rol distinto de `MESA_ENTRADAS`/`PROFESOR`, o un `PROFESOR` que no es dueño del turno) o `USUARIO_INHABILITADO`; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias (incluida una posterior al fin efectivo de una serie ya finalizada).
 
@@ -356,16 +378,17 @@ El detalle de un turno en una fecha, y los turnos de un alumno (T-43): la lectur
       "materia": { "id": 3, "nombre": "Matemática" },
       "tipo": "RECURRENTE",
       "estado": "AGENDADO",
+      "estadoPago": "PENDIENTE",
       "prioridad": "ALTA",
       "cancelable": true
     }
   ]
   ```
 
-- `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle.
+- `estadoPago`: `PENDIENTE` o `PAGADO`; una cancelada viene `PENDIENTE` (nunca se cobró) y la UI no lo muestra. `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle (agendada y con el pago pendiente: una pagada no se puede tildar).
 - Errores: 400 `VALIDACION` (`alumnoId` faltante o inválido, `hasta` anterior a `desde`, o rango fuera de la ventana permitida, `details` sobre `hasta`); 401 `NO_AUTENTICADO`; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
-Todo sale de `leerOcurrencias` (T-30) y `leerPrioridades` (T-31): la feature no reimplementa ninguna de las dos.
+Todo sale de `leerOcurrencias` (T-30), `leerPrioridades` (T-31) y, para una pagada, `leerPagoDeOcurrencia` (`pagos`): la feature no reimplementa ninguna de las tres.
 
 ## Cancelaciones
 

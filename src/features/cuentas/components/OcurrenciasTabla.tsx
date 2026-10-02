@@ -1,5 +1,5 @@
 import Link from 'next/link'
-import { Banknote } from 'lucide-react'
+import { Eye } from 'lucide-react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { Button } from '@/components/ui/button'
@@ -33,11 +33,14 @@ type OcurrenciasTablaProps = {
   /** Con selección: columna de casillas. Sin ella, solo la acción por fila. */
   seleccion?: Seleccion
   onAlternar?: (fila: FilaDeCuenta) => void
-  /** "Registrar pago único" de la fila: cobra solo ese turno y no toca la selección. */
-  onCobrar: (fila: FilaDeCuenta, boton: HTMLButtonElement) => void
+  /**
+   * "Ver detalle" de la fila: abre el detalle del turno, desde donde se cobra ese turno solo (o se
+   * cancela o reprograma). No toca la selección. Recibe el botón, para devolverle el foco al cerrar.
+   */
+  onVerDetalle: (fila: FilaDeCuenta, boton: HTMLButtonElement) => void
   /**
    * Las filas son de un filtro o una página anterior (`isPlaceholderData`): se atenúan y no se
-   * pueden tildar ni cobrar hasta que lleguen las actuales.
+   * pueden tildar ni abrir hasta que lleguen las actuales.
    */
   enEspera?: boolean
 }
@@ -58,7 +61,7 @@ export function OcurrenciasTabla({
   conAlumno = false,
   seleccion,
   onAlternar,
-  onCobrar,
+  onVerDetalle,
   enEspera = false,
 }: OcurrenciasTablaProps) {
   const conCasillas = seleccion !== undefined && onAlternar !== undefined
@@ -87,8 +90,8 @@ export function OcurrenciasTabla({
         {filas.map((fila) => {
           const turno = textoOcurrencia(fila)
           const accion = conAlumno
-            ? `Registrar pago único del turno de ${textoOcurrencia(fila, true)}`
-            : `Registrar pago único del turno del ${turno}`
+            ? `Ver detalle del turno de ${textoOcurrencia(fila, true)}`
+            : `Ver detalle del turno del ${turno}`
           const tildada = conCasillas && estaSeleccionada(seleccion, fila)
           return (
             <TableRow key={claveOcurrencia(fila)} data-state={tildada ? 'selected' : undefined}>
@@ -137,12 +140,13 @@ export function OcurrenciasTabla({
                 <Button
                   type="button"
                   size="sm"
-                  onClick={(e) => onCobrar(fila, e.currentTarget)}
+                  variant="outline"
+                  onClick={(e) => onVerDetalle(fila, e.currentTarget)}
                   disabled={enEspera}
                   aria-label={accion}
                 >
-                  <Banknote />
-                  Registrar pago único
+                  <Eye />
+                  Ver detalle
                 </Button>
               </TableCell>
             </TableRow>
