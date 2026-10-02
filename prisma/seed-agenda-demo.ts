@@ -6,13 +6,18 @@
 // Requiere que el seed de desarrollo ya haya corrido (`pnpm db:seed`): reutiliza el usuario de
 // mesa de entradas, las materias y las aulas que ese seed crea; no los duplica.
 //
-// Idempotente por "limpiar y recrear": cada corrida borra únicamente lo que creó una corrida
-// anterior de ESTE script (identificable por el dominio de email @agenda-demo.local), con todo lo
-// que cuelga de sus turnos (cancelaciones, pagos, finalizaciones, exámenes), y lo vuelve a crear
-// con fechas relativas a "hoy", para que la agenda de hoy siempre tenga datos. Nunca toca los
-// profesores, alumnos ni turnos que hayas cargado a mano, por la API o con `seed-datos-demo.ts`.
+// Los datos que se ven en la app son verosímiles y no mencionan el seed. Lo carga `CARGADOR`: una
+// usuaria de mesa de entradas **sin cuenta** (nadie puede iniciar sesión con ella), así que en la
+// auditoría se ve como una persona más y ningún dato cargado desde la app queda a su nombre.
 //
-// Respeta las reglas de `docs/dominio.md`: lo carga mesa de entradas; cada bloque es una hora en
+// Idempotente por "limpiar y recrear": cada corrida borra únicamente lo que creó `CARGADOR`
+// (profesores y alumnos, y lo que dejó la versión anterior de este script, con emails
+// `@agenda-demo.local`), con todo lo que cuelga de sus turnos (cancelaciones, pagos,
+// finalizaciones, exámenes), y lo vuelve a crear con fechas relativas a "hoy", para que la agenda
+// de hoy siempre tenga datos. Nunca toca los profesores, alumnos ni turnos que hayas cargado a
+// mano, por la API o con otros seeds.
+//
+// Respeta las reglas de `docs/dominio.md`: lo carga mesa de entradas (`CARGADOR`); cada bloque es una hora en
 // punto en un aula libre a esa hora (se leen los bloques que ya existen, de cualquier seed); la
 // materia del turno está activa, con precio y asignada al profesor; una sesión única tiene "temas
 // a trabajar" (HU-08); el recurrente tiene `serieId` (T-103); y la cancelación es una
@@ -29,31 +34,113 @@ import { normalizarBusqueda } from '@/server/shared/busqueda'
 import { dateAFecha, diaSemanaISO, fechaADate, hoy } from '@/server/shared/fechas'
 import { horaAMinutos } from '@/server/shared/zod'
 
-// Dominio reservado para identificar (y poder limpiar) lo que crea este script, y no confundirlo
-// con cuentas reales o con las del seed de desarrollo (`@aulaclick.local`).
-const DOMINIO_DEMO = 'agenda-demo.local'
+/** Dominio de la versión anterior de este script: se limpia por si quedó algo. */
+const DOMINIO_ANTERIOR = 'agenda-demo.local'
 
-/** Contraseña de los profesores de prueba (>= 8 caracteres, como exige Better Auth). */
+/**
+ * Usuaria de mesa de entradas que carga todo, sin cuenta (no puede iniciar sesión). Se busca por
+ * DNI y no se borra nunca: lo que creó es lo que se limpia. `seed-pagos-demo.ts` usa su DNI para
+ * encontrar a estos alumnos.
+ */
+const CARGADOR = {
+  nombre: 'Marcela',
+  apellido: 'Ruiz',
+  dni: '32156093',
+  email: 'marcela.ruiz@gmail.com',
+  telefono: '(387) 15-468-9021',
+}
+
+/** Contraseña de los profesores (>= 8 caracteres, como exige Better Auth). Sólo desarrollo. */
 const PASSWORD_DEMO = 'demo-1234'
 
 // `aula` es la preferida: si a esa hora está ocupada (por ejemplo, por `seed-datos-demo.ts`), se
 // usa otra libre.
 const PROFESORES_DEMO = [
-  { nombre: 'Valentina', apellido: 'Cruz', dni: '99900101', materia: 'Matemática', aula: 'Aula 1' },
-  { nombre: 'Sofía', apellido: 'Ramírez', dni: '99900102', materia: 'Física', aula: 'Aula 2' },
-  { nombre: 'Diego', apellido: 'Torres', dni: '99900103', materia: 'Química', aula: 'Aula 3' },
+  {
+    nombre: 'Valentina',
+    apellido: 'Cruz',
+    dni: '28640915',
+    email: 'valentina.cruz@gmail.com',
+    telefono: '(387) 15-441-5803',
+    titulo: 'Profesora en Matemática (UNSa)',
+    matricula: 'MP-3912',
+    materia: 'Matemática',
+    aula: 'Aula 1',
+  },
+  {
+    nombre: 'Sofía',
+    apellido: 'Ramírez',
+    dni: '30217784',
+    email: 'sofia.ramirez@hotmail.com',
+    telefono: '(387) 15-527-1146',
+    titulo: 'Licenciada en Física (UNSa)',
+    matricula: 'MP-4205',
+    materia: 'Física',
+    aula: 'Aula 2',
+  },
+  {
+    nombre: 'Diego',
+    apellido: 'Torres',
+    dni: '25983461',
+    email: 'diego.torres@yahoo.com.ar',
+    telefono: '(387) 15-489-3370',
+    titulo: 'Ingeniero Químico (UNT)',
+    matricula: 'MP-2874',
+    materia: 'Química',
+    aula: 'Aula 3',
+  },
 ] as const
 
 // Todos mayores de edad, con su email y su teléfono (dominio.md → Alumnos).
 const ALUMNOS_DEMO = [
-  { nombre: 'Julieta', apellido: 'Fernández', dni: '99900201', fechaNacimiento: '2001-03-12' },
-  { nombre: 'Bruno', apellido: 'Suárez', dni: '99900202', fechaNacimiento: '1999-11-30' },
-  { nombre: 'Camila', apellido: 'Flores', dni: '99900203', fechaNacimiento: '2003-07-08' },
-  { nombre: 'Nicolás', apellido: 'Ibarra', dni: '99900204', fechaNacimiento: '2000-01-22' },
+  {
+    nombre: 'Julieta',
+    apellido: 'Fernández',
+    dni: '42871356',
+    fechaNacimiento: '2001-03-12',
+    email: 'juli.fernandez@gmail.com',
+    telefono: '(387) 15-503-2291',
+  },
+  {
+    nombre: 'Bruno',
+    apellido: 'Suárez',
+    dni: '42109874',
+    fechaNacimiento: '1999-11-30',
+    email: 'bruno.suarez99@hotmail.com',
+    telefono: '(387) 15-466-7012',
+  },
+  {
+    nombre: 'Camila',
+    apellido: 'Flores',
+    dni: '44652018',
+    fechaNacimiento: '2003-07-08',
+    email: 'cami.flores@gmail.com',
+    telefono: '(387) 15-578-4430',
+  },
+  {
+    nombre: 'Nicolás',
+    apellido: 'Ibarra',
+    dni: '42530697',
+    fechaNacimiento: '2000-01-22',
+    email: 'nico.ibarra@outlook.com',
+    telefono: '(387) 15-412-8865',
+  },
 ] as const
 
-const emailDe = (nombre: string, apellido: string) =>
-  `${normalizarBusqueda(nombre)}.${normalizarBusqueda(apellido)}@${DOMINIO_DEMO}`.replace(/ /g, '')
+/** Busca por DNI (o crea) la usuaria de mesa de entradas que carga todo, sin cuenta. */
+async function asegurarCargador() {
+  return prisma.usuario.upsert({
+    where: { dni: CARGADOR.dni },
+    create: {
+      id: randomUUID(),
+      ...CARGADOR,
+      busqueda: normalizarBusqueda(`${CARGADOR.apellido} ${CARGADOR.nombre} ${CARGADOR.dni}`),
+      emailVerified: true,
+      role: 'MESA_ENTRADAS',
+    },
+    update: {},
+  })
+}
 
 /** `fecha` (YYYY-MM-DD) + `dias` (puede ser negativo), sin usar `new Date(string)` a mano. */
 function sumarDias(fecha: string, dias: number): string {
@@ -64,13 +151,7 @@ function sumarDias(fecha: string, dias: number): string {
 /** Actor y catálogo que ya deja el seed de desarrollo. Falla con un mensaje claro si falta algo. */
 async function requisitos() {
   // Mesa de entradas carga alumnos, horarios, asignaciones y turnos (no el gerente).
-  const mesa = await prisma.usuario.findFirst({
-    where: {
-      role: 'MESA_ENTRADAS',
-      estado: 'ACTIVO',
-      email: { not: { endsWith: `@${DOMINIO_DEMO}` } },
-    },
-  })
+  const mesa = await asegurarCargador()
   // Sólo materias que se pueden asignar y cobrar: activas y con precio (HU-12).
   const materias = await prisma.materia.findMany({
     where: {
@@ -93,17 +174,18 @@ async function requisitos() {
 }
 
 /**
- * Borra únicamente lo que creó una corrida anterior de este script (dominio `@agenda-demo.local`),
+ * Borra únicamente lo que creó `CARGADOR` (y lo de la versión anterior, `@agenda-demo.local`),
  * con todo lo que cuelga de sus turnos y alumnos: las FK son `onDelete: Restrict`, así que si
  * cancelaste o cobraste uno de sus turnos desde la app, sin esto la limpieza fallaría.
  */
 async function limpiar() {
-  const emailsProfesores = PROFESORES_DEMO.map((p) => emailDe(p.nombre, p.apellido))
-  const emailsAlumnos = ALUMNOS_DEMO.map((a) => emailDe(a.nombre, a.apellido))
+  const cargador = await prisma.usuario.findUnique({ where: { dni: CARGADOR.dni } })
+  const delCargador = cargador ? [{ createdById: cargador.id }] : []
+  const anterior = { email: { endsWith: `@${DOMINIO_ANTERIOR}` } }
 
   const usuarioIds = (
     await prisma.usuario.findMany({
-      where: { email: { in: emailsProfesores } },
+      where: { OR: [...delCargador.map((c) => ({ ...c, role: 'PROFESOR' })), anterior] },
       select: { id: true },
     })
   ).map((u) => u.id)
@@ -114,7 +196,10 @@ async function limpiar() {
     })
   ).map((p) => p.id)
   const alumnoIds = (
-    await prisma.alumno.findMany({ where: { email: { in: emailsAlumnos } }, select: { id: true } })
+    await prisma.alumno.findMany({
+      where: { OR: [...delCargador, anterior] },
+      select: { id: true },
+    })
   ).map((a) => a.id)
   const turnoIds = (
     await prisma.turno.findMany({
@@ -174,10 +259,13 @@ async function crear() {
         apellido: datos.apellido,
         dni: datos.dni,
         busqueda: normalizarBusqueda(`${datos.apellido} ${datos.nombre} ${datos.dni}`),
-        telefono: '3870000000',
-        email: emailDe(datos.nombre, datos.apellido),
+        telefono: datos.telefono,
+        email: datos.email,
         emailVerified: true,
         role: 'PROFESOR',
+        // Los da de alta mesa de entradas (T-22): es lo que identifica qué limpiar.
+        createdById: mesa.id,
+        updatedById: mesa.id,
       },
     })
     // Cada profesor tiene su cuenta (dominio.md → Roles): Account 'credential' con el hash de auth.ts.
@@ -193,8 +281,8 @@ async function crear() {
     const profesor = await prisma.profesor.create({
       data: {
         usuarioId: usuario.id,
-        titulo: `Profesor en ${datos.materia}`,
-        matricula: `DEMO-${datos.dni}`,
+        titulo: datos.titulo,
+        matricula: datos.matricula,
         capacidad: 5,
       },
     })
@@ -219,9 +307,10 @@ async function crear() {
         dni: datos.dni,
         busqueda: normalizarBusqueda(`${datos.apellido} ${datos.nombre} ${datos.dni}`),
         fechaNacimiento: fechaADate(datos.fechaNacimiento),
-        telefono: '3870000000',
-        email: emailDe(datos.nombre, datos.apellido),
-        observaciones: 'Alumno de prueba (seed-agenda-demo.ts): se puede borrar sin problema.',
+        telefono: datos.telefono,
+        email: datos.email,
+        nivelEscolaridad: 'UNIVERSITARIO',
+        institucionEducativa: 'Universidad Nacional de Salta',
         ...auditoria,
       },
     })
@@ -333,14 +422,14 @@ async function crear() {
     alumnoId: alumnos.get('Suárez')!,
     materiaId: cruz.materiaId,
     fechaInicio: hoyStr,
-    observaciones: 'Cancelado a propósito: aparece en la agenda como cancelado.',
+    observaciones: 'Prepara el recuperatorio de Análisis I.',
   })
   await prisma.cancelacionTurno.create({
     data: {
       turnoId: cancelado.id,
       fechaOcurrencia: fechaADate(hoyStr),
       motivo: 'CANCELACION_ALUMNO',
-      detalle: 'El alumno avisó que no viene (seed-agenda-demo.ts).',
+      detalle: 'Avisó por WhatsApp que está enfermo.',
       createdById: mesa.id,
     },
   })
@@ -378,7 +467,7 @@ async function crear() {
     materiaId: ramirez.materiaId,
     fechaInicio: hoyStr,
     fechaFin: en3Semanas,
-    observaciones: `Recurrente de prueba: aparece hoy y cada 7 días hasta ${en3Semanas}.`,
+    observaciones: 'Apoyo semanal hasta el parcial de Física I.',
   })
 
   // Resultados esperados (la agenda incluye las canceladas, con su estado).
@@ -402,9 +491,7 @@ async function crear() {
     `  GET ${url}?profesorId=${ramirez.id}&q=cruz → vacío: con profesorId, q sólo busca alumnos`,
   )
   console.log(`  GET ${url}?fecha=${sumarDias(hoyStr, 7)} → el recurrente, otra vez`)
-  console.log(
-    `Los profesores entran con su email @${DOMINIO_DEMO} y la contraseña "${PASSWORD_DEMO}".`,
-  )
+  console.log(`Los profesores entran con su email y la contraseña "${PASSWORD_DEMO}".`)
 }
 
 async function main() {

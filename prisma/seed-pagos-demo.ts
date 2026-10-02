@@ -2,13 +2,17 @@
 // los pagos, el comprobante, la deuda del alumno y el estado de pago en las agendas con muchos datos.
 //
 // NO crea alumnos, profesores ni turnos: trabaja sobre los alumnos de los otros seeds de demo
-// (emails `@datos-demo.local` y `@agenda-demo.local`), así que **lo necesita corrido antes**:
+// (los que cargaron las usuarias de `DNI_CARGADORES`), así que **lo necesita corrido antes**:
 //   pnpm db:seed  →  pnpm exec tsx prisma/seed-datos-demo.ts  →  este script
 // Si después volvés a correr `seed-datos-demo.ts`, sus turnos se recrean y estos pagos se borran
 // con ellos: corré este de nuevo.
 //
-// Idempotente por "limpiar y recrear": cada corrida borra sólo los pagos que creó una corrida
-// anterior de ESTE script (los que empiezan con `MARCA` en sus observaciones) y los vuelve a crear
+// Los pagos los registra `CAJERA`: una usuaria de mesa de entradas **sin cuenta** (nadie puede
+// iniciar sesión con ella), así que en el comprobante se ve como una persona más, las
+// observaciones son las de un pago real y ningún pago registrado desde la app queda a su nombre.
+//
+// Idempotente por "limpiar y recrear": cada corrida borra sólo los pagos que registró `CAJERA`
+// (y los de la versión anterior de este script, marcados en sus observaciones) y los vuelve a crear
 // con fechas relativas a hoy. Nunca toca los pagos registrados desde la app ni los de otros seeds.
 //
 // Todo lo que cobra respeta las reglas de HU-15 (`docs/dominio.md` → Pagos):
@@ -31,14 +35,34 @@
 //   pnpm exec tsx prisma/seed-pagos-demo.ts             crea (o recrea) los pagos de demo
 //   pnpm exec tsx prisma/seed-pagos-demo.ts --limpiar   sólo borra los pagos que creó este script
 import 'dotenv/config'
+import { randomUUID } from 'node:crypto'
 import { prisma } from '@/lib/prisma'
+import { normalizarBusqueda } from '@/server/shared/busqueda'
 import { dateAFecha, fechaADate, hoy } from '@/server/shared/fechas'
 
-/** Prefijo de las observaciones: identifica (y permite limpiar) los pagos de este script. */
-const MARCA = '[seed-pagos-demo]'
+/** Marca de las observaciones de la versión anterior de este script: se limpia por si quedó algo. */
+const MARCA_ANTERIOR = '[seed-pagos-demo]'
 
-/** Dominios de los alumnos de los otros seeds de demo: sólo se cobran sus turnos. */
-const DOMINIOS_ALUMNOS = ['datos-demo.local', 'agenda-demo.local']
+/**
+ * Usuaria de mesa de entradas que registra los pagos, sin cuenta (no puede iniciar sesión). Se
+ * busca por DNI y no se borra nunca: los pagos que registró son los que se limpian.
+ */
+const CAJERA = {
+  nombre: 'Carla',
+  apellido: 'Ibáñez',
+  dni: '33890415',
+  email: 'carla.ibanez@gmail.com',
+  telefono: '(387) 15-455-6190',
+}
+
+/**
+ * DNI de las usuarias que cargan los otros seeds de demo (`CARGADOR` de `seed-datos-demo.ts` y de
+ * `seed-agenda-demo.ts`): sólo se cobran los turnos de los alumnos que cargaron ellas.
+ */
+const DNI_CARGADORES = ['30458127', '32156093']
+
+/** Dominios de la versión anterior de esos seeds, por si la base todavía tiene esos alumnos. */
+const DOMINIOS_ANTERIORES = ['datos-demo.local', 'agenda-demo.local']
 
 /** Cuántas semanas hacia atrás se miran las ocurrencias pasadas. */
 const SEMANAS_ATRAS = 8
@@ -99,7 +123,9 @@ const aImporte = (centavos: number) => (centavos / 100).toFixed(2)
 
 async function limpiar() {
   const pagos = await prisma.pago.findMany({
-    where: { observaciones: { startsWith: MARCA } },
+    where: {
+      OR: [{ createdBy: { dni: CAJERA.dni } }, { observaciones: { startsWith: MARCA_ANTERIOR } }],
+    },
     select: { id: true },
   })
   const pagoIds = pagos.map((p) => p.id)
@@ -132,7 +158,12 @@ async function ocurrenciasCobrables(fechaHoy: string): Promise<Map<number, Ocurr
   const turnos = await prisma.turno.findMany({
     where: {
       estado: 'ACTIVO',
-      alumno: { OR: DOMINIOS_ALUMNOS.map((dominio) => ({ email: { endsWith: `@${dominio}` } })) },
+      alumno: {
+        OR: [
+          { createdBy: { dni: { in: DNI_CARGADORES } } },
+          ...DOMINIOS_ANTERIORES.map((dominio) => ({ email: { endsWith: `@${dominio}` } })),
+        ],
+      },
       fechaInicio: { lte: fechaADate(tope) },
       OR: [{ fechaFin: null }, { fechaFin: { gte: fechaADate(desde) } }],
       materia: { precioHora: { not: null } },
@@ -315,15 +346,38 @@ function armarPagos(azar: Azar, porAlumno: Map<number, Ocurrencia[]>, fechaHoy: 
   return { pagos, escenarios }
 }
 
+/** Lo que anota mesa de entradas al registrar el pago (a veces nada), según cómo pagó. */
+function observacionDe(escenario: string): string | null {
+  switch (escenario) {
+    case 'Pago de dos materias distintas':
+      return 'Abona las clases de las dos materias juntas.'
+    case 'Serie pagada por adelantado hasta el tope de 8 semanas':
+      return 'Paga por adelantado las próximas ocho semanas.'
+    case 'Pago por adelantado':
+      return 'Adelanta sus próximas clases.'
+    case 'Varias clases juntas':
+      return 'Abona varias clases juntas.'
+    default:
+      return null
+  }
+}
+
 // ---------------------------------------------------------------------------------------------
 // Creación
 // ---------------------------------------------------------------------------------------------
 
 async function crear(azar: Azar) {
-  const actor = await prisma.usuario.findFirst({
-    where: { role: 'MESA_ENTRADAS', estado: 'ACTIVO', email: { endsWith: '@aulaclick.local' } },
+  const mesa = await prisma.usuario.upsert({
+    where: { dni: CAJERA.dni },
+    create: {
+      id: randomUUID(),
+      ...CAJERA,
+      busqueda: normalizarBusqueda(`${CAJERA.apellido} ${CAJERA.nombre} ${CAJERA.dni}`),
+      emailVerified: true,
+      role: 'MESA_ENTRADAS',
+    },
+    update: {},
   })
-  const mesa = actor ?? (await prisma.usuario.findFirst({ where: { role: 'MESA_ENTRADAS' } }))
   const formaPago = await prisma.formaPago.findUnique({ where: { nombre: 'Efectivo' } })
   if (!mesa || !formaPago) {
     throw new Error(
@@ -356,7 +410,7 @@ async function crear(azar: Azar) {
         importeTotal: aImporte(total),
         fechaPago: fechaADate(pago.fechaPago),
         montoRecibido: pago.montoRecibido === null ? null : aImporte(pago.montoRecibido),
-        observaciones: `${MARCA} ${pago.escenario}`,
+        observaciones: observacionDe(pago.escenario),
         createdById: mesa.id,
         updatedById: mesa.id,
         turnos: {
