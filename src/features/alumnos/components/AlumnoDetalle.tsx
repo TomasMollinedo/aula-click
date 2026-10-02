@@ -162,7 +162,8 @@ export function AlumnoDetalle({
           </span>
         }
         actions={
-          puedeEditar && (
+          puedeEditar &&
+          tab === 'datos' && (
             <Button size="lg" variant="accent" asChild>
               <Link href={`${rutaBase}/${alumno.id}/editar`}>
                 <Pencil />
