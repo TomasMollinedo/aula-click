@@ -18,7 +18,7 @@ export type AccionFinalizarTurnoProps = {
 }
 
 /**
- * "Finalizar turno" en el pie del detalle (HU-14, T-48). Se muestra según
+ * "Finalizar turno recurrente" en el pie del detalle (HU-14, T-48). Se muestra según
  * `ocurrencia.acciones.finalizar.visible`, que calcula la API: nunca con reglas propias.
  *
  * Después de finalizar, si la ocurrencia que muestra el detalle es de la fecha elegida en adelante,
@@ -62,7 +62,7 @@ export function AccionFinalizarTurno({ ocurrencia }: AccionFinalizarTurnoProps) 
     <>
       <DetalleModalAccion type="button" variant="outline" onClick={() => setAbierto(true)}>
         <CalendarOff />
-        Finalizar turno
+        Finalizar turno recurrente
       </DetalleModalAccion>
       <FinalizarTurnoDialog
         open={abierto}
