@@ -4,7 +4,7 @@ Repositorio: `aula-click` · Sprint: Iteración 2 · Estado inicial de todas las
 
 Estas tareas siguen `AGENTS.md` y `docs/`, y parten del estado de `testing` al cerrar el Sprint 1. Si una tarea y un doc se contradicen, manda el doc y se avisa para corregir la tarea. Las HU salen de `docs/sprint-2/backlog-sprint2.md`; el modelo de datos, del DER tentativo del Sprint 2.
 
-Numeración: continúa la del Sprint 1 (**T-29 en adelante**): 36 tareas, de T-29 a T-64. HU-21 (tablero del gerente) es **opcional**, igual que lo fue HU-10: sus tareas se marcan como tales, salvo el acceso del gerente, que lo necesita HU-12.
+Numeración: continúa la del Sprint 1 (**T-29 en adelante**): 36 tareas, de T-29 a T-64. Las decisiones de `docs/decisiones.md` usan el mismo prefijo `T-` con otra numeración: una "decisión T-xx" es una fila de ese archivo, no una tarea de este. HU-21 (tablero del gerente) es **opcional**, igual que lo fue HU-10: sus tareas se marcan como tales, salvo el acceso del gerente, que lo necesita HU-12.
 
 Las definiciones de las PO del 29/09 (ver "Definiciones de las PO (29/09)" al final) cambiaron varias tareas. Las que ya estaban cerradas no se editan: se corrigen con una tarea FIX (T-63). Las abiertas se editaron en su sección.
 
@@ -1174,10 +1174,12 @@ Reemplazan a los "Puntos a confirmar" del inicio del sprint. Las tareas abiertas
   - No se guarda ni se muestra "desde qué fecha y hora se reprogramó". Quién lo modificó y cuándo sale de la auditoría (`updatedById` y `updatedAt`) del turno.
 - **B. Ocurrencia = `(turnoId, fecha)`.** No tiene "fecha original" distinta de su fecha. `CancelacionTurno.fechaOcurrencia` y `PagoTurno.fechaOcurrencia` son la fecha de la ocurrencia. `PagoTurno` es `@@unique([turnoId, fechaOcurrencia])`.
 - **C. Finalizar (HU-14) no modifica `Turno.fechaFin`:** el fin efectivo sale de `FinalizacionRecurrencia.fechaDesde`. Con tramos, se finaliza el tramo desde cuyo detalle se opera, y la previa avisa si hay tramos posteriores del mismo alumno, hora y materia.
+  - **Reemplazada en la parte de tramos (01/10, decisiones T-103 y T-104):** finalizar actúa por hora, en **todos los tramos de la serie** (`Turno.serieId`), y la previa avisa las otras horas de la clase que siguen agendadas. Lo de `Turno.fechaFin` sigue vigente. Las reglas actuales están en `dominio.md` → Finalización.
 - **D. Sin anulación de pagos en este sprint.** `Pago.estado` queda sin uso (todo pago nace `VIGENTE`).
   - Un turno pagado no se cancela: "El turno está pagado: no se puede cancelar".
   - Al finalizar, si hay turnos pagados desde la fecha elegida, se rechaza y se muestran esos turnos. Hay que elegir una fecha posterior al último turno pagado.
 - **E. `montoRecibido` es opcional.** Si viene, tiene que ser `>= importeTotal`; la API calcula el vuelto y lo devuelve, pero no lo guarda.
+  - **Reemplazada (decisión T-112):** en un pago en efectivo, `montoRecibido` es **obligatorio** (mayor a 0 y `>= importeTotal`). El vuelto se sigue calculando sin guardarse. Las reglas actuales están en `dominio.md` → Pagos.
 - **F. Asistencia (HU-22) en el próximo sprint.** Los estados de una ocurrencia son sólo `AGENDADO`, `CANCELADO` y `SIN_REGISTRAR`. En el tablero (HU-21, opcional), los indicadores que dependen de la asistencia se devuelven como no disponibles.
 - **G. Datos del centro y logo.** Nombre, dirección y teléfono son constantes del backend y el logo va en una carpeta del backend, sin tabla. El frontend los pide a la API (T-64).
 - **H. HU-08.** Las fechas sin lugar sólo se avisan al registrar y el recurrente se guarda en tramos, como en el Sprint 1. No se guardan excepciones (T-41, T-42).

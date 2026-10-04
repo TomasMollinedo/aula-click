@@ -14,7 +14,7 @@ Sistema de gestión de un centro de atención académica: alumnos, profesores, m
 
 **Alcance del Sprint 1:** `alumnos`, `profesores` (incluye materias asignadas y bloques de clase), `materias` y `turnos` (prioridad, capacidad, solapamientos y agenda diaria). `pagos` e `indicadores` **no** se crean todavía.
 
-**Alcance del Sprint 2:** cancelación, finalización y reprogramación de turnos; materias con precio; pagos y deuda del alumno; exámenes y prioridad del turno; agenda en calendario semanal; documentos imprimibles; segmento y tablero del gerente. Features de API nuevas: `agendas`, `ocurrencias`, `cancelaciones`, `finalizaciones`, `reprogramaciones`, `pagos`, `cuentas`, `examenes` y `tablero` (detalle en `docs/arquitectura-backend.md`).
+**Alcance del Sprint 2:** cancelación, finalización y reprogramación de turnos; materias con precio; pagos y deuda del alumno; exámenes y prioridad del turno; agenda en calendario semanal; documentos imprimibles; segmento y tablero del gerente. Features de API nuevas: `agendas`, `ocurrencias`, `cancelaciones`, `finalizaciones`, `reprogramaciones`, `pagos`, `cuentas`, `examenes`, `tablero` y `centro` (datos y logo del centro para los documentos; detalle en `docs/arquitectura-backend.md`).
 
 Este archivo tiene solo lo que vale para todo el repo. El detalle de cada lado está en `docs/` (ver "Documentación") y se lee antes de tocar esa parte.
 
@@ -74,7 +74,7 @@ Fuera de `src/`: `prisma/schema.prisma`, `prisma/seed.ts`, `prisma7.config.ts` (
 | [`docs/convenciones-backend.md`](docs/convenciones-backend.md)   | Fechas, paginación, búsqueda, auditoría, concurrencia, seguridad de cuentas y especificación de `shared/` | implementar cualquier endpoint o repository                                                              |
 | [`docs/arquitectura-frontend.md`](docs/arquitectura-frontend.md) | Carpetas, features de UI, roles y URLs, datos, auth en el cliente, formularios, fechas, errores           | tocar `src/app` (salvo `api/`), `src/features`, `src/components`, `src/hooks`, `src/types` o `src/utils` |
 | [`docs/contrato-api.md`](docs/contrato-api.md)                   | Lo que front y back acuerdan: URLs, formatos, paginación, filtros, errores                                | cualquier cambio que cruce el límite HTTP                                                                |
-| [`docs/dominio.md`](docs/dominio.md)                             | Roles y reglas de negocio del Sprint 1                                                                    | implementar, validar o mostrar reglas de negocio                                                         |
+| [`docs/dominio.md`](docs/dominio.md)                             | Roles y reglas de negocio de los Sprints 1 y 2                                                            | implementar, validar o mostrar reglas de negocio                                                         |
 | [`docs/decisiones.md`](docs/decisiones.md)                       | Decisiones tomadas (con su porqué) y decisiones abiertas                                                  | implementar algo que dependa de una decisión                                                             |
 | [`docs/dependencias.md`](docs/dependencias.md)                   | Cada paquete de `package.json`, para qué sirve y de qué lado vive                                         | agregar o sacar una dependencia                                                                          |
 

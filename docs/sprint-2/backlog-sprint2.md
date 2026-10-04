@@ -65,7 +65,7 @@
   - Materia y profesor: los días en que ese profesor tiene bloques.
   - Materia, día y profesor: los bloques de ese profesor ese día.
   - Sólo materia: todos los profesores que dictan la materia, con sus días.
-- Al seleccionar un resultado (un profesor en un día), se muestran las horas de ese bloque, cada una con un checkbox y su ocupación (turnos vigentes / capacidad efectiva, HU-06). Las horas que no tienen lugar también se muestran con un mensaje aclarando que estan llenas.
+- Al seleccionar un resultado (un profesor en un día), se muestran las horas de ese bloque, cada una con un checkbox y su ocupación (turnos vigentes / capacidad efectiva, HU-06). Las horas que no tienen lugar también se muestran con un mensaje aclarando que están llenas.
 - Se pueden tildar una o varias horas del bloque, consecutivas o no (por ejemplo, 8:00–9:00 y 10:00–11:00). Cada hora seleccionada se registra como un turno, todos con la misma materia, tipo de turno y fechas.
 - El turno se da en el aula asignada al bloque (HU-06); el sistema muestra el aula al confirmar el turno y en el detalle del turno.
 - Validación: la materia del turno debe ser una de las materias asignadas al profesor del bloque; si no lo es, el sistema no permite continuar.
@@ -86,7 +86,7 @@
 **Título:** PDF de turno, de los turnos de un alumno y de la agenda
 **Como…** Personal de mesa de entrada
 **Necesito…** Guardar como PDF el resumen de un turno, el listado de turnos de un alumno y la agenda del día de un profesor.
-**Para…** Entregarle la información al alumno o profesor .
+**Para…** Entregarle la información al alumno o profesor.
 **Criterios de Aceptación:**
 
 - Tienen un botón "Generar PDF": el detalle de un turno, la pestaña "Turnos" de la ficha del alumno (HU-02) y la agenda diaria del centro (HU-09).
@@ -315,7 +315,7 @@
 - Disponible en la agenda diaria del centro (HU-09), en la agenda de un profesor y en "Mi agenda" (HU-10), con un selector "Calendario / Lista". La vista de lista actual se mantiene.
 - La grilla muestra los días de la semana en columnas (de lunes a domingo; se ocultan los días sin turnos) y las horas en filas, desde la primera hasta la última hora con turnos de esa semana.
 - En el calendario, cada clase se representa como un único bloque en el día y horario que corresponda. Una clase es una hora concreta de un bloque, en una fecha determinada, con su profesor y aula.
-- El bloque de la clase muestra inicialmente información resumida para evitar sobrecargar el calendario: horario, materia y, cuando corresponda, profesor y aula.También indica de forma resumida los alumnos que tienen turno en esa clase, sin desplegar inicialmente el detalle completo de cada turno.
+- El bloque de la clase muestra inicialmente información resumida para evitar sobrecargar el calendario: horario, materia y, cuando corresponda, profesor y aula. También indica de forma resumida los alumnos que tienen turno en esa clase, sin desplegar inicialmente el detalle completo de cada turno.
 - Cuando una clase tiene varios alumnos con turno en la misma hora, todos se agrupan dentro del mismo bloque horario. El calendario no muestra inicialmente un bloque independiente por cada alumno.
 - Al hacer clic sobre el bloque de una clase, este se expande y muestra el detalle de los turnos de los alumnos correspondientes a esa clase. Para cada alumno se muestra, como mínimo, su nombre y apellido, estado del turno y distintivo de prioridad cuando corresponda (HU-18).
 - Los datos propios de cada turno se mantienen diferenciados aunque los turnos pertenezcan a la misma clase: cada alumno puede tener un estado y una prioridad diferente.
@@ -351,13 +351,14 @@
 - El turno reprogramado se sigue viendo con el color de "Agendado": no aparece como cancelado en ninguna agenda ni en los turnos de la ficha del alumno.
 - Mensaje de éxito: "Turno reprogramado".
 
-**ID:** HU-21 | **Sprint:** 2 (tablero opcional; inicio de sesión y sección del gerente obligatorios por HU-12)
+**ID:** HU-21 | **Sprint:** 2 (tablero opcional)
 **Título:** Tablero del gerente
 **Como…** Gerente
 **Necesito…** Ingresar al sistema con mi usuario y contraseña, acceder a una sección propia y ver un tablero con los indicadores principales del centro.
 **Para…** Administrar el catálogo de materias y conocer la actividad del centro para tomar decisiones.
 **Criterios de Aceptación:**
 
+- Alcance en este incremento: el inicio de sesión y la sección del gerente son obligatorios, porque los requiere HU-12 (materias con precio); lo opcional es el tablero.
 - Amplía HU-01: el sistema pasa a tener tres roles con acceso: "Personal de mesa de entrada", "Profesor" y "Gerente".
 - El gerente ingresa con las mismas reglas de HU-01: usuario (email) y contraseña obligatorios, contraseña enmascarada, mensaje "Usuario o contraseña incorrectos" sin indicar cuál de los dos datos falló, un usuario inactivo no puede ingresar ("Su usuario no está habilitado"), cierre de sesión con el botón "Cerrar sesión" y cierre automático por inactividad.
 - La cuenta del gerente viene creada en el sistema (usuario inicial). En este incremento no hay alta, edición ni baja de gerentes desde las pantallas.

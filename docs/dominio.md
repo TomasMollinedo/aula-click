@@ -1,4 +1,4 @@
-# Reglas de dominio — Aula Click (Sprint 1)
+# Reglas de dominio — Aula Click (Sprints 1 y 2)
 
 Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendiente está en [`decisiones.md`](./decisiones.md) → Abiertas. Estas reglas las **decide y hace cumplir la API**; el frontend las muestra y puede anticipar errores de formato, pero no las recalcula (única excepción: el formulario de alumno calcula si es menor solo como ayuda visual, para mostrar el aviso y los datos del tutor; no bloquea el envío y la validación sigue siendo de la API; T-28).
 
@@ -8,7 +8,7 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 | ---------------- | ----------------------- | ----------------- |
 | Mesa de entradas | `MESA_ENTRADAS`         | Sprint 1          |
 | Profesor         | `PROFESOR`              | Sprint 1          |
-| Gerente          | `GERENTE`               | Planificado       |
+| Gerente          | `GERENTE`               | Sprint 2          |
 | Alumno           | `ALUMNO`                | Sprint 3 (portal) |
 
 - Cada usuario tiene un solo rol. Los valores técnicos son los de la tabla catálogo `rol`; la base rechaza cualquier otro (T-23).
@@ -87,30 +87,14 @@ HU-12 (T-39). Reemplaza a HU-04 en cuanto a quién administra el catálogo.
 - **Al confirmar se recalcula todo:** si alguien ocupó un lugar mientras tanto, entra en la cuenta.
 - **Sin lugar en ninguna fecha** (incluida una sesión única en una hora llena): se rechaza con `BLOQUE_LLENO`, sin opción de crearlo.
 - **Superposición del alumno:** un alumno no puede tener dos turnos que se pisen (mismo día y hora, con rangos de fechas que se cruzan), aunque sean de profesores distintos. Es un **rechazo total** (`ALUMNO_SUPERPUESTO`): no hay opción de crearlo en las fechas libres.
-- **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer.
+- **Prioridad** (no se ingresa a mano): Alta si el examen cae dentro de los 10 días desde la fecha del turno, Media entre 11 y 20 días, Baja en otro caso o si no hay fecha de examen. No se guarda: se calcula al leer. Las reglas están en [Prioridad](#prioridad).
 - Un turno está `ACTIVO` o `CANCELADO`; la UI muestra `ACTIVO` como **"Agendado"** (no es otro valor). Que sea vigente se decide por sus fechas, no por su estado. Un turno `CANCELADO` no es vigente ni ocupa lugar: no impide ninguna baja.
 - **Observaciones y temas a trabajar (HU-08):** las observaciones son siempre opcionales. Los **temas a trabajar** son opcionales en un `RECURRENTE` y **obligatorios** en una `SESION_UNICA`. Con "Asignar igual" (fechas sin lugar en un recurrente, tramos), todos los tramos creados de esa hora llevan las mismas observaciones y los mismos temas del pedido.
 - **Ocurrencia (Sprint 2, T-46):** un turno en una fecha concreta es lo que se cancela, se paga, se reprograma y tiene prioridad. Se identifica por el par **`(turnoId, fecha)`**: no tiene una "fecha original" distinta de su fecha.
-- **Cancelación de una ocurrencia (HU-13):** a partir del Sprint 2, cancelar registra siempre una fila en `CancelacionTurno` (`turnoId` + fecha de la ocurrencia), también para una sesión única; el resto de la serie sigue agendado. El valor `CANCELADO` de `Turno.estado` queda sólo para los turnos cancelados antes de este sprint (no se deshace una cancelación). El detalle de las reglas de HU-13 lo fija su propia tarea.
+- **Cancelación de una ocurrencia (HU-13):** a partir del Sprint 2, cancelar registra siempre una fila en `CancelacionTurno` (`turnoId` + fecha de la ocurrencia), también para una sesión única; el resto de la serie sigue agendado. El valor `CANCELADO` de `Turno.estado` queda sólo para los turnos cancelados antes de este sprint (no se deshace una cancelación). Las reglas están en [Cancelación](#cancelación).
 - **Finalización de una recurrencia (HU-14):** pone fin a **una hora** de una serie `RECURRENTE` desde una fecha, en todos sus tramos (`FinalizacionRecurrencia`, a lo sumo una por turno); los turnos anteriores a esa fecha no cambian. Las reglas están en [Finalización](#finalización).
-- **Reprogramación de una ocurrencia (HU-20, T-47):** edita el turno, sin tabla propia: una sesión única cambia su bloque y su fecha; en un recurrente la serie se parte en tramos (el original termina en la ocurrencia anterior, un tramo nuevo sigue desde la siguiente y la fecha movida pasa a ser una `SESION_UNICA` en el destino), y sus cancelaciones y pagos pasan al turno nuevo. El detalle lo fija T-49.
-
-## Pagos
-
-Modelo de datos (T-29); las reglas completas de cobro las fija HU-15 (registrar un pago) y HU-16 (deuda del alumno), cada una en su propia tarea.
-
-- Un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
-- El monto recibido (`Pago.montoRecibido`) es obligatorio en un pago en efectivo, la única forma de pago disponible, y tiene que ser >= el importe total (T-112). El vuelto lo calcula y lo devuelve la API: no se guarda (T-49).
-- La forma de pago (`FormaPago`) es un catálogo con baja lógica; el seed carga **"Efectivo"**, único medio disponible en este sprint (el ABM completo es HU-23, fuera de alcance).
-- El importe de cada ocurrencia pagada (`PagoTurno.importeAplicado`) es el precio por hora **vigente** de la materia del turno (`Materia.precioHora`) al momento de registrar el pago: cambiar el precio de la materia después no modifica los pagos ya registrados.
-- Una ocurrencia se paga **una sola vez** (lo garantiza la base, T-49). La anulación de pagos queda para el próximo sprint: en este, todo pago nace `VIGENTE` y un turno pagado no se puede cancelar.
-
-## Exámenes
-
-Modelo de datos (T-29); las reglas completas de alta, edición y baja las fija HU-17, en su propia tarea.
-
-- Un examen (`Examen`) es de un alumno en una materia, con `tipo` (`PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`) y baja lógica (`estado`): "eliminar" un examen (HU-17) es darlo de baja, nunca borrarlo.
-- De él depende la prioridad del turno (HU-18): Alta de 0 a 10 días hasta el examen, Media de 11 a 20, Baja en otro caso o si no hay examen próximo en esa materia.
+- **Reprogramación de una ocurrencia (HU-20, T-47):** edita el turno, sin tabla propia: una sesión única cambia su bloque y su fecha; en un recurrente la serie se parte en tramos (el original termina en la ocurrencia anterior, un tramo nuevo sigue desde la siguiente y la fecha movida pasa a ser una `SESION_UNICA` en el destino), y sus cancelaciones y pagos pasan al turno nuevo. Las reglas están en [Reprogramación](#reprogramación).
+- **Pagos y exámenes:** un turno en una fecha se cobra (HU-15) y su prioridad depende de los exámenes del alumno (HU-17, HU-18). Las reglas están en [Pagos](#pagos), [Deuda](#deuda), [Exámenes](#exámenes) y [Prioridad](#prioridad).
 
 ## Cancelación
 
@@ -156,11 +140,14 @@ HU-20 (T-49). Reprogramar **edita el turno**: no hay tabla de reprogramaciones (
 
 ## Pagos
 
-HU-15 (T-51). El modelo (un pago de un alumno con una o varias ocurrencias, comprobante correlativo, forma de pago "Efectivo", precio vigente) está en [Pagos](#pagos) más arriba; acá van las reglas del cobro.
+HU-15 (T-51; modelo de datos: T-29).
 
+- **Un pago, un alumno:** un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
+- **Forma de pago:** `FormaPago` es un catálogo con baja lógica; el seed carga **"Efectivo"**, único medio disponible en este sprint (el ABM completo es HU-23, fuera de alcance).
+- **Una sola vez:** una ocurrencia se paga una sola vez (lo garantiza la base, T-49). La anulación de pagos queda para el próximo sprint: en este, todo pago nace `VIGENTE` y un turno pagado no se puede cancelar.
 - **Qué se puede cobrar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), con estado `AGENDADO` o `SIN_REGISTRAR` (las canceladas no) y pago `PENDIENTE`. Pasadas o futuras.
 - **Tope de 8 semanas:** una ocurrencia futura, de una serie o una sesión única, se cobra sólo hasta hoy + 56 días. Las pasadas no tienen tope (T-60).
-- **Precio vigente:** el importe de cada ocurrencia es el precio por hora de su materia al registrar el pago (no lo manda el cliente). Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
+- **Precio vigente:** el importe de cada ocurrencia (`PagoTurno.importeAplicado`) es el precio por hora de su materia (`Materia.precioHora`) al registrar el pago (no lo manda el cliente). Cambiar el precio de la materia después no modifica los pagos ya registrados. Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
 - **Todo o nada:** si alguna ocurrencia no se puede cobrar, no se registra ninguna y la API informa cuáles y por qué (no existe, cancelada, ya pagada, fuera de las 8 semanas o sin precio). Dos pagos simultáneos de la misma ocurrencia: sólo uno se registra.
 - **Fecha de pago:** obligatoria, hoy o anterior.
 - **Monto recibido y vuelto:** el pago es en efectivo, así que el monto recibido es **obligatorio**: mayor a 0 y >= el total. Sin él no se registra el pago (T-112). El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**.
@@ -173,7 +160,7 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 
 - **Adeudado:** una ocurrencia con fecha **anterior a hoy**, estado "Sin registrar" (no cancelada) y pago pendiente. La ocurrencia de hoy no se adeuda todavía: es un próximo turno. Las canceladas no se adeudan.
 - **Pagada:** hay un pago registrado para esa ocurrencia. No hay anulación de pagos en este sprint (definición D): una ocurrencia pagada no vuelve a la deuda.
-- **Próximos turnos:** ocurrencias agendadas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos-1): 8 semanas). **Nunca son deuda:** no suman al total, pero se pueden cobrar por adelantado.
+- **Próximos turnos:** ocurrencias agendadas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos): 8 semanas). **Nunca son deuda:** no suman al total, pero se pueden cobrar por adelantado.
 - **Importe:** el precio por hora **vigente** de la materia. Si el gerente cambia el precio, los turnos impagos muestran el precio nuevo; lo ya pagado conserva el importe que se cobró. Una materia sin precio muestra el turno sin importe y no suma al total.
 - **Dos secciones, en las dos vistas:** "Turnos adeudados" y "Próximos turnos" se muestran por separado, tanto en la cuenta de un alumno como en la vista global (de todos los alumnos, o de uno). Hoy las separa: una ocurrencia nunca está en las dos.
 - **Filtros:** período (desde y hasta, cada uno opcional y sin tope de días), materia y profesor en las dos vistas; en la global, además, el alumno.
@@ -202,7 +189,7 @@ HU-21 (T-61). Indicadores del centro para el gerente, de un período (desde y ha
 
 ## Exámenes
 
-HU-17 (T-55). Modelo de datos: T-29 (ver más arriba). Registrar un examen es cargar un `Examen` de un alumno en una materia; "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
+HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia, con `tipo` (`PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
 
 - **Un examen pendiente por materia:** el alumno no puede tener dos exámenes `ACTIVO` de la misma materia con fecha `>= hoy` a la vez. Al intentar cargar o mover uno a esa situación, la API responde 409 `EXAMEN_PENDIENTE` con el existente, para ofrecer editarlo en vez de duplicarlo. Un examen pasado no cuenta: pasada su fecha, se puede cargar el siguiente de la misma materia sin límite.
 - **Fecha pasada:** se acepta igual (por ejemplo, para dejar registrado un examen que ya se tomó); la API lo marca con `pasado: true` para que el front avise, pero no lo rechaza.

@@ -2,6 +2,8 @@
 
 Registro corto de decisiones de arquitectura. Una decisión **tomada** no se cambia sin acuerdo del equipo; si cambia, se actualiza acá y en el doc afectado en el mismo PR. Lo que depende de una decisión **abierta** no se implementa suponiendo una respuesta (`AGENTS.md`, regla 7).
 
+**Los IDs `T-xx` de este archivo son decisiones, no tareas.** Las tareas de cada sprint (`docs/sprint-1/sprint-1.md`, `docs/sprint-2/sprint-2.md`) usan el mismo prefijo con otra numeración: la decisión T-39 no es la tarea T-39. Por eso, al citar una decisión fuera de este archivo se escribe "decisión T-xx", y "tarea T-xx" (o el nombre de la tarea) al citar una tarea.
+
 ## Tomadas
 
 <!-- Tabla sin formato de Prettier: se edita en muchos PR y realinearla entera genera conflictos. Al agregar una fila, respetar el ancho de las columnas. -->
