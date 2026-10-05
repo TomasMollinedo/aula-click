@@ -6,15 +6,10 @@
 **Criterios de Aceptación:**
 
 - El módulo "Alumnos" muestra el listado de todos los alumnos registrados. Como no se contempla la baja lógica de alumnos, el listado no tiene filtro por estado.
-- El listado muestra apellido, nombre y DNI de cada alumno, ordenado alfabéticamente por apellido; el resto de los datos se ve en el detalle.
+- El listado muestra sólo apellido y nombre de cada alumno, ordenado alfabéticamente por apellido; el resto de los datos se ve en el detalle.
 - El listado tiene un buscador por coincidencia parcial de DNI, nombre o apellido (por ejemplo, "gonz" encuentra a "González"); no distingue mayúsculas/minúsculas ni tildes.
 - Si la búsqueda no tiene coincidencias, el sistema lo indica y ofrece la opción de dar de alta un nuevo alumno.
 - Al seleccionar un alumno del listado se abre su detalle con todos sus datos: identificatorios, de contacto, del tutor (si corresponde), escolares, observaciones y sus turnos.
-- El detalle del alumno se organiza en pestañas: sus datos, sus turnos (HU-13, HU-18), sus exámenes (HU-17) y sus pagos (HU-16).
-- La pestaña "Turnos" muestra los turnos del alumno de un mes del año en curso, a elegir, o de todo el año. El mes en curso es lo que se muestra al entrar.
-- La pestaña "Turnos" también permite filtrar por estado del turno: agendado, sin registrar o cancelado. Los dos filtros se combinan, y la opción "Limpiar filtros" vuelve al mes en curso y a todos los estados.
-- Cada turno de la pestaña muestra, como mínimo: fecha, horario, materia, profesor, estado, estado de pago y prioridad (HU-18). Al seleccionarlo se abre su detalle con las acciones que correspondan (HU-13, HU-15, HU-20).
-- Desde la pestaña "Turnos" se puede generar un documento en PDF con los turnos del alumno (HU-11).
 - El mismo buscador está disponible en la pantalla de registrar turno (HU-08).
 - El alta se accede desde el módulo "Alumnos" mediante un botón "+ Nuevo alumno".
 - Datos obligatorios para el alta: nombre, apellido, DNI y fecha de nacimiento; si el alumno es mayor de edad, también su email y su teléfono. Si el alumno es menor de edad, su email y su teléfono son opcionales, y son obligatorios nombre, apellido, teléfono y email de un tutor o responsable. El resto (datos escolares, colegio y observaciones) es opcional y puede cargarse en el alta o después desde la edición.
@@ -47,7 +42,7 @@
 - No se puede guardar el alta si falta algún dato obligatorio; el sistema resalta los campos incompletos (la foto, al ser opcional, no bloquea el guardado).
 - Al guardar, el profesor queda en estado "Activo".
 - La edición de datos se realiza desde la ficha del profesor, con un botón "Editar", con las mismas validaciones del alta. El DNI no se puede modificar: en la edición se muestra como dato de sólo lectura, y el sistema rechaza cualquier intento de cambiarlo.
-- La capacidad no puede bajarse por debajo de la cantidad de alumnos que el profesor ya tiene anotados a la vez en alguna hora de sus bloques (HU-06). Se compara contra la hora y la fecha más cargadas de hoy en adelante, no contra el total de turnos de esa hora a lo largo del tiempo; si no se cumple, el sistema lo indica, aclara de qué hora, qué fecha y cuántos alumnos se trata, y no permite guardar. Igualar la cantidad sí se puede.
+- La capacidad no puede bajarse a un valor menor que la cantidad de turnos vigentes que el profesor tenga en alguna hora de sus bloques (HU-06); en ese caso el sistema lo indica y no permite guardar.
 - El detalle muestra quién creó el registro y quién lo modificó por última vez (con fecha y hora).
 
 **ID:** HU-08 | **Sprint:** 2
@@ -58,29 +53,30 @@
 **Criterios de Aceptación:**
 
 - Cada turno es una asignación que vincula un alumno con una hora de un bloque del profesor (HU-06).
-- Se selecciona un alumno (mediante el buscador del listado de alumnos, HU-02).
-- Para buscar horarios se usan tres filtros: materia (obligatorio; sólo materias activas), día de la semana y profesor (estos dos opcionales, se pueden combinar). Sólo se muestran profesores activos que tengan asignada la materia elegida (HU-05).
-- Según los filtros elegidos, el sistema muestra los bloques que coinciden, cada uno con su horario completo (por ejemplo, "de 8:00 a 12:00"):
-  - Materia y día: los profesores que dictan la materia y tienen un bloque ese día.
-  - Materia y profesor: los días en que ese profesor tiene bloques.
-  - Materia, día y profesor: los bloques de ese profesor ese día.
-  - Sólo materia: todos los profesores que dictan la materia, con sus días.
-- Al seleccionar un resultado (un profesor en un día), se muestran las horas de ese bloque, cada una con un checkbox y su ocupación (turnos vigentes / capacidad efectiva, HU-06). Las horas que no tienen lugar también se muestran con un mensaje aclarando que están llenas.
-- Se pueden tildar una o varias horas del bloque, consecutivas o no (por ejemplo, 8:00–9:00 y 10:00–11:00). Cada hora seleccionada se registra como un turno, todos con la misma materia, tipo de turno y fechas.
-- El turno se da en el aula asignada al bloque (HU-06); el sistema muestra el aula al confirmar el turno y en el detalle del turno.
-- Validación: la materia del turno debe ser una de las materias asignadas al profesor del bloque; si no lo es, el sistema no permite continuar.
-- Tipo de turno, obligatorio: "Recurrente" (el alumno viene todas las semanas en esa hora; se indica fecha de inicio y, opcionalmente, fecha de fin) o "Sesión única" (se indica la fecha). Las fechas deben coincidir con el día de la semana del bloque.
-- Validación de capacidad: la cantidad de turnos vinculados a cada hora del bloque no puede superar su capacidad efectiva (la menor entre la del profesor y la del aula, HU-06). La capacidad se controla para cada hora seleccionada y para cada fecha en que aplica el turno, contando los turnos recurrentes vigentes y las sesiones únicas de esa fecha en esa hora.
-- Sesión única sin lugar: si una hora seleccionada está completa en la fecha elegida, el sistema lo indica, no permite registrar el turno en esa hora y ofrece la opción "Buscar otros turnos disponibles".
-- Recurrente con fechas completas: si una hora tiene lugar en algunas fechas pero está completa en otras, el sistema muestra un mensaje que indica puntualmente qué fechas no tienen lugar (por ejemplo: "El lunes 12/10 la hora de 9:00 a 10:00 está completa") y ofrece dos opciones: "Asignar igual" y "Cancelar".
-- "Asignar igual": se registra el turno recurrente únicamente en las fechas con lugar (la serie se guarda en tramos que saltean las fechas completas); no se guardan excepciones. En las fechas sin lugar el alumno no figura en esa hora del bloque ni ocupa lugar. Una vez asignado, el mensaje de éxito lista las fechas en las que no se agendó turno.
-- "Cancelar": vuelve a la pantalla de buscar turnos disponibles.
-- Si una hora no tiene lugar en ninguna fecha (por ejemplo, porque está completa con turnos recurrentes sin fecha de fin), el sistema lo indica y no permite registrar el turno recurrente en esa hora.
-- Un alumno no puede tener dos turnos que se superpongan en fecha y horario.
-- Campo "Observaciones": texto libre, opcional (reemplaza al campo "motivo de consulta" del Sprint 1).
-- Campo "Temas a trabajar": texto libre; opcional si el turno es recurrente y obligatorio si es sesión única.
-- Al confirmar, el turno queda en estado "Agendado", reflejado en la agenda del profesor (HU-10), en la ficha del alumno y en la agenda diaria del centro (HU-09).
-- Cada turno registrado queda con fecha, hora y usuario de creación, visibles en el detalle del turno.
+  - Se selecciona un alumno (mediante el buscador del listado de alumnos, HU-02).
+  - Para buscar horarios se usan tres filtros: materia (obligatorio; sólo materias activas), día de la semana y profesor (estos dos opcionales, se pueden combinar). Sólo se muestran profesores activos que tengan asignada la materia elegida (HU-05).
+  - Según los filtros elegidos, el sistema muestra los bloques que coinciden, cada uno con su horario completo (por ejemplo, "de 8:00 a 12:00"):
+    ◦ Materia y día: los profesores que dictan la materia y tienen un bloque ese día.
+    ◦ Materia y profesor: los días en que ese profesor tiene bloques.
+    ◦ Materia, día y profesor: los bloques de ese profesor ese día.
+    ◦ Sólo materia: todos los profesores que dictan la materia, con sus días.
+  - Al seleccionar un resultado (un profesor en un día), se muestran las horas de ese bloque, cada una con un checkbox y su ocupación (turnos vigentes / capacidad efectiva, HU-06). Las horas que no tienen lugar también se muestran con un mensaje aclarando que estan llenas.
+  - Se pueden tildar una o varias horas del bloque, consecutivas o no (por ejemplo, 8:00–9:00 y 10:00–11:00). Cada hora seleccionada se registra como un turno, todos con la misma materia, tipo de turno y fechas.
+  - El turno se da en el aula asignada al bloque (HU-06); el sistema muestra el aula al confirmar el turno y en el detalle del turno.
+  - Validación: la materia del turno debe ser una de las materias asignadas al profesor del bloque; si no lo es, el sistema no permite continuar.
+  - Tipo de turno, obligatorio: "Recurrente" (el alumno viene todas las semanas en esa hora; se indica fecha de inicio y, opcionalmente, fecha de fin) o "Sesión única" (se indica la fecha). Las fechas deben coincidir con el día de la semana del bloque.
+  - Validación de capacidad: la cantidad de turnos vinculados a cada hora del bloque no puede superar su capacidad efectiva (la menor entre la del profesor y la del aula, HU-06). La capacidad se controla para cada hora seleccionada y para cada fecha en que aplica el turno, contando los turnos recurrentes vigentes y las sesiones únicas de esa fecha en esa hora.
+  - Sesión única sin lugar: si una hora seleccionada está completa en la fecha elegida, el sistema lo indica, no permite registrar el turno en esa hora y ofrece la opción "Buscar otros turnos disponibles".
+  - Recurrente con fechas completas: si una hora tiene lugar en algunas fechas pero está completa en otras, el sistema muestra un mensaje que indica puntualmente qué fechas no tienen lugar (por ejemplo: "El lunes 12/10 la hora de 9:00 a 10:00 está completa") y ofrece dos opciones: "Asignar igual" y "Cancelar".
+  - "Asignar igual": se registra el turno recurrente con esas fechas como excepciones; en esas fechas el alumno no figura en esa hora del bloque ni ocupa lugar. Y una vez asignado se muestra un mensaje de éxito con las aclaraciones de las fechas en las que hay excepciones (fechas en las que no hay turno).
+  - "Cancelar": vuelve a la pantalla de buscar turnos disponibles.
+  - Si una hora no tiene lugar en ninguna fecha (por ejemplo, porque está completa con turnos recurrentes sin fecha de fin), el sistema lo indica y no permite registrar el turno recurrente en esa hora.
+  - Las fechas exceptuadas de un turno recurrente se muestran en el detalle del turno.
+  - Un alumno no puede tener dos turnos que se superpongan en fecha y horario.
+  - Campo "motivo de consulta" de texto libre, opcional. se remplaza por el nombre de observaciones que es opcional de texto libre.
+  - Campo de "Temas a trabajar" que sea de texto libre, opcional si es recurrente y obligatorio si es de sesion unica.
+  - Al confirmar, el turno queda en estado "Agendado", reflejado en la agenda del profesor (HU-10), en la ficha del alumno y en la agenda diaria del centro (HU-09).
+  - Cada turno registrado queda con fecha, hora y usuario de creación, visibles en el detalle del turno.
 
 **ID:** HU-11 | **Sprint:** 2
 **Título:** PDF de turno, de los turnos de un alumno y de la agenda
