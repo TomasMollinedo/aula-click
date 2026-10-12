@@ -176,8 +176,8 @@ describe('registrar', () => {
   })
 
   it.each([
-    ['por nombre de índice', { index: 'pago_turno_turno_id_fecha_ocurrencia_key' }],
-    ['por campos', { fields: ['turno_id', 'fecha_ocurrencia'] }],
+    ['por nombre de índice', { index: 'pago_turno_turno_id_fecha_ocurrencia_vigente_key' }],
+    ['por campos', { fields: ['turno_id', 'fecha_ocurrencia', 'vigente'] }],
   ])('P2002 del único de pago_turno (%s) → 409 TURNOS_NO_COBRABLES sin details', async (_, c) => {
     pagoCreate.mockRejectedValue(p2002(c))
 
@@ -191,6 +191,7 @@ describe('registrar', () => {
 
   it.each([
     ['otro índice', { index: 'pago_numero_comprobante_key' }],
+    ['índice viejo del único', { index: 'pago_turno_turno_id_fecha_ocurrencia_key' }],
     ['forma ilegible', undefined],
   ])('otra P2002 (%s) no se traduce', async (_, c) => {
     const original = p2002(c)
