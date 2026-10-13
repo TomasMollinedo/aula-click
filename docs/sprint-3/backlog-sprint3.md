@@ -31,7 +31,7 @@ Es la HU-22 que HU-13, HU-15, HU-16 y HU-21 dejaron anunciada para este sprint.
 
 - Si un alumno tiene turnos en horas consecutivas, el mismo día, con el mismo profesor y la misma materia, la pantalla los muestra como una sola fila. (Ejemplo: Pérez, Juan · 8:00 a 11:00 (3 h)". Los turnos no consecutivos, o con otro profesor u otra materia, quedan en filas separadas.
 - El estado se elige una sola vez y vale para todas las horas de la fila. Con "Ajustar por hora" se puede dar un estado distinto a cada hora (por ejemplo, el alumno se retiró después de la primera hora: "Presente" la primera y "Ausente" las otras dos), porque el turno, el lugar y el cobro son por hora.
-- "Qué se trabajó" e "Indicaciones para la próxima sesión" se cargan una sola vez por fila y valen para sus horas "Presente". El sistema las guarda en cada turno, pero las muestra como una sola clase ("8:00 a 11:00 · 3 h") en el detalle del turno, el historial (HU-31, HU-33) y las indicaciones de la clase anterior. La observación de una hora "Ausente" se carga por hora.
+- "Qué se trabajó" e "Indicaciones para la próxima sesión" se cargan una sola vez por fila y valen para sus horas "Presente". El sistema las guarda en cada turno. La fila agrupada existe sólo en esta pantalla: en el detalle del turno, el historial (HU-31, HU-32, HU-33) y las demás vistas cada hora se muestra por separado, con su estado y su asistencia. La observación de una hora "Ausente" se carga por hora.
 - Las correcciones se pueden hacer sobre toda la fila o hora por hora. Los indicadores (HU-39) siguen contando cada hora como un turno.
 
 ▶ Plazo, corrección y cierre automático a los 7 días
@@ -39,7 +39,7 @@ Es la HU-22 que HU-13, HU-15, HU-16 y HU-21 dejaron anunciada para este sprint.
 - El profesor tiene 7 días desde la fecha del turno para registrar la asistencia y también para corregirla (estado y textos), hasta las 23:59 del séptimo día. Cada corrección actualiza quién y cuándo la modificó.
 - Pasado el plazo, el sistema cierra el turno y guarda en forma definitiva la asistencia como "Sin registrar", con la observación "No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema", dejando como autor al sistema y la fecha y hora del cierre.
 - Un turno cerrado es de sólo lectura para todos los roles: ni el profesor, ni la mesa de entrada, ni el gerente pueden registrarlo o modificarlo. Se puede ver eligiendo su fecha en "Asistencia".
-- El sistema distingue dos situaciones en el detalle del turno, las listas y el historial: "Sin registrar · vence el 12/10" (todavía se puede registrar) y "Sin registrar · cerrado por el sistema" (definitivo, con la observación visible y la aclaración de que no lo registró una persona).
+- El sistema distingue dos situaciones en el detalle del turno y el historial: "Sin registrar · vence el 12/10" (todavía se puede registrar) y "Sin registrar · cerrado por el sistema" (definitivo, con la observación visible y la aclaración de que no lo registró una persona).
 
 ▶ Control de los profesores que no registran
 
@@ -48,8 +48,8 @@ Es la HU-22 que HU-13, HU-15, HU-16 y HU-21 dejaron anunciada para este sprint.
 ▶ Estados del turno
 
 - Al registrar la asistencia, el turno pasa de "Agendado" o "Sin registrar" (dentro del plazo) a "Realizado" (presente) o "Ausente". Si vence el plazo sin registro, queda "Sin registrar" en forma definitiva.
-- Los dos estados nuevos tienen su propio color sólo en el detalle del turno y en la vista de lista de las agendas: la del centro (HU-09), la del profesor (HU-10) y la del alumno (HU-30). También en los turnos de la ficha del alumno.
-- La vista de calendario semanal (HU-19) no cambia: no muestra el estado de asistencia, para no sobrecargarla.
+- Los estados de asistencia se ven sólo en el detalle del turno (y en esta pantalla y el historial).
+- Ninguna vista de calendario ni de lista cambia: el calendario semanal (HU-19), las listas de las agendas del centro (HU-09) y del profesor (HU-10), los turnos de la ficha del alumno y "Mi calendario" (HU-30) no muestran el estado de asistencia, para no sobrecargarlos.
 - El detalle del turno muestra la asistencia: estado, qué se trabajó, indicaciones u observación, quién la registró y quién la modificó por última vez, con fecha y hora. Si la cerró el sistema, lo indica en lugar del nombre de una persona.
 
 ▶ Relación con otras operaciones
@@ -135,11 +135,12 @@ Responde a la observación de los clientes en la review del Sprint 2. Depende de
 - Para no confundirlos, el archivo que adjunta la familia se llama "Comprobante adjunto" y el documento que emite el centro sigue siendo el "Comprobante de pago" (PDF de HU-15).
 - Lo ven el personal de mesa de entrada y el gerente. El alumno no lo ve desde el portal.
 
-▶ Reemplazo
+▶ Reemplazo y baja
 
 - Desde el detalle del pago, el personal de mesa de entrada puede reemplazar el comprobante adjunto (por ejemplo, si la foto salió ilegible), con confirmación.
 - El archivo anterior no se elimina: queda guardado y el detalle muestra sólo el último, con quién lo adjuntó y cuándo.
 - Un pago por transferencia no puede quedar sin comprobante: se reemplaza, no se quita.
+- En un pago con tarjeta de débito, donde el comprobante es opcional, el personal de mesa de entrada puede quitarlo desde el detalle del pago, con confirmación. Es una baja lógica: el archivo queda guardado en el sistema, pero el pago se ve sin comprobante adjunto y se le puede adjuntar otro.
 
 ▶ Fuera de alcance en este incremento
 
@@ -149,24 +150,24 @@ Responde a la observación de los clientes en la review del Sprint 2. Depende de
 **ID:** HU-25 | **Sprint:** 3
 **Título:** Cobrar una materia completa
 **Como…** Personal de mesa de entrada
-**Necesito…** Filtrar los turnos pendientes del alumno por materia y período y seleccionarlos todos de una vez con "Seleccionar todo", para cobrarlos juntos.
-**Para…** Que la familia pueda pagar una materia completa (por ejemplo, Inglés) por uno, dos o más meses, y dejar otra pendiente, sin tildar turno por turno.
+**Necesito…** Filtrar los turnos pendientes del alumno por una o más materias y seleccionarlos todos de una vez con "Seleccionar todo", para cobrarlos juntos.
+**Para…** Que la familia pueda pagar una o varias materias completas (por ejemplo, Inglés, o Inglés y Matemática), con sus turnos adeudados y los próximos, y dejar otra pendiente, sin tildar turno por turno.
 **Criterios de Aceptación:**
 Amplía HU-15 y HU-16. Responde al pedido de la review del Sprint 2 (pago por materia). Se sigue cobrando por turno, con el importe de cada uno; esta HU agrega el checkbox "Seleccionar todo" sobre los turnos que dejan los filtros.
 
 ▶ Filtros
 
-- En la pestaña "Pagos" de la ficha del alumno (y en la vista global "Pagos" con un alumno filtrado), la lista "Por cobrar" se puede filtrar por materia, profesor, período y tipo de turno (adeudados o próximos).
-- El período admite uno o más meses (por ejemplo, octubre y noviembre) o un rango de fechas desde y hasta. Los próximos turnos nunca pasan del límite de cobro (8 semanas, HU-15).
-- Los filtros se combinan: materia y un mes permite cobrar toda una materia por un mes; materia y dos meses, por dos meses; sin filtros, todos los pendientes del alumno.
+- En la pestaña "Pagos" de la ficha del alumno (y en la vista global "Pagos" con un alumno filtrado), el filtro de materia de la lista "Por cobrar" permite elegir una o más materias. Profesor y período siguen como en HU-16.
+- Con el filtro aplicado se ven los turnos adeudados y los próximos de esas materias. Los próximos nunca pasan del límite de cobro (8 semanas, HU-15).
+- Sin filtro de materia, se ven todos los pendientes del alumno.
 
 ▶ Seleccionar todo
 
 - Sobre la lista hay un checkbox "Seleccionar todo". Marca todos los turnos que cumplen los filtros aplicados en ese momento, de todas las páginas y no sólo los de la página visible, y lo aclara: "Se seleccionaron los 12 turnos del filtro".
 - Si se destilda un turno, el checkbox queda en estado intermedio; con todo marcado, el mismo control pasa a "Deseleccionar todo".
 - Los turnos cancelados, los ya pagados y los posteriores al límite de cobro no aparecen en la lista, por lo que nunca quedan seleccionados.
-- Cambiar los filtros no borra lo ya seleccionado: se puede filtrar Inglés y seleccionar todo, luego filtrar Matemática y seleccionar todo, y cobrar las dos materias juntas, en un mismo pago.
-- Se muestran siempre la cantidad y el total seleccionados ("8 turnos de Inglés · $ 64.000"), con el subtotal por materia cuando hay más de una, aunque algunos turnos queden fuera del filtro actual. Antes de continuar se puede destildar cualquier turno.
+- Para cobrar varias materias juntas, se eligen todas en el filtro de materia y se usa "Seleccionar todo": se cobran en un mismo pago.
+- Se muestran siempre la cantidad y el total seleccionados ("8 turnos de Inglés · $ 64.000"), con el subtotal por materia cuando hay más de una. Antes de continuar se puede destildar cualquier turno.
 - Después sigue el flujo de registro de pago de HU-15 y HU-23 (forma de pago, datos y confirmación).
 - Valen todas las reglas de HU-15: no se incluyen turnos cancelados ni ya pagados, el importe es el precio por hora vigente de la materia y el pago se registra todo junto o nada.
 - En una serie recurrente sin fecha de fin, sólo se cobran los turnos que entran en el filtro, hasta el límite de cobro.
@@ -325,7 +326,7 @@ Reutiliza el calendario semanal de HU-19, con los turnos del alumno.
 - Se muestran sólo los turnos del alumno. Cada turno muestra horario, materia, profesor y aula.
 - Aunque reutiliza el calendario de HU-19, no muestra la ocupación: ni cuántos alumnos hay anotados ni cuántos lugares quedan en una hora, ni datos de otros alumnos. Vale para el calendario, la lista y el detalle.
 - En la vista de calendario los turnos se ven con los mismos estados y colores que el calendario semanal de HU-19: no muestra el estado de asistencia, para no sobrecargarlo.
-- En la vista de lista y en el detalle del turno sí se ve el estado de asistencia: "Realizado" o "Ausente" (HU-22), además de "Agendado" y "Cancelado".
+- La vista de lista tampoco muestra el estado de asistencia: "Realizado" o "Ausente" (HU-22) se ven sólo en el detalle del turno.
 - Los turnos cancelados se ven siempre, con su estado y su color, para que la familia sepa que esa clase no se da.
 - Por defecto se muestra la semana actual con el día de hoy destacado; se puede avanzar y retroceder de a una semana y volver a "Hoy".
 - Selector "Calendario / Lista". En el celular, la vista por defecto es la lista de la semana, porque la grilla no entra en pantallas chicas.
@@ -355,7 +356,7 @@ Reutiliza el calendario semanal de HU-19, con los turnos del alumno.
 
 - El historial se agrupa por materia y profesor ("Matemática — Prof. Gómez"), porque un alumno puede cursar una materia con más de un profesor.
 - Cada grupo muestra un resumen: clases realizadas, ausencias y porcentaje de asistencia (presentes sobre presentes más ausentes). Los turnos cancelados y los sin registrar no cuentan para el porcentaje.
-- Debajo, cada clase con fecha, horario, estado ("Realizado", "Ausente", "Cancelado" o "Sin registrar"), qué se trabajó, indicaciones para la próxima sesión u observación de la ausencia. Un turno cancelado muestra su motivo (HU-13). Un "Sin registrar" cerrado por el sistema (HU-22) se muestra con su observación. Las horas seguidas del mismo alumno, profesor y materia en un día se muestran como una sola clase ("8:00 a 11:00 · 3 h"); para el porcentaje, cada hora cuenta como un turno.
+- Debajo, cada clase con fecha, horario, estado ("Realizado", "Ausente", "Cancelado" o "Sin registrar"), qué se trabajó, indicaciones para la próxima sesión u observación de la ausencia. Un turno cancelado muestra su motivo (HU-13). Un "Sin registrar" cerrado por el sistema (HU-22) se muestra con su observación. Cada hora se muestra como una clase, también cuando el alumno tiene horas seguidas con el mismo profesor y materia; para el porcentaje, cada hora cuenta como un turno.
 - Las clases se ordenan de la más reciente a la más antigua. No se muestran turnos futuros: esos están en los turnos del alumno.
 
 ▶ Filtros
@@ -401,7 +402,7 @@ Depende de HU-22. Es la vista del alumno del historial académico (HU-31).
 - El menú del portal tiene la opción "Mis materias".
 - Lista cada combinación de materia y profesor en la que el alumno tiene o tuvo turnos ("Inglés — Prof. Ruiz"), con su próximo turno y su porcentaje de asistencia.
 - Al entrar a una materia se ven primero las "Indicaciones para la próxima clase" de la última clase realizada, destacadas.
-- Debajo, el historial de clases: fecha, horario, estado ("Realizado", "Ausente" o "Cancelado"), qué se trabajó e indicaciones del profesor, de la más reciente a la más antigua. Las horas seguidas con el mismo profesor y materia en un día se ven como una sola clase ("8:00 a 11:00 · 3 h").
+- Debajo, el historial de clases: fecha, horario, estado ("Realizado", "Ausente" o "Cancelado"), qué se trabajó e indicaciones del profesor, de la más reciente a la más antigua. Cada hora se ve como una clase, también las horas seguidas con el mismo profesor y materia.
 - Se puede filtrar por mes (por defecto, el mes en curso).
 - La misma pantalla tiene la sección "Exámenes" de esa materia (HU-35).
 - Es de sólo lectura. No muestra las observaciones internas de la ficha ni datos de otros alumnos.
