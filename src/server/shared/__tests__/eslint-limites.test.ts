@@ -82,59 +82,6 @@ describe('ESLint: las features y shared/ pueden importar de shared/', { timeout:
 // Entre features (decisión T-39): de otra feature solo se importa su repository o sus condiciones,
 // y un repository no importa el repository de otra. Los tests pueden importar tipos de la
 // validation de otra feature para armar sus falsos.
-// Las condiciones reciben el cliente del repository: de Prisma solo importan tipos.
-describe('ESLint: las condiciones no usan Prisma, salvo sus tipos', { timeout: 30_000 }, () => {
-  it.each([
-    [
-      'src/server/features/asistencias/asistencias.condiciones.ts',
-      "import { prisma } from '@/lib/prisma'",
-    ],
-    [
-      'src/server/features/adjuntos/adjuntos.condiciones.ts',
-      "import { Prisma } from '@/generated/prisma/client'",
-    ],
-  ])('%s: `%s` da error', async (filePath, import_) => {
-    expect(
-      await erroresDeImport(
-        filePath,
-        `${import_}
-export type { Prisma }
-`,
-      ),
-    ).toHaveLength(1)
-  })
-
-  it.each([
-    [
-      'src/server/features/turnos/turnos.condiciones.ts',
-      "import type { Prisma } from '@/generated/prisma/client'",
-    ],
-    [
-      'src/server/features/adjuntos/adjuntos.condiciones.ts',
-      "import { type Prisma } from '@/generated/prisma/client'",
-    ],
-    [
-      'src/server/features/turnos/ocurrencias.condiciones.ts',
-      "import type { Prisma } from '@/generated/prisma/client'",
-    ],
-    ['src/server/features/pagos/pagos.repository.ts', "import { prisma } from '@/lib/prisma'"],
-    [
-      'src/server/features/pagos/pagos.repository.ts',
-      "import { Prisma } from '@/generated/prisma/client'",
-    ],
-  ])('%s: `%s` está permitido', async (filePath, import_) => {
-    expect(
-      await erroresDeImport(
-        filePath,
-        `${import_}
-export type { Prisma }
-export { prisma }
-`,
-      ),
-    ).toEqual([])
-  })
-})
-
 describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout: 30_000 }, () => {
   it.each([
     ['src/server/features/bloques/bloques.service.ts', '@/server/features/turnos/turnos.reglas'],
@@ -160,25 +107,6 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
     ['src/server/features/pagos/pagos.pdf.tsx', '@/server/features/centro/centro.logo-pdf'],
     ['src/server/features/pagos/pagos.pdf.tsx', '@/lib/prisma'],
     ['src/server/features/pagos/pagos.pdf.tsx', '@/utils/moneda'],
-    // Las condiciones nuevas del Sprint 3 (T-73) caen en el mismo bloque que las de turnos.
-    [
-      'src/server/features/asistencias/asistencias.condiciones.ts',
-      '@/server/features/turnos/turnos.repository',
-    ],
-    [
-      'src/server/features/asistencias/asistencias.condiciones.ts',
-      '@/server/features/turnos/turnos.reglas',
-    ],
-    [
-      'src/server/features/adjuntos/adjuntos.condiciones.ts',
-      '@/server/features/pagos/pagos.repository',
-    ],
-    [
-      'src/server/features/adjuntos/adjuntos.condiciones.ts',
-      '@/server/features/pagos/pagos.validation',
-    ],
-    ['src/server/features/adjuntos/adjuntos.service.ts', '@/server/features/pagos/pagos.reglas'],
-    ['src/server/features/adjuntos/adjuntos.service.ts', '@/lib/prisma'],
   ])('desde %s, importar %s da error', async (filePath, ruta) => {
     expect(await erroresDeImport(filePath, importar(ruta))).toHaveLength(1)
   })
@@ -192,6 +120,7 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
       'src/server/features/bloques/bloques.repository.ts',
       '@/server/features/turnos/turnos.condiciones',
     ],
+    ['src/server/features/turnos/turnos.condiciones.ts', '@/generated/prisma/client'],
     ['src/server/features/turnos/turnos.repository.ts', './turnos.condiciones'],
     ['src/server/features/turnos/turnos.service.ts', './turnos.reglas'],
     [
@@ -202,17 +131,6 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
     ['src/server/features/pagos/pagos.pdf.tsx', '@/server/shared/pdf/tabla'],
     ['src/server/features/pagos/pagos.pdf.tsx', './pagos.formato'],
     ['src/server/features/centro/centro.condiciones.ts', './centro.logo-pdf'],
-    [
-      'src/server/features/asistencias/asistencias.condiciones.ts',
-      '@/server/features/turnos/ocurrencias.condiciones',
-    ],
-    [
-      'src/server/features/adjuntos/adjuntos.condiciones.ts',
-      '@/server/features/pagos/pagos.condiciones',
-    ],
-    ['src/server/features/adjuntos/adjuntos.repository.ts', './adjuntos.condiciones'],
-    ['src/server/features/adjuntos/adjuntos.service.ts', '@/server/shared/archivos'],
-    ['src/server/features/usuarios/usuarios.routes.ts', '@/server/router'],
   ])('desde %s, importar %s está permitido', async (filePath, ruta) => {
     expect(await erroresDeImport(filePath, importar(ruta))).toEqual([])
   })

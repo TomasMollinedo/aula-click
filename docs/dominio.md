@@ -1,4 +1,4 @@
-# Reglas de dominio — Aula Click (Sprints 1 a 3)
+# Reglas de dominio — Aula Click (Sprints 1 y 2)
 
 Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendiente está en [`decisiones.md`](./decisiones.md) → Abiertas. Estas reglas las **decide y hace cumplir la API**; el frontend las muestra y puede anticipar errores de formato, pero no las recalcula (única excepción: el formulario de alumno calcula si es menor solo como ayuda visual, para mostrar el aviso y los datos del tutor; no bloquea el envío y la validación sigue siendo de la API; T-28).
 
@@ -211,34 +211,6 @@ HU-18. La prioridad de un turno es de cada **ocurrencia** (un turno en una fecha
 - Junto con la prioridad se informa el examen que la determina (fecha, tipo, materia y días que faltan). Una Baja por lejanía también lo trae; sin examen próximo, no.
 - Las ocurrencias canceladas no tienen prioridad.
 - La prioridad **no se guarda**: se calcula en cada consulta, así que cargar, modificar o dar de baja un examen la cambia en la próxima consulta.
-
-## Asistencia
-
-A completar por T-81 (HU-22): quién la registra, plazo, campos, horas seguidas, corrección y cierre.
-
-## Historial académico
-
-A completar por T-108 (HU-31, HU-33).
-
-## Portal del alumno
-
-A completar por T-88 (acceso al portal, HU-27) y T-91 (contraseña, HU-28). La convención de sus endpoints está en `contrato-api.md` → Portal del alumno.
-
-## Comprobante adjunto
-
-A completar por T-95 (HU-24).
-
-## Anulación de pagos
-
-A completar por T-104 (HU-42).
-
-## Notas de exámenes
-
-A completar por T-106 (HU-34, HU-35).
-
-## Tope de deuda
-
-A completar por T-93 (HU-29, amplía HU-08): la regla de los 30 días la deja escrita T-76.
 
 ## Auditoría
 
