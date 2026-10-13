@@ -39,7 +39,7 @@ src/
 │   ├── router.ts                     # createRouter() y el tipo AppEnv
 │   ├── errors/                       # AppError y subclases, errorHandler, ErrorResponseSchema
 │   ├── middlewares/auth.ts           # requireAuth() + requireRole(...)
-│   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, formato, auditoria, detalles y pdf/ (ver convenciones-backend.md)
+│   ├── shared/                       # actor, estado, paginacion, zod, busqueda, fechas, formato, auditoria, detalles, archivos y pdf/ (ver convenciones-backend.md)
 │   └── features/
 │       ├── turnos/ocurrencias.condiciones.ts  # motor de ocurrencias (T-30): lo consumen agendas y las features del Sprint 2
 │       ├── agendas/                          # agendas diaria, propia, de un profesor y del centro: sin tablas propias, leen ocurrencias y prioridades
@@ -73,6 +73,16 @@ Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la com
 - `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
 - `tablero`: indicadores agregados de un período para el gerente (T-61). Sólo lectura y sin tablas propias: las ocurrencias salen del motor de `turnos`, la deuda de `cuentas.condiciones` (`totalAdeudado`) y lo cobrado de `pagos.condiciones` (`totalCobradoEntre`); las cuentas son reglas puras de `tablero.reglas.ts`.
 - `centro`: nombre, dirección, teléfono y logo del centro, para el encabezado de los documentos oficiales (T-64). Sin tabla: son constantes de la feature (el logo, un archivo); surgió con las definiciones del 29/09, así que es la única que agregó su línea a `app.ts` después de T-32.
+
+Features de API del Sprint 3 (T-73 registra sus routers vacíos; cada una la completa su tarea dueña, sin tocar `app.ts` ni `eslint.config.mjs`):
+
+- `asistencias`: el profesor registra y corrige la asistencia de sus turnos (HU-22, T-81). Lee las ocurrencias con el motor de `turnos`.
+- `historiales`: historial académico del alumno por materia y profesor (HU-31, HU-33, T-108). Sólo lectura y sin tablas propias, sobre el motor de ocurrencias.
+- `adjuntos`: comprobante adjunto de un pago, que se sube antes de registrarlo y se reemplaza sin borrar el anterior (HU-24, T-95).
+- `anulaciones`: anulación de un pago completo, con su motivo (HU-42, T-104).
+- `usuarios`: lo que vale para cualquier usuario sin importar su rol, hoy su usuario y el cambio de su contraseña (HU-28, T-91).
+
+El portal del alumno no es una feature: sus endpoints `mis-…` / `mi-…` viven en la feature dueña del concepto (`contrato-api.md` → Portal del alumno).
 
 `turnos` publica el **motor de ocurrencias** en `turnos/ocurrencias.condiciones.ts` (T-30): leer ocurrencias con su estado y su pago, la ocupación de una hora, la superposición del alumno y los locks de la reserva. Las features del Sprint 2 lo consumen desde su repository (o con su `tx`) y no reimplementan ninguna de esas reglas (`convenciones-backend.md` → Ocurrencias).
 
@@ -315,6 +325,7 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 - En la base se guarda la **clave** del objeto, no la URL.
 - Para mostrar un archivo se genera una URL prefirmada de lectura, con TTL por defecto de 900 s (15 min), para que no venza mientras el usuario está en pantalla.
 - La foto del profesor (JPG/PNG, chica) sube por **multipart a la API**. El navegador no sube directo a MinIO.
+- El tipo, el tamaño y el contenido de un archivo subido se validan con `archivoSchema`, y su clave se arma con `claveDeArchivo` (`src/server/shared/archivos.ts`, ver `convenciones-backend.md`). Además del tipo que declara el navegador, `archivoSchema` verifica la firma del archivo (JPG, PNG o PDF), para no guardar uno con la extensión cambiada. La foto del profesor conserva su validación propia (`profesores.validation.ts`), que no revisa la firma.
 
 ## Documentos PDF
 
