@@ -1,14 +1,13 @@
 import { z } from '@hono/zod-openapi'
 import { PRIORIDADES } from '@/server/features/examenes/examenes.condiciones'
-import { TIPOS_TURNO } from '@/server/features/turnos/ocurrencias.condiciones'
+import { ESTADOS_OCURRENCIA, TIPOS_TURNO } from '@/server/features/turnos/ocurrencias.condiciones'
 import { auditoriaSchema, usuarioAuditoriaSchema } from '@/server/shared/auditoria'
 import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 
-// Valores de enums que ningún `*.condiciones.ts` publica como array (a diferencia de
-// `TIPOS_TURNO`): se declaran acá para no importar `@/generated/*` ni `turnos.reglas.ts` fuera de
-// un repository (lo prohíbe ESLint). `ESTADOS_OCURRENCIA` es el de `turnos.reglas.ts` (definición
-// F: sólo estos tres, distinto del `Turno.estado` de `ESTADOS_TURNO`, que es ACTIVO/CANCELADO).
-const ESTADOS_OCURRENCIA = ['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR'] as const
+// Valores de enums que ningún `*.condiciones.ts` publica como array (a diferencia de `TIPOS_TURNO`
+// y `ESTADOS_OCURRENCIA`): se declaran acá para no importar `@/generated/*` ni `turnos.reglas.ts`
+// fuera de un repository (lo prohíbe ESLint). `ESTADOS_OCURRENCIA` (el estado de una ocurrencia,
+// T-74) es distinto del `Turno.estado` de `ESTADOS_TURNO`, que es ACTIVO/CANCELADO.
 /** Los de `Ocurrencia.pago.estado` (`EstadoPagoOcurrencia` del motor). */
 const ESTADOS_PAGO = ['PENDIENTE', 'PAGADO'] as const
 const MOTIVOS_CANCELACION = [

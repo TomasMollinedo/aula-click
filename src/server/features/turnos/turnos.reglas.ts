@@ -74,9 +74,31 @@ function diasEntre(desde: string, hasta: string): number {
 // Series y ocurrencias (docs/convenciones-backend.md → Ocurrencias)
 // ---------------------------------------------------------------------------------------------
 
-/** Estados de una ocurrencia (definición F de las PO): sólo estos tres. */
-export const ESTADOS_OCURRENCIA = ['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR'] as const
+/**
+ * Estados de una ocurrencia (T-74): los tres de la definición F de las PO más `REALIZADO` y
+ * `AUSENTE`, que salen de la asistencia. Los calcula `estadoDeOcurrencia`.
+ */
+export const ESTADOS_OCURRENCIA = [
+  'AGENDADO',
+  'CANCELADO',
+  'SIN_REGISTRAR',
+  'REALIZADO',
+  'AUSENTE',
+] as const
 export type EstadoOcurrencia = (typeof ESTADOS_OCURRENCIA)[number]
+
+/** Estado de una asistencia registrada. */
+export type EstadoAsistencia = 'PRESENTE' | 'AUSENTE'
+
+/** Días de calendario después de la fecha del turno en los que todavía se registra la asistencia. */
+export const PLAZO_ASISTENCIA_DIAS = 7
+
+/** Plazo para registrar la asistencia de una ocurrencia: su último día (`vence`) y si ya pasó. */
+export type PlazoAsistencia = { vence: string; vencido: boolean }
+
+/** Observación de la asistencia que cierra el sistema cuando vence el plazo sin registrarla. */
+export const OBSERVACION_CIERRE_SISTEMA =
+  'No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema'
 
 /**
  * **Fin efectivo** de una serie (definición C de las PO, decisión T-48): el menor entre `fechaFin`
@@ -152,17 +174,32 @@ export function ocupaLugarEn(serie: SerieFechas, fecha: string): boolean {
 }
 
 /**
- * Estado de una ocurrencia (definición F): `CANCELADO` si está cancelada; si no, `SIN_REGISTRAR`
- * si su fecha es anterior a `hoy` (la asistencia es del próximo sprint), y `AGENDADO` si es de hoy
- * en adelante.
+ * Estado de una ocurrencia (T-74), en este orden: `CANCELADO` si está cancelada; `REALIZADO` si la
+ * asistencia es `PRESENTE`; `AUSENTE` si es `AUSENTE`; sin asistencia, `SIN_REGISTRAR` si su fecha
+ * es anterior a `hoy` y `AGENDADO` si es de hoy en adelante. La asistencia no se reinterpreta por
+ * la fecha.
  */
 export function estadoDeOcurrencia(
-  fecha: string,
-  cancelada: boolean,
+  {
+    fecha,
+    cancelada,
+    asistencia,
+  }: { fecha: string; cancelada: boolean; asistencia: { estado: EstadoAsistencia } | null },
   hoy: string,
 ): EstadoOcurrencia {
   if (cancelada) return 'CANCELADO'
+  if (asistencia) return asistencia.estado === 'PRESENTE' ? 'REALIZADO' : 'AUSENTE'
   return fecha < hoy ? 'SIN_REGISTRAR' : 'AGENDADO'
+}
+
+/**
+ * Plazo para registrar la asistencia de la ocurrencia de `fecha`: `vence` = `fecha` +
+ * `PLAZO_ASISTENCIA_DIAS` días de calendario, y `vencido` si `hoy` es posterior (el día 7 entero,
+ * "hasta las 23:59", está dentro del plazo). Se calcula al leer: ningún proceso lo cierra.
+ */
+export function plazoDeAsistencia(fecha: string, hoy: string): PlazoAsistencia {
+  const vence = sumarDias(fecha, PLAZO_ASISTENCIA_DIAS)
+  return { vence, vencido: hoy > vence }
 }
 
 /**

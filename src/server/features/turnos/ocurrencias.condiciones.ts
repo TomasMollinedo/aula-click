@@ -6,6 +6,7 @@ import {
   CODIGO_MATERIA_INACTIVA,
   CODIGO_MATERIA_NO_ASIGNADA,
   CODIGO_PROFESOR_INACTIVO,
+  ESTADOS_OCURRENCIA,
   MENSAJE_ALUMNO_SUPERPUESTO,
   MENSAJE_BLOQUE_NO_ENCONTRADO,
   MENSAJE_FECHA_PASADA,
@@ -14,13 +15,18 @@ import {
   MENSAJE_MATERIA_NO_ENCONTRADA,
   MENSAJE_PROFESOR_INACTIVO,
   MENSAJE_PROFESOR_NO_ENCONTRADO,
+  OBSERVACION_CIERRE_SISTEMA,
+  PLAZO_ASISTENCIA_DIAS,
   estadoDeOcurrencia,
   fechasDeLaSerie,
   finEfectivo,
   nombreDia,
   ocupaLugarEn,
+  plazoDeAsistencia,
   primeraFechaLibre,
+  type EstadoAsistencia,
   type EstadoOcurrencia,
+  type PlazoAsistencia,
 } from './turnos.reglas'
 import { ESTADOS_TURNO, TIPOS_TURNO, type SerieFechas, type TipoTurno } from './turnos.validation'
 
@@ -60,10 +66,15 @@ export {
   nombreDia,
 }
 export type { EstadoOcurrencia, MotivoCancelacion, TipoTurno }
+// Estados de una ocurrencia y plazo de la asistencia (T-74): una sola definición, la de
+// `turnos.reglas.ts`.
+export { ESTADOS_OCURRENCIA, OBSERVACION_CIERRE_SISTEMA, PLAZO_ASISTENCIA_DIAS, plazoDeAsistencia }
+export type { EstadoAsistencia, PlazoAsistencia }
 // Cómo se escribe una ocurrencia en un documento (estado, prioridad, tipo y período de la serie):
 // lo usan las plantillas PDF de `ocurrencias` y `agendas`.
 export {
   etiquetaEstado,
+  etiquetaEstadoConPlazo,
   etiquetaPrioridad,
   textoPeriodoSerie,
   textoTipo,
@@ -444,7 +455,10 @@ function aOcurrencia(serie: Serie, fecha: string, fechaHoy: string): Ocurrencia 
     alumnoId: serie.alumnoId,
     materiaId: serie.materiaId,
     tipo: serie.tipo,
-    estado: estadoDeOcurrencia(fecha, cancelacion !== undefined, fechaHoy),
+    estado: estadoDeOcurrencia(
+      { fecha, cancelada: cancelacion !== undefined, asistencia: null },
+      fechaHoy,
+    ),
     pago: pago
       ? { estado: 'PAGADO', pagoId: pago.pagoId, importeAplicado: pago.importeAplicado }
       : { estado: 'PENDIENTE' },
