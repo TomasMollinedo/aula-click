@@ -49,6 +49,8 @@ function ocurrencia(
     tipo: 'SESION_UNICA',
     estado,
     pago: { estado: 'PENDIENTE' },
+    asistencia: null,
+    plazoAsistencia: null,
     serie: { serieId: null, fechaInicio: fecha, fechaFin: fecha, finEfectivo: fecha },
     alumno: { id: turnoId, nombre: `Alumno${turnoId}`, apellido: 'Paz', busqueda: 'paz' },
     profesor: {

@@ -34,6 +34,8 @@ function ocurrencia(
     tipo: 'RECURRENTE',
     estado: 'AGENDADO',
     pago: { estado: 'PENDIENTE' },
+    asistencia: null,
+    plazoAsistencia: null,
     serie: { serieId: null, fechaInicio: datos.fecha, fechaFin: null, finEfectivo: null },
     alumno: { id: 12, nombre: 'Lucía', apellido: 'González', busqueda: 'gonzalez lucia 40123456' },
     profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez', busqueda: 'perez ana 30111222' },
