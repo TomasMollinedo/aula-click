@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import {
+  agruparHorasSeguidas,
   analizarHora,
   estadoDeOcurrencia,
   fechasDeLaSerie,
@@ -576,6 +577,133 @@ describe('OBSERVACION_CIERRE_SISTEMA', () => {
     expect(OBSERVACION_CIERRE_SISTEMA).toBe(
       'No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema',
     )
+  })
+})
+
+describe('agruparHorasSeguidas', () => {
+  // Una hora (en minutos) de la alumna 1 con el profesor 1 en la materia 1 el 05/10, salvo lo que
+  // se pise. `id` sólo sirve para reconocerla en la salida.
+  const hora = (
+    id: string,
+    desde: number,
+    cambios: Partial<{
+      alumnoId: number
+      profesorId: number
+      materiaId: number
+      fecha: string
+      estado: EstadoOcurrencia
+    }> = {},
+  ) => ({
+    id,
+    alumnoId: 1,
+    profesorId: 1,
+    materiaId: 1,
+    fecha: '2026-10-05',
+    horaInicio: desde * 60,
+    horaFin: (desde + 1) * 60,
+    estado: 'AGENDADO' as EstadoOcurrencia,
+    ...cambios,
+  })
+  const ids = (grupos: { ocurrencias: { id: string }[] }[]) =>
+    grupos.map((grupo) => grupo.ocurrencias.map((ocurrencia) => ocurrencia.id))
+
+  it('8–9, 9–10 y 10–11 → un grupo de 3 h (480–660)', () => {
+    const ocurrencias = [hora('a', 8), hora('b', 9), hora('c', 10)]
+    expect(agruparHorasSeguidas(ocurrencias)).toEqual([
+      {
+        alumnoId: 1,
+        profesorId: 1,
+        materiaId: 1,
+        fecha: '2026-10-05',
+        horaInicio: 480,
+        horaFin: 660,
+        horas: 3,
+        ocurrencias,
+      },
+    ])
+  })
+
+  it('con un hueco (8–9 y 10–11) → dos grupos de una hora', () => {
+    const grupos = agruparHorasSeguidas([hora('a', 8), hora('b', 10)])
+    expect(ids(grupos)).toEqual([['a'], ['b']])
+    expect(grupos.map((grupo) => [grupo.horaInicio, grupo.horaFin, grupo.horas])).toEqual([
+      [480, 540, 1],
+      [600, 660, 1],
+    ])
+  })
+
+  it('otra materia en el medio corta el grupo', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('b', 9, { materiaId: 2 }),
+      hora('c', 10),
+    ])
+    expect(ids(grupos)).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it('otro profesor en el medio corta el grupo', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('b', 9, { profesorId: 2 }),
+      hora('c', 10),
+    ])
+    expect(ids(grupos)).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it('otro alumno no se mezcla, aunque sus horas sean seguidas', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('x', 8, { alumnoId: 2 }),
+      hora('b', 9),
+      hora('y', 9, { alumnoId: 2 }),
+    ])
+    expect(ids(grupos)).toEqual([
+      ['a', 'b'],
+      ['x', 'y'],
+    ])
+    expect(grupos.map((grupo) => grupo.alumnoId)).toEqual([1, 2])
+  })
+
+  it('una cancelada en el medio corta el grupo y no aparece', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('b', 9, { estado: 'CANCELADO' }),
+      hora('c', 10),
+    ])
+    expect(ids(grupos)).toEqual([['a'], ['c']])
+  })
+
+  it('cada hora conserva su estado dentro del grupo', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8, { estado: 'REALIZADO' }),
+      hora('b', 9, { estado: 'AUSENTE' }),
+      hora('c', 10, { estado: 'SIN_REGISTRAR' }),
+    ])
+    expect(grupos).toHaveLength(1)
+    expect(grupos[0].horas).toBe(3)
+    expect(grupos[0].ocurrencias.map((ocurrencia) => ocurrencia.estado)).toEqual([
+      'REALIZADO',
+      'AUSENTE',
+      'SIN_REGISTRAR',
+    ])
+    expect(grupos[0]).not.toHaveProperty('estado')
+  })
+
+  it('una entrada desordenada sale ordenada por fecha, horaInicio, alumno, profesor y materia', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('manana', 8, { fecha: '2026-10-12' }),
+      hora('b10', 10, { alumnoId: 2 }),
+      hora('a9', 9),
+      hora('m2', 10, { materiaId: 2 }),
+      hora('a8', 8),
+      hora('p2', 10, { profesorId: 2 }),
+      hora('a10', 10, { alumnoId: 3 }),
+    ])
+    expect(ids(grupos)).toEqual([['a8', 'a9'], ['m2'], ['p2'], ['b10'], ['a10'], ['manana']])
+  })
+
+  it('una lista vacía devuelve []', () => {
+    expect(agruparHorasSeguidas([])).toEqual([])
   })
 })
 

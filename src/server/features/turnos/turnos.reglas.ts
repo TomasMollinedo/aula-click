@@ -202,6 +202,104 @@ export function plazoDeAsistencia(fecha: string, hoy: string): PlazoAsistencia {
   return { vence, vencido: hoy > vence }
 }
 
+/** Lo que `agruparHorasSeguidas` necesita de una ocurrencia (las horas en minutos). */
+type HoraDeOcurrencia = {
+  alumnoId: number
+  profesorId: number
+  materiaId: number
+  fecha: string
+  horaInicio: number
+  horaFin: number
+  estado: EstadoOcurrencia
+}
+
+/** Horas seguidas de un alumno con un profesor y una materia en una fecha (horas en minutos). */
+export type GrupoHorasSeguidas<T> = {
+  alumnoId: number
+  profesorId: number
+  materiaId: number
+  fecha: string
+  /** La de la primera hora. */
+  horaInicio: number
+  /** La de la última hora. */
+  horaFin: number
+  /** Cantidad de horas (de ocurrencias) del grupo. */
+  horas: number
+  /** Las ocurrencias del grupo en orden horario, cada una con su propio estado. */
+  ocurrencias: T[]
+}
+
+function compararNumeros(a: number, b: number): number {
+  return a - b
+}
+
+function compararTextos(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/**
+ * **Horas seguidas** (Vocabulario del Sprint 3): agrupa las ocurrencias no canceladas de un mismo
+ * alumno, profesor y materia en una fecha que van una a continuación de la otra (el `horaFin` de
+ * una es el `horaInicio` de la siguiente). Una hora suelta es un grupo de una. Las `CANCELADO` no
+ * aparecen en ningún grupo y cortan la cadena. No calcula un estado del grupo: cada hora conserva
+ * el suyo. Sale ordenada por fecha, `horaInicio`, `alumnoId`, `profesorId` y `materiaId`.
+ *
+ * Sólo la usa la pantalla "Asistencia" del profesor (T-81): el resto de las vistas muestra cada
+ * hora por separado.
+ */
+export function agruparHorasSeguidas<T extends HoraDeOcurrencia>(
+  ocurrencias: readonly T[],
+): GrupoHorasSeguidas<T>[] {
+  const ordenadas = ocurrencias
+    .filter((ocurrencia) => ocurrencia.estado !== 'CANCELADO')
+    .sort(
+      (a, b) =>
+        compararTextos(a.fecha, b.fecha) ||
+        compararNumeros(a.alumnoId, b.alumnoId) ||
+        compararNumeros(a.profesorId, b.profesorId) ||
+        compararNumeros(a.materiaId, b.materiaId) ||
+        compararNumeros(a.horaInicio, b.horaInicio),
+    )
+
+  const grupos: GrupoHorasSeguidas<T>[] = []
+  let actual: GrupoHorasSeguidas<T> | undefined
+  for (const ocurrencia of ordenadas) {
+    const sigue =
+      actual !== undefined &&
+      actual.fecha === ocurrencia.fecha &&
+      actual.alumnoId === ocurrencia.alumnoId &&
+      actual.profesorId === ocurrencia.profesorId &&
+      actual.materiaId === ocurrencia.materiaId &&
+      actual.horaFin === ocurrencia.horaInicio
+    if (actual && sigue) {
+      actual.horaFin = ocurrencia.horaFin
+      actual.horas += 1
+      actual.ocurrencias.push(ocurrencia)
+      continue
+    }
+    actual = {
+      alumnoId: ocurrencia.alumnoId,
+      profesorId: ocurrencia.profesorId,
+      materiaId: ocurrencia.materiaId,
+      fecha: ocurrencia.fecha,
+      horaInicio: ocurrencia.horaInicio,
+      horaFin: ocurrencia.horaFin,
+      horas: 1,
+      ocurrencias: [ocurrencia],
+    }
+    grupos.push(actual)
+  }
+
+  return grupos.sort(
+    (a, b) =>
+      compararTextos(a.fecha, b.fecha) ||
+      compararNumeros(a.horaInicio, b.horaInicio) ||
+      compararNumeros(a.alumnoId, b.alumnoId) ||
+      compararNumeros(a.profesorId, b.profesorId) ||
+      compararNumeros(a.materiaId, b.materiaId),
+  )
+}
+
 /**
  * Primera ocurrencia **que ocupa lugar** de la serie dentro de `[desde, hasta]` (`hasta` `null` =
  * sin límite; el fin efectivo acota igual), o `null` si no hay ninguna. Saltea las canceladas: como
