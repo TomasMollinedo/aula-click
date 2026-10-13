@@ -29,6 +29,14 @@ const prismaImports = {
   group: ['@/lib/prisma', '@/generated/*'],
   message: 'Solo el repository usa Prisma (@/lib/prisma, @/generated/*).',
 }
+// Una condición (`*.condiciones.ts`) no instancia Prisma: recibe el cliente que le pasa el repository.
+// De Prisma solo importa tipos (`import type { Prisma } from '@/generated/prisma/client'`).
+const prismaSoloTiposImports = {
+  ...prismaImports,
+  allowTypeImports: true,
+  message:
+    'Una condición no usa Prisma: recibe el cliente del repository. De @/lib/prisma y @/generated/* solo importa tipos (import type).',
+}
 const crossFeatureImports = {
   group: [
     '@/server/features/*/*.service',
@@ -223,13 +231,29 @@ const eslintConfig = defineConfig([
       }),
     },
   },
-  // Backend: repositories y condiciones (únicos de las features que usan Prisma; las condiciones
-  // solo sus tipos: reciben el cliente).
+  // Backend: repositories (únicos de las features que usan Prisma).
   {
-    files: ['src/server/features/**/*.repository.ts', 'src/server/features/**/*.condiciones.ts'],
+    files: ['src/server/features/**/*.repository.ts'],
     rules: {
       'no-restricted-imports': restrict({
         patterns: [
+          crossFeatureImports,
+          repositoryDeOtraFeature,
+          ...otraFeatureSoloLecturas,
+          frontendFromBackend,
+        ],
+      }),
+    },
+  },
+  // Backend: condiciones. Reciben el cliente (o la transacción) del repository: solo importan los
+  // tipos de Prisma, nunca @/lib/prisma ni el cliente generado como valor. Lo prueba
+  // shared/__tests__/eslint-limites.test.ts.
+  {
+    files: ['src/server/features/**/*.condiciones.ts'],
+    rules: {
+      'no-restricted-imports': restrict({
+        patterns: [
+          prismaSoloTiposImports,
           crossFeatureImports,
           repositoryDeOtraFeature,
           ...otraFeatureSoloLecturas,

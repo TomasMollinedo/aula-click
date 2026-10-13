@@ -1,8 +1,11 @@
 import { swaggerUI } from '@hono/swagger-ui'
 import { errorHandler, notFoundHandler } from './errors'
 import { createRouter } from './router'
+import { adjuntosRoutes } from './features/adjuntos/adjuntos.routes'
 import { agendasRoutes } from './features/agendas/agendas.routes'
 import { alumnosRoutes } from './features/alumnos/alumnos.routes'
+import { anulacionesRoutes } from './features/anulaciones/anulaciones.routes'
+import { asistenciasRoutes } from './features/asistencias/asistencias.routes'
 import { aulasRoutes } from './features/aulas/aulas.routes'
 import { bloquesRoutes } from './features/bloques/bloques.routes'
 import { cancelacionesRoutes } from './features/cancelaciones/cancelaciones.routes'
@@ -10,6 +13,7 @@ import { centroRoutes } from './features/centro/centro.routes'
 import { cuentasRoutes } from './features/cuentas/cuentas.routes'
 import { examenesRoutes } from './features/examenes/examenes.routes'
 import { finalizacionesRoutes } from './features/finalizaciones/finalizaciones.routes'
+import { historialesRoutes } from './features/historiales/historiales.routes'
 import { materiasRoutes } from './features/materias/materias.routes'
 import { ocurrenciasRoutes } from './features/ocurrencias/ocurrencias.routes'
 import { pagosRoutes } from './features/pagos/pagos.routes'
@@ -17,6 +21,7 @@ import { profesoresRoutes } from './features/profesores/profesores.routes'
 import { reprogramacionesRoutes } from './features/reprogramaciones/reprogramaciones.routes'
 import { tableroRoutes } from './features/tablero/tablero.routes'
 import { turnosRoutes } from './features/turnos/turnos.routes'
+import { usuariosRoutes } from './features/usuarios/usuarios.routes'
 
 export const app = createRouter().basePath('/api/v1')
 
@@ -46,3 +51,8 @@ app.route('/pagos', pagosRoutes)
 app.route('/cuentas', cuentasRoutes)
 app.route('/examenes', examenesRoutes)
 app.route('/tablero', tableroRoutes)
+app.route('/asistencias', asistenciasRoutes)
+app.route('/historiales', historialesRoutes)
+app.route('/adjuntos', adjuntosRoutes)
+app.route('/anulaciones', anulacionesRoutes)
+app.route('/usuarios', usuariosRoutes)

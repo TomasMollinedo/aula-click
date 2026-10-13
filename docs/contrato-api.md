@@ -950,6 +950,49 @@ Los datos del centro (HU-11, HU-15, T-64): son los que el backend pone en el enc
 
 Los documentos PDF no piden estos endpoints: el backend arma el encabezado con los mismos datos y con el logo en su versión vectorial, que se mantiene en sincronía con este archivo (ver Documentos PDF).
 
+## Asistencias
+
+A completar por T-81 (HU-22).
+
+## Historiales
+
+A completar por T-108 (HU-31, HU-33). El PDF del historial lo suma T-110 en [Documentos PDF](#documentos-pdf).
+
+## Adjuntos
+
+A completar por T-95 (HU-24).
+
+## Anulaciones
+
+A completar por T-104 (HU-42).
+
+## Usuarios
+
+A completar por T-91 (HU-28): lo que vale para cualquier usuario sin importar su rol (su usuario y el cambio de su contraseña).
+
+## Portal del alumno
+
+El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: cada endpoint del alumno vive en la feature dueña del concepto (`pagos`, `ocurrencias`, `cuentas`…) y se documenta en la sección de esa feature, con las convenciones de [Formatos](#formatos), [Errores](#errores) y [Roles](#roles). Acá están la convención y el índice.
+
+- **Nombre:** `mis-…` para una lista (`GET /pagos/mis-pagos`) y `mi-…` para un dato único (`GET /cuentas/mi-cuenta`), igual que `GET /alumnos/mis-alumnos` del profesor. Es un segmento más del path de la feature dueña.
+- **Rol:** `requireRole('ALUMNO')`. Un endpoint del personal no se abre al alumno por omisión: si un endpoint existente (por ejemplo, un PDF) también lo sirve, lo declara su sección y vale la misma regla de propiedad.
+- **El alumno sale de la sesión.** Ningún endpoint del portal recibe un `alumnoId` ni otro dato que identifique a un alumno: se toma del usuario que inició sesión (`actor.alumnoId`). Pedir un recurso de otro alumno (un turno, un pago, un PDF) responde 403 `SIN_PERMISO`; un usuario con rol `ALUMNO` sin alumno vinculado, también.
+- **Qué no se devuelve nunca al alumno:** las observaciones internas de su ficha ni las del turno, la prioridad del turno, la ocupación o los cupos de un bloque, la auditoría (quién cargó cada dato), el comprobante adjunto de un pago ni datos de otros alumnos.
+- **Sólo lectura, salvo lo que su sección diga.** Cancelar, reprogramar y pagar son de mesa de entradas; el alumno saca turnos (`POST /turnos/mis-turnos`) y cambia su contraseña.
+
+Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
+
+| Feature       | Endpoints del portal  | Tarea |
+| ------------- | --------------------- | ----- |
+| `ocurrencias` | A completar por T-84  | T-84  |
+| `alumnos`     | A completar por T-88  | T-88  |
+| `usuarios`    | A completar por T-91  | T-91  |
+| `turnos`      | A completar por T-93  | T-93  |
+| `pagos`       | A completar por T-98  | T-98  |
+| `cuentas`     | A completar por T-101 | T-101 |
+| `examenes`    | A completar por T-106 | T-106 |
+| `historiales` | A completar por T-108 | T-108 |
+
 ## Documentos PDF
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
