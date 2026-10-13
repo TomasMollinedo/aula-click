@@ -65,6 +65,40 @@ enum EstadoPago {
   ANULADO
 }
 
+// Asistencia del profesor a una ocurrencia (HU-22). "Sin registrar" no es un valor: es que no hay fila.
+enum EstadoAsistencia {
+  PRESENTE
+  AUSENTE
+}
+
+// Forma de pago identificada por un código fijo, no por su nombre (HU-23).
+enum TipoFormaPago {
+  EFECTIVO
+  TRANSFERENCIA
+  DEBITO
+}
+
+// Red de la tarjeta de un pago con débito (HU-23).
+enum RedDebito {
+  VISA_DEBITO
+  MASTERCARD_DEBITO
+  MAESTRO
+  CABAL_DEBITO
+  OTRA
+}
+
+enum MotivoAnulacion {
+  ERROR_CARGA
+  FORMA_PAGO_EQUIVOCADA
+  OTRO
+}
+
+// Resultado de un examen rendido (HU-34). null en Examen.resultado = "Sin nota".
+enum ResultadoExamen {
+  CON_NOTA
+  AUSENTE
+}
+
 // ---------- Usuarios y roles ----------
 
 // Catálogo que carga el seed. Sin auditoría.
@@ -82,6 +116,15 @@ model Rol {
 // Usuario de dominio y de Better Auth (user.modelName: 'usuario' en src/lib/auth.ts).
 // La contraseña no vive acá: está en Account.password (providerId 'credential').
 // Su estado es también la baja lógica del profesor.
+//
+// Cuenta del alumno (HU-27, HU-28): el alumno ingresa con `username` y su cuenta es un Usuario con
+// rol ALUMNO y `alumnoId`. Los campos obligatorios se completan con los del alumno: `dni` el del
+// alumno, `telefono` el del alumno o, si no tiene, el del tutor, y `email` es sintético
+// (`<usuario>@alumnos.aulaclick.invalid`): Better Auth exige un email, pero el dominio `.invalid`
+// está reservado y no entrega correo. No cambia la nulabilidad de ninguna columna.
+//
+// El vínculo cuenta ↔ alumno va acá (`alumnoId`) y no en Alumno, al revés que Profesor.usuarioId:
+// así Better Auth lo devuelve en la sesión y requireAuth() arma `actor.alumnoId` sin otra consulta.
 model Usuario {
   id              String    @id // lo genera Better Auth (o el seed)
   nombre          String // Better Auth: name
@@ -92,10 +135,15 @@ model Usuario {
   email           String    @unique
   emailVerified   Boolean   @default(false) @map("email_verified")
   image           String? // lo exige Better Auth; sin uso (la foto va por avatarKey)
+  // Plugin `username` de Better Auth: usuario de ingreso del alumno (los demás roles ingresan con email).
+  username        String?   @unique
+  displayUsername String?   @map("display_username")
   role            String    @map("rol_id")
   avatarKey       String?   @map("avatar_key")
   avatarMimeType  String?   @map("avatar_mime_type")
   avatarUpdatedAt DateTime? @map("avatar_updated_at")
+  // Alumno al que pertenece la cuenta (sólo rol ALUMNO); a lo sumo una cuenta por alumno.
+  alumnoId        Int?      @unique @map("alumno_id")
   estado          Estado    @default(ACTIVO)
 
   // Autorreferencia: opcionales porque el seed no tiene creador.
@@ -105,6 +153,7 @@ model Usuario {
   updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
 
   rol       Rol      @relation(fields: [role], references: [id], onDelete: Restrict)
+  alumno    Alumno?  @relation("AlumnoUsuario", fields: [alumnoId], references: [id], onDelete: Restrict)
   createdBy Usuario? @relation("UsuarioCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy Usuario? @relation("UsuarioModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
@@ -133,6 +182,14 @@ model Usuario {
   formasPagoModificadas            FormaPago[]               @relation("FormaPagoModificador")
   pagosCreados                     Pago[]                    @relation("PagoCreador")
   pagosModificados                 Pago[]                    @relation("PagoModificador")
+  contrasenasRestablecidas         Account[]                 @relation("AccountContrasenaRestablecida")
+  asistenciasCreadas               AsistenciaTurno[]         @relation("AsistenciaTurnoCreador")
+  asistenciasModificadas           AsistenciaTurno[]         @relation("AsistenciaTurnoModificador")
+  comprobantesAdjuntosCreados      ComprobanteAdjunto[]      @relation("ComprobanteAdjuntoCreador")
+  comprobantesAdjuntosModificados  ComprobanteAdjunto[]      @relation("ComprobanteAdjuntoModificador")
+  anulacionesPagoCreadas           AnulacionPago[]           @relation("AnulacionPagoCreador")
+  notasExamenCreadas               Examen[]                  @relation("ExamenNotaCreador")
+  notasExamenModificadas           Examen[]                  @relation("ExamenNotaModificador")
 
   @@index([apellido])
   @@index([busqueda])
@@ -164,24 +221,34 @@ model Session {
 }
 
 model Account {
-  id                    String    @id
-  accountId             String    @map("account_id")
-  providerId            String    @map("provider_id")
-  userId                String    @map("usuario_id")
-  accessToken           String?   @map("access_token")
-  refreshToken          String?   @map("refresh_token")
-  idToken               String?   @map("id_token")
-  accessTokenExpiresAt  DateTime? @map("access_token_expires_at")
-  refreshTokenExpiresAt DateTime? @map("refresh_token_expires_at")
-  scope                 String?
-  password              String? // hash de la contraseña (providerId 'credential')
-  createdAt             DateTime  @default(now()) @map("created_at")
-  updatedAt             DateTime  @updatedAt @map("updated_at")
+  id                          String    @id
+  accountId                   String    @map("account_id")
+  providerId                  String    @map("provider_id")
+  userId                      String    @map("usuario_id")
+  accessToken                 String?   @map("access_token")
+  refreshToken                String?   @map("refresh_token")
+  idToken                     String?   @map("id_token")
+  accessTokenExpiresAt        DateTime? @map("access_token_expires_at")
+  refreshTokenExpiresAt       DateTime? @map("refresh_token_expires_at")
+  scope                       String?
+  password                    String? // hash de la contraseña (providerId 'credential')
+  // Datos de dominio sobre la contraseña (providerId 'credential'), no de Better Auth: viven junto al
+  // hash porque describen la credencial. Better Auth ignora estas columnas.
+  // true mientras la contraseña sea la que puso el sistema (el DNI del alumno): aviso de HU-28.
+  contrasenaInicial           Boolean   @default(false) @map("contrasena_inicial")
+  // Quién y cuándo restableció la contraseña por última vez (HU-27). Quién creó el acceso y cuándo
+  // es la auditoría del Usuario (createdById, createdAt).
+  contrasenaRestablecidaPorId String?   @map("contrasena_restablecida_por_id")
+  contrasenaRestablecidaFecha DateTime? @map("contrasena_restablecida_fecha")
+  createdAt                   DateTime  @default(now()) @map("created_at")
+  updatedAt                   DateTime  @updatedAt @map("updated_at")
 
-  usuario Usuario @relation(fields: [userId], references: [id], onDelete: Cascade)
+  usuario                   Usuario  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contrasenaRestablecidaPor Usuario? @relation("AccountContrasenaRestablecida", fields: [contrasenaRestablecidaPorId], references: [id], onDelete: Restrict)
 
   @@unique([providerId, accountId])
   @@index([userId])
+  @@index([contrasenaRestablecidaPorId])
   @@map("account")
 }
 
@@ -221,7 +288,7 @@ model Profesor {
 
 // ---------- Alumnos ----------
 
-// Sin vínculo a Usuario todavía: el portal del alumno llega en el Sprint 3.
+// El vínculo con su cuenta del portal (HU-27) vive en Usuario.alumnoId: un alumno tiene a lo sumo una.
 // Los datos del tutor son obligatorios si el alumno es menor: lo valida la API, no la base.
 // telefono y email son nullable (T-29/HU-02): opcionales si el alumno es menor y tiene tutor
 // con sus propios datos de contacto; la obligatoriedad según la edad la valida la API.
@@ -243,6 +310,10 @@ model Alumno {
   grado                String?
   institucionEducativa String?           @map("institucion_educativa")
   observaciones        String?
+  // Foto del alumno (HU-26): se guarda la clave del objeto, no la URL (como la del profesor en Usuario).
+  avatarKey            String?           @map("avatar_key")
+  avatarMimeType       String?           @map("avatar_mime_type")
+  avatarUpdatedAt      DateTime?         @map("avatar_updated_at")
   estado               Estado            @default(ACTIVO)
 
   createdById String   @map("usuario_creador_id")
@@ -253,6 +324,7 @@ model Alumno {
   createdBy Usuario @relation("AlumnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy Usuario @relation("AlumnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
+  usuario  Usuario? @relation("AlumnoUsuario")
   turnos   Turno[]
   examenes Examen[]
   pagos    Pago[]
@@ -435,6 +507,7 @@ model Turno {
   cancelaciones CancelacionTurno[]
   finalizacion  FinalizacionRecurrencia?
   pagoTurnos    PagoTurno[]
+  asistencias   AsistenciaTurno[]
 
   @@index([bloqueAgendaId, fechaInicio])
   @@index([alumnoId])
@@ -448,24 +521,37 @@ model Turno {
 // Examen de un alumno en una materia (T-29, reemplaza a ExamenMateria: la migración de T-29 dropeó
 // esa tabla sin copiar sus datos, decisión T-51). De él depende la prioridad del turno (HU-18). Baja lógica
 // ("eliminar" de HU-17): nada se borra.
+//
+// Nota (HU-34): resultado null = "Sin nota"; CON_NOTA lleva `nota`, AUSENTE no. Que la nota sea de
+// 1 a 10 lo valida la API. La nota tiene su propia trazabilidad (notaCreated*, notaUpdated*) porque
+// createdById/updatedById ya registran quién cargó o editó el examen, no su nota.
 model Examen {
-  id            Int        @id @default(autoincrement())
-  alumnoId      Int        @map("alumno_id")
-  materiaId     Int        @map("materia_id")
-  fecha         DateTime   @db.Date
+  id            Int              @id @default(autoincrement())
+  alumnoId      Int              @map("alumno_id")
+  materiaId     Int              @map("materia_id")
+  fecha         DateTime         @db.Date
   tipo          TipoExamen
-  observaciones String?    @db.VarChar(500)
-  estado        Estado     @default(ACTIVO)
+  observaciones String?          @db.VarChar(500)
+  resultado     ResultadoExamen?
+  nota          Decimal?         @db.Decimal(4, 2)
+  estado        Estado           @default(ACTIVO)
+
+  notaCreatedById String?   @map("nota_usuario_creador_id")
+  notaCreatedAt   DateTime? @map("nota_fecha_hora_creacion")
+  notaUpdatedById String?   @map("nota_usuario_modificador_id")
+  notaUpdatedAt   DateTime? @map("nota_fecha_hora_modificacion")
 
   createdById String   @map("usuario_creador_id")
   updatedById String   @map("usuario_modificador_id")
   createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
   updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
 
-  alumno    Alumno  @relation(fields: [alumnoId], references: [id], onDelete: Restrict)
-  materia   Materia @relation(fields: [materiaId], references: [id], onDelete: Restrict)
-  createdBy Usuario @relation("ExamenCreador", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy Usuario @relation("ExamenModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+  alumno        Alumno   @relation(fields: [alumnoId], references: [id], onDelete: Restrict)
+  materia       Materia  @relation(fields: [materiaId], references: [id], onDelete: Restrict)
+  createdBy     Usuario  @relation("ExamenCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy     Usuario  @relation("ExamenModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+  notaCreatedBy Usuario? @relation("ExamenNotaCreador", fields: [notaCreatedById], references: [id], onDelete: Restrict)
+  notaUpdatedBy Usuario? @relation("ExamenNotaModificador", fields: [notaUpdatedById], references: [id], onDelete: Restrict)
 
   // Sin único por (alumno, materia, fecha): "un examen pendiente por materia" lo valida la API
   // (HU-17), no la base. El índice sigue sirviendo para esa consulta.
@@ -473,6 +559,8 @@ model Examen {
   @@index([materiaId])
   @@index([createdById])
   @@index([updatedById])
+  @@index([notaCreatedById])
+  @@index([notaUpdatedById])
   @@map("examen")
 }
 
@@ -522,14 +610,50 @@ model FinalizacionRecurrencia {
   @@map("finalizacion_recurrencia")
 }
 
+// ---------- Asistencia ----------
+
+// Asistencia de UNA ocurrencia (HU-22), identificada por (turnoId, fechaOcurrencia) como una
+// cancelación. Una fila por ocurrencia: corregirla es actualizarla (queda en updatedById/updatedAt).
+// Qué se trabajó e indicaciones sólo con PRESENTE; observación sólo con AUSENTE (lo valida la API).
+//
+// El estado de la ocurrencia lo calcula la API al leer, no se guarda: "Sin registrar" es que no hay
+// fila, y el cierre a los 7 días (23:59 del séptimo día después de la fecha) tampoco es una fila ni
+// un proceso programado: pasado el plazo, la API no deja registrar y la ocurrencia queda cerrada.
+model AsistenciaTurno {
+  id              Int              @id @default(autoincrement())
+  turnoId         Int              @map("turno_id")
+  fechaOcurrencia DateTime         @map("fecha_ocurrencia") @db.Date
+  estado          EstadoAsistencia
+  trabajado       String?          @db.VarChar(1000)
+  indicaciones    String?          @db.VarChar(1000)
+  observacion     String?          @db.VarChar(500)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  turno     Turno   @relation(fields: [turnoId], references: [id], onDelete: Restrict)
+  createdBy Usuario @relation("AsistenciaTurnoCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario @relation("AsistenciaTurnoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@unique([turnoId, fechaOcurrencia])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("asistencia_turno")
+}
+
 // ---------- Pagos ----------
 
-// Catálogo de formas de pago (HU-15/HU-23). El seed carga "Efectivo", único medio de este sprint;
-// el ABM completo es HU-23, fuera de alcance.
+// Catálogo de formas de pago (HU-15/HU-23). El seed carga "Efectivo", "Transferencia" y "Tarjeta de
+// débito", cada una con su tipo; las reglas de cada medio se deciden por `tipoFormaPago`, nunca por el nombre.
+// `tipoFormaPago` es nullable sólo para poder agregar la columna con la migración de Prisma sobre una base con
+// datos (el seed lo completa por nombre); Postgres permite varios NULL en un único.
 model FormaPago {
-  id     Int    @id @default(autoincrement())
-  nombre String @unique
-  estado Estado @default(ACTIVO)
+  id            Int            @id @default(autoincrement())
+  nombre        String         @unique
+  tipoFormaPago TipoFormaPago? @unique @map("tipo_forma_pago")
+  estado        Estado         @default(ACTIVO)
 
   createdById String   @map("usuario_creador_id")
   updatedById String   @map("usuario_modificador_id")
@@ -548,21 +672,33 @@ model FormaPago {
 
 // Un pago de un alumno, que puede incluir una o varias de sus ocurrencias (PagoTurno) y genera
 // un único comprobante. numeroComprobante es correlativo y no se repite (HU-15).
-// montoRecibido es obligatorio en un pago en efectivo (única forma de pago hoy) y >= importeTotal:
-// lo valida la API (el CHECK en la base queda pendiente, decisión T-50). La columna sigue nullable
-// para otras formas de pago y para los pagos anteriores a esa regla. El vuelto lo calcula y lo
-// devuelve la API: no se guarda.
-// estado queda sin uso en este sprint: todo pago nace VIGENTE; la anulación llega en el próximo.
+// montoRecibido es obligatorio en un pago en efectivo y >= importeTotal: lo valida la API (el CHECK
+// en la base queda pendiente, decisión T-50). La columna sigue nullable para las otras formas de
+// pago y para los pagos anteriores a esa regla. El vuelto lo calcula y lo devuelve la API: no se guarda.
+//
+// Datos del medio (HU-23): todos opcionales en la base; cuáles son obligatorios según la forma de
+// pago (por `FormaPago.tipoFormaPago`) lo valida la API. Transferencia: operación, banco y titular. Débito:
+// red, cupón y últimos 4 dígitos de la tarjeta (nunca el número completo).
+//
+// estado: VIGENTE al registrarse; ANULADO cuando existe su AnulacionPago (HU-42). Un pago anulado
+// conserva todos sus datos, pero sus PagoTurno pasan a vigente = null y sus turnos vuelven a estar
+// pendientes: el estado de pago de una ocurrencia sólo mira los pagos vigentes.
 model Pago {
-  id                Int        @id @default(autoincrement())
-  alumnoId          Int        @map("alumno_id")
-  formaPagoId       Int        @map("forma_pago_id")
-  numeroComprobante Int        @unique @default(autoincrement()) @map("numero_comprobante")
-  importeTotal      Decimal    @map("importe_total") @db.Decimal(10, 2)
-  fechaPago         DateTime   @map("fecha_pago") @db.Date
-  montoRecibido     Decimal?   @map("monto_recibido") @db.Decimal(10, 2)
-  observaciones     String?    @db.VarChar(500)
-  estado            EstadoPago @default(VIGENTE)
+  id                     Int        @id @default(autoincrement())
+  alumnoId               Int        @map("alumno_id")
+  formaPagoId            Int        @map("forma_pago_id")
+  numeroComprobante      Int        @unique @default(autoincrement()) @map("numero_comprobante")
+  importeTotal           Decimal    @map("importe_total") @db.Decimal(10, 2)
+  fechaPago              DateTime   @map("fecha_pago") @db.Date
+  montoRecibido          Decimal?   @map("monto_recibido") @db.Decimal(10, 2)
+  observaciones          String?    @db.VarChar(500)
+  transferenciaOperacion String?    @map("transferencia_operacion") @db.VarChar(50)
+  transferenciaBanco     String?    @map("transferencia_banco") @db.VarChar(100)
+  transferenciaTitular   String?    @map("transferencia_titular") @db.VarChar(100)
+  debitoRed              RedDebito? @map("debito_red")
+  debitoCupon            String?    @map("debito_cupon") @db.VarChar(20)
+  debitoUltimos4         String?    @map("debito_ultimos4") @db.Char(4)
+  estado                 EstadoPago @default(VIGENTE)
 
   createdById String   @map("usuario_creador_id")
   updatedById String   @map("usuario_modificador_id")
@@ -574,30 +710,92 @@ model Pago {
   createdBy Usuario   @relation("PagoCreador", fields: [createdById], references: [id], onDelete: Restrict)
   updatedBy Usuario   @relation("PagoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
-  turnos PagoTurno[]
+  turnos               PagoTurno[]
+  anulacion            AnulacionPago?
+  comprobantesAdjuntos ComprobanteAdjunto[]
 
   @@index([alumnoId])
   @@index([formaPagoId])
   @@index([createdById])
   @@index([updatedById])
+  // Aviso de transferencia compartida (HU-42): otros pagos con la misma operación y banco.
+  @@index([transferenciaOperacion, transferenciaBanco])
+  // Historial y tablero filtran por fecha de pago.
+  @@index([fechaPago])
   @@map("pago")
 }
 
 // Ocurrencias incluidas en un pago, identificadas igual que una cancelación: (turnoId, fecha de la
-// ocurrencia), sin "fecha original". Una ocurrencia se paga una sola vez y lo garantiza el único
-// (turnoId, fechaOcurrencia); vale mientras no exista la anulación de pagos, que lo va a tener que
-// reemplazar (decisión T-49).
+// ocurrencia), sin "fecha original".
+//
+// Una ocurrencia tiene a lo sumo un pago vigente y lo garantiza la base con el único
+// (turnoId, fechaOcurrencia, vigente): una fila vigente lleva vigente = true; al anular el pago, sus
+// filas pasan a vigente = null. En Postgres dos NULL no chocan, así que una ocurrencia puede tener
+// varios pagos anulados y un solo pago vigente, sin índice parcial (decisión T-50). Reemplaza al
+// único simple (turnoId, fechaOcurrencia) que anticipaba la decisión T-49. Es la red contra el pago
+// doble. vigente nunca es false.
 model PagoTurno {
   id              Int      @id @default(autoincrement())
   pagoId          Int      @map("pago_id")
   turnoId         Int      @map("turno_id")
   fechaOcurrencia DateTime @map("fecha_ocurrencia") @db.Date
   importeAplicado Decimal  @map("importe_aplicado") @db.Decimal(10, 2)
+  vigente         Boolean? @default(true)
 
   pago  Pago  @relation(fields: [pagoId], references: [id], onDelete: Restrict)
   turno Turno @relation(fields: [turnoId], references: [id], onDelete: Restrict)
 
-  @@unique([turnoId, fechaOcurrencia])
+  @@unique([turnoId, fechaOcurrencia, vigente])
   @@index([pagoId])
   @@map("pago_turno")
+}
+
+// Archivo que trae la familia como respaldo de un pago (HU-24): distinto del comprobante de pago, el
+// PDF que emite el centro. Se guarda la clave del objeto en el almacenamiento, no la URL.
+//
+// pagoId es nullable porque el archivo se sube antes de registrar el pago y se vincula al registrarlo.
+// Un pago puede tener varios: el que se muestra es el último activo (createdAt, con id como
+// desempate) y los anteriores quedan guardados (reemplazo). Quitar el adjunto de un pago con débito
+// es una baja lógica: pasa a INACTIVO con quién y cuándo (updatedById, updatedAt), sin borrar la
+// fila ni el archivo.
+model ComprobanteAdjunto {
+  id            Int    @id @default(autoincrement())
+  pagoId        Int?   @map("pago_id")
+  archivoKey    String @map("archivo_key")
+  mimeType      String @map("mime_type")
+  nombreArchivo String @map("nombre_archivo")
+  bytes         Int
+  estado        Estado @default(ACTIVO)
+
+  createdById String   @map("usuario_creador_id")
+  updatedById String   @map("usuario_modificador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+  updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
+
+  pago      Pago?   @relation(fields: [pagoId], references: [id], onDelete: Restrict)
+  createdBy Usuario @relation("ComprobanteAdjuntoCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy Usuario @relation("ComprobanteAdjuntoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+
+  @@index([pagoId])
+  @@index([createdById])
+  @@index([updatedById])
+  @@map("comprobante_adjunto")
+}
+
+// Anulación de un pago (HU-42), con el patrón de CancelacionTurno: una por pago. Al crearla, el pago
+// pasa a ANULADO y sus PagoTurno a vigente = null, en la misma transacción. No se deshace.
+model AnulacionPago {
+  id      Int             @id @default(autoincrement())
+  pagoId  Int             @unique @map("pago_id")
+  motivo  MotivoAnulacion
+  detalle String?         @db.VarChar(500)
+
+  createdById String   @map("usuario_creador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+
+  pago      Pago    @relation(fields: [pagoId], references: [id], onDelete: Restrict)
+  createdBy Usuario @relation("AnulacionPagoCreador", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([createdById])
+  @@map("anulacion_pago")
 }

@@ -1,6 +1,6 @@
-// Seed de desarrollo: roles, un usuario por rol (salvo ALUMNO, que llega con el portal en el
-// Sprint 3), materias con precio, aulas, la forma de pago "Efectivo" y una materia asignada al
-// profesor. Idempotente: todo es upsert por clave natural.
+// Seed de desarrollo: roles, un usuario por rol, materias con precio, aulas, las tres formas de
+// pago (con su tipo), una materia asignada al profesor y un alumno de demo con acceso al portal
+// (HU-27). Idempotente: todo es upsert por clave natural.
 //
 // Se corre con `pnpm db:seed` (Prisma 7 no lo ejecuta solo después de `migrate dev`).
 // Es la única excepción, fuera de los repositories, que usa Prisma directo (AGENTS.md, regla 3).
@@ -11,6 +11,7 @@ import { env } from '@/config/env'
 import { hashPassword } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { normalizarBusqueda } from '@/server/shared/busqueda'
+import { fechaADate } from '@/server/shared/fechas'
 
 const ROLES = [
   {
@@ -37,8 +38,28 @@ const MATERIAS = [
   { nombre: 'Contabilidad', precioHora: '8500.00' },
 ]
 
-// Forma de pago del seed (HU-15): único medio en este sprint.
-const FORMAS_PAGO = ['Efectivo']
+// Formas de pago (HU-15, HU-23). Las reglas de cada medio se deciden por `tipoFormaPago`, no por el
+// nombre. En una base del Sprint 2 la fila "Efectivo" ya existe sin tipo: el upsert por nombre se
+// lo completa (la columna es nullable justamente para poder agregarla con la migración).
+const FORMAS_PAGO = [
+  { nombre: 'Efectivo', tipoFormaPago: 'EFECTIVO' },
+  { nombre: 'Transferencia', tipoFormaPago: 'TRANSFERENCIA' },
+  { nombre: 'Tarjeta de débito', tipoFormaPago: 'DEBITO' },
+] as const
+
+// Alumno de demo con acceso al portal (HU-27). Se puede cambiar con las variables SEED_ALUMNO_*
+// de .env.example; si no están, se usan estos valores. Es adulto y tiene teléfono propio.
+const ALUMNO_DEMO_POR_DEFECTO = {
+  nombre: 'Lucía',
+  apellido: 'López',
+  dni: '45123456',
+  telefono: '(387) 15-466-7788',
+  fechaNacimiento: '2005-03-15',
+}
+
+// Dominio reservado (RFC 2606): no entrega correo. Better Auth exige un email, pero el alumno
+// ingresa con su usuario (decisión T-70).
+const DOMINIO_EMAIL_ALUMNOS = 'alumnos.aulaclick.invalid'
 
 // Aulas: catálogo cargado por el seed, sin ABM en este release (HU-05, dominio.md → Aulas).
 const AULAS = [
@@ -112,6 +133,92 @@ async function upsertUsuario(datos: UsuarioSeed) {
   })
 
   return usuario
+}
+
+// Usuario del portal (HU-27): inicial del nombre + apellido + últimos 3 dígitos del DNI, en
+// minúsculas, sin espacios ni tildes y con la "ñ" como "n". Juan Pérez, DNI 45123456 → "jperez456".
+function usuarioDelAlumno(nombre: string, apellido: string, dni: string): string {
+  const sinSimbolos = (texto: string) => normalizarBusqueda(texto).replace(/[^a-z0-9]/g, '')
+  return `${sinSimbolos(nombre).charAt(0)}${sinSimbolos(apellido)}${dni.slice(-3)}`
+}
+
+// Si el usuario ya lo usa otra cuenta, se agrega un número al final ("jperez456-2").
+async function usuarioLibre(base: string): Promise<string> {
+  for (let n = 1; ; n++) {
+    const candidato = n === 1 ? base : `${base}-${n}`
+    const ocupado = await prisma.usuario.findUnique({ where: { username: candidato } })
+    if (!ocupado) return candidato
+  }
+}
+
+// Alumno de demo + su cuenta del portal. La contraseña inicial es su DNI, y se re-hashea en cada
+// corrida (igual que la de los otros usuarios del seed), con `contrasenaInicial: true`. El usuario
+// no cambia una vez generado.
+async function upsertAlumnoConAcceso(mesaId: string) {
+  const datos = {
+    nombre: env.SEED_ALUMNO_NOMBRE ?? ALUMNO_DEMO_POR_DEFECTO.nombre,
+    apellido: env.SEED_ALUMNO_APELLIDO ?? ALUMNO_DEMO_POR_DEFECTO.apellido,
+    dni: env.SEED_ALUMNO_DNI ?? ALUMNO_DEMO_POR_DEFECTO.dni,
+    telefono: env.SEED_ALUMNO_TELEFONO ?? ALUMNO_DEMO_POR_DEFECTO.telefono,
+  }
+  const busqueda = normalizarBusqueda(`${datos.apellido} ${datos.nombre} ${datos.dni}`)
+
+  const alumno = await prisma.alumno.upsert({
+    where: { dni: datos.dni },
+    create: {
+      ...datos,
+      busqueda,
+      fechaNacimiento: fechaADate(ALUMNO_DEMO_POR_DEFECTO.fechaNacimiento),
+      nivelEscolaridad: 'UNIVERSITARIO',
+      createdById: mesaId,
+      updatedById: mesaId,
+    },
+    update: {},
+  })
+
+  const perfil = {
+    nombre: datos.nombre,
+    apellido: datos.apellido,
+    dni: datos.dni,
+    busqueda,
+    telefono: datos.telefono,
+  }
+  const existente = await prisma.usuario.findUnique({ where: { alumnoId: alumno.id } })
+  const username =
+    existente?.username ??
+    (await usuarioLibre(usuarioDelAlumno(datos.nombre, datos.apellido, datos.dni)))
+  const usuario = await prisma.usuario.upsert({
+    where: { alumnoId: alumno.id },
+    create: {
+      id: randomUUID(),
+      ...perfil,
+      email: `${username}@${DOMINIO_EMAIL_ALUMNOS}`,
+      emailVerified: true,
+      username,
+      displayUsername: username,
+      role: 'ALUMNO',
+      alumnoId: alumno.id,
+      createdById: mesaId,
+      updatedById: mesaId,
+    },
+    update: perfil,
+  })
+
+  const hash = await hashPassword(datos.dni)
+  await prisma.account.upsert({
+    where: { providerId_accountId: { providerId: 'credential', accountId: usuario.id } },
+    create: {
+      id: randomUUID(),
+      providerId: 'credential',
+      accountId: usuario.id,
+      userId: usuario.id,
+      password: hash,
+      contrasenaInicial: true,
+    },
+    update: { password: hash, contrasenaInicial: true },
+  })
+
+  return { alumno, username }
 }
 
 async function main() {
@@ -215,18 +322,21 @@ async function main() {
     })
   }
 
-  for (const nombre of FORMAS_PAGO) {
+  for (const { nombre, tipoFormaPago } of FORMAS_PAGO) {
     await prisma.formaPago.upsert({
       where: { nombre },
-      create: { nombre, createdById: gerente.id, updatedById: gerente.id },
-      update: {},
+      create: { nombre, tipoFormaPago, createdById: gerente.id, updatedById: gerente.id },
+      update: { tipoFormaPago },
     })
   }
+
+  const { username: usuarioAlumno } = await upsertAlumnoConAcceso(mesa.id)
 
   console.log(
     `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias ` +
       `(${preciosCargados} con precio recién cargado), Matemática asignada al profesor, ` +
-      `${AULAS.length} aulas y ${FORMAS_PAGO.length} forma(s) de pago; ` +
+      `${AULAS.length} aulas, ${FORMAS_PAGO.length} formas de pago y un alumno con acceso al ` +
+      `portal (usuario "${usuarioAlumno}", contraseña inicial = su DNI); ` +
       `${sinPrecio.count} materia(s) sin precio pasadas a INACTIVO.`,
   )
 }

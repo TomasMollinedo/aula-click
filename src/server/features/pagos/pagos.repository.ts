@@ -28,8 +28,8 @@ export const FORMA_PAGO_EFECTIVO = 'Efectivo'
 
 const MENSAJE_SIN_EFECTIVO = `Falta la forma de pago "${FORMA_PAGO_EFECTIVO}" activa: corré \`pnpm db:seed\``
 
-// Nombre del índice único de `PagoTurno (turnoId, fechaOcurrencia)` (migración de T-63).
-const INDICE_PAGO_TURNO = 'pago_turno_turno_id_fecha_ocurrencia_key'
+// Nombre del índice único de `PagoTurno (turnoId, fechaOcurrencia, vigente)` (migración de T-70).
+const INDICE_PAGO_TURNO = 'pago_turno_turno_id_fecha_ocurrencia_vigente_key'
 
 /**
  * Timeout más largo que el default de Prisma (5 s): con pagos o cancelaciones simultáneas del
@@ -77,7 +77,7 @@ async function leerSnapshot(
 /**
  * Con Prisma 7 + `@prisma/adapter-pg`, un P2002 trae la restricción en
  * `meta.driverAdapterError.cause.constraint`: `{ index }` o `{ fields }`. En esta transacción hay
- * dos únicos posibles (`pago.numero_comprobante` y `pago_turno (turno_id, fecha_ocurrencia)`), así
+ * dos únicos posibles (`pago.numero_comprobante` y `pago_turno (turno_id, fecha_ocurrencia, vigente)`), así
  * que una forma que no se puede leer **no** se asume del pago doble.
  */
 function esPagoDoble(meta: Record<string, unknown> | undefined): boolean {
