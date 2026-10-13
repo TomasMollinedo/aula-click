@@ -22,6 +22,15 @@ const envSchema = z.object({
   SEED_PROFESOR_PASSWORD: z.string().min(8).optional(),
   SEED_GERENTE_EMAIL: z.email().optional(),
   SEED_GERENTE_PASSWORD: z.string().min(8).optional(),
+  // Alumno de demo con acceso al portal (HU-27): su usuario sale de estos datos y su contraseña
+  // inicial es su DNI. Opcionales: si falta alguna, el seed usa un valor por defecto.
+  SEED_ALUMNO_NOMBRE: z.string().min(1).optional(),
+  SEED_ALUMNO_APELLIDO: z.string().min(1).optional(),
+  SEED_ALUMNO_DNI: z
+    .string()
+    .regex(/^\d{7,8}$/, 'debe tener 7 u 8 dígitos, sin puntos')
+    .optional(),
+  SEED_ALUMNO_TELEFONO: z.string().min(1).optional(),
 })
 
 const parsed = envSchema.safeParse(process.env)

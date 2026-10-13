@@ -129,6 +129,9 @@ async function limpiar() {
     select: { id: true },
   })
   const pagoIds = pagos.map((p) => p.id)
+  // Sprint 3: un pago de estos puede haberse anulado o tener un comprobante adjunto desde la app.
+  await prisma.anulacionPago.deleteMany({ where: { pagoId: { in: pagoIds } } })
+  await prisma.comprobanteAdjunto.deleteMany({ where: { pagoId: { in: pagoIds } } })
   const { count } = await prisma.pagoTurno.deleteMany({ where: { pagoId: { in: pagoIds } } })
   await prisma.pago.deleteMany({ where: { id: { in: pagoIds } } })
   console.log(`Limpieza: ${pagoIds.length} pagos de este script (${count} ocurrencias cobradas).`)
@@ -178,7 +181,8 @@ async function ocurrenciasCobrables(fechaHoy: string): Promise<Map<number, Ocurr
       materia: { select: { precioHora: true } },
       finalizacion: { select: { fechaDesde: true } },
       cancelaciones: { select: { fechaOcurrencia: true } },
-      pagoTurnos: { select: { fechaOcurrencia: true } },
+      // Sólo los pagos vigentes: un pago anulado deja la ocurrencia otra vez sin cobrar (HU-42).
+      pagoTurnos: { where: { vigente: true }, select: { fechaOcurrencia: true } },
     },
     orderBy: { id: 'asc' },
   })
