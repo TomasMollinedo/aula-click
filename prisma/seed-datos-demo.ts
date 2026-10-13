@@ -419,6 +419,10 @@ async function limpiar() {
   // Orden que respeta las FK (todas son onDelete: Restrict): primero lo que cuelga de un turno o
   // de un pago, después el turno y el pago, y recién ahí profesores/bloques/alumnos.
   await prisma.examen.deleteMany({ where: { alumnoId: { in: alumnoIds } } })
+  // Sprint 3: asistencias de sus turnos, y anulaciones y comprobantes adjuntos de sus pagos.
+  await prisma.asistenciaTurno.deleteMany({ where: { turnoId: { in: turnoIds } } })
+  await prisma.anulacionPago.deleteMany({ where: { pagoId: { in: pagoIds } } })
+  await prisma.comprobanteAdjunto.deleteMany({ where: { pagoId: { in: pagoIds } } })
   await prisma.pagoTurno.deleteMany({
     where: { OR: [{ turnoId: { in: turnoIds } }, { pagoId: { in: pagoIds } }] },
   })
