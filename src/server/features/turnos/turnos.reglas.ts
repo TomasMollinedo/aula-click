@@ -74,9 +74,31 @@ function diasEntre(desde: string, hasta: string): number {
 // Series y ocurrencias (docs/convenciones-backend.md → Ocurrencias)
 // ---------------------------------------------------------------------------------------------
 
-/** Estados de una ocurrencia (definición F de las PO): sólo estos tres. */
-export const ESTADOS_OCURRENCIA = ['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR'] as const
+/**
+ * Estados de una ocurrencia (T-74): los tres de la definición F de las PO más `REALIZADO` y
+ * `AUSENTE`, que salen de la asistencia. Los calcula `estadoDeOcurrencia`.
+ */
+export const ESTADOS_OCURRENCIA = [
+  'AGENDADO',
+  'CANCELADO',
+  'SIN_REGISTRAR',
+  'REALIZADO',
+  'AUSENTE',
+] as const
 export type EstadoOcurrencia = (typeof ESTADOS_OCURRENCIA)[number]
+
+/** Estado de una asistencia registrada. */
+export type EstadoAsistencia = 'PRESENTE' | 'AUSENTE'
+
+/** Días de calendario después de la fecha del turno en los que todavía se registra la asistencia. */
+export const PLAZO_ASISTENCIA_DIAS = 7
+
+/** Plazo para registrar la asistencia de una ocurrencia: su último día (`vence`) y si ya pasó. */
+export type PlazoAsistencia = { vence: string; vencido: boolean }
+
+/** Observación de la asistencia que cierra el sistema cuando vence el plazo sin registrarla. */
+export const OBSERVACION_CIERRE_SISTEMA =
+  'No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema'
 
 /**
  * **Fin efectivo** de una serie (definición C de las PO, decisión T-48): el menor entre `fechaFin`
@@ -152,17 +174,130 @@ export function ocupaLugarEn(serie: SerieFechas, fecha: string): boolean {
 }
 
 /**
- * Estado de una ocurrencia (definición F): `CANCELADO` si está cancelada; si no, `SIN_REGISTRAR`
- * si su fecha es anterior a `hoy` (la asistencia es del próximo sprint), y `AGENDADO` si es de hoy
- * en adelante.
+ * Estado de una ocurrencia (T-74), en este orden: `CANCELADO` si está cancelada; `REALIZADO` si la
+ * asistencia es `PRESENTE`; `AUSENTE` si es `AUSENTE`; sin asistencia, `SIN_REGISTRAR` si su fecha
+ * es anterior a `hoy` y `AGENDADO` si es de hoy en adelante. La asistencia no se reinterpreta por
+ * la fecha.
  */
 export function estadoDeOcurrencia(
-  fecha: string,
-  cancelada: boolean,
+  {
+    fecha,
+    cancelada,
+    asistencia,
+  }: { fecha: string; cancelada: boolean; asistencia: { estado: EstadoAsistencia } | null },
   hoy: string,
 ): EstadoOcurrencia {
   if (cancelada) return 'CANCELADO'
+  if (asistencia) return asistencia.estado === 'PRESENTE' ? 'REALIZADO' : 'AUSENTE'
   return fecha < hoy ? 'SIN_REGISTRAR' : 'AGENDADO'
+}
+
+/**
+ * Plazo para registrar la asistencia de la ocurrencia de `fecha`: `vence` = `fecha` +
+ * `PLAZO_ASISTENCIA_DIAS` días de calendario, y `vencido` si `hoy` es posterior (el día 7 entero,
+ * "hasta las 23:59", está dentro del plazo). Se calcula al leer: ningún proceso lo cierra.
+ */
+export function plazoDeAsistencia(fecha: string, hoy: string): PlazoAsistencia {
+  const vence = sumarDias(fecha, PLAZO_ASISTENCIA_DIAS)
+  return { vence, vencido: hoy > vence }
+}
+
+/** Lo que `agruparHorasSeguidas` necesita de una ocurrencia (las horas en minutos). */
+type HoraDeOcurrencia = {
+  alumnoId: number
+  profesorId: number
+  materiaId: number
+  fecha: string
+  horaInicio: number
+  horaFin: number
+  estado: EstadoOcurrencia
+}
+
+/** Horas seguidas de un alumno con un profesor y una materia en una fecha (horas en minutos). */
+export type GrupoHorasSeguidas<T> = {
+  alumnoId: number
+  profesorId: number
+  materiaId: number
+  fecha: string
+  /** La de la primera hora. */
+  horaInicio: number
+  /** La de la última hora. */
+  horaFin: number
+  /** Cantidad de horas (de ocurrencias) del grupo. */
+  horas: number
+  /** Las ocurrencias del grupo en orden horario, cada una con su propio estado. */
+  ocurrencias: T[]
+}
+
+function compararNumeros(a: number, b: number): number {
+  return a - b
+}
+
+function compararTextos(a: string, b: string): number {
+  return a < b ? -1 : a > b ? 1 : 0
+}
+
+/**
+ * **Horas seguidas** (Vocabulario del Sprint 3): agrupa las ocurrencias no canceladas de un mismo
+ * alumno, profesor y materia en una fecha que van una a continuación de la otra (el `horaFin` de
+ * una es el `horaInicio` de la siguiente). Una hora suelta es un grupo de una. Las `CANCELADO` no
+ * aparecen en ningún grupo y cortan la cadena. No calcula un estado del grupo: cada hora conserva
+ * el suyo. Sale ordenada por fecha, `horaInicio`, `alumnoId`, `profesorId` y `materiaId`.
+ *
+ * Sólo la usa la pantalla "Asistencia" del profesor (T-81): el resto de las vistas muestra cada
+ * hora por separado.
+ */
+export function agruparHorasSeguidas<T extends HoraDeOcurrencia>(
+  ocurrencias: readonly T[],
+): GrupoHorasSeguidas<T>[] {
+  const ordenadas = ocurrencias
+    .filter((ocurrencia) => ocurrencia.estado !== 'CANCELADO')
+    .sort(
+      (a, b) =>
+        compararTextos(a.fecha, b.fecha) ||
+        compararNumeros(a.alumnoId, b.alumnoId) ||
+        compararNumeros(a.profesorId, b.profesorId) ||
+        compararNumeros(a.materiaId, b.materiaId) ||
+        compararNumeros(a.horaInicio, b.horaInicio),
+    )
+
+  const grupos: GrupoHorasSeguidas<T>[] = []
+  let actual: GrupoHorasSeguidas<T> | undefined
+  for (const ocurrencia of ordenadas) {
+    const sigue =
+      actual !== undefined &&
+      actual.fecha === ocurrencia.fecha &&
+      actual.alumnoId === ocurrencia.alumnoId &&
+      actual.profesorId === ocurrencia.profesorId &&
+      actual.materiaId === ocurrencia.materiaId &&
+      actual.horaFin === ocurrencia.horaInicio
+    if (actual && sigue) {
+      actual.horaFin = ocurrencia.horaFin
+      actual.horas += 1
+      actual.ocurrencias.push(ocurrencia)
+      continue
+    }
+    actual = {
+      alumnoId: ocurrencia.alumnoId,
+      profesorId: ocurrencia.profesorId,
+      materiaId: ocurrencia.materiaId,
+      fecha: ocurrencia.fecha,
+      horaInicio: ocurrencia.horaInicio,
+      horaFin: ocurrencia.horaFin,
+      horas: 1,
+      ocurrencias: [ocurrencia],
+    }
+    grupos.push(actual)
+  }
+
+  return grupos.sort(
+    (a, b) =>
+      compararTextos(a.fecha, b.fecha) ||
+      compararNumeros(a.horaInicio, b.horaInicio) ||
+      compararNumeros(a.alumnoId, b.alumnoId) ||
+      compararNumeros(a.profesorId, b.profesorId) ||
+      compararNumeros(a.materiaId, b.materiaId),
+  )
 }
 
 /**

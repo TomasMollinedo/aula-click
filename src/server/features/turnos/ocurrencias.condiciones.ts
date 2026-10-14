@@ -6,6 +6,7 @@ import {
   CODIGO_MATERIA_INACTIVA,
   CODIGO_MATERIA_NO_ASIGNADA,
   CODIGO_PROFESOR_INACTIVO,
+  ESTADOS_OCURRENCIA,
   MENSAJE_ALUMNO_SUPERPUESTO,
   MENSAJE_BLOQUE_NO_ENCONTRADO,
   MENSAJE_FECHA_PASADA,
@@ -14,19 +15,27 @@ import {
   MENSAJE_MATERIA_NO_ENCONTRADA,
   MENSAJE_PROFESOR_INACTIVO,
   MENSAJE_PROFESOR_NO_ENCONTRADO,
+  OBSERVACION_CIERRE_SISTEMA,
+  PLAZO_ASISTENCIA_DIAS,
+  agruparHorasSeguidas,
   estadoDeOcurrencia,
   fechasDeLaSerie,
   finEfectivo,
   nombreDia,
   ocupaLugarEn,
+  plazoDeAsistencia,
   primeraFechaLibre,
+  type EstadoAsistencia,
   type EstadoOcurrencia,
+  type GrupoHorasSeguidas,
+  type PlazoAsistencia,
 } from './turnos.reglas'
 import { ESTADOS_TURNO, TIPOS_TURNO, type SerieFechas, type TipoTurno } from './turnos.validation'
 
-// Motor de **ocurrencias** (docs/convenciones-backend.md → Ocurrencias, T-30): la única
-// implementación de expandir un turno en sus ocurrencias, su estado y su pago, la ocupación de una
-// hora en una fecha, la superposición del alumno y los locks de la reserva. Lo usan `turnos` y las
+// Motor de **ocurrencias** (docs/convenciones-backend.md → Ocurrencias, T-30 y T-74): la única
+// implementación de expandir un turno en sus ocurrencias, su estado, su pago vigente, su asistencia
+// y su plazo de asistencia, la ocupación de una hora en una fecha, la superposición del alumno y
+// los locks de la reserva. Lo usan `turnos` y las
 // features del Sprint 2 (agendas, ocurrencias, cancelaciones, finalizaciones, reprogramaciones,
 // pagos, cuentas, exámenes y tablero), desde su repository y con su `tx` si están en una
 // transacción (decisión T-39). No crea el cliente de Prisma (lo recibe): de Prisma solo importa
@@ -60,10 +69,21 @@ export {
   nombreDia,
 }
 export type { EstadoOcurrencia, MotivoCancelacion, TipoTurno }
+// Estados de una ocurrencia, plazo de la asistencia y horas seguidas (T-74): una sola definición,
+// la de `turnos.reglas.ts`.
+export {
+  ESTADOS_OCURRENCIA,
+  OBSERVACION_CIERRE_SISTEMA,
+  PLAZO_ASISTENCIA_DIAS,
+  agruparHorasSeguidas,
+  plazoDeAsistencia,
+}
+export type { EstadoAsistencia, GrupoHorasSeguidas, PlazoAsistencia }
 // Cómo se escribe una ocurrencia en un documento (estado, prioridad, tipo y período de la serie):
 // lo usan las plantillas PDF de `ocurrencias` y `agendas`.
 export {
   etiquetaEstado,
+  etiquetaEstadoConPlazo,
   etiquetaPrioridad,
   textoPeriodoSerie,
   textoTipo,
@@ -93,9 +113,11 @@ export type Ocurrencia = {
   tipo: TipoTurno
   estado: EstadoOcurrencia
   /**
-   * `PAGADO` si hay un `PagoTurno` para `(turnoId, fecha)` (definición D: no se mira
-   * `Pago.estado`). `importeAplicado` es un número con hasta dos decimales (convenciones-backend.md
-   * → Importes).
+   * `PAGADO` si hay un `PagoTurno` **vigente** (`vigente = true`) para `(turnoId, fecha)`; las filas
+   * de un pago anulado (`vigente = null`, decisión T-133) no cuentan, y la ocurrencia vuelve a
+   * `PENDIENTE` (T-74: reemplaza la definición D, que no miraba la anulación). `pagoId` es el del
+   * pago vigente. `importeAplicado` es un número con hasta dos decimales (convenciones-backend.md →
+   * Importes).
    */
   pago: { estado: EstadoPagoOcurrencia; pagoId?: number; importeAplicado?: number }
   /** Sólo si está cancelada. `createdAt` en ISO 8601 UTC, como la auditoría. */
@@ -105,6 +127,28 @@ export type Ocurrencia = {
     createdById: string
     createdAt: string
   }
+  /**
+   * La asistencia registrada de `(turnoId, fecha)` (`AsistenciaTurno`), o `null` si no hay. Decide
+   * `REALIZADO` o `AUSENTE` salvo que la ocurrencia esté cancelada. `createdAt` y `updatedAt` en
+   * ISO 8601 UTC, como `cancelacion`. Un "Sin registrar" cerrado por el sistema no tiene fila: es
+   * `null` con `plazoAsistencia.vencido`.
+   */
+  asistencia: {
+    estado: EstadoAsistencia
+    trabajado: string | null
+    indicaciones: string | null
+    observacion: string | null
+    createdById: string
+    createdAt: string
+    updatedById: string
+    updatedAt: string
+  } | null
+  /**
+   * Plazo para registrar (o corregir) la asistencia (`plazoDeAsistencia`), calculado con el reloj
+   * de la lectura. `null` si está cancelada o si su fecha es posterior a hoy; las de hoy y las
+   * pasadas lo tienen, también las ya registradas.
+   */
+  plazoAsistencia: PlazoAsistencia | null
   /**
    * La fila (turno o tramo) a la que pertenece: `fechaFin` guardada, su fin efectivo y el
    * `serieId` que la agrupa con las otras horas y tramos de su alta (`null` en una sesión única y
@@ -286,9 +330,24 @@ function selectSerie(desde: string, hasta: string | null) {
         createdAt: true,
       },
     },
+    // Sólo los vigentes: anular un pago pone `vigente = null` en sus filas (decisión T-133).
     pagoTurnos: {
-      where: { fechaOcurrencia: rango },
+      where: { fechaOcurrencia: rango, vigente: true },
       select: { fechaOcurrencia: true, pagoId: true, importeAplicado: true },
+    },
+    asistencias: {
+      where: { fechaOcurrencia: rango },
+      select: {
+        fechaOcurrencia: true,
+        estado: true,
+        trabajado: true,
+        indicaciones: true,
+        observacion: true,
+        createdById: true,
+        createdAt: true,
+        updatedById: true,
+        updatedAt: true,
+      },
     },
   } satisfies Prisma.TurnoSelect
 }
@@ -296,9 +355,9 @@ function selectSerie(desde: string, hasta: string | null) {
 type FilaSerie = Prisma.TurnoGetPayload<{ select: ReturnType<typeof selectSerie> }>
 
 /**
- * Una serie (turno o tramo) leída con su fin efectivo, sus fechas canceladas y sus pagos dentro
- * del rango pedido, y las referencias que usan las ocurrencias. Interna de `turnos`: las otras
- * features leen ocurrencias (`leerOcurrencias`), no series.
+ * Una serie (turno o tramo) leída con su fin efectivo, sus fechas canceladas, sus pagos vigentes y
+ * sus asistencias dentro del rango pedido, y las referencias que usan las ocurrencias. Interna de
+ * `turnos`: las otras features leen ocurrencias (`leerOcurrencias`), no series.
  */
 export type Serie = SerieFechas & {
   turnoId: number
@@ -315,6 +374,7 @@ export type Serie = SerieFechas & {
   aulaId: number
   cancelaciones: Map<string, NonNullable<Ocurrencia['cancelacion']>>
   pagos: Map<string, { pagoId: number; importeAplicado: number }>
+  asistencias: Map<string, NonNullable<Ocurrencia['asistencia']>>
   alumno: Ocurrencia['alumno']
   profesor: Ocurrencia['profesor']
   materia: Ocurrencia['materia']
@@ -357,6 +417,21 @@ function aSerie(fila: FilaSerie): Serie {
         { pagoId: p.pagoId, importeAplicado: p.importeAplicado.toNumber() },
       ]),
     ),
+    asistencias: new Map(
+      fila.asistencias.map((a) => [
+        dateAFecha(a.fechaOcurrencia),
+        {
+          estado: a.estado,
+          trabajado: a.trabajado,
+          indicaciones: a.indicaciones,
+          observacion: a.observacion,
+          createdById: a.createdById,
+          createdAt: a.createdAt.toISOString(),
+          updatedById: a.updatedById,
+          updatedAt: a.updatedAt.toISOString(),
+        },
+      ]),
+    ),
     diaSemana: bloqueAgenda.diaSemana,
     horaInicio: bloqueAgenda.horaInicio,
     horaFin: bloqueAgenda.horaFin,
@@ -377,8 +452,8 @@ function aSerie(fila: FilaSerie): Serie {
 /**
  * Lector de series de la feature (lo usan el motor, `turnos.condiciones` y `turnos.repository`):
  * las series `ACTIVO` que se cruzan con `[desde, hasta]` (`condicionTurnoSeCruzaCon`) y cumplen el
- * filtro, con su fin efectivo, sus cancelaciones y sus pagos de ese rango y sus referencias, en
- * **una sola consulta** (sin N+1). Ordenadas por hora de inicio e id.
+ * filtro, con su fin efectivo, sus cancelaciones, sus pagos vigentes y sus asistencias de ese
+ * rango y sus referencias, en **una sola consulta** (sin N+1). Ordenadas por hora de inicio e id.
  */
 export async function leerSeries(
   client: ClienteOcurrencias,
@@ -431,7 +506,9 @@ function sinExcluida(serie: Serie, excluir?: OcurrenciaExcluida): SerieFechas {
 
 function aOcurrencia(serie: Serie, fecha: string, fechaHoy: string): Ocurrencia {
   const cancelacion = serie.cancelaciones.get(fecha)
+  const cancelada = cancelacion !== undefined
   const pago = serie.pagos.get(fecha)
+  const asistencia = serie.asistencias.get(fecha) ?? null
   return {
     turnoId: serie.turnoId,
     fecha,
@@ -444,11 +521,13 @@ function aOcurrencia(serie: Serie, fecha: string, fechaHoy: string): Ocurrencia 
     alumnoId: serie.alumnoId,
     materiaId: serie.materiaId,
     tipo: serie.tipo,
-    estado: estadoDeOcurrencia(fecha, cancelacion !== undefined, fechaHoy),
+    estado: estadoDeOcurrencia({ fecha, cancelada, asistencia }, fechaHoy),
     pago: pago
       ? { estado: 'PAGADO', pagoId: pago.pagoId, importeAplicado: pago.importeAplicado }
       : { estado: 'PENDIENTE' },
     ...(cancelacion ? { cancelacion } : {}),
+    asistencia,
+    plazoAsistencia: cancelada || fecha > fechaHoy ? null : plazoDeAsistencia(fecha, fechaHoy),
     serie: {
       serieId: serie.serieId,
       fechaInicio: serie.fechaInicio,
@@ -478,8 +557,10 @@ function porFechaHoraYTurno(a: Ocurrencia, b: Ocurrencia): number {
  * Ocurrencias de `[filtro.desde, filtro.hasta]` (rango obligatorio): cada fecha del día de la
  * semana del bloque entre `fechaInicio` y el fin efectivo de cada serie `ACTIVO` que cumple el
  * filtro (`profesorId` y `aulaId` filtran por el bloque), **incluidas las canceladas**, con su
- * estado (`CANCELADO`, `SIN_REGISTRAR` o `AGENDADO`), su pago y su cancelación. Cada tramo es un
- * turno propio. `reloj` (por defecto el del sistema) sólo decide `SIN_REGISTRAR`.
+ * estado (`estadoDeOcurrencia`), su pago vigente, su cancelación, su asistencia y su plazo de
+ * asistencia. Cada tramo es un turno propio. `reloj` (por defecto el del sistema) decide
+ * `SIN_REGISTRAR` frente a `AGENDADO` y el plazo (`plazoAsistencia`, también si está vencido): el
+ * cierre por plazo se calcula al leer, sin un proceso programado.
  *
  * Una cantidad fija de consultas (la de `leerSeries`), sin importar cuántos turnos haya; el resto
  * se expande en memoria con las reglas puras. Ordenadas por fecha, hora de inicio y `turnoId`.
@@ -509,8 +590,9 @@ export function claveOcupacion(bloqueAgendaId: number, fecha: string): string {
 /**
  * Ocupación de varias horas en varias fechas en **una sola consulta**: por cada consulta, cuántas
  * ocurrencias **ocupan lugar** en esa fila en esa fecha (`ocupaLugarEn`: `ACTIVO`, dentro del fin
- * efectivo y no canceladas; una pagada o pasada ocupa lugar igual). Un turno reprogramado es un
- * turno más: no hay nada que sumar ni restar. `excluir` saca esa ocurrencia de su consulta.
+ * efectivo y no canceladas; una pagada, pasada, `REALIZADO` o `AUSENTE` ocupa lugar igual). Un
+ * turno reprogramado es un turno más: no hay nada que sumar ni restar. `excluir` saca esa
+ * ocurrencia de su consulta.
  * Devuelve un `Map` por `claveOcupacion(bloqueAgendaId, fecha)` con todas las consultas (0 si no
  * hay ninguna); si una clave se repite, vale la última consulta.
  */

@@ -2,9 +2,11 @@ import { vi } from 'vitest'
 
 // Tabla de turnos en memoria para los tests del motor de ocurrencias (T-30). `turno.findMany`
 // aplica el `where` que arma `leerSeries` (solo las claves que usa) y los `where` de las relaciones
-// filtradas del `select` (cancelaciones y pagos del rango), y devuelve las filas con la forma que
-// devuelve Prisma (fechas `@db.Date` como `Date` a medianoche UTC, importes con `toNumber()`). Así
-// se prueban el prefiltro de la base y la regla en memoria juntos, sin base.
+// filtradas del `select` (cancelaciones, pagos vigentes y asistencias del rango), y devuelve las
+// filas con la forma que devuelve Prisma (fechas `@db.Date` como `Date` a medianoche UTC, importes
+// con `toNumber()`). Así se prueban el prefiltro de la base y la regla en memoria juntos, sin base.
+// Lo nuevo de T-74 es opcional: un pago sin `vigente` es vigente y un turno sin `asistencias` no
+// tiene ninguna, así los tests de otras features que usan esta tabla no cambian.
 
 export type BloqueDePrueba = {
   id: number
@@ -29,7 +31,15 @@ export type TurnoDePrueba = {
   fechaFin: string | null
   finalizadaDesde?: string
   cancelaciones?: { fecha: string; motivo?: string; detalle?: string | null }[]
-  pagos?: { fecha: string; pagoId: number; importe: number }[]
+  /** `vigente: false` = pago anulado (en la base, `vigente = null`). Sin dato, vigente. */
+  pagos?: { fecha: string; pagoId: number; importe: number; vigente?: boolean }[]
+  asistencias?: {
+    fecha: string
+    estado: 'PRESENTE' | 'AUSENTE'
+    trabajado?: string | null
+    indicaciones?: string | null
+    observacion?: string | null
+  }[]
 }
 
 export const d = (fecha: string) => new Date(`${fecha}T00:00:00.000Z`)
@@ -58,7 +68,8 @@ type WhereSerie = {
 
 type SelectSerie = {
   cancelaciones: { where: { fechaOcurrencia: Rango } }
-  pagoTurnos: { where: { fechaOcurrencia: Rango } }
+  pagoTurnos: { where: { fechaOcurrencia: Rango; vigente?: boolean } }
+  asistencias?: { where: { fechaOcurrencia: Rango } }
 }
 
 /** Crea la tabla y el `turno.findMany` falso que la consulta. */
@@ -145,11 +156,32 @@ export function crearTurnosEnMemoria(bloques: BloqueDePrueba[], turnos: TurnoDeP
               createdAt: new Date('2026-09-20T12:00:00.000Z'),
             })),
           pagoTurnos: (turno.pagos ?? [])
-            .filter((p) => enRango(d(p.fecha), select.pagoTurnos.where.fechaOcurrencia))
+            .filter(
+              (p) =>
+                enRango(d(p.fecha), select.pagoTurnos.where.fechaOcurrencia) &&
+                (select.pagoTurnos.where.vigente === undefined ||
+                  (p.vigente ?? true) === select.pagoTurnos.where.vigente),
+            )
             .map((p) => ({
               fechaOcurrencia: d(p.fecha),
               pagoId: p.pagoId,
               importeAplicado: { toNumber: () => p.importe },
+            })),
+          asistencias: (turno.asistencias ?? [])
+            .filter((a) => {
+              const rango = select.asistencias?.where.fechaOcurrencia
+              return rango === undefined || enRango(d(a.fecha), rango)
+            })
+            .map((a) => ({
+              fechaOcurrencia: d(a.fecha),
+              estado: a.estado,
+              trabajado: a.trabajado ?? null,
+              indicaciones: a.indicaciones ?? null,
+              observacion: a.observacion ?? null,
+              createdById: 'usr_profe',
+              createdAt: new Date('2026-10-05T18:00:00.000Z'),
+              updatedById: 'usr_profe',
+              updatedAt: new Date('2026-10-05T18:30:00.000Z'),
             })),
         }
       }),

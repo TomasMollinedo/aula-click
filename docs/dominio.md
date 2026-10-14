@@ -138,6 +138,24 @@ HU-20 (T-49). Reprogramar **edita el turno**: no hay tabla de reprogramaciones (
 - **Cancelaciones y pagos:** los de las fechas posteriores pasan al tramo nuevo y el de la fecha movida, a la sesión única con la fecha nueva.
 - **Finalización de la serie:** si el turno tiene una y se crea el tramo nuevo, pasa al tramo nuevo (es el que termina en `fechaDesde`); si no se crea, queda en el original. Si la ocurrencia era la única fecha del turno, se borra: una sesión única no se finaliza y la finalización podría cortar la fecha movida.
 
+## Asistencia
+
+HU-22 (T-74: estados y plazo). La asistencia se registra por ocurrencia (`AsistenciaTurno`, `turnoId` + fecha de la ocurrencia), como "Presente" o "Ausente".
+
+- **Estados de una ocurrencia** (decisión T-137), en este orden:
+  1. `CANCELADO` si está cancelada, aunque tenga una asistencia registrada.
+  2. `REALIZADO` si la asistencia es "Presente".
+  3. `AUSENTE` si es "Ausente".
+  4. Sin asistencia: `SIN_REGISTRAR` si su fecha es anterior a hoy.
+  5. Si no, `AGENDADO`.
+
+  La UI los muestra como "Cancelado", "Realizado", "Ausente", "Sin registrar" y "Agendado". Una asistencia registrada no cambia con el paso del tiempo. El estado lo calcula siempre la API.
+
+- **Plazo para registrar:** hasta las 23:59 del **séptimo día** después de la fecha del turno (vence = fecha + 7 días de calendario; el día 7 entero está dentro del plazo). Un "Sin registrar" dentro del plazo se muestra **"Sin registrar · vence el DD/MM"**; vencido, **"Sin registrar · cerrado por el sistema"**, con la observación "No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema". Si el plazo venció o no, lo dice la API: la UI no lo calcula.
+- **Pasado el plazo, el estado es definitivo:** un "Sin registrar" cerrado por el sistema no se puede registrar ni corregir, y lo ya registrado tampoco se puede corregir.
+- **El cierre se calcula al leer** (decisión T-138, **pendiente de confirmación de las PO**, punto 2 de "Puntos a confirmar" del Sprint 3): no hay un proceso programado ni una fila que lo guarde. La fecha y hora del cierre que se muestra es el vencimiento (las 23:59 del séptimo día), no el momento en que corrió un proceso.
+- **Horas seguidas:** cada hora es una ocurrencia con su propio estado y su propia asistencia. Sólo la pantalla "Asistencia" del profesor agrupa las horas seguidas de un alumno, profesor y materia en una fila, para registrarlas de una vez; el resto de las vistas muestra cada hora por separado.
+
 ## Pagos
 
 HU-15 (T-51; modelo de datos: T-29).

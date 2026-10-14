@@ -107,6 +107,8 @@ describe('leerOcurrencias', () => {
       tipo: 'RECURRENTE',
       estado: 'AGENDADO',
       pago: { estado: 'PENDIENTE' },
+      asistencia: null,
+      plazoAsistencia: { vence: '2026-10-12', vencido: false },
       serie: { serieId: null, fechaInicio: '2026-10-05', fechaFin: null, finEfectivo: null },
       alumno: {
         id: 12,
@@ -278,6 +280,57 @@ describe('leerOcurrencias', () => {
     ])
   })
 
+  it('pago anulado (vigente: false) solo: PENDIENTE', async () => {
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-10-05',
+        fechaFin: '2026-10-05',
+        pagos: [{ fecha: '2026-10-05', pagoId: 8, importe: 8000, vigente: false }],
+      },
+    ]
+
+    const [ocurrencia] = await leerOcurrencias(
+      cliente(),
+      { desde: '2026-10-05', hasta: '2026-10-05' },
+      reloj,
+    )
+
+    expect(ocurrencia?.pago).toEqual({ estado: 'PENDIENTE' })
+  })
+
+  it.each([
+    ['anulado primero', [false, true]],
+    ['vigente primero', [true, false]],
+  ])(
+    'un pago anulado y uno vigente (%s): PAGADO con el pagoId del vigente',
+    async (_, vigencias) => {
+      turnos = [
+        {
+          id: 1,
+          bloqueAgendaId: 10,
+          fechaInicio: '2026-10-05',
+          fechaFin: '2026-10-05',
+          pagos: vigencias.map((vigente) => ({
+            fecha: '2026-10-05',
+            pagoId: vigente ? 9 : 8,
+            importe: vigente ? 9000 : 8000,
+            vigente,
+          })),
+        },
+      ]
+
+      const [ocurrencia] = await leerOcurrencias(
+        cliente(),
+        { desde: '2026-10-05', hasta: '2026-10-05' },
+        reloj,
+      )
+
+      expect(ocurrencia?.pago).toEqual({ estado: 'PAGADO', pagoId: 9, importeAplicado: 9000 })
+    },
+  )
+
   it('filtros: alumnoId, profesorId (por el bloque) y turnoIds; un turno CANCELADO legado no aparece', async () => {
     turnos = [
       { id: 1, bloqueAgendaId: 10, alumnoId: 12, fechaInicio: '2026-10-05', fechaFin: null },
@@ -336,6 +389,160 @@ describe('leerOcurrencias', () => {
           OR: [{ fechaFin: null }, { fechaFin: { gte: new Date('2026-10-05T00:00:00.000Z') } }],
           bloqueAgenda: { aulaId: 1, diaSemana: { in: [1] } },
         },
+      }),
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// leerOcurrencias: asistencia y plazo (T-74)
+// ---------------------------------------------------------------------------------------------
+
+describe('leerOcurrencias: asistencia y plazo', () => {
+  /** Un turno semanal de los lunes 9–10 desde el 28/09. */
+  const semanal = (datos: Partial<TurnoDePrueba> = {}): TurnoDePrueba => ({
+    id: 1,
+    bloqueAgendaId: 10,
+    fechaInicio: '2026-09-28',
+    fechaFin: null,
+    ...datos,
+  })
+  const leer = (desde: string, hasta: string, conReloj: () => Date = reloj) =>
+    leerOcurrencias(cliente(), { desde, hasta }, conReloj)
+
+  it('presente → REALIZADO, con la asistencia completa (fechas en ISO)', async () => {
+    turnos = [
+      semanal({
+        asistencias: [
+          {
+            fecha: '2026-09-28',
+            estado: 'PRESENTE',
+            trabajado: 'Ecuaciones',
+            indicaciones: 'Repasar fracciones',
+          },
+        ],
+      }),
+    ]
+
+    const [ocurrencia] = await leer('2026-09-28', '2026-09-28')
+
+    expect(ocurrencia?.estado).toBe('REALIZADO')
+    expect(ocurrencia?.asistencia).toEqual({
+      estado: 'PRESENTE',
+      trabajado: 'Ecuaciones',
+      indicaciones: 'Repasar fracciones',
+      observacion: null,
+      createdById: 'usr_profe',
+      createdAt: '2026-10-05T18:00:00.000Z',
+      updatedById: 'usr_profe',
+      updatedAt: '2026-10-05T18:30:00.000Z',
+    })
+    expect(ocurrencia?.plazoAsistencia).toEqual({ vence: '2026-10-05', vencido: false })
+  })
+
+  it('ausente → AUSENTE, con su observación', async () => {
+    turnos = [
+      semanal({
+        asistencias: [{ fecha: '2026-09-28', estado: 'AUSENTE', observacion: 'Avisó tarde' }],
+      }),
+    ]
+
+    const [ocurrencia] = await leer('2026-09-28', '2026-09-28')
+
+    expect(ocurrencia?.estado).toBe('AUSENTE')
+    expect(ocurrencia?.asistencia).toMatchObject({
+      estado: 'AUSENTE',
+      trabajado: null,
+      indicaciones: null,
+      observacion: 'Avisó tarde',
+    })
+  })
+
+  it('cancelada con asistencia → CANCELADO y sin plazo (la asistencia se expone igual)', async () => {
+    turnos = [
+      semanal({
+        cancelaciones: [{ fecha: '2026-09-28' }],
+        asistencias: [{ fecha: '2026-09-28', estado: 'PRESENTE' }],
+      }),
+    ]
+
+    const [ocurrencia] = await leer('2026-09-28', '2026-09-28')
+
+    expect(ocurrencia?.estado).toBe('CANCELADO')
+    expect(ocurrencia?.plazoAsistencia).toBeNull()
+    expect(ocurrencia?.asistencia).toMatchObject({ estado: 'PRESENTE' })
+  })
+
+  it('futura: AGENDADO, sin asistencia y sin plazo; la de hoy sí tiene plazo', async () => {
+    turnos = [semanal()]
+
+    const ocurrencias = await leer('2026-10-05', '2026-10-12')
+
+    expect(ocurrencias.map((o) => [o.fecha, o.estado, o.asistencia, o.plazoAsistencia])).toEqual([
+      ['2026-10-05', 'AGENDADO', null, { vence: '2026-10-12', vencido: false }],
+      ['2026-10-12', 'AGENDADO', null, null],
+    ])
+  })
+
+  it('plazo de un turno del 28/09: con el reloj del 05/10 (día 7) en plazo; con el del 06/10, vencido', async () => {
+    turnos = [semanal()]
+
+    const [dia7] = await leer('2026-09-28', '2026-09-28')
+    const [dia8] = await leer('2026-09-28', '2026-09-28', () => new Date('2026-10-06T15:00:00Z'))
+
+    expect(dia7?.plazoAsistencia).toEqual({ vence: '2026-10-05', vencido: false })
+    expect(dia7?.estado).toBe('SIN_REGISTRAR')
+    expect(dia8?.plazoAsistencia).toEqual({ vence: '2026-10-05', vencido: true })
+    expect(dia8?.estado).toBe('SIN_REGISTRAR')
+    expect(dia8?.asistencia).toBeNull()
+  })
+
+  it('el borde de las 23:59 en Salta: sólo cambia el reloj, sin proceso programado', async () => {
+    turnos = [semanal()]
+
+    // 2026-10-06T02:59Z = 05/10 23:59 en Salta (UTC-3): último minuto del día 7.
+    const [ultimoMinuto] = await leer(
+      '2026-09-28',
+      '2026-09-28',
+      () => new Date('2026-10-06T02:59:00Z'),
+    )
+    // 2026-10-06T03:00Z = 06/10 00:00 en Salta: día 8.
+    const [medianoche] = await leer(
+      '2026-09-28',
+      '2026-09-28',
+      () => new Date('2026-10-06T03:00:00Z'),
+    )
+
+    expect(ultimoMinuto?.plazoAsistencia?.vencido).toBe(false)
+    expect(medianoche?.plazoAsistencia?.vencido).toBe(true)
+  })
+
+  it('una asistencia fuera del rango no aparece; una sola consulta, con las asistencias del rango', async () => {
+    turnos = [
+      semanal({
+        asistencias: [
+          { fecha: '2026-09-28', estado: 'PRESENTE' },
+          { fecha: '2026-10-05', estado: 'AUSENTE' },
+        ],
+      }),
+    ]
+
+    const ocurrencias = await leer('2026-10-05', '2026-10-05')
+
+    expect(ocurrencias.map((o) => [o.fecha, o.estado, o.asistencia?.estado])).toEqual([
+      ['2026-10-05', 'AUSENTE', 'AUSENTE'],
+    ])
+    expect(base.findMany).toHaveBeenCalledTimes(1)
+    const rango = {
+      gte: new Date('2026-10-05T00:00:00.000Z'),
+      lte: new Date('2026-10-05T00:00:00.000Z'),
+    }
+    expect(base.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.objectContaining({
+          asistencias: expect.objectContaining({ where: { fechaOcurrencia: rango } }),
+          pagoTurnos: expect.objectContaining({ where: { fechaOcurrencia: rango, vigente: true } }),
+        }),
       }),
     )
   })
@@ -409,6 +616,33 @@ describe('ocupacionEn y ocupacionesEn', () => {
       [claveOcupacion(10, '2026-10-19')]: 2,
       [claveOcupacion(20, '2026-10-19')]: 0,
     })
+  })
+
+  it('una ocurrencia REALIZADO y una AUSENTE ocupan lugar como cualquier no cancelada', async () => {
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 20,
+        fechaInicio: '2026-09-28',
+        fechaFin: '2026-09-28',
+        asistencias: [{ fecha: '2026-09-28', estado: 'PRESENTE' }],
+      },
+      {
+        id: 2,
+        bloqueAgendaId: 20,
+        fechaInicio: '2026-09-28',
+        fechaFin: '2026-09-28',
+        asistencias: [{ fecha: '2026-09-28', estado: 'AUSENTE' }],
+      },
+    ]
+
+    const estados = await leerOcurrencias(
+      cliente(),
+      { desde: '2026-09-28', hasta: '2026-09-28', bloqueAgendaIds: [20] },
+      reloj,
+    )
+    expect(estados.map((o) => o.estado)).toEqual(['REALIZADO', 'AUSENTE'])
+    expect(await ocupacionEn(cliente(), { bloqueAgendaId: 20, fecha: '2026-09-28' })).toBe(2)
   })
 
   it('sin consultas no va a la base', async () => {
