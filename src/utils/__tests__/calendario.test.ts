@@ -20,6 +20,11 @@ describe('esFechaHabilitada', () => {
     expect(esFechaHabilitada('2026-09-22', MARTES)).toBe(false) // martes, antes del mínimo
   })
 
+  it('hasta el máximo, incluido', () => {
+    expect(esFechaHabilitada('2026-10-14', { max: '2026-10-14' })).toBe(true)
+    expect(esFechaHabilitada('2026-10-15', { max: '2026-10-14' })).toBe(false)
+  })
+
   it('sin restricción, cualquier día', () => {
     expect(esFechaHabilitada('2026-09-30', {})).toBe(true)
   })

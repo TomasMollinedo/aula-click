@@ -57,6 +57,7 @@ function CalendarioFecha({
   onBlur,
   ref,
   min,
+  max,
   diaSemana,
   placeholder = 'Elegí una fecha',
   textoVaciar,
@@ -65,7 +66,7 @@ function CalendarioFecha({
   'aria-invalid': ariaInvalid,
   'aria-describedby': ariaDescribedby,
 }: CalendarioFechaProps) {
-  const restriccion: RestriccionFechas = { min, diaSemana }
+  const restriccion: RestriccionFechas = { min, max, diaSemana }
   const [abierto, setAbierto] = useState(false)
   const [mes, setMes] = useState(() =>
     inicioDeMes(value || min || format(new Date(), 'yyyy-MM-dd')),
