@@ -53,8 +53,8 @@ Con T-74 mergeada:     T-76 Deuda (cuentas.condiciones) ────────
                                                                  │                                                  └──> T-103 Mis pagos UI (+ T-98)
                                                                  └──> T-104 Anulaciones (+ T-96) ──> T-105 Anular pago UI (+ T-99)
                        T-81 Asistencia API ──────────────────────┬──> T-82 Pantalla "Asistencia" UI (+ T-77, T-79)
-                                                                 └──> T-108 Historial académico API ──┬──> T-109 Historial UI (+ T-79)
-                                                                                                      └──> T-110 PDF del historial (+ T-106)
+                                                                 └──> T-108 Historial académico API (+ T-84) ──┬──> T-109 Historial UI (+ T-79)
+                                                                                                               └──> T-110 PDF del historial (+ T-106)
                        T-83 FIX: con asistencia no se cancela, reprograma ni finaliza
                        T-84 Ocurrencias v3 (+ T-75) ─────────────────> T-85 Detalle del turno UI (+ T-77, T-79, T-80)
                        T-86 Agendas sin estados de asistencia ───────> T-87 Agendas UI y "Mi calendario" (+ T-84, T-80)
@@ -95,7 +95,7 @@ Un punto de partida para repartir el sprint entre 6 personas, respetando las dep
 | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `prisma/schema.prisma`, `prisma/migrations/`, `prisma/seed*.ts`, `.env.example` (si hiciera falta)                                                                                                                                                                                                                                                                                                                                | T-72                                                                                              |
 | `src/server/app.ts`, `eslint.config.mjs`, `src/server/shared/archivos.ts` (+ test), routers vacíos de las features nuevas                                                                                                                                                                                                                                                                                                         | T-73                                                                                              |
-| `src/server/features/turnos/ocurrencias.condiciones.ts`, `ocurrencias.formato.ts`, `turnos.reglas.ts` (+ tests); la constante `ESTADOS_OCURRENCIA` de `agendas.validation.ts` y `ocurrencias.validation.ts`                                                                                                                                                                                                                       | T-74                                                                                              |
+| `src/server/features/turnos/ocurrencias.condiciones.ts`, `ocurrencias.formato.ts`, `turnos.reglas.ts` (+ tests); la constante `ESTADOS_OCURRENCIA` de `agendas.validation.ts` y `ocurrencias.validation.ts`                                                                                                                                                                                                                       | T-74; después, `textosDeHorasSeguidas` (+ test), T-84                                             |
 | `src/lib/auth.ts`, `src/lib/auth-reglas.ts`, `src/server/middlewares/auth.ts`, `src/server/shared/actor.ts` (+ tests)                                                                                                                                                                                                                                                                                                             | T-75                                                                                              |
 | `src/server/features/cuentas/cuentas.reglas.ts`, `cuentas.condiciones.ts` (+ tests)                                                                                                                                                                                                                                                                                                                                               | T-76                                                                                              |
 | `src/server/features/cuentas/**` (salvo reglas y condiciones)                                                                                                                                                                                                                                                                                                                                                                     | T-101                                                                                             |
@@ -116,7 +116,7 @@ Un punto de partida para repartir el sprint entre 6 personas, respetando las dep
 | `src/components/ui/campo-archivo.tsx`                                                                                                                                                                                                                                                                                                                                                                                             | T-78                                                                                              |
 | `AlumnoDetalle.tsx` (y `AlumnoForm.tsx` y `DatosAlumno.tsx`, sólo para montar los placeholders del acceso), `app/mesa/_componentes/**`, `app/profesor/_componentes/**`, `app/gerente/_componentes/**`, `app/mesa/pagos/page.tsx`, `app/gerente/pagos/**`, `app/profesor/asistencia/**`, `profesor-sidebar.tsx`, `gerente-sidebar.tsx`, placeholders de las features nuevas del personal, `src/types/pago.ts` (tipos de los slots) | T-79 (después, cada placeholder pasa a su tarea)                                                  |
 | `features/auth` (`roles.ts`, `SegmentoDeRol.tsx`, `LoginForm`, `auth-client`, `auth.schema`, `interpretar-error-login`), `app/page.tsx`, `app/portal/**`, `components/layout/portal-sidebar.tsx`, `components/layout/app-shell.tsx`, `components/layout/sidebar-nav.tsx`, `src/features/centro/**`, placeholders del portal                                                                                                       | T-80 (después, cada página del portal pasa a su tarea)                                            |
-| `src/features/asistencias/**`                                                                                                                                                                                                                                                                                                                                                                                                     | T-82                                                                                              |
+| `src/features/asistencias/**` (salvo `components/RegistrarAsistenciaTurno.tsx`, de T-85)                                                                                                                                                                                                                                                                                                                                          | T-82                                                                                              |
 | `src/features/ocurrencias/**`, `src/types/ocurrencia.ts`, `app/portal/_componentes/detalle-turno.tsx`                                                                                                                                                                                                                                                                                                                             | T-85                                                                                              |
 | `src/features/agendas/**`, `app/portal/calendario/**`                                                                                                                                                                                                                                                                                                                                                                             | T-87                                                                                              |
 | `features/alumnos` (formulario, edición, listado, detalle, schema, types, api, "Mis alumnos"), salvo los archivos de acceso; después de T-79                                                                                                                                                                                                                                                                                      | T-89                                                                                              |
@@ -152,9 +152,14 @@ Un punto de partida para repartir el sprint entre 6 personas, respetando las dep
 
 - **Asistencia:** el registro de una ocurrencia `(turnoId, fecha)` por su profesor: "Presente" o "Ausente", con "Qué se trabajó" e "Indicaciones para la próxima sesión" (presente) u "Observación" (ausente). Vive en `AsistenciaTurno`, una fila por ocurrencia.
 - **Estado de una ocurrencia** (lo calcula la API, T-74), en este orden: `CANCELADO` si hay cancelación; `REALIZADO` si la asistencia es "Presente"; `AUSENTE` si es "Ausente"; `SIN_REGISTRAR` si es de una fecha anterior a hoy y no tiene asistencia; `AGENDADO` en otro caso. La UI los muestra como "Cancelado", "Realizado", "Ausente", "Sin registrar" y "Agendado".
-- **Dónde se ve la asistencia** (decisión de las PO): sólo en el **detalle del turno**, además de la pantalla "Asistencia" del profesor y el historial académico. **Ninguna vista de calendario ni de lista cambia** (calendario semanal, listas de las agendas, turnos de la ficha del alumno, "Mi calendario" del portal y el PDF de la agenda): muestran "Agendado" y "Cancelado" como hoy y un turno pasado no cancelado sin distintivo de asistencia (variante "sin asistencia" de T-77).
+- **Dónde se ve la asistencia** (decisión de las PO): sólo en el **detalle del turno** (desde el que el profesor del turno también la registra, T-84 y T-85), además de la pantalla "Asistencia" del profesor, el historial académico, su PDF y "Mis materias". **Ninguna vista de calendario ni de lista cambia** (calendario semanal, listas de las agendas, turnos de la ficha del alumno, "Mi calendario" del portal y el PDF de la agenda): muestran "Agendado" y "Cancelado" como hoy y un turno pasado no cancelado sin distintivo de asistencia (variante "sin asistencia" de T-77).
 - **Plazo de registro:** hasta las 23:59 del séptimo día después de la fecha del turno (`vence` = fecha + 7). Un "Sin registrar" dentro del plazo se ve "Sin registrar · vence el 12/10"; vencido, "Sin registrar · cerrado por el sistema", definitivo y de sólo lectura. **El cierre se calcula al leer** (propuesta, ver "Puntos a confirmar"): no hay un proceso programado ni una fila que lo guarde.
-- **Clase:** como en HU-19, una hora de un profesor en una fecha. **Horas seguidas:** las ocurrencias no canceladas de un mismo alumno, profesor y materia en un día, una a continuación de la otra; se agrupan en una sola fila ("8:00 a 11:00 · 3 h") **sólo en la pantalla "Asistencia" del profesor** (T-81, T-82), para marcar el estado de todas las horas de una vez y escribir "Qué se trabajó" e "Indicaciones para la próxima sesión" una sola vez. En todo lo demás (detalle del turno, turnos del alumno, historial, su PDF y "Mis materias") **cada hora se muestra por separado**, con su estado y su asistencia. Cada hora es una ocurrencia: se cobra, se cuenta en los indicadores y en los porcentajes por separado.
+- **Clase:** como en HU-19, una hora de un profesor en una fecha. **Horas seguidas:** las ocurrencias no canceladas de un mismo alumno, profesor y materia en un día, una a continuación de la otra (de 8 a 9 y de 9 a 10, sí; de 8 a 9 y de 20 a 21, no; una hora cancelada en el medio corta el grupo). Cada hora sigue siendo una ocurrencia, con su estado y su asistencia: se cobra, se cuenta en los indicadores y en los porcentajes por separado. Cómo se ven (ajuste del equipo y de las PO del 14/10, que reemplaza el punto 7 de "Puntos a confirmar"):
+  - **Pantalla "Asistencia" del profesor:** cada clase muestra a todos sus alumnos, una fila por hora (FIX de T-82), y "Aplicar también a…" registra de una vez las otras horas seguidas sin registrar.
+  - **Detalle del turno (también el del portal), historial, su PDF y "Mis materias":** las horas seguidas se muestran **juntas**, con el estado de **cada** hora y "Qué se trabajó" e "Indicaciones para la próxima sesión" **una sola vez**. Si alguna hora tiene otros textos (porque se corrigió sola), se muestran también los de esa hora.
+  - **Desde el detalle del turno**, el profesor del turno registra la asistencia de esa hora y, con "Aplicar también a…", la de sus otras horas seguidas sin registrar, con los mismos textos.
+  - Los textos se guardan en **cada** hora (una asistencia por ocurrencia): "una sola vez" es cómo se muestran. Qué textos van una vez y cuáles aparte lo decide la API (`textosDeHorasSeguidas`, T-84), así el detalle, el historial, el PDF y el portal dicen lo mismo.
+  - Las listas y los calendarios no cambian: no muestran la asistencia (ver "Dónde se ve la asistencia").
 - **Forma de pago:** "Efectivo", "Transferencia" o "Tarjeta de débito", identificadas por un código fijo (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`), no por el nombre.
 - **Comprobante de pago** (el PDF que emite el centro, HU-15) y **comprobante adjunto** (el archivo que trae la familia, HU-24): son dos cosas distintas y la UI las nombra siempre así.
 - **Pago vigente / anulado:** un pago anulado conserva todos sus datos, pero sus turnos vuelven a estar pendientes: el estado de pago de una ocurrencia sólo mira los pagos **vigentes**.
@@ -259,7 +264,7 @@ Agendas, ocurrencias, cuentas, historial, tablero y la propia asistencia necesit
    - `estadoDeOcurrencia({ fecha, cancelada, asistencia }, hoy)`, con la precedencia del Vocabulario: cancelada gana; después la asistencia (`PRESENTE` → `REALIZADO`, `AUSENTE` → `AUSENTE`); sin asistencia, `SIN_REGISTRAR` si la fecha es anterior a hoy y `AGENDADO` si no.
    - `PLAZO_ASISTENCIA_DIAS = 7` y `plazoDeAsistencia(fecha, hoy)` → `{ vence, vencido }`: `vence` = fecha + 7 días; `vencido` = hoy posterior a `vence` (el día 7 entero todavía se puede registrar, "hasta las 23:59").
    - `OBSERVACION_CIERRE_SISTEMA`: "No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema".
-   - `agruparHorasSeguidas(ocurrencias)`: agrupa las ocurrencias **no canceladas** de un mismo alumno, profesor, materia y fecha cuyas horas son consecutivas (`horaFin` de una = `horaInicio` de la siguiente). Devuelve grupos `{ alumnoId, profesorId, materiaId, fecha, horaInicio, horaFin, horas, ocurrencias }`; una hora suelta es un grupo de una. Una hora cancelada en el medio corta el grupo. Las horas de un grupo pueden tener estados distintos: el grupo no los mezcla, los conserva por hora. **Sólo la usa la pantalla "Asistencia" (T-81)**: el resto de las vistas muestra cada hora por separado.
+   - `agruparHorasSeguidas(ocurrencias)`: agrupa las ocurrencias **no canceladas** de un mismo alumno, profesor, materia y fecha cuyas horas son consecutivas (`horaFin` de una = `horaInicio` de la siguiente). Devuelve grupos `{ alumnoId, profesorId, materiaId, fecha, horaInicio, horaFin, horas, ocurrencias }`; una hora suelta es un grupo de una. Una hora cancelada en el medio corta el grupo. Las horas de un grupo pueden tener estados distintos: el grupo no los mezcla, los conserva por hora. La usan la pantalla "Asistencia" (T-81) y, desde el ajuste del 14/10, el detalle del turno (T-84) y el historial (T-108), que muestran las horas seguidas juntas (ver "Vocabulario del sprint" → Horas seguidas).
 2. `ocurrencias.condiciones.ts`:
    - `Ocurrencia` suma `asistencia: { estado: 'PRESENTE' | 'AUSENTE', trabajado, indicaciones, observacion, createdById, createdAt, updatedById, updatedAt } | null` y `plazoAsistencia: { vence, vencido } | null` (`null` en las canceladas y en las de fecha posterior a hoy).
    - `leerOcurrencias` lee `asistencia_turno` del rango con **una sola consulta** (como las cancelaciones) y el `pago` sólo con los `PagoTurno` **vigentes**: un pago anulado no cuenta y la ocurrencia vuelve a `PENDIENTE`. **Reemplaza la definición D del Sprint 2** ("no se mira `Pago.estado`").
@@ -569,54 +574,84 @@ HU-22 completa la condición que HU-13 dejó fuera de alcance: un turno con asis
 
 ## T-84 · [Back] HU-22 / HU-30 · Ocurrencias v3: detalle con asistencia, estados nuevos y turnos del alumno en el portal
 
-- **HU:** HU-22 (detalle), HU-29 (trazabilidad), HU-30 (portal) y HU-31 (detalle desde el historial)
+- **HU:** HU-22 (detalle y registro desde el detalle), HU-29 (trazabilidad), HU-30 (portal) y HU-31 (detalle desde el historial)
 - **Área:** Backend
 - **Rama:** `feat/ocurrencias-sprint3-api`
-- **Depende de:** T-74 (dueña de `ESTADOS_OCURRENCIA` hasta mergearse), T-75
+- **Depende de:** T-74 (dueña de `ESTADOS_OCURRENCIA` hasta mergearse), T-75; T-81 (el `PUT /asistencias` con el que se registra desde el detalle, ya mergeada)
 - **Estimación:** 3
+
+**Descripción**
+Con el ajuste del 14/10 (ver "Vocabulario del sprint" → Horas seguidas), el detalle de una hora muestra también sus horas seguidas, con el estado de cada una y los textos una sola vez, y el profesor del turno registra la asistencia desde ahí. Qué textos van una vez y cuáles aparte se decide en una sola regla del motor, que también usa el historial (T-108).
 
 **Alcance**
 
-1. **`GET /ocurrencias/{turnoId}/{fecha}`:**
+1. **Textos de las horas seguidas** (regla pura, con test): `textosDeHorasSeguidas(horas)` en `turnos.reglas.ts`, publicada en `ocurrencias.condiciones.ts` junto a `agruparHorasSeguidas`. Recibe las horas de un grupo, en orden, y devuelve:
+   - `textos: { trabajado, indicaciones } | null`: los de la **primera hora presente** del grupo, que se muestran una sola vez; `null` si ninguna hora está presente.
+   - Por hora, alineado con la entrada, `textosPropios: { trabajado, indicaciones } | null`: los de esa hora sólo si es presente y **difieren** de `textos` ("muestra la que cambió"); `null` si coinciden o si no está presente.
+   - La observación de un ausente es siempre de su hora: no se agrupa.
+   - La usan este detalle y el historial (T-108, para la ficha, su PDF y "Mis materias"): ninguna vista compara textos por su cuenta.
+2. **`GET /ocurrencias/{turnoId}/{fecha}`:**
    - `estado` con los valores nuevos y `plazoAsistencia`.
-   - `asistencia: { estado, trabajado, indicaciones, observacion, registradaPor, registradaEl, modificadaPor, modificadaEl, cerradaPorSistema } | null`, **de esa hora**: el detalle es siempre el de una ocurrencia (una hora, con su horario), también cuando el alumno tiene horas seguidas y la asistencia se registró de una vez desde la pantalla "Asistencia". No se devuelve el grupo de horas seguidas. Un "Sin registrar" vencido trae `cerradaPorSistema: true`, la observación del cierre y ninguna persona; dentro del plazo, `asistencia: null` y su `plazoAsistencia`.
+   - `asistencia: { estado, trabajado, indicaciones, observacion, registradaPor, registradaEl, modificadaPor, modificadaEl, cerradaPorSistema } | null`, **de esa hora**, con su auditoría: el detalle sigue siendo el de una ocurrencia (una hora, con su horario). Un "Sin registrar" vencido trae `cerradaPorSistema: true`, la observación del cierre y ninguna persona; dentro del plazo, `asistencia: null` y su `plazoAsistencia`.
+   - **`horasSeguidas`**: si la hora pertenece a un grupo de más de una hora (`agruparHorasSeguidas`), `{ horaInicio, horaFin, horas, textos, ocurrencias: [{ turnoId, fecha, horaInicio, horaFin, estado, plazoAsistencia, actual, textosPropios, observacion }] }`, con todas las horas del grupo en orden y `actual: true` en la del detalle; si no, `null`. Ejemplo: Lucas viene de 8 a 9, de 9 a 10 y de 20 a 21. Los detalles de 8 a 9 y de 9 a 10 traen el mismo grupo (8:00 a 10:00, 2 h); el de 20 a 21, `null`. Una hora cancelada en el medio, u otra materia u otro profesor, cortan el grupo. Lo ve todo el que puede ver el detalle (también el profesor ajeno, en sólo lectura).
+   - Una sola lectura del motor (las ocurrencias del alumno en esa fecha) resuelve la ocurrencia pedida y su grupo: ninguna consulta por hora.
    - `acciones`: cancelar y reprogramar no se ofrecen en un turno con asistencia; registrar pago sí, si está impago (un "Realizado" o "Ausente" se cobra). Lo deciden las reglas que publican `cancelaciones.condiciones` y `pagos.condiciones`, sin copiarlas: el cobro de un turno con asistencia aparece cuando T-96 suma esos estados a la regla de cobro.
+   - **`acciones.registrarAsistencia: { visible }`**: `true` si quien mira es el **profesor del turno** y la hora se puede registrar: `plazoAsistencia` no nulo (de hoy o anterior y no cancelada) y no vencido, del motor y sin copiar reglas de `asistencias`. Mesa de entrada, gerente, profesor ajeno y alumno: `false`. Registrar y corregir usan el `PUT /asistencias` de T-81, sin endpoint nuevo. "Aplicar también a…" ofrece las otras horas de `horasSeguidas` **sin registrar**: una ya registrada se corrige desde su propio detalle, como en la pantalla "Asistencia".
    - Auditoría: `createdBy` con su **rol**, para que el detalle diga que lo registró el propio alumno desde el portal (HU-29).
    - **Profesor:** además de sus turnos, ve en sólo lectura (acciones en `false`, `pago: null`) el detalle de un turno de **otro** profesor si el alumno tiene o tuvo turnos con él: desde el historial (HU-31) se abre el detalle de cualquier clase del alumno. Si no, 403 como hoy.
-2. `GET /ocurrencias?alumnoId` (pestaña "Turnos" de la ficha): estados nuevos y `plazoAsistencia`.
-3. **Portal (HU-30):**
+3. `GET /ocurrencias?alumnoId` (pestaña "Turnos" de la ficha): estados nuevos y `plazoAsistencia`. Es una lista: no trae asistencia ni horas seguidas.
+4. **Portal (HU-30):**
    - `GET /ocurrencias/mis-turnos?desde&hasta` (`ALUMNO`): las ocurrencias del alumno de la sesión en el rango (hasta 31 días), **incluidas las canceladas**, con horario, materia, profesor, aula, estado y estado de pago. Sin prioridad, ocupación ni observaciones.
-   - `GET /ocurrencias/mis-turnos/{turnoId}/{fecha}` (`ALUMNO`): datos del turno, temas a trabajar, estado con su asistencia, estado de pago ("Pagado" o "Pendiente") y, si ya se dio, qué se trabajó y las indicaciones de esa hora. Sin prioridad, observaciones del turno, acciones ni auditoría. Un turno de otro alumno → 403.
-4. Tests del service: cada forma de `asistencia` (registrada, corregida, sin registrar en plazo y cerrada), cada hora de un grupo de horas seguidas con su propio estado y su asistencia, acciones con asistencia, profesor ajeno con y sin relación con el alumno, portal propio y ajeno, y que la respuesta del portal no tenga `prioridad`, `observaciones` ni `acciones`.
-5. `contrato-api.md` → Ocurrencias y su fila en Portal del alumno (`src/types/ocurrencia.ts` lo actualiza T-85).
+   - `GET /ocurrencias/mis-turnos/{turnoId}/{fecha}` (`ALUMNO`): datos del turno, temas a trabajar, estado con su asistencia, estado de pago ("Pagado" o "Pendiente") y, si ya se dio, qué se trabajó y las indicaciones de esa hora. Suma `horasSeguidas`, con la misma forma que el detalle del personal. Sin prioridad, observaciones del turno, acciones ni auditoría. Un turno de otro alumno → 403.
+5. Tests:
+   - `textosDeHorasSeguidas`: todas las horas con los mismos textos → `textos` una vez y ningún `textosPropios`; una hora corregida con otros textos → sólo esa trae `textosPropios`; la primera hora ausente → `textos` sale de la primera presente; sin horas presentes → `textos: null`.
+   - Del service: cada forma de `asistencia` (registrada, corregida, sin registrar en plazo y cerrada); `horasSeguidas` con el ejemplo de 8 a 9, 9 a 10 y 20 a 21, con una cancelada en el medio y con otra materia u otro profesor; cada hora del grupo con su propio estado; `registrarAsistencia` visible sólo para el profesor del turno dentro del plazo; acciones con asistencia; profesor ajeno con y sin relación con el alumno; portal propio y ajeno, con `horasSeguidas`; y que la respuesta del portal no tenga `prioridad`, `observaciones` ni `acciones`.
+6. Documentación:
+   - `contrato-api.md` → Ocurrencias y su fila en Portal del alumno (`src/types/ocurrencia.ts` lo actualiza T-85).
+   - `convenciones-backend.md` → Ocurrencias, en "Horas seguidas": `textosDeHorasSeguidas` y quién la usa.
+   - `dominio.md` → Asistencia, en "Horas seguidas": cómo se ven y el registro desde el detalle.
+   - `decisiones.md`: el ajuste del 14/10 (las horas seguidas juntas, con los textos una sola vez, en el detalle, el historial, su PDF y "Mis materias"; registrar desde el detalle). Reemplaza lo resuelto en el punto 7 de "Puntos a confirmar".
 
 **Criterios de aceptación**
 
-- Un alumno con tres horas seguidas registradas de una vez tiene tres detalles, uno por hora (8:00 a 9:00, 9:00 a 10:00 y 10:00 a 11:00), cada uno con su estado y su asistencia; si se ajustó por hora, cada detalle muestra el estado de su hora.
-- El alumno ve el detalle de sus turnos y recibe 403 si pide el de otro.
+- Lucas viene de 8 a 9, de 9 a 10 y de 20 a 21. Los detalles de 8 a 9 y de 9 a 10 muestran las dos horas, cada una con su estado, y los textos una sola vez; el de 20 a 21 no muestra horas seguidas.
+- Si la hora de 9 a 10 se corrigió con otros textos, los dos detalles muestran los del grupo y, aparte, los de 9 a 10.
+- Cada detalle sigue siendo de su hora: trae su estado y su asistencia completa, con la auditoría de esa hora.
+- El profesor del turno, dentro del plazo, recibe `registrarAsistencia.visible: true`; la mesa de entrada, el gerente, un profesor ajeno y el alumno, `false`.
+- El alumno ve el detalle de sus turnos, con sus horas seguidas, y recibe 403 si pide el de otro.
 
 ---
 
 ## T-85 · [Front] HU-22 / HU-30 · Detalle del turno con asistencia, turnos del alumno y detalle en el portal
 
-- **HU:** HU-22, HU-29 y HU-30
+- **HU:** HU-22 (detalle y registro desde el detalle), HU-29 y HU-30
 - **Área:** Frontend
 - **Rama:** `feat/ocurrencias-sprint3-ui`
-- **Depende de:** T-84, T-77, T-79, T-80
+- **Depende de:** T-84, T-77, T-79, T-80; T-81 y T-82 (el `PUT /asistencias` y el formulario que se reusa, ya mergeadas)
 - **Estimación:** 3
 
 **Alcance**
 
-1. `src/types/ocurrencia.ts` con el contrato de T-84 (pasa a ser de esta tarea).
-2. `OcurrenciaDetalle`: sección "Asistencia" de **esa hora** (nunca el grupo de horas seguidas) (estado, qué se trabajó, indicaciones u observación, registrada y modificada por, con fecha y hora; si la cerró el sistema, "Cerrado por el sistema" con su observación en lugar de una persona); `EstadoTurnoBadge` con plazo; en la trazabilidad, "Registrado por el alumno desde el portal" cuando el creador tiene rol `ALUMNO`.
-3. `TurnosDelAlumno`: sin cambios visuales, con la variante "sin asistencia" de T-77 (la asistencia se ve al abrir el detalle); la casilla de cancelar sigue saliendo de `cancelable`.
-4. `DetalleTurnoPortal` (`app/portal/_componentes/detalle-turno.tsx`), con un componente nuevo de `features/ocurrencias` (`OcurrenciaDetallePortal`) y su hook: datos, temas, estado, pago, lo trabajado e indicaciones; sin acciones; en el celular, a pantalla completa.
-5. Carga, vacío y error (403 incluido).
+1. `src/types/ocurrencia.ts` con el contrato de T-84 (pasa a ser de esta tarea), incluidos `horasSeguidas` y `acciones.registrarAsistencia`.
+2. `OcurrenciaDetalle`, sección "Asistencia":
+   - La de **esa hora**: estado, qué se trabajó, indicaciones u observación, registrada y modificada por, con fecha y hora. Si la cerró el sistema, "Cerrado por el sistema" con su observación en lugar de una persona. `EstadoTurnoBadge` con plazo.
+   - Si `horasSeguidas` no es `null`, el grupo debajo ("8:00 a 10:00 · 2 h"): cada hora con su `EstadoTurnoBadge` (la del detalle, marcada; las otras abren su propio detalle), "Qué se trabajó" e "Indicaciones para la próxima sesión" **una sola vez** (`textos`) y, en la hora que los tenga, sus `textosPropios`, más la observación de cada hora ausente. La pantalla no compara textos: muestra lo que manda la API.
+   - En la trazabilidad, "Registrado por el alumno desde el portal" cuando el creador tiene rol `ALUMNO`.
+3. **Registrar la asistencia desde el detalle**, si `acciones.registrarAsistencia.visible`:
+   - El mismo formulario de la pantalla "Asistencia": "Presente" / "Ausente", los textos con su contador y "Aplicar también a…", con una casilla por cada otra hora de `horasSeguidas` sin registrar. Abre con lo registrado de esa hora: corregir es volver a guardar.
+   - No se copia: es un componente nuevo de `features/asistencias`, `RegistrarAsistenciaTurno({ ocurrencia, horasSeguidas })`, que reusa las piezas de `FilaAsistencia` (selector de estado, textos, schema y `registrosDeFila`). `app/` lo compone en el detalle con una prop de render (`renderRegistrarAsistencia`), como `AccionRegistrarPago`.
+   - Guarda con `useRegistrarAsistencias` (`PUT /asistencias`): un registro por hora tildada, con el mismo estado y los mismos textos. Muestra "Asistencia registrada"; los 409 (`FUERA_DE_PLAZO`, `TURNO_CANCELADO`) y los 400, en el formulario. Invalida `asistencias`, `ocurrencias`, `agendas`, `historiales` y `cuentas`.
+4. `TurnosDelAlumno`: sin cambios visuales, con la variante "sin asistencia" de T-77 (la asistencia se ve al abrir el detalle); la casilla de cancelar sigue saliendo de `cancelable`.
+5. `DetalleTurnoPortal` (`app/portal/_componentes/detalle-turno.tsx`), con un componente nuevo de `features/ocurrencias` (`OcurrenciaDetallePortal`) y su hook: datos, temas, estado, pago, lo trabajado e indicaciones, y el grupo de horas seguidas con la misma presentación del punto 2; sin acciones; en el celular, a pantalla completa.
+6. Carga, vacío y error (403 incluido).
 
 **Criterios de aceptación**
 
-- El detalle del mismo turno, abierto desde la agenda, la ficha o el historial, muestra su asistencia; las listas no la muestran.
-- El alumno ve su detalle sin prioridad, observaciones ni acciones.
+- El detalle del mismo turno, abierto desde la agenda, la ficha o el historial, muestra su asistencia y sus horas seguidas; las listas no muestran la asistencia.
+- Desde el detalle de 8 a 9, el profesor marca "Presente" esa hora y la de 9 a 10 con los mismos textos. Los dos detalles quedan "Realizado" y muestran los textos una sola vez.
+- Si después corrige sólo la de 9 a 10 con otros textos, el detalle muestra los del grupo y, aparte, los de 9 a 10.
+- La mesa de entrada, el gerente y el alumno no ven el formulario.
+- El alumno ve su detalle, con sus horas seguidas, sin prioridad, observaciones ni acciones.
 
 ---
 
@@ -1182,30 +1217,38 @@ Filtro por meses y por tipo de turno (descartados por las PO).
 - **HU:** HU-31 Historial académico del alumno; HU-33 Mis materias e historial de asistencia
 - **Área:** Backend
 - **Rama:** `feat/historiales-api`
-- **Depende de:** T-74, T-75, T-81 (`ultimasIndicaciones`; puede empezar contra su firma)
+- **Depende de:** T-74, T-75, T-81 (`ultimasIndicaciones`), T-84 (`textosDeHorasSeguidas`; puede empezar contra su firma)
 - **Estimación:** 5
 
 **Descripción**
-El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas del alumno con el motor (estado, asistencia y cancelación), **una por hora** y las ordena por materia y profesor, para la ficha (mesa y profesor), para "Mis materias" del portal y para el PDF (T-110).
+El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas del alumno con el motor (estado, asistencia y cancelación), **una por hora**, y las ordena por materia y profesor, para la ficha (mesa y profesor), para "Mis materias" del portal y para el PDF (T-110). Con el ajuste del 14/10 (ver "Vocabulario del sprint" → Horas seguidas), las horas seguidas van **juntas**, con el estado de cada hora y los textos una sola vez; cada hora se sigue contando por separado.
 
 **Alcance**
 
 1. **`GET /historiales/alumnos/{alumnoId}?desde&hasta&materiaId?&profesorId?`** (`MESA_ENTRADAS`; `PROFESOR` sólo si el alumno tiene o tuvo turnos con él, el criterio de "Mis alumnos", 403 si no):
    - Período por defecto: el mes en curso; `hasta` anterior a `desde` → 400; un tope de días (por ejemplo, 366, como el tablero) que se deja en `decisiones.md`.
    - Sólo ocurrencias de hoy o anteriores: los turnos futuros están en los turnos del alumno.
-   - Grupos por **materia y profesor** ("Matemática — Prof. Gómez"), cada uno con `resumen: { realizadas, ausencias, porcentaje }` (presentes sobre presentes más ausentes, cada hora como un turno; cancelados y sin registrar no cuentan; un decimal, 0 sin base) y sus `clases`, de la más reciente a la más antigua.
-   - Cada clase es **una hora** (también cuando el alumno tiene horas seguidas): fecha, horario, estado ("Realizado", "Ausente", "Cancelado" o "Sin registrar", con su plazo o el cierre del sistema y su observación), qué se trabajó, indicaciones u observación de la ausencia, el motivo de un cancelado (HU-13), y su `turnoId` y `fecha` para abrir el detalle.
+   - Grupos por **materia y profesor** ("Matemática — Prof. Gómez"), cada uno con `resumen: { realizadas, ausencias, porcentaje }` (presentes sobre presentes más ausentes, cada hora como un turno; cancelados y sin registrar no cuentan; un decimal, 0 sin base) y sus `bloques`, de la más reciente a la más antigua.
+   - Cada **bloque** son las **horas seguidas** de un día (`agruparHorasSeguidas` de T-74; una hora suelta o cancelada es un bloque de una): `{ fecha, horaInicio, horaFin, horas, textos, clases }`. `textos` son "Qué se trabajó" e indicaciones, que se muestran **una sola vez**, y salen de `textosDeHorasSeguidas` (T-84), sin recalcularse.
+   - Cada clase sigue siendo **una hora**: horario, estado ("Realizado", "Ausente", "Cancelado" o "Sin registrar", con su plazo o el cierre del sistema y su observación), `textosPropios` (sólo si sus textos difieren de los del bloque), la observación de la ausencia, el motivo de un cancelado (HU-13), y su `turnoId` y `fecha` para abrir el detalle.
    - `opciones: { materias, profesores }` del historial completo del alumno, para los filtros.
 2. **Portal (HU-33):**
    - `GET /historiales/mis-materias` (`ALUMNO`): cada materia y profesor en los que el alumno tiene o tuvo turnos, con su próximo turno (fecha y horario) y su porcentaje de asistencia.
-   - `GET /historiales/mis-materias/{materiaId}/{profesorId}?mes` (`ALUMNO`; por defecto, el mes en curso): `indicacionesProximaClase` (las de la última clase realizada, de cualquier fecha, con `ultimasIndicaciones` de T-81) y las clases del mes con estado ("Realizado", "Ausente" o "Cancelado": HU-33 no lista los "Sin registrar"), qué se trabajó e indicaciones, una por hora. Sin observaciones internas ni datos de otros alumnos. Una materia y profesor en los que no cursa → 404.
-3. Una sola función del service arma el historial para la ficha, el portal y el PDF; `historiales.reglas.ts` (puro, con test) agrupa y resume.
-4. Tests del service con reloj fijo: grupos por materia y profesor; porcentaje sin cancelados ni sin registrar; tres horas seguidas salen como tres clases, cada una con su estado; cerrado por el sistema con su observación; profesor sin relación con el alumno → 403; el portal sin "Sin registrar"; indicaciones de una clase anterior al mes.
+   - `GET /historiales/mis-materias/{materiaId}/{profesorId}?mes` (`ALUMNO`; por defecto, el mes en curso): `indicacionesProximaClase` (las de la última clase realizada, de cualquier fecha, con `ultimasIndicaciones` de T-81) y las clases del mes en **bloques de horas seguidas**, con la misma forma: estado de cada hora ("Realizado", "Ausente" o "Cancelado": HU-33 no lista los "Sin registrar", que se omiten del bloque), qué se trabajó e indicaciones una sola vez y, en la hora que los tenga distintos, los suyos. Sin observaciones internas ni datos de otros alumnos. Una materia y profesor en los que no cursa → 404.
+3. Una sola función del service arma el historial para la ficha, el portal y el PDF; `historiales.reglas.ts` (puro, con test) agrupa en bloques y resume.
+4. Tests del service con reloj fijo:
+   - grupos por materia y profesor; porcentaje sin cancelados ni sin registrar;
+   - tres horas seguidas salen como **un bloque** con tres clases, cada una con su estado, y los textos una sola vez, y el porcentaje cuenta las tres;
+   - una hora del bloque con otros textos trae sus `textosPropios`;
+   - una hora cancelada en el medio corta el bloque;
+   - cerrado por el sistema con su observación; profesor sin relación con el alumno → 403;
+   - el portal sin "Sin registrar"; indicaciones de una clase anterior al mes.
 5. Documentación: `contrato-api.md` → Historiales y su fila en Portal del alumno; `dominio.md` → Historial académico.
 
 **Criterios de aceptación**
 
 - Un alumno que cursa Matemática con dos profesores ve dos grupos, cada uno con su porcentaje.
+- Un alumno que vino de 8 a 10 con los mismos textos ve un solo bloque con las dos horas y los textos una vez, y el porcentaje cuenta dos clases.
 - El profesor ve el historial completo de su alumno (también las clases con otros profesores) y recibe 403 con un alumno que no tiene.
 
 ---
@@ -1221,13 +1264,22 @@ El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas de
 **Alcance**
 
 1. `HistorialAcademico({ alumnoId, rol, renderDetalle })`: filtros en la URL (un mes, por defecto el actual, o un rango desde-hasta; materia y profesor con las `opciones` de la API) y "Limpiar filtros".
-2. Un bloque por materia y profesor con su resumen (clases realizadas, ausencias y porcentaje) y, debajo, sus clases: fecha, horario, `EstadoTurnoBadge` con plazo o cierre, qué se trabajó, indicaciones u observación, el motivo de un cancelado; una fila por hora. Clic en una clase abre el detalle del turno (`renderDetalle`, `?detalle&fecha`).
+2. Una sección por materia y profesor con su resumen (clases realizadas, ausencias y porcentaje) y, debajo, sus clases en **bloques de horas seguidas** (los `bloques` de la API):
+   - fecha y horario del bloque ("8:00 a 10:00 · 2 h");
+   - el `EstadoTurnoBadge` de **cada** hora, con plazo o cierre;
+   - "Qué se trabajó" e indicaciones **una sola vez** y, en la hora que los tenga distintos, sus `textosPropios`;
+   - la observación de cada hora ausente y el motivo de un cancelado;
+   - clic en una hora abre su detalle del turno (`renderDetalle`, `?detalle&fecha`).
+
+   La pantalla no compara textos: muestra lo que manda la API.
+
 3. Vacío: "No hay clases registradas en este período". Sólo lectura en los dos roles.
 4. Mesa de entrada: "Generar PDF" (`hrefPdfHistorial` en `features/historiales/rutas-historiales.ts`, con test), con el mes que se ve y los filtros de materia y profesor; si el filtro es un rango de más de un mes, primero se elige el mes. Se enlaza y abre en otra pestaña (decisión T-123). Es estirable junto con T-110.
 
 **Criterios de aceptación**
 
 - Mesa de entrada y profesor ven el mismo historial, y desde una clase se abre su detalle.
+- Un alumno que vino de 8 a 10 se ve en un solo bloque, con el estado de cada hora y los textos una vez.
 - El PDF sale con el mes y los filtros que se ven.
 
 ---
@@ -1244,7 +1296,7 @@ El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas de
 **Alcance**
 
 1. `GET /historiales/alumnos/{alumnoId}/pdf?mes&materiaId?&profesorId?` (`MESA_ENTRADAS`), con el contrato común de los PDF (decisiones T-122 y T-123) y el mismo cálculo del historial, sin duplicar reglas.
-2. Contenido: encabezado oficial (`encabezadoDeDocumento`); alumno (apellido, nombre, DNI y nivel de escolaridad), mes y filtros; por materia y profesor, el resumen y la lista de clases, una por hora (fecha, horario, estado, qué se trabajó e indicaciones); los turnos cancelados del mes con fecha, horario y motivo; los exámenes del mes con su nota, si la tienen. **Sin** las observaciones internas de la ficha. Un mes sin clases lo dice.
+2. Contenido: encabezado oficial (`encabezadoDeDocumento`); alumno (apellido, nombre, DNI y nivel de escolaridad), mes y filtros; por materia y profesor, el resumen y la lista de clases **en bloques de horas seguidas**, con los mismos `bloques` del historial (fecha y horario del bloque, el estado de cada hora y qué se trabajó e indicaciones una sola vez; los de la hora que los tenga distintos, aparte); los turnos cancelados del mes con fecha, horario y motivo; los exámenes del mes con su nota, si la tienen. **Sin** las observaciones internas de la ficha. Un mes sin clases lo dice.
 3. Nombre del archivo: "historial-academico", el alumno y el mes, con la convención de la decisión T-123 (ver "Puntos a confirmar": HU-32 pide `_` entre las partes).
 4. Archivos: `historiales.pdf.tsx`, `historiales.documentos.ts`, `historiales.formato.ts`, la ruta y su handler. Tests como los del Sprint 2 (`%PDF-`, páginas y metadatos; la ruta con el service mockeado).
 5. `contrato-api.md` → Documentos PDF e Historiales.
@@ -1252,6 +1304,7 @@ El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas de
 **Criterios de aceptación**
 
 - El PDF de octubre de un alumno con dos materias trae los dos resúmenes con sus clases, los cancelados y los exámenes con nota, y no trae observaciones internas.
+- Las horas seguidas salen en un solo bloque, con los textos una vez, igual que en la pantalla.
 
 ---
 
@@ -1267,13 +1320,14 @@ El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas de
 **Alcance**
 
 1. `MisMaterias`: cada materia y profesor ("Inglés — Prof. Ruiz") con su próximo turno y su porcentaje de asistencia; tocarla entra a la materia.
-2. `MiMateria`: primero y destacadas, las "Indicaciones para la próxima clase"; debajo, el historial del mes (filtro de mes, por defecto el actual) con fecha, horario, estado, qué se trabajó e indicaciones, una fila por hora, de la más reciente a la más antigua. Sin clases realizadas: "Todavía no tenés clases registradas en esta materia".
+2. `MiMateria`: primero y destacadas, las "Indicaciones para la próxima clase"; debajo, el historial del mes (filtro de mes, por defecto el actual), de la más reciente a la más antigua, en **bloques de horas seguidas** (los de la API): fecha y horario del bloque, el estado de cada hora, y qué se trabajó e indicaciones **una sola vez** (si una hora los tiene distintos, también los suyos). Sin clases realizadas: "Todavía no tenés clases registradas en esta materia".
 3. `MisExamenes({ materiaId })`, la sección "Exámenes" de la misma pantalla: el próximo con "en 5 días" u "hoy" (de la API), los rendidos con su resultado y el promedio de la materia. Sin exámenes: "No hay exámenes cargados en esta materia".
 4. Sólo lectura y pensado para el celular.
 
 **Criterios de aceptación**
 
 - Desde el celular, el alumno ve qué tiene que preparar para la próxima clase y su historial del mes.
+- Si vino de 8 a 10, ve un solo bloque con las dos horas y los textos una vez.
 
 ---
 
@@ -1341,10 +1395,10 @@ El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas de
 
 1. `testing` actualizado, migración y seed desde una base vacía, para confirmar que el seed alcanza para la demo.
 2. Recorridos por rol, contra los criterios de aceptación de cada HU:
-   - **Profesor:** asistencia de hoy (con horas seguidas y "Ajustar por hora", y después el detalle de cada hora por separado), corrección al día siguiente, un día vencido, historial de un alumno y nota de un examen.
+   - **Profesor:** asistencia de hoy desde la pantalla "Asistencia" (horas seguidas con "Aplicar también a…"); registrar desde el detalle de una hora y su hora seguida; el detalle de cada hora con sus horas seguidas y los textos una vez; corregir sólo una hora con otros textos (el detalle y el historial muestran los del grupo y, aparte, los de esa hora); corrección al día siguiente; un día vencido; historial de un alumno y nota de un examen.
    - **Mesa de entrada:** alta de un alumno con foto y acceso; cobro de dos materias con el filtro de varias materias y "Seleccionar todo", por transferencia con comprobante; detalle del pago y reemplazo del adjunto; quitar el adjunto de un pago con débito; anulación y nuevo cobro; historial y su PDF; bloqueo por deuda al registrar un turno.
    - **Gerente:** tablero por secciones y sus PDF; pagos realizados en sólo lectura.
-   - **Alumno, desde un celular real:** ingreso con usuario y DNI, aviso y cambio de contraseña, "Mi calendario", "Sacar turno" (una clase y semanal), "Mis materias", "Mis pagos" y su comprobante.
+   - **Alumno, desde un celular real:** ingreso con usuario y DNI, aviso y cambio de contraseña, "Mi calendario", el detalle de un turno con horas seguidas, "Sacar turno" (una clase y semanal), "Mis materias" (con un bloque de horas seguidas), "Mis pagos" y su comprobante.
 3. **Permisos:** cada rol en el segmento de otro ve "No tiene permiso para acceder a esta sección"; el alumno que pide por la API un turno, un pago o un PDF de otro alumno recibe 403.
 4. **Regresión del Sprint 2:** registrar, cancelar, reprogramar y finalizar turnos; cobrar en efectivo; PDF del turno, de la agenda y del comprobante; tablero.
 5. Guion de la review (qué se muestra, en qué orden y con qué datos del seed) y la lista de lo que queda pendiente, para informar a las PO.
@@ -1464,7 +1518,7 @@ Cada punto tiene una propuesta con la que las tareas pueden avanzar; si la respu
 4. **"Marcar todos presentes" con filas ya registradas.** Propuesta: marca sólo las que no tienen asistencia; un ausente ya registrado no cambia. (T-81, T-82)
 5. ~~**Calendario semanal con asistencia.**~~ **Resuelto por las PO:** ninguna vista de calendario ni de lista cambia; los estados de asistencia se ven sólo en el detalle del turno (además de la pantalla "Asistencia" y el historial). Un turno pasado no cancelado se ve sin distintivo. (T-77, T-85, T-86, T-87)
 6. **Un turno de hoy ya dado e impago: ¿adeudado o próximo?** Propuesta: próximo hasta mañana, porque la fecha sigue separando las dos secciones de HU-16. (T-76)
-7. ~~**Horas seguidas en el historial.**~~ **Resuelto por las PO:** todo se muestra por hora (detalle, historial, PDF y "Mis materias"); las horas seguidas sólo se agrupan en la pantalla "Asistencia", para registrar el estado y escribir los textos una vez. (T-84, T-85, T-108, T-109, T-110, T-111)
+7. ~~**Horas seguidas en el historial.**~~ **Resuelto por las PO (ajustado el 14/10, reemplaza la respuesta anterior: "todo se muestra por hora"):** cada hora sigue siendo una ocurrencia con su estado y su asistencia. En el detalle del turno (también el del portal), el historial, su PDF y "Mis materias", las horas seguidas se muestran juntas, con el estado de cada hora y los textos una sola vez; si una hora tiene otros textos, se muestran también los suyos. Desde el detalle, el profesor del turno registra la asistencia de esa hora y de sus horas seguidas sin registrar. (T-84, T-85, T-108, T-109, T-110, T-111)
 8. **"Sin registrar" en "Mis materias".** HU-33 sólo nombra "Realizado", "Ausente" y "Cancelado": un turno dado y todavía sin registrar no se le muestra al alumno hasta que el profesor lo registre. Confirmar. (T-108, T-111)
 9. **Nombre del PDF del historial.** HU-32 pide `historial-academico_perez-juan_2026-10.pdf`, pero la decisión T-123 reserva el `_` para separar las dos fechas de un rango. Propuesta: `historial-academico-perez-juan-2026-10.pdf`. (T-110)
 10. **Un alumno cuyo DNI ya tiene usuario** (por ejemplo, un profesor del centro que también toma clases). Cada persona tiene un solo usuario por DNI. Propuesta: el alta se rechaza con "Ya existe un usuario con ese DNI" hasta que las PO definan el caso. (T-88)

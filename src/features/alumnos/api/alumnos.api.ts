@@ -57,3 +57,18 @@ export function editarAlumno(id: number, cambios: AlumnoEditar): Promise<AlumnoD
     body: JSON.stringify(cambios),
   })
 }
+
+/** Multipart con un único campo `foto` (JPG o PNG, hasta 5 MB). Reemplaza la anterior si tenía. */
+export function subirFotoAlumno(id: number, foto: File): Promise<AlumnoDetalle> {
+  const formData = new FormData()
+  formData.set('foto', foto)
+  return fetchJson<AlumnoDetalle>(`${BASE}/${id}/foto`, {
+    method: 'POST',
+    body: formData,
+  })
+}
+
+/** Quita la foto. Sin foto no es un error: devuelve el detalle igual. */
+export function quitarFotoAlumno(id: number): Promise<AlumnoDetalle> {
+  return fetchJson<AlumnoDetalle>(`${BASE}/${id}/foto`, { method: 'DELETE' })
+}

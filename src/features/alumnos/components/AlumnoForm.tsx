@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Controller, useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { AlertCircle } from 'lucide-react'
@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Textarea } from '@/components/ui/textarea'
+import { useToast } from '@/hooks/use-toast'
 import type { ApiError } from '@/utils/fetch-json'
 
 import {
@@ -31,8 +32,11 @@ import {
 import { NIVEL_ESCOLARIDAD_LABEL, type AlumnoCrear, type AlumnoEditar } from '../alumnos.types'
 import { esMenorDeEdad, hoyLocal } from '../edad'
 import { aplicarErroresApi, interpretarErroresApi } from '../errores-api'
+import { useQuitarFotoAlumno } from '../hooks/use-quitar-foto-alumno'
+import { useSubirFotoAlumno } from '../hooks/use-subir-foto-alumno'
 import { AccesoPortalAlta } from './AccesoPortalAlta'
 import { AvisoMenorDeEdad } from './AvisoMenorDeEdad'
+import { type CambioFotoPendiente, FotoAlumnoCampo } from './FotoAlumnoCampo'
 
 const CAMPOS_TUTOR = [
   'tutorNombre',
@@ -50,11 +54,17 @@ type AlumnoFormProps = {
   | {
       modo: 'crear'
       defaultValues?: undefined
-      onSubmit: (datos: AlumnoCrear) => void
+      alumnoId?: undefined
+      fotoUrl?: undefined
+      /** `foto` es el archivo elegido en el formulario (todavía no subido) o null. */
+      onSubmit: (datos: AlumnoCrear, foto: File | null) => void
     }
   | {
       modo: 'editar'
       defaultValues: AlumnoFormValues
+      alumnoId: number
+      /** URL prefirmada de la foto actual (la del detalle que se está editando), o null. */
+      fotoUrl: string | null
       onSubmit: (datos: AlumnoEditar | null) => void
     }
 )
@@ -63,12 +73,25 @@ type AlumnoFormProps = {
 export function AlumnoForm({
   modo,
   defaultValues,
+  alumnoId,
+  fotoUrl,
   onSubmit,
   onCancelar,
   isPending,
   error,
 }: AlumnoFormProps) {
   const formRef = useRef<HTMLFormElement>(null)
+  const toast = useToast()
+
+  // Foto (HU-26). En el alta, el archivo elegido se entrega con los datos y lo sube AlumnoNuevo
+  // después de crear al alumno (hasta entonces no hay id). En la edición, el reemplazo o la marca
+  // de "quitar" quedan pendientes y se aplican recién con "Guardar alumno", junto con los demás
+  // campos (un solo botón de guardado, como en el profesor).
+  const [archivoFoto, setArchivoFoto] = useState<File | null>(null)
+  const [cambioFoto, setCambioFoto] = useState<CambioFotoPendiente | null>(null)
+  const subirFoto = useSubirFotoAlumno()
+  const quitarFoto = useQuitarFotoAlumno(alumnoId ?? 0)
+  const fotoPending = subirFoto.isPending || quitarFoto.isPending
 
   const {
     register,
@@ -111,12 +134,27 @@ export function AlumnoForm({
     errorApi?.errorGeneral ??
     (erroresOcultos.length > 0 ? erroresOcultos.map(({ mensaje }) => mensaje).join('. ') : null)
 
-  const procesarEnvio = handleSubmit((valores) => {
+  const procesarEnvio = handleSubmit(async (valores) => {
     if (modo === 'crear') {
-      onSubmit(valoresFormACrear(valores))
-    } else {
-      onSubmit(valoresFormAEditar(valores, dirtyFields))
+      onSubmit(valoresFormACrear(valores), archivoFoto)
+      return
     }
+    if (cambioFoto) {
+      try {
+        if (cambioFoto.tipo === 'archivo') {
+          await subirFoto.mutateAsync({ id: alumnoId, foto: cambioFoto.archivo })
+          toast.success('Se actualizó la foto')
+        } else {
+          await quitarFoto.mutateAsync()
+          toast.success('Se quitó la foto')
+        }
+        setCambioFoto(null)
+      } catch (errorFoto) {
+        toast.error(errorFoto instanceof Error ? errorFoto.message : 'No se pudo guardar la foto')
+        return
+      }
+    }
+    onSubmit(valoresFormAEditar(valores, dirtyFields))
   })
 
   // Mostrar errores de la API en los campos (setError) y poner el foco en el primero. Corre después
@@ -139,6 +177,23 @@ export function AlumnoForm({
             <AlertCircle className="size-4" />
             <AlertDescription className="text-destructive">{errorGeneral}</AlertDescription>
           </Alert>
+        )}
+
+        {modo === 'crear' ? (
+          <FotoAlumnoCampo
+            modo="crear"
+            archivo={archivoFoto}
+            onArchivoChange={setArchivoFoto}
+            disabled={isPending}
+          />
+        ) : (
+          <FotoAlumnoCampo
+            modo="editar"
+            fotoUrl={fotoUrl}
+            cambio={cambioFoto}
+            onCambioChange={setCambioFoto}
+            disabled={isPending || fotoPending}
+          />
         )}
 
         <Grilla>
@@ -330,8 +385,14 @@ export function AlumnoForm({
           Cancelar
         </Button>
         {/* Sin cambios no hay nada que guardar: el botón queda deshabilitado (así lo muestra el diseño). */}
-        <Button type="submit" variant="confirmado" size="lg" disabled={isPending || !isDirty}>
-          {isPending ? 'Guardando…' : 'Guardar alumno'}
+        {/* Un cambio de foto pendiente también es algo que guardar. */}
+        <Button
+          type="submit"
+          variant="confirmado"
+          size="lg"
+          disabled={isPending || fotoPending || (!isDirty && !cambioFoto)}
+        >
+          {isPending || fotoPending ? 'Guardando…' : 'Guardar alumno'}
         </Button>
       </PanelFooter>
     </form>

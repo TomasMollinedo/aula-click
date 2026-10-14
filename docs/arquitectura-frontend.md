@@ -30,7 +30,7 @@ components/ → hooks/, types/, utils/ (nunca features/: ESLint)
 hooks/, types/, utils/ → entre sí (nunca features/ ni components/: ESLint)
 nadie del frontend → server/, lib/, config/, generated/ (ESLint, con alias o con ruta relativa)
 
-Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx` usa el hook `use-alumnos` de `features/alumnos/hooks/`; no llama a `alumnos.api.ts` ni importa `AlumnosTable`.
+Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx` usa el hook `use-alumnos` de `features/alumnos/hooks/`; no llama a `alumnos.api.ts` ni importa `AlumnosGrid`.
 
 Cuando una pantalla de una feature tiene que mostrar un **componente** de otra (no solo sus datos), lo compone `app/`, que puede importar de cualquier feature, y la feature que lo muestra lo recibe por una prop de render. Ejemplo: el tab "Agenda" de la ficha del profesor. `ProfesorDetalle` recibe `renderAgenda: (profesor) => ReactNode`, y `app/mesa/profesores/[profesorId]/page.tsx` (y `editar/page.tsx`, que monta el detalle de fondo) le pasa `<AgendaProfesorListado profesorId={profesor.id} renderDetalle={…} />` de `features/agendas`. No se mueve el componente a `components/ui/` para saltear la regla.
 
@@ -244,7 +244,152 @@ src/
 │ ├── AccesoPortalAlta.tsx, AccesoPortalFicha.tsx # "Acceso al portal" del alta ({ nombre, apellido, dni }) y de la ficha ({ alumno }) (T-90)
 │ ├── AlumnoNuevo.tsx, AlumnoEditar.tsx # alta y edición en un <Panel> (modal)
 │ └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
-│
+=======
+│   ├── auth/
+│   │   ├── auth-client.ts              # createAuthClient() de better-auth/react
+│   │   ├── auth.schema.ts              # schema Zod del login: un campo "Email o usuario" (`esEmail` decide el camino)
+│   │   ├── roles.ts                    # rol → segmento de URL (único lugar con esa correspondencia)
+│   │   ├── codigos-error.ts            # codes del contrato que el frontend reconoce
+│   │   ├── interpretar-error-login.ts  # único lugar que decide el mensaje de un login fallido
+│   │   ├── sesion-expirada.ts          # los motivos en la URL de /login, compartidos con providers.tsx
+│   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
+│   ├── aulas/                          # mínima, solo de lectura: aulas libres para un horario
+│   │   ├── aulas.types.ts, api/{aulas.api.ts, aulas.keys.ts}
+│   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
+│   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
+│   │                                   # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
+│   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque;
+│   │                                   # el listado es una grilla de tarjetas con foto (ProfesoresGrid + ProfesorCard), no una tabla
+│   ├── turnos/                         # registrar turno (HU-07) y reprogramar un turno (HU-20, T-50)
+│   │   ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts
+│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, errores-reprogramaciones.ts, formato-reprogramaciones.ts
+│   │   ├── api/{turnos.api.ts, turnos.keys.ts, reprogramaciones.api.ts}
+│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-reprogramar-turno.ts}
+│   │   └── components/
+│   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
+│   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
+│   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx); la confirmación abre el detalle del turno
+│   │       │   (`?detalle=&fecha=`) que le llega por `renderDetalle`
+│   │       └── AccionReprogramarTurno.tsx, ReprogramarTurnoDialog.tsx # reprogramar: reutiliza la búsqueda (FiltrosDisponibilidad con
+│   │           materiaFija, HorasDelBloque con unaSola); al reprogramar abre el detalle con el turnoId de la API y la fecha nueva
+│   ├── agendas/                        # las tres agendas: diaria (HU-09), propia (HU-10) y de la ficha del profesor (HU-02)
+│   │   ├── agendas.types.ts, agenda-propia.ts (rango, agrupado y params de la URL), filtros-agenda.ts, modo-agenda.ts,
+│   │   │   calendario.ts (clases, grilla de la semana, filtros y URL del calendario; con tests),
+│   │   │   calendario-alumno.ts (los turnos de un alumno en la grilla y sus filtros; con tests)
+│   │   ├── api/{agendas.api.ts, agendas.keys.ts, calendario.api.ts}  # /api/v1/agendas/{diaria,propia,profesor,centro}
+│   │   ├── hooks/{use-agenda.ts, use-agenda-propia.ts, use-agenda-profesor.ts, use-rango-agenda-en-url.ts,
+│   │   │   use-filtros-agenda.ts, use-modo-agenda.ts, use-invalidar-agendas.ts, use-calendario.ts, use-semana-en-url.ts}
+│   │   └── components/
+│   │       ├── AgendaConModo.tsx        # lo común a las tres: selector Calendario/Lista, detalle en la URL, slot de acciones
+│   │       ├── SelectorModoAgenda.tsx
+│   │       ├── CalendarioSemanal.tsx, CalendarioGrilla.tsx, BloqueClase.tsx # el calendario semanal (T-59)
+│   │       ├── GrillaSemanal.tsx        # la tabla de la semana (días y horas), genérica: la usan los dos calendarios
+│   │       ├── AgendaDelAlumno.tsx, CalendarioAlumno.tsx, BloqueTurnoAlumno.tsx # pestaña "Turnos" de la ficha del alumno: calendario
+│   │       │                            # por defecto y la lista (`TurnosDelAlumno`, que le llega por children) como segunda vista
+│   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
+│   │       │   FiltroProfesorAgenda.tsx # agenda diaria; NavegacionFecha la comparten las dos agendas por rango
+│   │       ├── BarraFiltrosAgenda.tsx, FiltrosCanceladosPrioridad.tsx, FiltrosGrillaCalendario.tsx # los filtros de la lista
+│   │       │                            # (cancelados, prioridad y, en la diaria, profesor) y los campos de cada filtro
+│   │       ├── AgendaPorRango.tsx, AgendaPropiaTable.tsx, SelectorVistaAgenda.tsx # vista por día o por semana
+│   │       ├── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx # "Mi agenda"
+│   │       └── AgendaProfesorListado.tsx # tab "Agenda" de la ficha del profesor; lo compone app/
+│   ├── ocurrencias/                    # el detalle de un turno en una fecha y los turnos de un alumno (T-44)
+│   │   ├── detalle-url.ts, api/ocurrencias.keys.ts, hooks/{use-detalle-en-url.ts, use-invalidar-ocurrencias.ts}
+│   │   └── components/{OcurrenciaDetalle.tsx, TurnosDelAlumno.tsx}   # el detalle (con su sección de pago) y la pestaña "Turnos"
+│   ├── pagos/                          # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52)
+│   │   ├── pagos.types.ts, pagos.schema.ts   # schema del formulario, parsearMonto y armarRegistrarPago (el body)
+│   │   ├── a-cobrar.ts                 # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar
+│   │   ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts   # textos; errores del POST en lo que muestra el diálogo; URL del PDF del comprobante
+│   │   ├── detalle-pago-url.ts         # `?pago=<pagoId>`: el único archivo que conoce el parámetro (con test)
+│   │   ├── api/{pagos.api.ts, pagos.keys.ts}
+│   │   ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts}
+│   │   └── components/
+│   │       ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar → éxito o rechazo
+│   │       │                           #   (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
+│   │       ├── AccionRegistrarPago.tsx # slot del pie del detalle del turno
+│   │       ├── EnlaceComprobante.tsx   # "Ver comprobante" de un turno pagado (slot renderComprobante del detalle); enlaza al PDF
+│   │       ├── PagoDetalle.tsx         # ({ pagoId, onCerrar, renderAcciones? }): el detalle del pago, modal con `?pago=` (T-99)
+│   │       ├── EnlaceDetallePago.tsx   # ({ pagoId }): abre el detalle del pago desde el detalle de un turno pagado (T-99)
+│   │       └── PagosRealizados.tsx     # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
+│   ├── cuentas/                        # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
+│   │   ├── cuentas.types.ts, a-cobrar.ts   # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
+│   │   ├── filtros-cuenta.ts           # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
+│   │   ├── seleccion.ts                # la selección a cobrar (inmutable) y su resumen
+│   │   ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts   # textos (total, filtros activos, tope); errores de lectura y del período; ficha
+│   │   ├── api/{cuentas.api.ts, cuentas.keys.ts}
+│   │   ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts,
+│   │   │   use-filtros-cuenta.ts,      # los filtros de la URL con router.replace
+│   │   │   use-materias-de-cuenta.ts, use-nombres-de-filtros.ts,   # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
+│   │   │   use-todos-los-adeudados.ts, # todos los adeudados de un alumno, a pedido ("Seleccionar todos" de la vista global)
+│   │   │   use-dialogo-de-pago.ts,     # el diálogo de cobro de la selección: copia al abrir, ajuste de la selección y foco al cerrar
+│   │   │   use-detalle-de-cuenta.ts}   # "Ver detalle" de una fila: abre el detalle del turno en la URL; ajuste y foco al cerrar
+│   │   └── components/
+│   │       ├── PagosDelAlumno.tsx      # pestaña "Pagos" de la ficha (?tab=pagos&desde=…); la compone app/ con renderRegistrarPago
+│   │       ├── PagosGlobal.tsx         # /mesa/pagos: filtros y una página por tabla en la URL; la compone app/ (renderRegistrarPago, renderDetalle)
+│   │       ├── FiltrosCuenta.tsx       # período, materia y profesor, en las dos vistas; el 400 del período junto a "Hasta"
+│   │       ├── FiltroAlumno.tsx, FiltroProfesor.tsx   # los dos usos del selector con buscador (`ComboboxBuscador` de components/ui)
+│   │       ├── SeccionOcurrencias.tsx  # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
+│   │       ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx  # filas con casilla y "Ver detalle"; el importe destacado
+│   │       ├── BarraSeleccion.tsx      # resumen y acciones de la selección; envuelve las listas y flota abajo cuando deja de verse
+│   │       └── TotalDestacado.tsx      # el total con su etiqueta y los filtros activos
+│   ├── asistencias/                    # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
+│   │   ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
+│   │   └── components/AsistenciaPantalla.tsx   # ({ renderDetalle })
+│   ├── historiales/                    # HU-31 (andamiaje T-79; la completa T-109): pestaña "Historial académico" de la ficha del alumno
+│   │   ├── api/historiales.keys.ts, hooks/use-invalidar-historiales.ts
+│   │   └── components/HistorialAcademico.tsx   # ({ alumnoId, rol, renderDetalle })
+│   ├── anulaciones/                    # HU-42 (andamiaje T-79; la completa T-105): anular un pago
+│   │   ├── api/anulaciones.keys.ts, hooks/use-invalidar-anulaciones.ts
+│   │   └── components/AccionAnularPago.tsx     # ({ pago: PagoParaAcciones }): el pie del detalle del pago
+│   ├── cancelaciones/                  # HU-13 (T-46): cancelar uno o varios turnos
+│   │   ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
+│   │   ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts}  # al cancelar invalida ocurrencias, agendas y cuentas
+│   │   └── components/{AccionCancelarTurno, AccionCancelarVarios, CancelarTurnosDialog}.tsx
+│   ├── finalizaciones/                 # HU-14 (T-48): finalizar un turno recurrente desde una fecha
+│   │   ├── finalizaciones.{types,schema}.ts, errores-api.ts, formato-finalizaciones.ts, api/{finalizaciones.api,finalizaciones.keys}.ts
+│   │   ├── hooks/{use-previa-finalizacion.ts, use-finalizar-turno.ts, use-invalidar-finalizaciones.ts}  # al finalizar invalida agendas, cuentas y las previas
+│   │   └── components/{AccionFinalizarTurno, FinalizarTurnoDialog}.tsx  # la acción invalida las ocurrencias después de mover el detalle
+│   ├── examenes/                       # HU-17 (T-56): pestaña "Exámenes" de la ficha del alumno (mesa y profesor)
+│   │   ├── examenes.{types,schema}.ts, errores-api.ts, formato-examenes.ts, api/{examenes.api,examenes.keys}.ts
+│   │   ├── hooks/{use-examenes.ts, use-materias-examen.ts, use-crear-examen.ts, use-editar-examen.ts, use-eliminar-examen.ts,
+│   │   │   use-refrescar-por-examen.ts, use-invalidar-examenes.ts}  # una mutación invalida exámenes, ocurrencias y agendas (la prioridad)
+│   │   └── components/{ExamenesDelAlumno, ExamenDialog, ConfirmarEliminarExamen}.tsx  # alta y edición en un Dialog sin URL propia; editar y eliminar según `administrable` de la API
+│   ├── documentos/                     # los enlaces a los PDF de la API (ver Documentos PDF); sin datos propios: sin api/, keys ni hooks
+│   │   ├── rutas-documentos.ts         # hrefPdfTurno, hrefPdfTurnosAlumno y hrefPdfAgenda: las URLs, con su test
+│   │   └── components/{AccionPdfTurno, AccionPdfTurnosAlumno, BotonPdfAgenda}.tsx
+│   ├── tablero/                        # HU-21 (T-62): indicadores del centro de un período, solo lectura y sin enlaces
+│   │   ├── tablero.types.ts, periodo.ts, formato-tablero.ts, errores-tablero.ts, rutas-tablero.ts
+│   │   │                               # periodo.ts: opciones del selector y `?periodo=hoy|mes|rango&desde=&hasta=` (sin parámetros,
+│   │   │                               # "Esta semana", lunes a domingo); formato-tablero.ts: números, períodos y rótulos de cada tarjeta;
+│   │   │                               # errores-tablero.ts: el 400 del período junto a "Desde"/"Hasta", el 403 y el error general
+│   │   ├── api/{tablero.api.ts, tablero.keys.ts}                   # GET /api/v1/tablero?desde&hasta
+│   │   ├── hooks/{use-tablero.ts, use-periodo-en-url.ts}           # keepPreviousData; el período en la URL con router.replace
+│   │   └── components/{TableroPantalla, SelectorPeriodo, TarjetaIndicador, TarjetaRanking, GraficoDona, BotonPdfTablero}.tsx   # GraficoDona: torta/anillo en SVG, sin librería
+│   ├── centro/                         # vuelve en T-80 (la decisión T-127 lo había sacado con las hojas de impresión): ahora lo usa la UI, no los documentos; GET /centro (HU-11) para el teléfono del aviso del portal
+│   │   ├── centro.types.ts, api/{centro.api.ts, centro.keys.ts}, hooks/use-centro.ts   # staleTime: Infinity, sin reintentos
+│   │   └── components/AvisoMesaDeEntrada.tsx   # "Para cancelar o reprogramar un turno, comunicate con la mesa de entrada al …"
+│   ├── usuarios/                       # lo que vale para cualquier usuario: su cuenta y su contraseña (T-91, T-92)
+│   │   └── components/{AvisoContrasenaInicial, CambiarContrasena}.tsx   # placeholders de T-80 que completa T-92
+│   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
+│       ├── alumnos.types.ts
+│       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
+│       ├── volver-a.ts                  # ida y vuelta al alta desde otra pantalla (?volverA=, lista blanca)
+│       ├── edad.ts                      # "menor de edad" en el formulario: solo ayuda visual (ver Formularios)
+│       ├── errores-api.ts               # helper: mapea ApiError a errores del formulario
+│       ├── api/{alumnos.api.ts, alumnos.keys.ts}
+│       ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts,
+│       │          use-subir-foto-alumno.ts, use-quitar-foto-alumno.ts}   # la foto (HU-26): actualizan el detalle e invalidan el listado
+│       └── components/
+│           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
+│           ├── AlumnosListado.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
+│           ├── AlumnosGrid.tsx, AlumnoCard.tsx   # el listado es una grilla de tarjetas con foto (HU-26), como la de profesores; sin acciones de estado
+│           ├── AlumnoDetalle.tsx        # ficha con pestañas en la URL (datos|turnos|historial|examenes|pagos); las cuatro últimas llegan por render props
+│           ├── DatosAlumno.tsx          # la pestaña "Datos"; monta AccesoPortalFicha
+│           ├── AccesoPortalAlta.tsx, AccesoPortalFicha.tsx   # "Acceso al portal" del alta ({ nombre, apellido, dni }) y de la ficha ({ alumno }) (T-90)
+│           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
+│           ├── FotoAlumnoCampo.tsx      # la foto en el alta y la edición (CampoArchivo), espejo de FotoProfesorCampo
+│           ├── MisAlumnosListado.tsx, MisAlumnosTable.tsx   # "Mis alumnos" del profesor: sigue siendo tabla, con la foto en el avatar
+│           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 ├── components/
 │ ├── ui/ # primitivos de UI hechos a mano (D-08/T-26)
 │ ├── turno/ # estado, pago y prioridad de un turno (T-33; ver Componentes compartidos del turno)
@@ -542,7 +687,7 @@ mutation.mutate(datos, {
     - `DetalleModal`: el detalle de solo lectura de una entidad sencilla (ver Modales con URL propia): encabezado, datos, trazabilidad, pie con "Cerrar" y acciones, y los estados de carga, 404, 403 y error con reintentar. Cada botón del pie es un `DetalleModalAccion` (mismo archivo): un `Button` con el alto y el relleno fijos, donde solo se elige la `variant`. El pie los reparte en columnas iguales según cuántos haya (hasta dos, a la derecha; cuatro, en 2 × 2; el resto, de a tres por fila; apilados en pantallas angostas). Como los cuenta con CSS, cada acción aporta al pie un solo elemento o ninguno: sus diálogos van en un portal y lo que necesite además (un texto para lectores de pantalla) va dentro de ese elemento. Dos props opcionales, que hoy usa el detalle del turno: `accionesEncabezado` pone acciones al lado de la cruz de cerrar, y `soloCruz` saca "Cerrar" del pie, destaca la cruz y oculta el pie si queda sin botones.
     - `CalendarioFecha` (`calendario-fecha.tsx`): selector de fecha con una grilla mensual que solo deja elegir los días de una restricción (`min`, `max` y/o un `diaSemana` ISO), con teclado (flechas, Enter, Escape) y un botón opcional para vaciar el campo (`textoVaciar`). Entrega `YYYY-MM-DD`. Se usa en lugar de `<input type="date">` cuando la fecha tiene que caer en un día de la semana (el turno, en el día de su bloque): el input nativo deja escribir cualquier día, aun con `min` y `step`. La grilla sale de `utils/calendario.ts`. Es una ayuda para elegir: la API valida igual.
     - `CalendarioFecha` (`calendario-fecha.tsx`): selector de fecha con una grilla mensual que solo deja elegir los días de una restricción (`min` y/o un `diaSemana` ISO), con teclado (flechas, Enter, Escape) y un botón opcional para vaciar el campo (`textoVaciar`). Entrega `YYYY-MM-DD`. Se usa en lugar de `<input type="date">` cuando la fecha tiene que caer en un día de la semana (el turno, en el día de su bloque): el input nativo deja escribir cualquier día, aun con `min` y `step`. La grilla sale de `utils/calendario.ts`. Es una ayuda para elegir: la API valida igual.
-    - `CampoArchivo` (`campo-archivo.tsx`, T-78): elegir un archivo con el mouse, con el teclado o arrastrándolo, con vista previa antes de confirmar (miniatura si es imagen, con una URL de objeto que se libera al cambiar o desmontar; ícono, nombre y tamaño si no) y "Elegir otro" / "Quitar". Props: `id` (el `htmlFor` del `Field`), `aceptar` (MIME → etiqueta: `{ 'application/pdf': 'PDF' }`), `maxBytes`, `mensajes` (`{ tipo, tamano }`, los mismos textos que se le pasan a `archivoSchema` en la API), `valor: File | null`, `onCambiar`, `error` y `deshabilitado`. Para editar algo ya guardado (la foto actual, el comprobante adjunto vigente): `actual` (`{ url, nombre, esImagen, detalle? }`, con la URL prefirmada) se muestra mientras `valor` sea `null`, con "Elegir otro" y, si llega `onQuitarActual`, "Quitar"; si la URL ya venció, queda el ícono. La foto del profesor (`features/profesores/components/FotoProfesorCampo.tsx`) lo usa en el alta y en la edición. Un archivo de otro tipo o más grande no llega a `onCambiar` (se conserva el anterior) y se muestra su mensaje. Va dentro de un `Field` **sin** `error`: el campo muestra el suyo con `fieldErrorId(id)`, junto con la ayuda ("JPG, PNG o PDF, hasta 5 MB"). Es una ayuda: la API valida tipo, firma y tamaño igual. Las funciones puras (`campo-archivo-reglas.ts`: rechazo, etiquetas y tamaño legible) tienen sus tests en `components/ui/__tests__/`.
+    - `CampoArchivo` (`campo-archivo.tsx`, T-78): elegir un archivo con el mouse, con el teclado o arrastrándolo, con vista previa antes de confirmar (miniatura si es imagen, con una URL de objeto que se libera al cambiar o desmontar; ícono, nombre y tamaño si no) y "Elegir otro" / "Quitar". Props: `id` (el `htmlFor` del `Field`), `aceptar` (MIME → etiqueta: `{ 'application/pdf': 'PDF' }`), `maxBytes`, `mensajes` (`{ tipo, tamano }`, los mismos textos que se le pasan a `archivoSchema` en la API), `valor: File | null`, `onCambiar`, `error` y `deshabilitado`. Para editar algo ya guardado (la foto actual, el comprobante adjunto vigente): `actual` (`{ url, nombre, esImagen, detalle? }`, con la URL prefirmada) se muestra mientras `valor` sea `null`, con "Elegir otro" y, si llega `onQuitarActual`, "Quitar"; si la URL ya venció, queda el ícono. La foto del profesor (`features/profesores/components/FotoProfesorCampo.tsx`) y la del alumno (`features/alumnos/components/FotoAlumnoCampo.tsx`) lo usan en el alta y en la edición: en el alta el archivo se sube después de crear la entidad (hasta entonces no hay id); en la edición, reemplazar o quitar queda pendiente, con un aviso y "Dejar la foto actual", y se aplica con el único botón de guardado. La foto guardada se muestra con `Avatar` (`AvatarImage` + `AvatarFallback` de iniciales), no con `next/image`: es una URL prefirmada de otro origen. Un archivo de otro tipo o más grande no llega a `onCambiar` (se conserva el anterior) y se muestra su mensaje. Va dentro de un `Field` **sin** `error`: el campo muestra el suyo con `fieldErrorId(id)`, junto con la ayuda ("JPG, PNG o PDF, hasta 5 MB"). Es una ayuda: la API valida tipo, firma y tamaño igual. Las funciones puras (`campo-archivo-reglas.ts`: rechazo, etiquetas y tamaño legible) tienen sus tests en `components/ui/__tests__/`.
     - `ToastProvider` (`toast.tsx`): la pila de notificaciones. Se usa con `useToast()` de `hooks/use-toast.ts` (ver Notificaciones (toasts)).
   - No es una lista cerrada: cada feature suma el primitivo que le falte, siguiendo el mismo patrón (`cva` + Radix si hace falta accesibilidad) y actualizando esta lista y, si suma un paquete, `dependencias.md` en el mismo PR.
 - Íconos: `lucide-react`.
