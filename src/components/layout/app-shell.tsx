@@ -54,6 +54,40 @@ const esPantallaChica = () => window.matchMedia(CONSULTA_CELULAR).matches
 const CLASE_BOTON_ICONO =
   'flex size-10 items-center justify-center rounded-lg text-white/80 transition-colors outline-none hover:bg-white/10 hover:text-white focus-visible:ring-2 focus-visible:ring-dorado'
 
+/**
+ * Lo que comparten la columna de escritorio y el panel del celular, en ese orden: el logo, el
+ * Sidebar del rol (con scroll propio si no entra) y el menú de usuario, abajo y separado por un
+ * borde. Cada vista suma lo suyo: `alLadoDelLogo` (la ✕ del panel) y `antesDelUsuario` (el botón de
+ * modo de escritorio). Va dentro de un contenedor `flex-col` con `data-modo`.
+ */
+function ContenidoColumna({
+  sidebar,
+  userMenu,
+  alLadoDelLogo,
+  antesDelUsuario,
+}: {
+  sidebar: ReactNode
+  userMenu: ReactNode
+  alLadoDelLogo?: ReactNode
+  antesDelUsuario?: ReactNode
+}) {
+  return (
+    <>
+      {alLadoDelLogo ? (
+        <div className="flex items-center justify-between pr-2">
+          <SidebarLogo />
+          {alLadoDelLogo}
+        </div>
+      ) : (
+        <SidebarLogo />
+      )}
+      <div className="flex-1 overflow-x-hidden overflow-y-auto px-3 pb-4">{sidebar}</div>
+      {antesDelUsuario}
+      <div className="border-t border-white/10 p-3">{userMenu}</div>
+    </>
+  )
+}
+
 // Esqueleto de la app autenticada, para todos los roles. El Sidebar y el menú de usuario llegan por
 // props desde el layout del segmento: components/ no puede importar de features/ (ESLint).
 //
@@ -118,14 +152,18 @@ export function AppShell({
             >
               <DialogPrimitive.Title className="sr-only">Menú</DialogPrimitive.Title>
               <div data-modo="fijo" className="group/sidebar flex min-h-0 flex-1 flex-col">
-                <div className="flex items-center justify-between pr-2">
-                  <SidebarLogo />
-                  <DialogPrimitive.Close aria-label="Cerrar el menú" className={CLASE_BOTON_ICONO}>
-                    <X className="size-5" />
-                  </DialogPrimitive.Close>
-                </div>
-                <div className="flex-1 overflow-x-hidden overflow-y-auto px-3 pb-4">{sidebar}</div>
-                <div className="border-t border-white/10 p-3">{userMenu}</div>
+                <ContenidoColumna
+                  sidebar={sidebar}
+                  userMenu={userMenu}
+                  alLadoDelLogo={
+                    <DialogPrimitive.Close
+                      aria-label="Cerrar el menú"
+                      className={CLASE_BOTON_ICONO}
+                    >
+                      <X className="size-5" />
+                    </DialogPrimitive.Close>
+                  }
+                />
               </div>
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
@@ -138,23 +176,26 @@ export function AppShell({
         className="group/sidebar hidden w-16 shrink-0 overflow-hidden transition-[width] duration-300 ease-in-out data-[modo=fijo]:w-64 motion-reduce:transition-none md:block"
       >
         <aside className="bg-sidebar flex h-full w-64 flex-col">
-          <SidebarLogo />
-          <div className="flex-1 overflow-x-hidden overflow-y-auto px-3 pb-4">{sidebar}</div>
-          <div className="px-3 pb-2">
-            <button
-              type="button"
-              onClick={() => guardarModo(fijo ? 'iconos' : 'fijo')}
-              aria-label={textoBoton}
-              title={textoBoton}
-              className="flex w-full items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/5 hover:text-white"
-            >
-              <Icono className="size-4 shrink-0" />
-              <span className="sidebar-abierto:opacity-100 flex-1 text-left whitespace-nowrap opacity-0 transition-opacity duration-300">
-                {textoBoton}
-              </span>
-            </button>
-          </div>
-          <div className="border-t border-white/10 p-3">{userMenu}</div>
+          <ContenidoColumna
+            sidebar={sidebar}
+            userMenu={userMenu}
+            antesDelUsuario={
+              <div className="px-3 pb-2">
+                <button
+                  type="button"
+                  onClick={() => guardarModo(fijo ? 'iconos' : 'fijo')}
+                  aria-label={textoBoton}
+                  title={textoBoton}
+                  className="flex w-full items-center gap-3 rounded-lg border-l-2 border-transparent px-3 py-2.5 text-sm font-medium text-white/70 transition-colors hover:bg-white/5 hover:text-white"
+                >
+                  <Icono className="size-4 shrink-0" />
+                  <span className="sidebar-abierto:opacity-100 flex-1 text-left whitespace-nowrap opacity-0 transition-opacity duration-300">
+                    {textoBoton}
+                  </span>
+                </button>
+              </div>
+            }
+          />
         </aside>
       </div>
 
