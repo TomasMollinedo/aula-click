@@ -156,6 +156,17 @@ HU-22 (T-74: estados y plazo). La asistencia se registra por ocurrencia (`Asiste
 - **El cierre se calcula al leer** (decisión T-138, **pendiente de confirmación de las PO**, punto 2 de "Puntos a confirmar" del Sprint 3): no hay un proceso programado ni una fila que lo guarde. La fecha y hora del cierre que se muestra es el vencimiento (las 23:59 del séptimo día), no el momento en que corrió un proceso.
 - **Horas seguidas:** cada hora es una ocurrencia con su propio estado y su propia asistencia. Sólo la pantalla "Asistencia" del profesor agrupa las horas seguidas de un alumno, profesor y materia en una fila, para registrarlas de una vez; el resto de las vistas muestra cada hora por separado.
 
+HU-22 (T-81: registro).
+
+- **Quién:** sólo el **profesor del turno** registra y corrige su asistencia. Mesa de entrada y gerente no registran ni corrigen: la ven en el detalle del turno, el historial y el tablero.
+- **Cuándo:** turnos de **hoy** (también antes de su hora) y de días anteriores dentro del plazo. Una fecha futura o una ocurrencia cancelada no se registran. Un día vencido se sigue viendo, en sólo lectura.
+- **Campos:** "Presente" con "Qué se trabajó" e "Indicaciones para la próxima sesión" (opcionales, hasta 1000 caracteres cada uno), o "Ausente" con una "Observación" (opcional, hasta 500). Un ausente no lleva "Qué se trabajó" ni indicaciones.
+- **Horas seguidas:** se registran una vez para todo el grupo: el estado y los textos quedan en **cada** hora presente. "Ajustar por hora" registra cada hora por separado.
+- **Corrección:** registrar de nuevo la misma ocurrencia la corrige: es la misma asistencia (una por ocurrencia), y queda quién y cuándo la modificó. Dentro del plazo se puede corregir; pasado el plazo, no.
+- **"Marcar todos presentes"** marca sólo las filas sin asistencia: un ausente ya registrado no cambia (propuesta, punto 4 de "Puntos a confirmar" del Sprint 3).
+- **Cierre:** pasado el séptimo día, lo que quedó "Sin registrar" se cierra solo (ver Plazo para registrar) y nada de esa fecha se puede registrar ni corregir.
+- **Indicaciones anteriores:** al registrar, se muestran las indicaciones de la última clase "Presente" con indicaciones de ese alumno en esa materia.
+
 ## Pagos
 
 HU-15 (T-51; modelo de datos: T-29).
