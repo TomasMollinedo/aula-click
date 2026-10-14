@@ -10,7 +10,7 @@ import { PaginationControls } from '@/components/ui/pagination'
 
 import { useBuscadorAlumnos } from '../hooks/use-buscador-alumnos'
 import { AlumnoEditar } from './AlumnoEditar'
-import { AlumnosTable } from './AlumnosTable'
+import { AlumnosGrid } from './AlumnosGrid'
 import { BuscadorAlumnos } from './BuscadorAlumnos'
 import { SinResultados } from './SinResultados'
 
@@ -102,7 +102,7 @@ export function AlumnosListado({ rutaBase }: AlumnosListadoProps) {
           </Alert>
         </div>
       ) : (
-        <AlumnosTable
+        <AlumnosGrid
           rutaBase={rutaBase}
           hrefEditar={hrefEditar}
           onEditar={() => {

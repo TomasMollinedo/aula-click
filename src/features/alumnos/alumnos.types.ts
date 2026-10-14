@@ -15,6 +15,8 @@ export type AlumnoListadoItem = {
   apellido: string
   nombre: string
   dni: string
+  /** URL prefirmada (vive 15 min) o null si no tiene foto. No se guarda fuera de la query. */
+  fotoUrl: string | null
 }
 
 export type AlumnoDetalle = {
@@ -36,6 +38,8 @@ export type AlumnoDetalle = {
   tutorEmail: string | null
   estado: 'ACTIVO' | 'INACTIVO'
   menorDeEdad: boolean
+  /** URL prefirmada (vive 15 min) o null si no tiene foto. No se guarda fuera de la query. */
+  fotoUrl: string | null
 } & Auditoria
 
 export type AlumnoCrear = {

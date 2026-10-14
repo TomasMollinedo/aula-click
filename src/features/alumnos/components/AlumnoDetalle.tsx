@@ -17,12 +17,14 @@ import {
 
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { getInitials } from '@/utils/initials'
 
 import { parsearAlumnoId } from '../alumnos.schema'
 import type { AlumnoDetalle as AlumnoDetalleType } from '../alumnos.types'
@@ -159,7 +161,18 @@ export function AlumnoDetalle({
     <div className="space-y-6">
       {volver}
       <PageHeader
-        title={`${alumno.nombre} ${alumno.apellido}`}
+        title={
+          // Foto o avatar genérico con las iniciales (HU-26), como en el detalle del profesor.
+          <span className="flex items-center gap-3">
+            <Avatar className="size-11">
+              {alumno.fotoUrl && <AvatarImage src={alumno.fotoUrl} alt="" />}
+              <AvatarFallback className="bg-cobalto/10 text-cobalto text-sm font-semibold">
+                {getInitials(alumno.nombre, alumno.apellido)}
+              </AvatarFallback>
+            </Avatar>
+            {alumno.nombre} {alumno.apellido}
+          </span>
+        }
         description={
           <span className="flex flex-wrap items-center gap-2">
             DNI {alumno.dni}
