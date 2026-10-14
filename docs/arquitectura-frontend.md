@@ -93,13 +93,22 @@ src/
 │   │       ├── page.tsx                # listado; detalle (?detalle=) y edición (?editar=) como modales
 │   │       ├── nueva/page.tsx          # alta entrando por URL: el listado de fondo
 │   │       └── @modal/                 # default.tsx, page.tsx, (.)nueva/page.tsx, nueva/page.tsx
-│   ├── portal/                         # se crea con las HU del alumno (Sprint 3)
+│   ├── portal/                         # rol ALUMNO → /portal/... (T-80), pensado para el celular
+│   │   ├── layout.tsx                  # SegmentoDeRol ALUMNO + AppShell (PortalSidebar) + avisos arriba de todo
+│   │   ├── page.tsx                    # redirige a /portal/calendario
+│   │   ├── calendario/page.tsx         # MiCalendario (agendas) + DetalleTurnoPortal (T-87; el detalle, T-85)
+│   │   ├── turnos/nuevo/page.tsx       # SacarTurno (turnos, T-94)
+│   │   ├── materias/page.tsx           # MisMaterias (historiales, T-111)
+│   │   ├── materias/[materiaId]/[profesorId]/page.tsx   # MiMateria (historiales) + MisExamenes (examenes) (T-111)
+│   │   ├── pagos/page.tsx              # MisPendientes (cuentas) + MisPagosRealizados (pagos) (T-103)
+│   │   ├── configuracion/page.tsx      # CambiarContrasena (usuarios, T-92)
+│   │   └── _componentes/detalle-turno.tsx   # DetalleTurnoPortal: el detalle de solo lectura del alumno (T-85)
 │   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
 │   ├── auth/
 │   │   ├── auth-client.ts              # createAuthClient() de better-auth/react
-│   │   ├── auth.schema.ts              # schema Zod del formulario de login
+│   │   ├── auth.schema.ts              # schema Zod del login: un campo "Email o usuario" (`esEmail` decide el camino)
 │   │   ├── roles.ts                    # rol → segmento de URL (único lugar con esa correspondencia)
 │   │   ├── codigos-error.ts            # codes del contrato que el frontend reconoce
 │   │   ├── interpretar-error-login.ts  # único lugar que decide el mensaje de un login fallido
@@ -217,6 +226,11 @@ src/
 │   │   ├── api/{tablero.api.ts, tablero.keys.ts}                   # GET /api/v1/tablero?desde&hasta
 │   │   ├── hooks/{use-tablero.ts, use-periodo-en-url.ts}           # keepPreviousData; el período en la URL con router.replace
 │   │   └── components/{TableroPantalla, SelectorPeriodo, TarjetaIndicador, TarjetaRanking, GraficoDona, BotonPdfTablero}.tsx   # GraficoDona: torta/anillo en SVG, sin librería
+│   ├── centro/                         # vuelve en T-80 (la decisión T-127 lo había sacado con las hojas de impresión): ahora lo usa la UI, no los documentos; GET /centro (HU-11) para el teléfono del aviso del portal
+│   │   ├── centro.types.ts, api/{centro.api.ts, centro.keys.ts}, hooks/use-centro.ts   # staleTime: Infinity, sin reintentos
+│   │   └── components/AvisoMesaDeEntrada.tsx   # "Para cancelar o reprogramar un turno, comunicate con la mesa de entrada al …"
+│   ├── usuarios/                       # lo que vale para cualquier usuario: su cuenta y su contraseña (T-91, T-92)
+│   │   └── components/{AvisoContrasenaInicial, CambiarContrasena}.tsx   # placeholders de T-80 que completa T-92
 │   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
 │       ├── alumnos.types.ts
 │       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
@@ -240,11 +254,11 @@ src/
 │   │   ├── indicadores-turno.ts        # tipos, mapeos estado → etiqueta/variante y texto del examen (con tests)
 │   │   └── estado-turno-badge.tsx, estado-pago-badge.tsx, prioridad-indicador.tsx
 │   └── layout/
-│       ├── app-shell.tsx               # columna del Sidebar (logo + nav + usuario) + contenido
+│       ├── app-shell.tsx               # columna del Sidebar (logo + nav + usuario) + contenido; en el celular, barra superior y panel
 │       ├── page-header.tsx             # título, descripción y acción principal de cada pantalla
 │       ├── sidebar-logo.tsx            # isotipo + wordmark, arriba de la columna (no es un link)
 │       ├── sidebar-nav.tsx             # nav genérico (label + links con ícono); lo usan los de abajo
-│       └── {mesa,profesor,gerente}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
+│       └── {mesa,profesor,gerente,portal}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
 ├── hooks/{use-debounce.ts, use-toast.ts, use-vista-en-url.ts}   # use-toast: contexto y hook de los toasts; use-vista-en-url: las subpestañas (?vista=)
 ├── types/
@@ -289,7 +303,8 @@ Cada rol tiene su propio segmento de URL (decisión T-19). Todas sus pantallas c
 - Por eso los componentes de una feature **no escriben el segmento del rol en sus links**: la página les pasa `rutaBase` (la URL del listado de la entidad en su segmento, por ejemplo `rutaBase="/mesa/alumnos"`) y el componente arma el resto (`${rutaBase}/nuevo`, `${rutaBase}/<id>`, `${rutaBase}/<id>/editar`).
 - El segmento **no es seguridad**. El layout de cada rol monta `features/auth/components/SegmentoDeRol.tsx`, que, si el rol de la sesión no es el del segmento, muestra "No tiene permiso para acceder a esta sección" con un enlace a la pantalla de inicio del propio rol en lugar del contenido (HU-21): es comodidad de navegación, no un control de acceso, y sin sesión no hace nada. Lo que decide de verdad es el 403 de la API, que cada componente con datos muestra igual.
 - **Acciones de escritura según el segmento.** Si dos roles ven la misma entidad pero solo uno escribe (materias: el gerente administra el catálogo y mesa de entradas lo lee, HU-12), la página de cada segmento se lo dice a la feature con una prop (`puedeEscribir`, por defecto `false`), igual que `rutaBase`. La feature no lee la sesión: `SegmentoDeRol` ya garantiza que en `/gerente` solo se ve el contenido con rol `GERENTE`. Sin permiso tampoco se montan los formularios que abriría la URL (`?editar=` se saca con `router.replace`) ni existen las rutas del alta en ese segmento. Es ayuda visual: lo que decide es el 403 de la API, que se muestra igual.
-- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `ALUMNO` no tiene segmento todavía: para él la correspondencia es `null` y `/` muestra un aviso en lugar de mandarlo a un 404.
+- La correspondencia rol → segmento vive en un solo lugar: `features/auth/roles.ts`. La usan `/` (que lee la sesión con `authClient.useSession()` y redirige al segmento del rol), `SegmentoDeRol` y el login. `ALUMNO` va a `/portal` (T-80), que redirige a `/portal/calendario` ("Mi calendario"). "No tiene permiso para acceder a esta sección" funciona en los dos sentidos: un alumno que escribe `/mesa/...` y un usuario del personal que escribe `/portal`, cada uno con el enlace a su inicio.
+- **Portal del alumno (`/portal`, T-80).** Pensado para el celular. Arriba de todas sus pantallas, el layout muestra dos avisos: el de la contraseña inicial (`AvisoContrasenaInicial`, de `features/usuarios`, que completa T-92) y el de la mesa de entrada (`AvisoMesaDeEntrada`, de `features/centro`), con el teléfono de `GET /centro`; mientras ese dato no se puede leer (carga, error o el 403 del alumno hasta T-91), el aviso se ve igual, sin el teléfono. Cada página compone el componente de la feature dueña de su HU, con las props que fija la tarea, y lo completa esa tarea.
 - No se usan route groups.
 
 ## Layout: Sidebar
@@ -299,9 +314,10 @@ No hay una barra de Header separada: todo lo fijo de la app autenticada vive en 
 - `app/layout.tsx` (raíz) solo monta `<Providers>`. No lleva el Sidebar: si lo llevara, también aparecería en `/login`.
 - `components/layout/app-shell.tsx` arma esa columna, de arriba a abajo: `SidebarLogo` (isotipo, fijo), el `sidebar` que recibe por props (nav del rol, con scroll propio si no entra) y el `userMenu` que recibe por props (fijo, abajo, separado por un borde). El contenido va a la derecha.
 - **Dos modos**, que la persona elige con el botón de arriba del menú de usuario (queda en `localStorage`, clave `aula-click:sidebar-modo`; `app-shell.tsx` es un Client Component por eso). El Sidebar **no reacciona al puntero**: solo cambia con ese botón, con una animación del ancho. **`iconos`** (por defecto) lo deja colapsado a 4rem, con solo íconos; **`fijo`** lo expande a 16rem, con los nombres, y el contenido ocupa el resto. Es CSS sobre `data-modo` en el wrapper `group/sidebar`: el wrapper anima su ancho y recorta un `<aside>` de ancho fijo; la variante `sidebar-abierto` (en `globals.css`) agrupa la condición `data-modo='fijo'`, y `SidebarLogo`, `SidebarNav`, `UserMenu` y el botón de modo muestran sus textos con `sidebar-abierto:opacity-100`. Todo componente nuevo dentro del Sidebar debe seguir esa convención (el ícono siempre visible, el texto solo con el Sidebar abierto). En modo `iconos`, el menú de usuario sigue accesible: toda su fila (el avatar) es el disparador.
+- **Celular (por debajo de `md`, T-80), para todos los roles.** La columna se oculta y aparece una barra superior con `SidebarLogo` y un botón ☰ que abre el mismo `sidebar` y el `userMenu` como **panel lateral** (Dialog de Radix: el foco queda adentro, se cierra con Escape, con la ✕ o tocando afuera), siempre con los nombres (`data-modo='fijo'`). El panel se cierra al navegar (tocar un enlace) y si la pantalla deja de ser chica. El contenido ocupa todo el ancho, con 16px de margen. En escritorio no cambia nada (modos `iconos` y `fijo`).
 - El `layout.tsx` de cada segmento de rol monta `<AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>{children}</AppShell>`.
 - **`sidebar-logo.tsx`:** isotipo + "AulaClick", uno solo para todos los roles. No es un link: no hay una pantalla propia de "/" para un usuario logueado (`/` solo redirige según el rol).
-- **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx`, `profesor-sidebar.tsx` y `gerente-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
+- **`sidebar-nav.tsx`:** el nav genérico (una lista de `{ href, label, icon }` con el estado activo resuelto por `usePathname`). Lo usan `mesa-sidebar.tsx`, `profesor-sidebar.tsx`, `gerente-sidebar.tsx` y `portal-sidebar.tsx`, que solo aportan su propio array de links y el título de sección; evita repetir la lógica de estado activo entre roles sin dejar de tener "un archivo por rol" (`<segmento>-sidebar.tsx`) como pide la tabla de arriba.
 - **Menú de usuario** (avatar, nombre, rol y un menú con "Cerrar sesión"): `features/auth/components/UserMenu.tsx`. `components/` no puede importar de `features/` (ESLint), así que todo lo que depende de una feature le llega a `AppShell` por props, armado en el layout del segmento.
 
 ## Documentos PDF
@@ -464,10 +480,10 @@ mutation.mutate(datos, {
 ## Autenticación en el cliente
 
 - `features/auth/auth-client.ts` crea el cliente con `createAuthClient` de `better-auth/react`.
-- Login: `authClient.signIn.email(...)` desde `LoginForm` (en `/login`). Logout: `authClient.signOut()` desde `UserMenu`. Sesión y rol para la UI: `authClient.useSession()`.
+- Login: la misma pantalla para todos (`LoginForm`, en `/login`), con un campo "Email o usuario" (T-80). Con `@` se ingresa por email (`authClient.signIn.email`, el personal) y sin `@`, por usuario (`authClient.signIn.username`, el alumno; plugin cliente `usernameClient`). Logout: `authClient.signOut()` desde `UserMenu`. Sesión y rol para la UI: `authClient.useSession()`.
 - No se importa `@/lib/auth`: es la instancia del servidor y ESLint lo bloquea. Los campos extra de `Usuario` se redeclaran del lado del cliente con el plugin `inferAdditionalFields` (`role`, `apellido`, `dni`, `telefono` y `estado`), sin importar tipos del servidor; si cambian en `src/lib/auth.ts`, se cambian acá en el mismo PR. `busqueda` queda afuera: en el servidor tiene `returned: false` y nunca llega al cliente.
 - El rol en el cliente solo sirve para mostrar u ocultar navegación y acciones. La seguridad es la API.
-- **Errores del login.** `/api/auth` responde con el formato de Better Auth, no con el de `/api/v1`: el `authClient` lo expone como `error.code` / `error.message`, y el `message` viene en inglés. El texto que ve el usuario se elige **por `code`**, en el único lugar que decide eso: `features/auth/interpretar-error-login.ts` (`INVALID_EMAIL_OR_PASSWORD` → "Usuario o contraseña incorrectos"; `USUARIO_INHABILITADO` → "Su usuario no está habilitado"; tabla completa en `contrato-api.md` → Autenticación). Un login fallido muestra un mensaje solo, que nunca dice qué campo falló ni si el email existe; quién puede entrar lo decide la API.
+- **Errores del login.** `/api/auth` responde con el formato de Better Auth, no con el de `/api/v1`: el `authClient` lo expone como `error.code` / `error.message`, y el `message` viene en inglés. El texto que ve el usuario se elige **por `code`**, en el único lugar que decide eso: `features/auth/interpretar-error-login.ts` (`INVALID_EMAIL_OR_PASSWORD`, `INVALID_USERNAME_OR_PASSWORD` y el 422 de un usuario con formato inválido —`USERNAME_TOO_SHORT`, `USERNAME_TOO_LONG`, `INVALID_USERNAME`— → "Usuario/email o contraseña incorrectos", los dos caminos igual; `USUARIO_INHABILITADO` → "Su usuario no está habilitado"; tabla completa en `contrato-api.md` → Autenticación). Un login fallido muestra un mensaje solo, que nunca dice qué campo falló ni si el email existe; quién puede entrar lo decide la API.
 - El login no manda `rememberMe`: la sesión vence siempre por inactividad (60 min, decisión T-24) y la API neutraliza ese valor igual.
 - Al cerrar sesión se vacía la cache de TanStack Query, para que volver con Atrás no muestre datos del usuario anterior.
 - No hay pantalla de registro ni de recuperación de contraseña: las cuentas se crean desde el servidor (el seed y, para los profesores, mesa de entradas; `dominio.md` → Roles).

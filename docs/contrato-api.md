@@ -1230,21 +1230,21 @@ Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de 
 - `/api/auth/*` responde con el **formato de Better Auth**, `{ "code", "message" }` (el `authClient` lo expone como `error.code` / `error.message`), no con `{ "error": { … } }`. El `message` de Better Auth viene en inglés: la UI elige el texto según el `code`.
 - Códigos que la UI maneja en el login (`POST /api/auth/sign-in/email`):
 
-  | Status | `code`                      | Cuándo                                                                                        | Texto en la UI                     |
-  | ------ | --------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
-  | 401    | `INVALID_EMAIL_OR_PASSWORD` | Email inexistente o contraseña incorrecta (siempre el mismo, sin indicar cuál falló)          | "Usuario o contraseña incorrectos" |
-  | 403    | `USUARIO_INHABILITADO`      | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
-  | 400    | `INVALID_EMAIL`             | El email no tiene formato válido (el formulario lo valida antes de enviarlo)                  | Error de formato del campo         |
+  | Status | `code`                      | Cuándo                                                                                        | Texto en la UI                           |
+  | ------ | --------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+  | 401    | `INVALID_EMAIL_OR_PASSWORD` | Email inexistente o contraseña incorrecta (siempre el mismo, sin indicar cuál falló)          | "Usuario/email o contraseña incorrectos" |
+  | 403    | `USUARIO_INHABILITADO`      | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"          |
+  | 400    | `INVALID_EMAIL`             | El email no tiene formato válido (el formulario lo valida antes de enviarlo)                  | Error de formato del campo               |
 
 - Códigos que la UI maneja en el ingreso del alumno (`POST /api/auth/sign-in/username`). Usuario inexistente, contraseña incorrecta o usuario con formato inválido muestran **lo mismo**, sin indicar cuál falló:
 
-  | Status | `code`                         | Cuándo                                                                                        | Texto en la UI                     |
-  | ------ | ------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------- |
-  | 401    | `INVALID_USERNAME_OR_PASSWORD` | Usuario inexistente o contraseña incorrecta                                                   | "Usuario o contraseña incorrectos" |
-  | 422    | `USERNAME_TOO_SHORT`           | Usuario de menos de 3 caracteres (antes de mirar la contraseña)                               | "Usuario o contraseña incorrectos" |
-  | 422    | `USERNAME_TOO_LONG`            | Usuario de más de 50 caracteres (antes de mirar la contraseña)                                | "Usuario o contraseña incorrectos" |
-  | 422    | `INVALID_USERNAME`             | Usuario con algo que no sea minúsculas, números, `.` o `-` (antes de mirar la contraseña)     | "Usuario o contraseña incorrectos" |
-  | 403    | `USUARIO_INHABILITADO`         | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
+  | Status | `code`                         | Cuándo                                                                                        | Texto en la UI                           |
+  | ------ | ------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+  | 401    | `INVALID_USERNAME_OR_PASSWORD` | Usuario inexistente o contraseña incorrecta                                                   | "Usuario/email o contraseña incorrectos" |
+  | 422    | `USERNAME_TOO_SHORT`           | Usuario de menos de 3 caracteres (antes de mirar la contraseña)                               | "Usuario/email o contraseña incorrectos" |
+  | 422    | `USERNAME_TOO_LONG`            | Usuario de más de 50 caracteres (antes de mirar la contraseña)                                | "Usuario/email o contraseña incorrectos" |
+  | 422    | `INVALID_USERNAME`             | Usuario con algo que no sea minúsculas, números, `.` o `-` (antes de mirar la contraseña)     | "Usuario/email o contraseña incorrectos" |
+  | 403    | `USUARIO_INHABILITADO`         | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"          |
 
 - El usuario no se cambia: `POST /api/auth/update-user` con un `username` distinto responde 400 `USERNAME_IS_IMMUTABLE`.
 
