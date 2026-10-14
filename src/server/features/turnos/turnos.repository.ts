@@ -1,5 +1,6 @@
 import type { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
+import { deudaVencida } from '@/server/features/cuentas/cuentas.condiciones'
 import type { Actor } from '@/server/shared/actor'
 import { armarAuditoria, SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
@@ -18,12 +19,14 @@ import {
   ocupacionMaximaPorFila,
 } from './turnos.condiciones'
 import type {
+  DeudaVencida,
   EntradaReserva,
   FechasSinTurno,
+  MateriaOfertada,
   OcupacionMaximaPorFila,
   OcupacionPorBloque,
   PlanReserva,
-  SnapshotReserva,
+  SnapshotAlta,
   TurnoDetalle,
   TurnosVigentesPorBloque,
   TurnosVigentesPorMateria,
@@ -34,7 +37,10 @@ import type {
 // decide el service con `turnos.reglas.ts`. Las lecturas que otras features hacen dentro de su
 // propia transacción viven en `turnos.condiciones.ts` (vigentes, ocupación máxima) y en el motor
 // `ocurrencias.condiciones.ts` (ocurrencias, ocupación, superposición, locks); acá se usan con el
-// cliente común o con el `tx` de la reserva.
+// cliente común o con el `tx` de la reserva. La deuda vencida del tope de deuda (HU-29) es de
+// `cuentas` (`deudaVencida` de `cuentas.condiciones`, T-76): se lee con el `tx` de la reserva.
+// Importarla no forma un ciclo: `cuentas.condiciones` sólo importa el motor de `turnos` y no este
+// repository (decisión T-143).
 
 /** Opciones de la transacción de `reservar` (ver el comentario ahí). */
 const TRANSACCION_RESERVA = { timeout: 10_000 } as const
@@ -102,8 +108,8 @@ function aDetalle(fila: FilaDetalle): TurnoDetalle {
 async function leerSnapshot(
   tx: Prisma.TransactionClient,
   entrada: EntradaReserva,
-): Promise<SnapshotReserva> {
-  const { alumnoId, profesorId, materiaId, bloqueIds, fechaInicio, fechaFin } = entrada
+): Promise<SnapshotAlta> {
+  const { hoy, alumnoId, profesorId, materiaId, bloqueIds, fechaInicio, fechaFin } = entrada
   const filas = await tx.bloqueAgenda.findMany({
     where: { id: { in: bloqueIds } },
     select: {
@@ -148,6 +154,9 @@ async function leerSnapshot(
           horaInicio: Math.min(...filas.map((fila) => fila.horaInicio)),
           horaFin: Math.max(...filas.map((fila) => fila.horaFin)),
         })
+  // Tope de deuda (HU-29): la deuda vencida del alumno, con su lock ya tomado, así un pago o una
+  // anulación simultáneos no la cambian entre que se lee y se decide.
+  const deuda = await deudaVencida(tx, { alumnoId, hoy })
 
   return {
     filas: filas.map(({ aula, ...fila }) => ({ ...fila, aulaCapacidad: aula.capacidad })),
@@ -181,6 +190,7 @@ async function leerSnapshot(
       },
       materia: ocurrencia.materia,
     })),
+    deudaVencida: { cantidad: deuda.cantidad, total: deuda.total },
   }
 }
 
@@ -264,6 +274,40 @@ export const turnosRepository = {
     })
   },
 
+  /**
+   * Deuda vencida del alumno (`deudaVencida` de `cuentas.condiciones`, T-76), sin lock: para el
+   * aviso del portal antes de "Sacar turno" (HU-29). El alta la vuelve a leer en `reservar`.
+   */
+  async deudaVencidaDe(alumnoId: number, hoy: string): Promise<DeudaVencida> {
+    const { cantidad, total } = await deudaVencida(prisma, { alumnoId, hoy })
+    return { cantidad, total }
+  },
+
+  /**
+   * Materias que el alumno puede elegir para sacar un turno (HU-29, paso 1): activas, con al
+   * menos un profesor activo que la tenga asignada (asignación activa) y tenga bloques activos.
+   * Los mismos filtros que la disponibilidad (`listarProfesoresActivosDeMateria` y
+   * `listarActivasDeProfesores`). Selector de catálogo: sin paginar, por nombre (`busqueda`) e id.
+   */
+  async listarMateriasOfertadas(): Promise<MateriaOfertada[]> {
+    return prisma.materia.findMany({
+      where: {
+        estado: 'ACTIVO',
+        asignaciones: {
+          some: {
+            estado: 'ACTIVO',
+            profesor: {
+              usuario: { estado: 'ACTIVO' },
+              bloques: { some: { estado: 'ACTIVO' } },
+            },
+          },
+        },
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+    })
+  },
+
   /** Detalle de un turno (cualquier estado), o `null` si no existe. */
   async buscarDetalle(id: number): Promise<TurnoDetalle | null> {
     const fila = await prisma.turno.findUnique({ where: { id }, select: SELECT_DETALLE })
@@ -279,14 +323,14 @@ export const turnosRepository = {
    *    turnos: `profesor` `FOR SHARE`, las filas de `bloque_agenda` por id `FOR UPDATE` y
    *    `alumno` `FOR UPDATE`), antes de cualquier lectura.
    * 2. Relee todo con los locks tomados (`leerSnapshot`): las series de las filas con su fin
-   *    efectivo y sus canceladas, y la superposición del alumno.
+   *    efectivo y sus canceladas, la superposición del alumno y su deuda vencida (HU-29).
    * 3. `planificar(snapshot)`: si lanza, no se inserta nada.
    * 4. Inserta los turnos con la auditoría del actor y los devuelve con el select del detalle,
    *    ordenados por hora y fecha de inicio.
    */
   async reservar(
     entrada: EntradaReserva,
-    planificar: (snapshot: SnapshotReserva) => PlanReserva,
+    planificar: (snapshot: SnapshotAlta) => PlanReserva,
     actor: Actor,
   ): Promise<{ turnos: TurnoDetalle[]; fechasSinTurno: FechasSinTurno[] }> {
     const { alumnoId, profesorId, bloqueIds } = entrada
