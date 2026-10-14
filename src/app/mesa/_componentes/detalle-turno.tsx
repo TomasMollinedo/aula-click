@@ -6,6 +6,7 @@ import { AccionFinalizarTurno } from '@/features/finalizaciones/components/Accio
 import { OcurrenciaDetalle } from '@/features/ocurrencias/components/OcurrenciaDetalle'
 import { AccionRegistrarPago } from '@/features/pagos/components/AccionRegistrarPago'
 import { EnlaceComprobante } from '@/features/pagos/components/EnlaceComprobante'
+import { EnlaceDetallePago } from '@/features/pagos/components/EnlaceDetallePago'
 import { AccionReprogramarTurno } from '@/features/turnos/components/AccionReprogramarTurno'
 import type { SolicitudDetalleOcurrencia } from '@/types/ocurrencia'
 
@@ -23,7 +24,7 @@ type DetalleTurnoProps = SolicitudDetalleOcurrencia & {
 // otra: cada pantalla que lo muestra (agendas, ficha del alumno, alta de turno, pagos) recibe
 // `renderDetalle={(d) => <DetalleTurno {...d} />}`. Cada acción decide si se muestra con
 // `ocurrencia.acciones`, que calcula la API (docs/arquitectura-frontend.md → Acciones sobre una
-// ocurrencia). El enlace al comprobante de un turno pagado también es de otra feature (`pagos`).
+// ocurrencia). Los enlaces al comprobante y al detalle del pago de un turno pagado también son de otra feature (`pagos`).
 export function DetalleTurno({ turnoId, fecha, onCerrar, soloPago = false }: DetalleTurnoProps) {
   return (
     <OcurrenciaDetalle
@@ -31,7 +32,10 @@ export function DetalleTurno({ turnoId, fecha, onCerrar, soloPago = false }: Det
       fecha={fecha}
       onCerrar={onCerrar}
       renderComprobante={(pago) => (
-        <EnlaceComprobante pagoId={pago.pagoId} numeroComprobante={pago.numeroComprobante} />
+        <>
+          <EnlaceComprobante pagoId={pago.pagoId} numeroComprobante={pago.numeroComprobante} />
+          <EnlaceDetallePago pagoId={pago.pagoId} />
+        </>
       )}
       renderAccionesEncabezado={(ocurrencia) => (
         <AccionPdfTurno turnoId={ocurrencia.turnoId} fecha={ocurrencia.fecha} />
