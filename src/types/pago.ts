@@ -30,3 +30,31 @@ export type SolicitudRegistrarPago = {
   ocurrencias: OcurrenciaACobrar[]
   onCerrar: () => void
 }
+
+/** Estado de un pago registrado: nace `VIGENTE` y al anularlo (HU-42) pasa a `ANULADO`. */
+export type EstadoPagoRegistrado = 'VIGENTE' | 'ANULADO'
+
+/**
+ * El pago que reciben las acciones del detalle del pago (`renderAcciones` de `PagoDetalle`, T-79).
+ * Viene de `GET /pagos/{id}` (contrato de T-98). Vive acá y no en `features/pagos` porque lo
+ * completan otras features (`anulaciones`: `AccionAnularPago`) y ninguna importa los types de otra.
+ *
+ * **Las acciones las decide la API**, según el rol, el estado y la forma de pago: un botón se
+ * muestra cuando su acción es `true`, nunca con reglas propias del cliente (docs/arquitectura-frontend.md →
+ * Acciones sobre una ocurrencia). El gerente las recibe todas en `false`.
+ */
+export type PagoParaAcciones = {
+  id: number
+  numeroComprobante: number
+  estado: EstadoPagoRegistrado
+  alumno: { id: number; nombre: string; apellido: string; dni: string }
+  /** Importe total del pago, en pesos (lo calcula la API). */
+  total: number
+  /** Cantidad de turnos que incluye. */
+  cantidad: number
+  acciones: {
+    anular: boolean
+    reemplazarAdjunto: boolean
+    quitarAdjunto: boolean
+  }
+}
