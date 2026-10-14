@@ -13,6 +13,7 @@ import {
   MENSAJE_USUARIO_ASISTENCIA_NO_ENCONTRADO,
   asistenciaDelDetalle,
   calcularAcciones,
+  puedeRegistrarAsistencia,
   usuariosDeLaAsistencia,
   validarRangoOcurrencias,
   ventanaOcurrencias,
@@ -119,6 +120,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: false },
       reprogramar: { visible: true },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -133,6 +135,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -147,6 +150,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -161,6 +165,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -235,6 +240,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
     expect(acciones.cancelar.motivo).toBe('El turno está pagado: no se puede cancelar')
   })
@@ -298,6 +304,7 @@ describe('calcularAcciones', () => {
         finalizar: { visible: false },
         reprogramar: { visible: true },
         registrarPago: { visible: false },
+        registrarAsistencia: { visible: false },
       })
     })
   })
@@ -317,6 +324,7 @@ describe('calcularAcciones con asistencia (REALIZADO o AUSENTE, T-84)', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
 
     const pagada = calcularAcciones(
@@ -329,6 +337,7 @@ describe('calcularAcciones con asistencia (REALIZADO o AUSENTE, T-84)', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 })
@@ -439,13 +448,32 @@ describe('asistenciaDelDetalle y usuariosDeLaAsistencia', () => {
   })
 })
 
+describe('puedeRegistrarAsistencia', () => {
+  it('con plazo y sin vencer (de hoy o anterior, no cancelada): true', () => {
+    expect(
+      puedeRegistrarAsistencia({ plazoAsistencia: { vence: '2026-09-29', vencido: false } }),
+    ).toBe(true)
+  })
+
+  it('con el plazo vencido: false', () => {
+    expect(
+      puedeRegistrarAsistencia({ plazoAsistencia: { vence: '2026-09-21', vencido: true } }),
+    ).toBe(false)
+  })
+
+  it('sin plazo (cancelada o posterior a hoy): false', () => {
+    expect(puedeRegistrarAsistencia({ plazoAsistencia: null })).toBe(false)
+  })
+})
+
 describe('ACCIONES_SIN_PERMISO', () => {
-  it('las cuatro acciones no visibles / no habilitadas', () => {
+  it('todas las acciones no visibles / no habilitadas, también registrarAsistencia', () => {
     expect(ACCIONES_SIN_PERMISO).toEqual({
       cancelar: { visible: false, habilitada: false },
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 })

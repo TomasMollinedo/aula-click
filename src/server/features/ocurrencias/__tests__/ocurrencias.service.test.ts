@@ -68,6 +68,7 @@ function filaDeLaHora(datos: Partial<FilaDeSerie> = {}): FilaDeSerie {
 }
 
 const DATOS_ADICIONALES = {
+  alumnoId: 12,
   alumnoDni: '40123456',
   observaciones: null,
   temas: null,
@@ -94,7 +95,7 @@ const actorProfesorAjeno: Actor = { userId: 'usr_otro', role: 'PROFESOR' }
 function crearRepositories() {
   return {
     repository: {
-      buscarOcurrencia: vi.fn<OcurrenciasRepository['buscarOcurrencia']>(),
+      profesorTieneAlumno: vi.fn<OcurrenciasRepository['profesorTieneAlumno']>(),
       buscarDatosAdicionales: vi.fn<OcurrenciasRepository['buscarDatosAdicionales']>(),
       leerFilasDeLaHora: vi.fn<OcurrenciasRepository['leerFilasDeLaHora']>(),
       buscarFinalizacion: vi.fn<OcurrenciasRepository['buscarFinalizacion']>(),
@@ -129,7 +130,18 @@ beforeEach(() => {
   repos.profesoresRepository.buscarIdPorUsuario.mockImplementation(async (usuarioId) =>
     usuarioId === 'usr_ana' ? 4 : 99,
   )
+  repos.repository.profesorTieneAlumno.mockResolvedValue(false)
 })
+
+/**
+ * Lo que lee el motor para el detalle: las ocurrencias del alumno en esa fecha (una sola lectura).
+ * `null` = ninguna (la fecha no es una ocurrencia del turno).
+ */
+function delDia(...ocurrencias: (Ocurrencia | null)[]) {
+  repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue(
+    ocurrencias.filter((o): o is Ocurrencia => o !== null),
+  )
+}
 
 /** Ejecuta `accion`, que debe fallar, y devuelve el error. */
 function errorDe(accion: Promise<unknown>): Promise<AppError> {
@@ -147,32 +159,89 @@ function errorDe(accion: Promise<unknown>): Promise<AppError> {
 // ---------------------------------------------------------------------------------------------
 
 describe('obtenerDetalle', () => {
-  it('el turno no existe, o la fecha no es una de sus ocurrencias → 404', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(null)
+  it('el turno no existe → 404, sin leer el motor', async () => {
+    repos.repository.buscarDatosAdicionales.mockResolvedValue(null)
 
     const error = await errorDe(service.obtenerDetalle(31, HOY, actorMesa))
     expect(error).toBeInstanceOf(NotFoundError)
+    expect(error.message).toBe('No existe una ocurrencia con ese turno y esa fecha')
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('la fecha no es una de sus ocurrencias (sólo hay otras del alumno ese día) → el mismo 404', async () => {
+    delDia(ocurrencia({ turnoId: 77, fecha: HOY }))
+
+    const error = await errorDe(service.obtenerDetalle(31, HOY, actorMesa))
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error.message).toBe('No existe una ocurrencia con ese turno y esa fecha')
   })
 
   it('una fecha posterior al fin efectivo de una serie finalizada no es una ocurrencia → 404', async () => {
-    // El motor de T-30 (`leerOcurrencias`) ya no la genera: el repository devuelve `null`.
-    repos.repository.buscarOcurrencia.mockResolvedValue(null)
+    // El motor de T-30 (`leerOcurrencias`) ya no la genera: no viene entre las del alumno ese día.
+    delDia(null)
 
     const error = await errorDe(service.obtenerDetalle(31, '2026-12-01', actorMesa))
     expect(error).toBeInstanceOf(NotFoundError)
-    expect(repos.repository.buscarDatosAdicionales).not.toHaveBeenCalled()
+    expect(repos.repository.leerPrioridades).not.toHaveBeenCalled()
   })
 
-  it('profesor ajeno al turno → 403, sin pedir el detalle ni las acciones', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+  it('una sola lectura del motor: las ocurrencias del alumno del turno en esa fecha', async () => {
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
+
+    await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(repos.repository.buscarDatosAdicionales).toHaveBeenCalledExactlyOnceWith(31)
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledExactlyOnceWith(
+      { desde: HOY, hasta: HOY, alumnoId: 12 },
+      relojFijo,
+    )
+  })
+
+  it('profesor ajeno al turno, sin turnos con el alumno → 403, sin pedir el resto', async () => {
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
 
     const error = await errorDe(service.obtenerDetalle(31, HOY, actorProfesorAjeno))
     expect(error).toBeInstanceOf(ForbiddenError)
-    expect(repos.repository.buscarDatosAdicionales).not.toHaveBeenCalled()
+    expect(repos.repository.profesorTieneAlumno).toHaveBeenCalledExactlyOnceWith(99, 12)
+    expect(repos.repository.leerPrioridades).not.toHaveBeenCalled()
   })
 
-  it('profesor dueño del turno: ve el detalle, pero con las cuatro acciones en `false` (el profesor no opera en este incremento)', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+  it('profesor ajeno al turno, con turnos con el alumno (HU-31) → 200 en sólo lectura', async () => {
+    repos.repository.profesorTieneAlumno.mockResolvedValue(true)
+    delDia(
+      ocurrencia({
+        turnoId: 31,
+        fecha: HOY,
+        horaInicio: 480,
+        horaFin: 540,
+        plazoAsistencia: { vence: '2026-09-29', vencido: false },
+      }),
+      ocurrencia({
+        turnoId: 32,
+        fecha: HOY,
+        horaInicio: 540,
+        horaFin: 600,
+        plazoAsistencia: { vence: '2026-09-29', vencido: false },
+      }),
+    )
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorProfesorAjeno)
+    expect(detalle.turnoId).toBe(31)
+    expect(detalle.pago).toBeNull()
+    expect(detalle.acciones).toEqual({
+      cancelar: { visible: false, habilitada: false },
+      finalizar: { visible: false },
+      reprogramar: { visible: false },
+      registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
+    })
+    expect(detalle.horasSeguidas?.ocurrencias.map((hora) => hora.registrable)).toEqual([
+      false,
+      false,
+    ])
+  })
+
+  it('profesor dueño del turno: ve el detalle sin operar ni cobrar (sin plazo, tampoco registra)', async () => {
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
 
     const detalle = await service.obtenerDetalle(31, HOY, actorProfesorDueño)
     expect(detalle.turnoId).toBe(31)
@@ -181,14 +250,16 @@ describe('obtenerDetalle', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
+    expect(repos.repository.profesorTieneAlumno).not.toHaveBeenCalled()
   })
 
   it('profesor dueño del turno: no ve el pago (`pago: null`), ni pendiente ni pagado, y no se consulta', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
     expect((await service.obtenerDetalle(31, HOY, actorProfesorDueño)).pago).toBeNull()
 
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: HOY,
@@ -200,7 +271,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pendiente: `pago` trae el importe vigente de la materia, sin consultar ningún pago', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
 
     const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
     expect(detalle.pago).toEqual({ estado: 'PENDIENTE', importeVigente: 8000 })
@@ -210,7 +281,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pendiente y la materia no tiene precio: `importeVigente: null`; el botón se ofrece igual (decide el 409 SIN_PRECIO)', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
     repos.repository.buscarDatosAdicionales.mockResolvedValue({
       ...DATOS_ADICIONALES,
       precioVigente: null,
@@ -222,9 +293,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pendiente y posterior al tope de cobro (hoy + 56): no se ofrece registrar el pago', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
-      ocurrencia({ turnoId: 31, fecha: '2026-11-18' }),
-    )
+    delDia(ocurrencia({ turnoId: 31, fecha: '2026-11-18' }))
 
     const detalle = await service.obtenerDetalle(31, '2026-11-18', actorMesa)
     expect(detalle.pago).toEqual({ estado: 'PENDIENTE', importeVigente: 8000 })
@@ -232,7 +301,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pagada: `pago` con los datos de su pago, cancelar deshabilitada con su motivo y sin registrarPago', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: HOY,
@@ -266,7 +335,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pagada y después cambió el precio de la materia: `importe` sigue siendo el que se cobró', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: HOY,
@@ -285,7 +354,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pagada pero su pago no aparece (inconsistencia): 500, no un detalle a medias', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: HOY,
@@ -299,14 +368,14 @@ describe('obtenerDetalle', () => {
   })
 
   it('MESA_ENTRADAS no tiene la restricción de dueño (no consulta al profesor)', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
 
     await service.obtenerDetalle(31, HOY, actorMesa)
     expect(repos.profesoresRepository.buscarIdPorUsuario).not.toHaveBeenCalled()
   })
 
   it('arma el DTO campo por campo: DNI del alumno, horas en HH:mm, sin `busqueda`', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
 
     const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
     expect(detalle.alumno).toEqual({
@@ -329,9 +398,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('sesión única: no pide las filas de la hora ni la finalización (no aplica)', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
-      ocurrencia({ turnoId: 31, fecha: HOY, tipo: 'SESION_UNICA' }),
-    )
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY, tipo: 'SESION_UNICA' }))
 
     const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
     expect(repos.repository.leerFilasDeLaHora).not.toHaveBeenCalled()
@@ -348,7 +415,7 @@ describe('obtenerDetalle', () => {
       createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
       createdAt: '2026-10-01T12:00:00.000Z',
     }
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: HOY,
@@ -373,7 +440,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('recurrente sin finalizar: no pide la finalización y ofrece finalizar', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
 
     const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
     expect(repos.repository.leerFilasDeLaHora).toHaveBeenCalledWith(31)
@@ -390,7 +457,7 @@ describe('obtenerDetalle', () => {
       createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
       createdAt: '2026-10-01T12:00:00.000Z',
     }
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
     // La hora del turno 31 tiene dos tramos; la finalización está registrada en el posterior (58).
     repos.repository.leerFilasDeLaHora.mockResolvedValue([
       filaDeLaHora({ fechaFin: '2026-10-19' }),
@@ -407,7 +474,7 @@ describe('obtenerDetalle', () => {
   it('la otra hora de la serie: sus filas no tienen finalización → ofrece finalizar', async () => {
     // El repository sólo devuelve las filas de la hora del turno pedido (acá, la de 10): la
     // finalización de la hora de 9 de la misma serie no entra.
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({ turnoId: 42, fecha: HOY, bloqueAgendaId: 11, horaInicio: 600, horaFin: 660 }),
     )
     repos.repository.leerFilasDeLaHora.mockResolvedValue([
@@ -421,7 +488,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('cancelada: resuelve quién canceló (el motor sólo trae el id) y no pide prioridad', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: HOY,
@@ -458,11 +525,12 @@ describe('obtenerDetalle', () => {
       finalizar: { visible: true },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 
   it('no cancelada: pide la prioridad y la incluye con el examen que la determina', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+    delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
     repos.repository.leerPrioridades.mockResolvedValue(
       new Map([
         [
@@ -496,9 +564,7 @@ describe('obtenerDetalle', () => {
   })
 
   it('pasada (SIN_REGISTRAR): cancelar y reprogramar no visibles', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
-      ocurrencia({ turnoId: 31, fecha: '2026-09-01', estado: 'SIN_REGISTRAR' }),
-    )
+    delDia(ocurrencia({ turnoId: 31, fecha: '2026-09-01', estado: 'SIN_REGISTRAR' }))
 
     const detalle = await service.obtenerDetalle(31, '2026-09-01', actorMesa)
     expect(detalle.acciones.cancelar).toEqual({ visible: false, habilitada: false })
@@ -547,7 +613,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   })
 
   it('presente con textos: el detalle completo, con la asistencia y su auditoría', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: AYER,
@@ -589,12 +655,14 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
         modificadaEl: '2026-09-21T15:00:00.000Z',
         cerradaPorSistema: false,
       },
+      horasSeguidas: null,
       // Con asistencia: ni cancelar ni reprogramar; el cobro sí, porque está impaga.
       acciones: {
         cancelar: { visible: false, habilitada: false },
         finalizar: { visible: true },
         reprogramar: { visible: false },
         registrarPago: { visible: true },
+        registrarAsistencia: { visible: false },
       },
       createdAt: '2026-08-01T13:00:00.000Z',
       updatedAt: '2026-08-01T13:00:00.000Z',
@@ -604,7 +672,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   })
 
   it('ausente con observación: sin textos y con la observación de esa hora', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: AYER,
@@ -635,7 +703,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   })
 
   it('corregida por otro usuario: resuelve los dos en una sola consulta, con su otro instante', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: AYER,
@@ -668,7 +736,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   })
 
   it('sin registrar dentro del plazo: `asistencia: null` con su plazo, sin resolver usuarios', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({ turnoId: 31, fecha: AYER, estado: 'SIN_REGISTRAR', plazoAsistencia: EN_PLAZO }),
     )
 
@@ -679,7 +747,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   })
 
   it('el día 8 sin registrar: cerrada por el sistema, sin estado ni personas', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({ turnoId: 31, fecha: DIA_8, estado: 'SIN_REGISTRAR', plazoAsistencia: VENCIDO }),
     )
 
@@ -700,7 +768,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   })
 
   it('cancelada con una asistencia en la base: `asistencia: null` (el estado manda, T-137)', async () => {
-    repos.repository.buscarOcurrencia.mockResolvedValue(
+    delDia(
       ocurrencia({
         turnoId: 31,
         fecha: AYER,
@@ -727,7 +795,7 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
   it.each(['ALUMNO', 'MESA_ENTRADAS'] as const)(
     '`createdBy` trae el rol de quien registró el turno: %s',
     async (rol) => {
-      repos.repository.buscarOcurrencia.mockResolvedValue(ocurrencia({ turnoId: 31, fecha: HOY }))
+      delDia(ocurrencia({ turnoId: 31, fecha: HOY }))
       repos.repository.buscarDatosAdicionales.mockResolvedValue({
         ...DATOS_ADICIONALES,
         createdBy: { id: 'usr_x', nombre: 'Lucía', apellido: 'González', rol },
@@ -738,6 +806,204 @@ describe('obtenerDetalle: asistencia de la hora (T-84)', () => {
       expect(detalle.updatedBy).toEqual({ id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' })
     },
   )
+})
+
+// ---------------------------------------------------------------------------------------------
+// obtenerDetalle: horas seguidas y registrarAsistencia (T-84)
+// ---------------------------------------------------------------------------------------------
+
+describe('obtenerDetalle: horas seguidas y registrarAsistencia (T-84)', () => {
+  const AYER = '2026-09-21'
+  const PLAZO_HOY = { vence: '2026-09-29', vencido: false }
+  const PLAZO_AYER = { vence: '2026-09-28', vencido: false }
+  const VENCIDO = { vence: '2026-09-21', vencido: true }
+  const ANA = { id: 'usr_ana', nombre: 'Ana', apellido: 'Pérez' }
+
+  /**
+   * Una hora de Lucas (alumno 12) con el profesor 4 en la materia 3, de `desde` a `desde + 1`
+   * (en horas), hoy y con el plazo abierto, salvo lo que se pise.
+   */
+  function hora(turnoId: number, desde: number, datos: Partial<Ocurrencia> = {}): Ocurrencia {
+    return ocurrencia({
+      turnoId,
+      fecha: HOY,
+      horaInicio: desde * 60,
+      horaFin: (desde + 1) * 60,
+      plazoAsistencia: PLAZO_HOY,
+      ...datos,
+    })
+  }
+
+  /** Una asistencia de Ana, presente con esos textos o ausente con esa observación. */
+  function registrada(
+    estado: 'PRESENTE' | 'AUSENTE',
+    textos: { trabajado?: string | null; indicaciones?: string | null; observacion?: string } = {},
+  ): NonNullable<Ocurrencia['asistencia']> {
+    return {
+      estado,
+      trabajado: textos.trabajado ?? null,
+      indicaciones: textos.indicaciones ?? null,
+      observacion: textos.observacion ?? null,
+      createdById: 'usr_ana',
+      createdAt: '2026-09-21T15:00:00.000Z',
+      updatedById: 'usr_ana',
+      updatedAt: '2026-09-21T15:00:00.000Z',
+    }
+  }
+
+  beforeEach(() => {
+    repos.repository.resolverUsuariosAuditoria.mockResolvedValue(new Map([[ANA.id, ANA]]))
+  })
+
+  /** Una hora de `horasSeguidas.ocurrencias` sin registrar, con lo que no cambia en estos tests. */
+  const horaSeguida = (turnoId: number, desde: number, actual: boolean) => ({
+    turnoId,
+    fecha: HOY,
+    horaInicio: `${String(desde).padStart(2, '0')}:00`,
+    horaFin: `${String(desde + 1).padStart(2, '0')}:00`,
+    estado: 'AGENDADO',
+    plazoAsistencia: PLAZO_HOY,
+    actual,
+    registrable: false,
+    textosPropios: null,
+    observacion: null,
+  })
+
+  it('Lucas de 8 a 9, de 9 a 10 y de 20 a 21: los dos primeros traen el mismo grupo; el de 20, null', async () => {
+    delDia(hora(31, 8), hora(32, 9), hora(33, 20))
+
+    const de8 = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(de8.horasSeguidas).toEqual({
+      horaInicio: '08:00',
+      horaFin: '10:00',
+      horas: 2,
+      textos: null,
+      ocurrencias: [horaSeguida(31, 8, true), horaSeguida(32, 9, false)],
+    })
+
+    const de9 = await service.obtenerDetalle(32, HOY, actorMesa)
+    expect(de9.horasSeguidas).toEqual({
+      horaInicio: '08:00',
+      horaFin: '10:00',
+      horas: 2,
+      textos: null,
+      ocurrencias: [horaSeguida(31, 8, false), horaSeguida(32, 9, true)],
+    })
+
+    const de20 = await service.obtenerDetalle(33, HOY, actorMesa)
+    expect(de20.horasSeguidas).toBeNull()
+
+    // Una lectura del motor por detalle, ninguna por hora.
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledTimes(3)
+  })
+
+  it('una hora cancelada en el medio corta el grupo; la cancelada no tiene horas seguidas', async () => {
+    delDia(hora(31, 8), hora(32, 9, { estado: 'CANCELADO', plazoAsistencia: null }), hora(33, 10))
+
+    expect((await service.obtenerDetalle(31, HOY, actorMesa)).horasSeguidas).toBeNull()
+    expect((await service.obtenerDetalle(33, HOY, actorMesa)).horasSeguidas).toBeNull()
+    expect((await service.obtenerDetalle(32, HOY, actorMesa)).horasSeguidas).toBeNull()
+  })
+
+  it.each([
+    ['otra materia', { materiaId: 7 }],
+    ['otro profesor', { profesorId: 9 }],
+  ] as const)('%s en la hora siguiente no entra en el grupo', async (_caso, cambio) => {
+    delDia(hora(31, 8), hora(32, 9, cambio))
+
+    expect((await service.obtenerDetalle(31, HOY, actorMesa)).horasSeguidas).toBeNull()
+  })
+
+  it('cada hora con su estado: REALIZADO y SIN_REGISTRAR, registrable sólo la sin registrar', async () => {
+    delDia(
+      hora(31, 8, {
+        fecha: AYER,
+        estado: 'REALIZADO',
+        asistencia: registrada('PRESENTE', { trabajado: 'Fracciones' }),
+        plazoAsistencia: PLAZO_AYER,
+      }),
+      hora(32, 9, { fecha: AYER, estado: 'SIN_REGISTRAR', plazoAsistencia: PLAZO_AYER }),
+    )
+
+    const detalle = await service.obtenerDetalle(31, AYER, actorProfesorDueño)
+    expect(
+      detalle.horasSeguidas?.ocurrencias.map((h) => [h.turnoId, h.estado, h.registrable]),
+    ).toEqual([
+      [31, 'REALIZADO', false],
+      [32, 'SIN_REGISTRAR', true],
+    ])
+    // La propia ya está registrada y en plazo: el profesor la puede corregir.
+    expect(detalle.acciones.registrarAsistencia).toEqual({ visible: true })
+  })
+
+  it('los textos una vez, `textosPropios` sólo en la hora corregida y la observación del ausente', async () => {
+    const fracciones = { trabajado: 'Fracciones', indicaciones: 'Guía 3' }
+    delDia(
+      hora(31, 8, { estado: 'REALIZADO', asistencia: registrada('PRESENTE', fracciones) }),
+      hora(32, 9, {
+        estado: 'REALIZADO',
+        asistencia: registrada('PRESENTE', { ...fracciones, trabajado: 'Decimales' }),
+      }),
+      hora(33, 10, { estado: 'REALIZADO', asistencia: registrada('PRESENTE', fracciones) }),
+      hora(34, 11, {
+        estado: 'AUSENTE',
+        asistencia: registrada('AUSENTE', { observacion: 'Se retiró antes' }),
+      }),
+    )
+
+    const grupo = (await service.obtenerDetalle(33, HOY, actorMesa)).horasSeguidas
+    expect(grupo?.textos).toEqual({ trabajado: 'Fracciones', indicaciones: 'Guía 3' })
+    expect(grupo?.ocurrencias.map((h) => h.textosPropios)).toEqual([
+      null,
+      { trabajado: 'Decimales', indicaciones: 'Guía 3' },
+      null,
+      null,
+    ])
+    expect(grupo?.ocurrencias.map((h) => h.observacion)).toEqual([
+      null,
+      null,
+      null,
+      'Se retiró antes',
+    ])
+    expect(grupo?.ocurrencias.map((h) => h.actual)).toEqual([false, false, true, false])
+  })
+
+  it('registrarAsistencia: visible para el profesor del turno dentro del plazo, con sus horas sin registrar registrables', async () => {
+    delDia(hora(31, 8), hora(32, 9))
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorProfesorDueño)
+    expect(detalle.acciones.registrarAsistencia).toEqual({ visible: true })
+    expect(detalle.horasSeguidas?.ocurrencias.map((h) => h.registrable)).toEqual([true, true])
+  })
+
+  it('registrarAsistencia: no visible con el plazo vencido, y ninguna hora registrable', async () => {
+    const DIA_8 = '2026-09-14'
+    delDia(
+      hora(31, 8, { fecha: DIA_8, estado: 'SIN_REGISTRAR', plazoAsistencia: VENCIDO }),
+      hora(32, 9, { fecha: DIA_8, estado: 'SIN_REGISTRAR', plazoAsistencia: VENCIDO }),
+    )
+
+    const detalle = await service.obtenerDetalle(31, DIA_8, actorProfesorDueño)
+    expect(detalle.acciones.registrarAsistencia).toEqual({ visible: false })
+    expect(detalle.horasSeguidas?.ocurrencias.map((h) => h.registrable)).toEqual([false, false])
+  })
+
+  it('registrarAsistencia: no visible para la mesa de entrada, ni registrable ninguna hora', async () => {
+    delDia(hora(31, 8), hora(32, 9))
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorMesa)
+    expect(detalle.acciones.registrarAsistencia).toEqual({ visible: false })
+    expect(detalle.horasSeguidas?.ocurrencias.map((h) => h.registrable)).toEqual([false, false])
+  })
+
+  it('registrarAsistencia: no visible para un profesor ajeno con turnos con el alumno', async () => {
+    repos.repository.profesorTieneAlumno.mockResolvedValue(true)
+    delDia(hora(31, 8), hora(32, 9))
+
+    const detalle = await service.obtenerDetalle(31, HOY, actorProfesorAjeno)
+    expect(detalle.acciones.registrarAsistencia).toEqual({ visible: false })
+    expect(detalle.horasSeguidas?.ocurrencias.map((h) => h.registrable)).toEqual([false, false])
+  })
 })
 
 // ---------------------------------------------------------------------------------------------

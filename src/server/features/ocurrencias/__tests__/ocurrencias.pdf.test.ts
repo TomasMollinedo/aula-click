@@ -35,11 +35,13 @@ function detalle(cambios: Partial<OcurrenciaDetalle> = {}): OcurrenciaDetalle {
     examen: null,
     plazoAsistencia: null,
     asistencia: null,
+    horasSeguidas: null,
     acciones: {
       cancelar: { visible: false, habilitada: false },
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     },
     createdAt: '2026-08-01T13:00:00.000Z',
     updatedAt: '2026-08-01T13:00:00.000Z',

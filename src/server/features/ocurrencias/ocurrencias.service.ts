@@ -11,6 +11,8 @@ import {
   asistenciaDelDetalle,
   calcularAcciones,
   filtrarParaDocumento,
+  horasSeguidasDelDetalle,
+  puedeRegistrarAsistencia,
   usuariosDeLaAsistencia,
   validarRangoOcurrencias,
   ventanaOcurrencias,
@@ -88,26 +90,42 @@ export function crearOcurrenciasService({
    * que son de la misma hora (todos sus tramos, decisiones T-103 y T-104): la finalización puede
    * estar registrada en otro tramo de esa hora.
    *
-   * `PROFESOR` sólo puede ver el turno si es suyo (si no, 403; no se filtra antes: primero hay que
-   * saber de quién es el turno, y eso ya resuelve el 404). Ve el turno sin operar ni cobrar: las
-   * cuatro acciones en `false` y `pago: null`. `MESA_ENTRADAS` no tiene esta restricción.
+   * Una sola lectura del motor: las ocurrencias del alumno del turno en esa fecha, de donde salen la
+   * pedida y sus horas seguidas (`horasSeguidasDelDetalle`). El turno se busca antes (404 si no
+   * existe) y la fecha tiene que ser una de sus ocurrencias (si no, el mismo 404).
+   *
+   * `PROFESOR` ve el turno sin operar ni cobrar: las acciones en `false` y `pago: null`. El del turno
+   * suma `registrarAsistencia` (y las horas `registrable`) mientras el plazo esté abierto. Uno ajeno
+   * lo ve en sólo lectura si el alumno tiene o tuvo turnos con él (HU-31, desde el historial); si no,
+   * 403. No se filtra antes: primero hay que saber de quién es el turno, y eso ya resuelve el 404.
+   * `MESA_ENTRADAS` no tiene esta restricción.
    */
   async function obtenerDetalle(
     turnoId: number,
     fecha: string,
     actor: Actor,
   ): Promise<OcurrenciaDetalle> {
-    const ocurrencia = await repository.buscarOcurrencia(turnoId, fecha, reloj)
-    if (!ocurrencia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
-
-    if (actor.role === 'PROFESOR') {
-      const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
-      if (profesorId !== ocurrencia.profesorId) throw new ForbiddenError(MENSAJE_SIN_PERMISO)
-    }
-
-    // No puede faltar: `buscarOcurrencia` ya confirmó que el turno existe.
     const datos = await repository.buscarDatosAdicionales(turnoId)
     if (!datos) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+
+    const ocurrenciasDelDia = await repository.leerOcurrenciasDelAlumno(
+      { desde: fecha, hasta: fecha, alumnoId: datos.alumnoId },
+      reloj,
+    )
+    const ocurrencia = ocurrenciasDelDia.find((o) => o.turnoId === turnoId)
+    if (!ocurrencia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+
+    const esProfesor = actor.role === 'PROFESOR'
+    let esProfesorDelTurno = false
+    if (esProfesor) {
+      const profesorId = await profesoresRepository.buscarIdPorUsuario(actor.userId)
+      esProfesorDelTurno = profesorId !== null && profesorId === ocurrencia.profesorId
+      const conRelacion =
+        esProfesorDelTurno ||
+        (profesorId !== null &&
+          (await repository.profesorTieneAlumno(profesorId, ocurrencia.alumnoId)))
+      if (!conRelacion) throw new ForbiddenError(MENSAJE_SIN_PERMISO)
+    }
 
     const filasDeLaHora =
       ocurrencia.tipo === 'RECURRENTE' ? await repository.leerFilasDeLaHora(turnoId) : []
@@ -146,9 +164,10 @@ export function crearOcurrenciasService({
             }),
           ) ?? null)
 
-    const esProfesor = actor.role === 'PROFESOR'
+    // Sólo el profesor del turno registra (o corrige) la asistencia, y sólo con el plazo abierto.
+    const puedeRegistrar = esProfesorDelTurno && puedeRegistrarAsistencia(ocurrencia)
     const acciones = esProfesor
-      ? ACCIONES_SIN_PERMISO
+      ? { ...ACCIONES_SIN_PERMISO, registrarAsistencia: { visible: puedeRegistrar } }
       : calcularAcciones(
           ocurrencia,
           filasDeLaHora.map((fila) => ({
@@ -200,6 +219,7 @@ export function crearOcurrenciasService({
       examen: prioridadPorClave?.examen ?? null,
       plazoAsistencia: plazoAsistencia(ocurrencia),
       asistencia: asistenciaDelDetalle(ocurrencia, usuariosAsistencia),
+      horasSeguidas: horasSeguidasDelDetalle(ocurrenciasDelDia, turnoId, puedeRegistrar),
       acciones,
       createdAt: datos.createdAt,
       updatedAt: datos.updatedAt,

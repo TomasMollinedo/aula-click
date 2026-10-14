@@ -10,7 +10,6 @@ import { ocurrenciasRoutes } from '../ocurrencias.routes'
 
 const { repository, profesoresRepository, alumnosRepository, getSession } = vi.hoisted(() => ({
   repository: {
-    buscarOcurrencia: vi.fn(),
     buscarDatosAdicionales: vi.fn(),
     leerFilasDeLaHora: vi.fn(),
     buscarFinalizacion: vi.fn(),
@@ -18,6 +17,7 @@ const { repository, profesoresRepository, alumnosRepository, getSession } = vi.h
     leerOcurrenciasDelAlumno: vi.fn(),
     resolverUsuarioAuditoria: vi.fn(),
     resolverUsuariosAuditoria: vi.fn(),
+    profesorTieneAlumno: vi.fn(),
     leerPrioridades: vi.fn(),
   },
   profesoresRepository: { buscarIdPorUsuario: vi.fn() },
@@ -58,6 +58,7 @@ const OCURRENCIA = {
 }
 
 const DATOS_ADICIONALES = {
+  alumnoId: 12,
   alumnoDni: '40123456',
   observaciones: null,
   temas: null,
@@ -122,7 +123,7 @@ async function esperarErrorJson(res: Response, status: number, code: string) {
 
 describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
   it('responde 200 con el detalle que arma el service, sin `busqueda`', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     const res = await pedir('/31/2099-01-05')
     const texto = await res.text()
@@ -145,25 +146,23 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 
   it('una pasada y pendiente ofrece registrar el pago', async () => {
-    repository.buscarOcurrencia.mockResolvedValue({
-      ...OCURRENCIA,
-      fecha: '2020-01-06',
-      estado: 'SIN_REGISTRAR',
-    })
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      { ...OCURRENCIA, fecha: '2020-01-06', estado: 'SIN_REGISTRAR' },
+    ])
 
     const cuerpo = await (await pedir('/31/2020-01-06')).json()
     expect(cuerpo.acciones.registrarPago).toEqual({ visible: true })
   })
 
   it('una pagada sale con los datos de su pago y `cancelar` deshabilitada con su motivo', async () => {
-    repository.buscarOcurrencia.mockResolvedValue({
-      ...OCURRENCIA,
-      pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 },
-    })
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      { ...OCURRENCIA, pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 } },
+    ])
     repository.buscarPago.mockResolvedValue({
       numeroComprobante: 1024,
       fechaPago: '2026-10-01',
@@ -196,7 +195,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
   })
 
   it('el turno no existe, o la fecha no es una de sus ocurrencias → 404', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(null)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
     expect((await pedir('/31/2099-01-05')).status).toBe(404)
   })
 
@@ -221,10 +220,10 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
     expect((await pedir('/31/2099-01-05')).status).toBe(403)
   })
 
-  it('profesor ajeno al turno → 403', async () => {
+  it('profesor ajeno al turno, sin turnos con el alumno → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_otro'))
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(99)
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     expect((await pedir('/31/2099-01-05')).status).toBe(403)
   })
@@ -232,7 +231,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
   it('profesor dueño del turno → 200, con `pago: null`', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     const res = await pedir('/31/2099-01-05')
     expect(res.status).toBe(200)
@@ -301,7 +300,7 @@ describe('GET /ocurrencias', () => {
 
 describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
   it('200 con el PDF del turno y los headers del contrato común', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     const res = await pedir('/31/2099-01-05/pdf')
 
@@ -311,12 +310,15 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(contarPaginas(pdf)).toBe(1)
     expect(metadato(pdf, 'Title')).toBe('Detalle del turno')
-    // El mismo detalle que el JSON: una sola lectura de la ocurrencia.
-    expect(repository.buscarOcurrencia).toHaveBeenCalledExactlyOnceWith(31, '2099-01-05', undefined)
+    // El mismo detalle que el JSON: una sola lectura del motor (las del alumno ese día).
+    expect(repository.leerOcurrenciasDelAlumno).toHaveBeenCalledExactlyOnceWith(
+      { desde: '2099-01-05', hasta: '2099-01-05', alumnoId: 12 },
+      undefined,
+    )
   })
 
   it('el turno no existe, o la fecha no es una de sus ocurrencias → 404 en JSON', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(null)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
     await esperarErrorJson(await pedir('/31/2099-01-05/pdf'), 404, 'NO_ENCONTRADO')
   })
 
@@ -324,7 +326,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
     '%s → 400 VALIDACION en JSON',
     async (path) => {
       await esperarErrorJson(await pedir(path), 400, 'VALIDACION')
-      expect(repository.buscarOcurrencia).not.toHaveBeenCalled()
+      expect(repository.buscarDatosAdicionales).not.toHaveBeenCalled()
     },
   )
 
@@ -336,12 +338,12 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
   it.each(['GERENTE', 'ALUMNO'])('con el rol %s → 403', async (role) => {
     getSession.mockResolvedValue(sesion(role))
     await esperarErrorJson(await pedir('/31/2099-01-05/pdf'), 403, 'SIN_PERMISO')
-    expect(repository.buscarOcurrencia).not.toHaveBeenCalled()
+    expect(repository.buscarDatosAdicionales).not.toHaveBeenCalled()
   })
 
-  it('profesor ajeno al turno → 403', async () => {
+  it('profesor ajeno al turno, sin turnos con el alumno → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_otro'))
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(99)
 
     await esperarErrorJson(await pedir('/31/2099-01-05/pdf'), 403, 'SIN_PERMISO')
@@ -349,7 +351,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
 
   it('profesor dueño del turno → 200 con el PDF', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
 
     const res = await pedir('/31/2099-01-05/pdf')
@@ -475,6 +477,9 @@ describe('OpenAPI de ocurrencias', () => {
         'Finalizacion',
         'PagoDeOcurrenciaPendiente',
         'PagoDeOcurrenciaPagado',
+        'HorasSeguidas',
+        'HoraSeguida',
+        'TextosAsistencia',
         'AsistenciaDeOcurrencia',
         'UsuarioAuditoriaConRol',
       ]),

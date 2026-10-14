@@ -3,6 +3,8 @@ import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelac
 import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
 import {
   OBSERVACION_CIERRE_SISTEMA,
+  agruparHorasSeguidas,
+  textosDeHorasSeguidas,
   tieneAsistencia,
   type EstadoOcurrencia,
   type EstadoPagoOcurrencia,
@@ -10,7 +12,8 @@ import {
   type TipoTurno,
 } from '@/server/features/turnos/ocurrencias.condiciones'
 import type { UsuarioAuditoria } from '@/server/shared/auditoria'
-import type { AsistenciaDeOcurrencia } from './ocurrencias.validation'
+import { minutosAHora } from '@/server/shared/zod'
+import type { AsistenciaDeOcurrencia, HorasSeguidas } from './ocurrencias.validation'
 
 // Reglas puras de `ocurrencias`: sin Prisma y sin `hoy()` (lo recibe quien llama). Las acciones
 // miran el pago de la ocurrencia, que ya trae el motor (`Ocurrencia.pago`). Lo que es de otra
@@ -110,14 +113,19 @@ export type Acciones = {
   finalizar: AccionSimple
   reprogramar: AccionSimple
   registrarPago: AccionSimple
+  registrarAsistencia: AccionSimple
 }
 
-/** Las cuatro acciones en `false`/no visibles: lo que ve un `PROFESOR` (sólo lee). */
+/**
+ * Todas las acciones en `false`/no visibles: lo que ve un `PROFESOR`, que no opera ni cobra (el
+ * del turno sólo suma `registrarAsistencia`, que decide el service con `puedeRegistrarAsistencia`).
+ */
 export const ACCIONES_SIN_PERMISO: Acciones = {
   cancelar: { visible: false, habilitada: false },
   finalizar: { visible: false },
   reprogramar: { visible: false },
   registrarPago: { visible: false },
+  registrarAsistencia: { visible: false },
 }
 
 /** Lo que `calcularAcciones` mira de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
@@ -144,6 +152,7 @@ export type OcurrenciaParaAcciones = {
  *   (`limiteDeCobro(hoy)`, el de `POST /pagos`; las pasadas no tienen tope), así no se ofrece algo
  *   que la API rechaza con `FUERA_DE_RANGO`. Una materia sin precio sí lo muestra: decide el 409
  *   `SIN_PRECIO` del cobro.
+ * - `registrarAsistencia`: nunca. Sólo la ve el profesor del turno, que no pasa por acá.
  */
 export function calcularAcciones(
   ocurrencia: OcurrenciaParaAcciones,
@@ -169,6 +178,78 @@ export function calcularAcciones(
       visible:
         ocurrencia.estado !== 'CANCELADO' && !pagada && ocurrencia.fecha <= limiteDeCobro(fechaHoy),
     },
+    registrarAsistencia: { visible: false },
+  }
+}
+
+/**
+ * La asistencia de la ocurrencia se puede registrar o corregir hoy: tiene plazo (es de hoy o
+ * anterior y no está cancelada) y no venció. El plazo lo calcula el motor (`plazoAsistencia`): no
+ * se copian las reglas de `asistencias`. Con la asistencia ya registrada también: corregir es
+ * volver a guardar con el mismo `PUT /asistencias`.
+ */
+export function puedeRegistrarAsistencia(ocurrencia: Pick<Ocurrencia, 'plazoAsistencia'>): boolean {
+  return ocurrencia.plazoAsistencia !== null && !ocurrencia.plazoAsistencia.vencido
+}
+
+/** Lo que `horasSeguidasDelDetalle` mira de cada ocurrencia del día (una `Ocurrencia` lo cumple). */
+export type OcurrenciaParaHorasSeguidas = Pick<
+  Ocurrencia,
+  | 'turnoId'
+  | 'fecha'
+  | 'alumnoId'
+  | 'profesorId'
+  | 'materiaId'
+  | 'horaInicio'
+  | 'horaFin'
+  | 'estado'
+  | 'asistencia'
+  | 'plazoAsistencia'
+>
+
+/**
+ * Las `horasSeguidas` del detalle de `turnoId` (T-84): el grupo de `agruparHorasSeguidas` que
+ * la contiene, entre `ocurrenciasDelDia` (las del alumno en esa fecha). `null` si el grupo es de
+ * una sola hora o si la ocurrencia está cancelada (no entra en ningún grupo).
+ *
+ * Los textos salen de `textosDeHorasSeguidas` (una vez en el grupo y, aparte, los de la hora que
+ * cambió): acá no se compara nada. Cada hora conserva su estado; `observacion` es la de un
+ * ausente. `registrable` marca las que ofrece "Aplicar también a…": quien mira puede registrar
+ * (`puedeRegistrar`, el profesor del turno) y la hora no tiene asistencia ni está vencida. Una ya
+ * registrada se corrige desde su propio detalle.
+ */
+export function horasSeguidasDelDetalle(
+  ocurrenciasDelDia: readonly OcurrenciaParaHorasSeguidas[],
+  turnoId: number,
+  puedeRegistrar: boolean,
+): HorasSeguidas | null {
+  const grupo = agruparHorasSeguidas(ocurrenciasDelDia).find((g) =>
+    g.ocurrencias.some((hora) => hora.turnoId === turnoId),
+  )
+  if (!grupo || grupo.horas < 2) return null
+
+  const { textos, porHora } = textosDeHorasSeguidas(grupo.ocurrencias)
+  return {
+    horaInicio: minutosAHora(grupo.horaInicio),
+    horaFin: minutosAHora(grupo.horaFin),
+    horas: grupo.horas,
+    textos,
+    ocurrencias: grupo.ocurrencias.map((hora, i) => ({
+      turnoId: hora.turnoId,
+      fecha: hora.fecha,
+      horaInicio: minutosAHora(hora.horaInicio),
+      horaFin: minutosAHora(hora.horaFin),
+      estado: hora.estado,
+      plazoAsistencia: hora.plazoAsistencia && {
+        vence: hora.plazoAsistencia.vence,
+        vencido: hora.plazoAsistencia.vencido,
+      },
+      actual: hora.turnoId === turnoId,
+      registrable:
+        puedeRegistrar && !tieneAsistencia(hora.estado) && puedeRegistrarAsistencia(hora),
+      textosPropios: porHora[i] ?? null,
+      observacion: hora.estado === 'AUSENTE' ? (hora.asistencia?.observacion ?? null) : null,
+    })),
   }
 }
 

@@ -36,11 +36,13 @@ export const ejemploOcurrenciaDetalle = {
   },
   plazoAsistencia: null,
   asistencia: null,
+  horasSeguidas: null,
   acciones: {
     cancelar: { visible: true, habilitada: true },
     finalizar: { visible: true },
     reprogramar: { visible: true },
     registrarPago: { visible: true },
+    registrarAsistencia: { visible: false },
   },
   ...auditoria,
 } satisfies OcurrenciaDetalle

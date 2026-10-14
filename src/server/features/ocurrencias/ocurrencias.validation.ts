@@ -63,6 +63,10 @@ const accionesSchema = z
     finalizar: accionSimpleSchema,
     reprogramar: accionSimpleSchema,
     registrarPago: accionSimpleSchema,
+    registrarAsistencia: accionSimpleSchema.openapi({
+      description:
+        'Sólo para el profesor del turno, con el plazo de asistencia abierto. Registrar y corregir usan `PUT /asistencias`',
+    }),
   })
   .openapi('Acciones')
 
@@ -187,6 +191,51 @@ const usuarioAuditoriaConRolSchema = usuarioAuditoriaSchema
   .extend({ rol: z.enum(ROLES) })
   .openapi('UsuarioAuditoriaConRol')
 
+/** "Qué se trabajó" e indicaciones de una asistencia presente (`textosDeHorasSeguidas`). */
+const textosAsistenciaSchema = z
+  .object({ trabajado: z.string().nullable(), indicaciones: z.string().nullable() })
+  .openapi('TextosAsistencia')
+
+/** Una hora de unas horas seguidas, con su propio estado. */
+const horaSeguidaSchema = z
+  .object({
+    turnoId: z.number().int(),
+    fecha: fechaISO,
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    estado: z.enum(ESTADOS_OCURRENCIA),
+    plazoAsistencia: plazoAsistenciaSchema,
+    actual: z.boolean().openapi({ description: 'Es la hora de este detalle' }),
+    registrable: z.boolean().openapi({
+      description:
+        'Quien mira puede registrar su asistencia y la hora no la tiene ni venció: las que ofrece "Aplicar también a…"',
+    }),
+    textosPropios: textosAsistenciaSchema.nullable().openapi({
+      description: 'Los de esta hora si es presente y difieren de `textos` del grupo; si no, null',
+    }),
+    observacion: z
+      .string()
+      .nullable()
+      .openapi({ description: 'La de la asistencia si la hora es `AUSENTE`; si no, null' }),
+  })
+  .openapi('HoraSeguida')
+
+/**
+ * Las **horas seguidas** de la ocurrencia (Vocabulario del Sprint 3): mismo alumno, profesor,
+ * materia y fecha, una a continuación de la otra. Los textos van una sola vez.
+ */
+const horasSeguidasSchema = z
+  .object({
+    horaInicio: horaHHmm.openapi({ description: 'La de la primera hora' }),
+    horaFin: horaHHmm.openapi({ description: 'La de la última hora' }),
+    horas: z.number().int(),
+    textos: textosAsistenciaSchema.nullable().openapi({
+      description: 'Los de la primera hora presente, que se muestran una sola vez; null si ninguna',
+    }),
+    ocurrencias: z.array(horaSeguidaSchema),
+  })
+  .openapi('HorasSeguidas')
+
 /** Detalle de una ocurrencia: todo lo que necesita la pantalla de detalle de un turno (T-44). */
 export const ocurrenciaDetalleSchema = z
   .object({
@@ -224,6 +273,9 @@ export const ocurrenciaDetalleSchema = z
       description:
         '`null` si está agendada, cancelada o sin registrar dentro del plazo (con su `plazoAsistencia`)',
     }),
+    horasSeguidas: horasSeguidasSchema.nullable().openapi({
+      description: '`null` si la hora no tiene horas seguidas o si está cancelada',
+    }),
     acciones: accionesSchema,
     ...auditoriaSchema.shape,
     createdBy: usuarioAuditoriaConRolSchema.nullable().openapi({
@@ -234,6 +286,7 @@ export const ocurrenciaDetalleSchema = z
   .openapi('OcurrenciaDetalle')
 
 export type AsistenciaDeOcurrencia = z.infer<typeof asistenciaSchema>
+export type HorasSeguidas = z.infer<typeof horasSeguidasSchema>
 
 export type OcurrenciaDetalle = z.infer<typeof ocurrenciaDetalleSchema>
 
