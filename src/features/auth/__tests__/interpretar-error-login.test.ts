@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { INVALID_EMAIL_OR_PASSWORD, USUARIO_INHABILITADO } from '../codigos-error'
+import {
+  INVALID_EMAIL_OR_PASSWORD,
+  INVALID_USERNAME,
+  INVALID_USERNAME_OR_PASSWORD,
+  USERNAME_TOO_LONG,
+  USERNAME_TOO_SHORT,
+  USUARIO_INHABILITADO,
+} from '../codigos-error'
 import { interpretarErrorLogin } from '../interpretar-error-login'
 
 const GENERICO = 'No se pudo iniciar sesión. Intentá de nuevo en unos minutos.'
@@ -14,6 +21,20 @@ describe('interpretarErrorLogin', () => {
 
     expect(mensaje).toBe('Usuario o contraseña incorrectos')
   })
+
+  it.each([
+    [401, INVALID_USERNAME_OR_PASSWORD],
+    [422, USERNAME_TOO_SHORT],
+    [422, USERNAME_TOO_LONG],
+    [422, INVALID_USERNAME],
+  ])(
+    'ingreso por usuario: %i %s dice lo mismo que una credencial incorrecta (T-75)',
+    (status, code) => {
+      expect(interpretarErrorLogin({ status, code, message: 'Invalid username' })).toBe(
+        'Usuario o contraseña incorrectos',
+      )
+    },
+  )
 
   it('avisa que el usuario está inhabilitado con el 403 del contrato', () => {
     expect(interpretarErrorLogin({ status: 403, code: USUARIO_INHABILITADO })).toBe(

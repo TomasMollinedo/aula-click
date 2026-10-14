@@ -1,7 +1,7 @@
 'use client'
 
 import { zodResolver } from '@hookform/resolvers/zod'
-import { ArrowRight, Eye, EyeOff, Lock, Mail } from 'lucide-react'
+import { ArrowRight, Eye, EyeOff, Lock, UserRound } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { useForm } from 'react-hook-form'
@@ -11,7 +11,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { authClient } from '@/features/auth/auth-client'
-import { loginSchema, type LoginInput } from '@/features/auth/auth.schema'
+import { esEmail, loginSchema, type LoginInput } from '@/features/auth/auth.schema'
 import { interpretarErrorLogin } from '@/features/auth/interpretar-error-login'
 import { segmentoDeRol } from '@/features/auth/roles'
 
@@ -32,7 +32,12 @@ export function LoginForm() {
   const enviar = handleSubmit(async (valores) => {
     setErrorDelLogin(null)
 
-    const { data, error } = await authClient.signIn.email(valores)
+    // Un solo campo para todos (HU-28): con @ entra por email (el personal) y sin @, por usuario
+    // (el alumno). Los dos caminos devuelven la misma forma de error y de sesión.
+    const { identificador, password } = valores
+    const { data, error } = esEmail(identificador)
+      ? await authClient.signIn.email({ email: identificador, password })
+      : await authClient.signIn.username({ username: identificador, password })
 
     if (error) {
       setErrorDelLogin(interpretarErrorLogin(error))
@@ -45,25 +50,27 @@ export function LoginForm() {
   return (
     <form noValidate onSubmit={enviar} className="space-y-6">
       <div className="space-y-2">
-        <Label htmlFor="email">Correo electrónico</Label>
+        <Label htmlFor="identificador">Email o usuario</Label>
 
         <div className="relative">
-          <Mail className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+          <UserRound className="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
 
           <Input
-            id="email"
-            type="email"
-            autoComplete="email"
-            placeholder="tu@institucion.edu"
-            aria-invalid={errors.email ? true : undefined}
+            id="identificador"
+            type="text"
+            autoComplete="username"
+            autoCapitalize="none"
+            spellCheck={false}
+            placeholder="tu@institucion.edu o tu usuario"
+            aria-invalid={errors.identificador ? true : undefined}
             className="h-12 pl-9"
-            {...register('email')}
+            {...register('identificador')}
           />
         </div>
 
-        {errors.email && (
+        {errors.identificador && (
           <p role="alert" className="text-destructive text-sm">
-            {errors.email.message}
+            {errors.identificador.message}
           </p>
         )}
       </div>
