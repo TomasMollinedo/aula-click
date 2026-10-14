@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  distintivoTurno,
   ESTADO_PAGO,
   ESTADO_TURNO,
   ETIQUETA_PRIORIDAD,
@@ -8,15 +9,115 @@ import {
   textoDiasHastaExamen,
   textoExamenCorto,
   textoExamenPrioridad,
+  textoSinRegistrar,
 } from '../indicadores-turno'
 
 describe('ESTADO_TURNO', () => {
   it.each([
-    ['AGENDADO', 'Agendado', 'confirmado'],
-    ['CANCELADO', 'Cancelado', 'cancelado'],
-    ['SIN_REGISTRAR', 'Sin registrar', 'secondary'],
+    ['AGENDADO', 'Agendado', 'estadoAgendado'],
+    ['CANCELADO', 'Cancelado', 'estadoCancelado'],
+    ['SIN_REGISTRAR', 'Sin registrar', 'estadoSinRegistrar'],
+    ['REALIZADO', 'Realizado', 'estadoRealizado'],
+    ['AUSENTE', 'Ausente', 'estadoAusente'],
   ] as const)('%s → %s (Badge %s)', (estado, etiqueta, variante) => {
-    expect(ESTADO_TURNO[estado]).toEqual({ etiqueta, variante })
+    expect(ESTADO_TURNO[estado]).toMatchObject({ etiqueta, variante })
+  })
+
+  it('los cinco estados tienen una variante distinta', () => {
+    const variantes = Object.values(ESTADO_TURNO).map((estilo) => estilo.variante)
+    expect(new Set(variantes).size).toBe(5)
+  })
+
+  it('los cinco estados tienen un ícono, y ninguno se repite', () => {
+    const iconos = Object.values(ESTADO_TURNO).map((estilo) => estilo.icono)
+    expect(iconos.every(Boolean)).toBe(true)
+    expect(new Set(iconos).size).toBe(5)
+  })
+})
+
+describe('textoSinRegistrar', () => {
+  it('dentro del plazo dice cuándo vence, con la fecha de la API', () => {
+    expect(textoSinRegistrar({ vence: '2026-10-12', vencido: false })).toBe(
+      'Sin registrar · vence el 12/10',
+    )
+  })
+
+  it('vencido dice que lo cerró el sistema', () => {
+    expect(textoSinRegistrar({ vence: '2026-10-05', vencido: true })).toBe(
+      'Sin registrar · cerrado por el sistema',
+    )
+  })
+
+  it('lee la fecha como día local (no corre al día anterior)', () => {
+    expect(textoSinRegistrar({ vence: '2026-11-01', vencido: false })).toBe(
+      'Sin registrar · vence el 01/11',
+    )
+  })
+
+  it('usa el vencido de la API: no lo deduce de la fecha', () => {
+    expect(textoSinRegistrar({ vence: '2000-01-01', vencido: false })).toBe(
+      'Sin registrar · vence el 01/01',
+    )
+  })
+})
+
+describe('distintivoTurno', () => {
+  const plazo = { vence: '2026-10-12', vencido: false }
+
+  it.each(['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR', 'REALIZADO', 'AUSENTE'] as const)(
+    '%s sin opciones: el de ESTADO_TURNO',
+    (estado) => {
+      expect(distintivoTurno(estado)).toEqual(ESTADO_TURNO[estado])
+    },
+  )
+
+  it('con plazo, "Sin registrar" cambia texto, ícono y borde punteado', () => {
+    const enPlazo = distintivoTurno('SIN_REGISTRAR', { plazo })
+    expect(enPlazo).toMatchObject({
+      etiqueta: 'Sin registrar · vence el 12/10',
+      variante: 'estadoPorVencer',
+    })
+    const cerrado = distintivoTurno('SIN_REGISTRAR', {
+      plazo: { vence: '2026-10-05', vencido: true },
+    })
+    expect(cerrado).toMatchObject({
+      etiqueta: 'Sin registrar · cerrado por el sistema',
+      variante: 'estadoCerrado',
+    })
+    const iconos = [ESTADO_TURNO.SIN_REGISTRAR.icono, enPlazo?.icono, cerrado?.icono]
+    expect(new Set(iconos).size).toBe(3)
+  })
+
+  it.each(['AGENDADO', 'CANCELADO', 'REALIZADO', 'AUSENTE'] as const)(
+    '%s ignora el plazo',
+    (estado) => {
+      expect(distintivoTurno(estado, { plazo })).toEqual(ESTADO_TURNO[estado])
+    },
+  )
+
+  it('"Sin registrar" sin plazo (null o ausente) queda con la palabra sola', () => {
+    expect(distintivoTurno('SIN_REGISTRAR', { plazo: null })).toEqual(ESTADO_TURNO.SIN_REGISTRAR)
+    expect(distintivoTurno('SIN_REGISTRAR', {})).toEqual(ESTADO_TURNO.SIN_REGISTRAR)
+  })
+
+  describe('variante sin asistencia', () => {
+    it.each(['AGENDADO', 'CANCELADO'] as const)('%s se ve como siempre', (estado) => {
+      expect(distintivoTurno(estado, { sinAsistencia: true })).toEqual(ESTADO_TURNO[estado])
+    })
+
+    it.each(['SIN_REGISTRAR', 'REALIZADO', 'AUSENTE'] as const)(
+      '%s no lleva distintivo, con o sin plazo',
+      (estado) => {
+        expect(distintivoTurno(estado, { sinAsistencia: true })).toBeNull()
+        expect(distintivoTurno(estado, { sinAsistencia: true, plazo })).toBeNull()
+      },
+    )
+
+    it('un turno realizado se ve igual que uno pasado sin registrar: ninguno tiene distintivo', () => {
+      expect(distintivoTurno('REALIZADO', { sinAsistencia: true })).toEqual(
+        distintivoTurno('SIN_REGISTRAR', { sinAsistencia: true }),
+      )
+    })
   })
 })
 

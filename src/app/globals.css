@@ -24,6 +24,23 @@
   --color-urgente: #b5852c;
   --color-pendiente: #2e5069;
 
+  /* Estado del turno (components/turno/). Badge suave: el texto lleva el color `estado-*` y el
+     borde y el fondo (al 25 %) el `estado-*-borde`, más claro. Cancelado reusa `cancelado` como
+     texto. "Sin registrar" con plazo usa `por-vencer` (dentro del plazo) y `sin-registrar` (cerrado
+     por el sistema), ambos con borde punteado. La palabra y el ícono siempre acompañan al color.
+     La app no tiene tema oscuro (el Figma no define uno): si se suma, se redefinen acá. */
+  --color-estado-agendado: #1e4a8a;
+  --color-estado-agendado-borde: #93c5fd;
+  --color-estado-realizado: #1f5d1a;
+  --color-estado-realizado-borde: #86d17a;
+  --color-estado-ausente: #8a5200;
+  --color-estado-ausente-borde: #f5b94f;
+  --color-estado-cancelado-borde: #f1a3ad;
+  --color-estado-sin-registrar: #55503f;
+  --color-estado-sin-registrar-borde: #c9c3b0;
+  --color-estado-por-vencer: #8a5412;
+  --color-estado-por-vencer-borde: #f0a935;
+
   /* Prioridad del turno (HU-18, components/turno/). Rojo y amarillo más vivos que cancelado y
      urgente, para que la prioridad no se confunda con un estado. Baja no tiene color. */
   --color-prioridad-alta: #c8352c;
@@ -93,6 +110,17 @@
   --color-cancelado: var(--color-cancelado);
   --color-urgente: var(--color-urgente);
   --color-pendiente: var(--color-pendiente);
+  --color-estado-agendado: var(--color-estado-agendado);
+  --color-estado-agendado-borde: var(--color-estado-agendado-borde);
+  --color-estado-realizado: var(--color-estado-realizado);
+  --color-estado-realizado-borde: var(--color-estado-realizado-borde);
+  --color-estado-ausente: var(--color-estado-ausente);
+  --color-estado-ausente-borde: var(--color-estado-ausente-borde);
+  --color-estado-cancelado-borde: var(--color-estado-cancelado-borde);
+  --color-estado-sin-registrar: var(--color-estado-sin-registrar);
+  --color-estado-sin-registrar-borde: var(--color-estado-sin-registrar-borde);
+  --color-estado-por-vencer: var(--color-estado-por-vencer);
+  --color-estado-por-vencer-borde: var(--color-estado-por-vencer-borde);
   --color-prioridad-alta: var(--color-prioridad-alta);
   --color-prioridad-media: var(--color-prioridad-media);
 
