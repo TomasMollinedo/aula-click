@@ -1,5 +1,5 @@
 import { ConflictError, ValidationError } from '@/server/errors'
-import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import { tieneAsistencia, type Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import { detallesPorPosicion } from '@/server/shared/detalles'
 import type { OcurrenciaACancelar } from './cancelaciones.validation'
 
@@ -51,9 +51,9 @@ function motivoNoCancelable(
 ): MotivoNoCancelable | null {
   if (!ocurrencia) return 'NO_EXISTE'
   if (ocurrencia.estado === 'CANCELADO') return 'YA_CANCELADO'
-  // Con asistencia (REALIZADO o AUSENTE, HU-22) el turno ya ocurrió: va antes que PAGADO porque
+  // Con asistencia (HU-22) el turno ya ocurrió: va antes que PAGADO porque
   // anular el pago no lo vuelve cancelable (T-83).
-  if (ocurrencia.estado === 'REALIZADO' || ocurrencia.estado === 'AUSENTE') return 'CON_ASISTENCIA'
+  if (tieneAsistencia(ocurrencia.estado)) return 'CON_ASISTENCIA'
   if (ocurrencia.pago.estado === 'PAGADO') return 'PAGADO'
   // Sólo se cancela una AGENDADO: cualquier otro estado (SIN_REGISTRAR) es pasado.
   if (ocurrencia.estado !== 'AGENDADO') return 'PASADO'

@@ -1,5 +1,8 @@
 import { z } from '@hono/zod-openapi'
-import type { MotivoCancelacion } from '@/server/features/turnos/ocurrencias.condiciones'
+import {
+  ESTADOS_CON_ASISTENCIA,
+  type MotivoCancelacion,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 import { fechaISO, horaHHmm } from '@/server/shared/zod'
 
 // Schemas Zod de entrada y salida de finalizaciones (HU-14, T-47). Son la fuente del OpenAPI. Sin
@@ -105,7 +108,7 @@ export const turnoConAsistenciaSchema = z
     fecha: fechaISO.openapi({ example: '2026-10-19' }),
     horaInicio: horaHHmm.openapi({ example: '09:00' }),
     horaFin: horaHHmm.openapi({ example: '10:00' }),
-    estado: z.enum(['REALIZADO', 'AUSENTE']).openapi({
+    estado: z.enum(ESTADOS_CON_ASISTENCIA).openapi({
       description: 'Estado de la ocurrencia según su asistencia (Presente o Ausente)',
       example: 'REALIZADO',
     }),

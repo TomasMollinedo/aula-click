@@ -12,6 +12,7 @@ import {
   MENSAJE_PROFESOR_INACTIVO,
   MENSAJE_PROFESOR_NO_ENCONTRADO,
   nombreDia,
+  tieneAsistencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
 import { diaSemanaISO, sumarDias } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
@@ -72,7 +73,7 @@ export function planificarReprogramacion(
   // 1. La ocurrencia.
   if (!ocurrencia || !turno) throw new NotFoundError(MENSAJE_OCURRENCIA_NO_ENCONTRADA)
   if (ocurrencia.estado === 'CANCELADO') throw new ConflictError(MENSAJE_OCURRENCIA_CANCELADA)
-  if (ocurrencia.estado === 'REALIZADO' || ocurrencia.estado === 'AUSENTE') {
+  if (tieneAsistencia(ocurrencia.estado)) {
     throw new ConflictError(MENSAJE_TURNO_CON_ASISTENCIA, { code: CODIGO_TURNO_CON_ASISTENCIA })
   }
   if (ocurrencia.estado !== 'AGENDADO') throw new ConflictError(MENSAJE_OCURRENCIA_PASADA)

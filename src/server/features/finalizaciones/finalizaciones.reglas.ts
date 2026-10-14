@@ -2,6 +2,7 @@ import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import {
   MENSAJE_FECHA_PASADA,
   nombreDia,
+  tieneAsistencia,
   type FilaDeSerie,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
@@ -204,7 +205,7 @@ export function armarPrevia(
     }))
   const ultimaFechaPagada = pagadas.at(-1)?.fecha ?? null
   const conAsistencia: TurnoConAsistencia[] = liberadas.flatMap((o) =>
-    o.estado === 'REALIZADO' || o.estado === 'AUSENTE'
+    tieneAsistencia(o.estado)
       ? [
           {
             fecha: o.fecha,
