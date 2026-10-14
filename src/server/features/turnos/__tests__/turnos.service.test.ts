@@ -1,9 +1,19 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppError, ConflictError, NotFoundError, ValidationError } from '@/server/errors'
+import {
+  AppError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { AlumnoGuardado } from '@/server/features/alumnos/alumnos.validation'
 import type { BloquesRepository } from '@/server/features/bloques/bloques.repository'
 import type { BloqueDeProfesor } from '@/server/features/bloques/bloques.validation'
+import {
+  deudaVencida,
+  type ClienteOcurrencias,
+} from '@/server/features/cuentas/cuentas.condiciones'
 import type { MateriasRepository } from '@/server/features/materias/materias.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
@@ -13,13 +23,20 @@ import type { TurnosRepository } from '../turnos.repository'
 import { finEfectivo, primeraFechaLibre, seCruzaCon } from '../turnos.reglas'
 import { crearTurnosService } from '../turnos.service'
 import type {
+  CrearMiTurno,
   CrearTurno,
   FilaBloqueado,
   SerieFechas,
-  SnapshotReserva,
+  SnapshotAlta,
   TipoTurno,
   TurnoDetalle,
 } from '../turnos.validation'
+import {
+  crearTurnosEnMemoria,
+  d,
+  type BloqueDePrueba,
+  type TurnoDePrueba,
+} from './turnos-en-memoria'
 
 // Los repositories se reemplazan por falsos: sin Docker ni Postgres. El de turnos es un fake en
 // memoria que arma el snapshot como el real y ejecuta el `planificar` verdadero (el de
@@ -27,6 +44,8 @@ import type {
 // solo como tipo.
 
 const actor: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
+/** El alumno 12 en el portal (HU-29): su usuario y su alumno vinculado salen de la sesión. */
+const actorAlumno: Actor = { userId: 'usr_alumno_12', role: 'ALUMNO', alumnoId: 12 }
 
 // Mediodía del martes 22/09/2026 en Salta (UTC-3). Los lunes siguientes: 28/09, 05/10, 12/10…
 const relojFijo = () => new Date('2026-09-22T15:00:00Z')
@@ -34,6 +53,64 @@ const relojFijo = () => new Date('2026-09-22T15:00:00Z')
 // ---------------------------------------------------------------------------------------------
 // Base en memoria
 // ---------------------------------------------------------------------------------------------
+
+// Deuda (HU-29): los turnos ya dados del alumno, en la tabla en memoria del motor
+// (`turnos-en-memoria.ts`). El `reservar` falso lee la deuda vencida con el `deudaVencida` real de
+// `cuentas.condiciones` (T-76), como el repository dentro de su transacción: el tope de deuda se
+// prueba de punta a punta. Hoy - 30 = domingo 23/08 (vencida); hoy - 29 = lunes 24/08.
+const HOY_MENOS_30 = '2026-08-23'
+const HOY_MENOS_29 = '2026-08-24'
+const PRECIO_HORA = 8000
+const BLOQUES_DEUDA: BloqueDePrueba[] = [
+  { id: 90, profesorId: 4, aulaId: 3, diaSemana: 7, horaInicio: 540 }, // domingo 9–10
+  { id: 91, profesorId: 4, aulaId: 3, diaSemana: 1, horaInicio: 600 }, // lunes 10–11
+]
+let turnosDados: TurnoDePrueba[]
+
+/**
+ * Un turno ya dado e impago del alumno 12 (Matemática, $ 8.000), en una fecha pasada: un domingo
+ * (bloque 90) o un lunes (bloque 91).
+ */
+function adeudar(fecha: string, bloqueAgendaId = 90) {
+  turnosDados.push({
+    id: 500 + turnosDados.length,
+    bloqueAgendaId,
+    alumnoId: 12,
+    materiaId: 3,
+    fechaInicio: fecha,
+    fechaFin: fecha,
+  })
+}
+
+/** Cliente de Prisma falso para `deudaVencida`: turnos (motor), `aggregate` y precios. */
+function clienteDeuda(): ClienteOcurrencias {
+  const base = crearTurnosEnMemoria(BLOQUES_DEUDA, turnosDados)
+  return {
+    turno: {
+      findMany: base.findMany,
+      aggregate: async ({
+        where,
+      }: {
+        where: { alumnoId?: number; fechaInicio: { lte: Date } }
+      }) => {
+        const inicios = turnosDados
+          .filter(
+            (t) =>
+              (where.alumnoId === undefined || t.alumnoId === where.alumnoId) &&
+              d(t.fechaInicio) <= where.fechaInicio.lte,
+          )
+          .map((t) => d(t.fechaInicio).getTime())
+        return {
+          _min: { fechaInicio: inicios.length === 0 ? null : new Date(Math.min(...inicios)) },
+        }
+      },
+    },
+    materia: {
+      findMany: async ({ where }: { where: { id: { in: number[] } } }) =>
+        where.id.in.map((id) => ({ id, precioHora: { toNumber: () => PRECIO_HORA } })),
+    },
+  } as unknown as ClienteOcurrencias
+}
 
 type ProfesorEnBase = {
   id: number
@@ -105,6 +182,7 @@ function sembrar() {
   materia = { id: 3, nombre: 'Matemática', estado: 'ACTIVO' }
   asignacion = { estado: 'ACTIVO' }
   turnos = []
+  turnosDados = []
 }
 
 /** Un turno ya guardado de otro alumno (por defecto) o del que se pide. */
@@ -173,7 +251,7 @@ function crearReservarEnMemoria() {
     const ejecucion = cola.then(async () => {
       const elegidas = filas.filter((f) => entrada.bloqueIds.includes(f.id))
       const profesor = profesores.get(entrada.profesorId)
-      const snapshot: SnapshotReserva = {
+      const snapshot: SnapshotAlta = {
         filas: elegidas.map((f) => ({ ...f })),
         profesor: profesor
           ? { id: profesor.id, capacidad: profesor.capacidad, estado: profesor.estado }
@@ -227,6 +305,11 @@ function crearReservarEnMemoria() {
               },
             ]
           }),
+        // Como el repository: la deuda vencida del alumno, leída con su lock tomado.
+        deudaVencida: await deudaVencida(clienteDeuda(), {
+          alumnoId: entrada.alumnoId,
+          hoy: entrada.hoy,
+        }),
       }
       // Cede el turno entre la lectura y la escritura: sin la cola, otra reserva se colaría acá.
       await new Promise((resolver) => setTimeout(resolver, 0))
@@ -260,6 +343,8 @@ function crearRepositories() {
       contarOcupacionPorBloque: vi.fn<TurnosRepository['contarOcupacionPorBloque']>(),
       reservar: vi.fn<TurnosRepository['reservar']>(),
       buscarDetalle: vi.fn<TurnosRepository['buscarDetalle']>(),
+      deudaVencidaDe: vi.fn<TurnosRepository['deudaVencidaDe']>(),
+      listarMateriasOfertadas: vi.fn<TurnosRepository['listarMateriasOfertadas']>(),
     },
     alumnosRepository: { buscarPorId: vi.fn<AlumnosRepository['buscarPorId']>() },
     bloquesRepository: {
@@ -271,7 +356,10 @@ function crearRepositories() {
         vi.fn<ProfesoresRepository['listarProfesoresActivosDeMateria']>(),
       buscarConAsignaciones: vi.fn<ProfesoresRepository['buscarConAsignaciones']>(),
     },
-    materiasRepository: { buscarPorIds: vi.fn<MateriasRepository['buscarPorIds']>() },
+    materiasRepository: {
+      buscarPorIds: vi.fn<MateriasRepository['buscarPorIds']>(),
+      buscarPorId: vi.fn<MateriasRepository['buscarPorId']>(),
+    },
   }
 }
 
@@ -906,6 +994,7 @@ describe('crear: validaciones del service', () => {
     await service.crear({ ...SESION, fechaFin: '2026-10-05' }, actor)
     expect(repos.repository.reservar).toHaveBeenCalledWith(
       {
+        hoy: '2026-09-22',
         alumnoId: 12,
         profesorId: 4,
         materiaId: 3,
@@ -1003,5 +1092,425 @@ describe('crear: una ocurrencia cancelada o fuera del fin efectivo libera su lug
     })
 
     expect((await service.crear({ ...RECURRENTE, fechaFin: null }, actor)).cantidad).toBe(1)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Tope de deuda (HU-29): en los dos caminos
+// ---------------------------------------------------------------------------------------------
+
+/** Sesión única del portal: lunes 05/10, 9–10 con Ana. */
+const MI_SESION: CrearMiTurno = {
+  materiaId: 3,
+  bloqueIds: [11],
+  tipo: 'SESION_UNICA',
+  fechaInicio: '2026-10-05',
+  temas: 'Fracciones',
+  asignarDondeHayLugar: false,
+}
+
+/** Recurrente del portal: los lunes 9–10 del 05/10 al 30/11. */
+const MI_RECURRENTE: CrearMiTurno = {
+  ...MI_SESION,
+  tipo: 'RECURRENTE',
+  fechaFin: '2026-11-30',
+}
+
+describe('tope de deuda (HU-29)', () => {
+  it('mesa: una deuda de hace 30 días bloquea el alta con 409 DEUDA_VENCIDA, cantidad y total', async () => {
+    adeudar(HOY_MENOS_30)
+
+    const error = await errorDe(service.crear(SESION, actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.code).toBe('DEUDA_VENCIDA')
+    expect(error.message).toBe(
+      'El alumno tiene deuda de más de 30 días (1 turno · $ 8.000). Debe regularizar el pago para agendar turnos nuevos',
+    )
+    expect(error.details).toEqual({ cantidad: 1, total: 8000 })
+    expect(turnos).toEqual([])
+  })
+
+  it('mesa: el mensaje lleva la cantidad y el total de todos los vencidos (3 turnos · $ 24.000)', async () => {
+    adeudar('2026-08-09')
+    adeudar('2026-08-16')
+    adeudar(HOY_MENOS_30)
+
+    const error = await errorDe(service.crear(RECURRENTE, actor))
+
+    expect(error.message).toBe(
+      'El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos',
+    )
+    expect(error.details).toEqual({ cantidad: 3, total: 24000 })
+  })
+
+  it('mesa: una deuda de hace 29 días no bloquea', async () => {
+    adeudar(HOY_MENOS_29, 91)
+
+    expect((await service.crear(SESION, actor)).cantidad).toBe(1)
+  })
+
+  it('portal: una deuda de hace 30 días bloquea con el mensaje para el alumno', async () => {
+    adeudar(HOY_MENOS_30)
+
+    const error = await errorDe(service.crearMiTurno(MI_SESION, actorAlumno))
+
+    expect(error.code).toBe('DEUDA_VENCIDA')
+    expect(error.message).toBe(
+      'Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada',
+    )
+    expect(error.details).toEqual({ cantidad: 1, total: 8000 })
+    expect(turnos).toEqual([])
+  })
+
+  it('portal: una deuda de hace 29 días no bloquea', async () => {
+    adeudar(HOY_MENOS_29, 91)
+
+    expect((await service.crearMiTurno(MI_SESION, actorAlumno)).cantidad).toBe(1)
+  })
+
+  it('un turno pagado, o la deuda de otro alumno, no bloquean', async () => {
+    adeudar(HOY_MENOS_30)
+    turnosDados[0] = {
+      ...turnosDados[0]!,
+      pagos: [{ fecha: HOY_MENOS_30, pagoId: 1, importe: 8000 }],
+    }
+    turnosDados.push({
+      id: 600,
+      bloqueAgendaId: 90,
+      alumnoId: 99,
+      materiaId: 3,
+      fechaInicio: HOY_MENOS_30,
+      fechaFin: HOY_MENOS_30,
+    })
+
+    expect((await service.crear(SESION, actor)).cantidad).toBe(1)
+  })
+
+  it('se decide antes que la capacidad: con la hora llena y deuda, responde DEUDA_VENCIDA', async () => {
+    llenar(11, '2026-10-05')
+    adeudar(HOY_MENOS_30)
+
+    expect((await errorDe(service.crear(SESION, actor))).code).toBe('DEUDA_VENCIDA')
+  })
+
+  it('se lee dentro de reservar (bajo lock), con el hoy del reloj', async () => {
+    await service.crear(SESION, actor)
+
+    const [entrada] = repos.repository.reservar.mock.calls[0]!
+    expect(entrada.hoy).toBe('2026-09-22')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Portal del alumno (HU-29)
+// ---------------------------------------------------------------------------------------------
+
+/** Las claves que el alumno no ve nunca (contrato-api.md → Portal del alumno). */
+const PROHIBIDAS_PORTAL = [
+  'capacidadEfectiva',
+  'ocupacion',
+  'lleno',
+  'prioridad',
+  'observaciones',
+  'createdBy',
+  'updatedBy',
+  'createdAt',
+  'updatedAt',
+  'dni',
+]
+
+/** Todas las claves de un valor JSON, a cualquier profundidad. */
+function clavesDe(valor: unknown): string[] {
+  if (Array.isArray(valor)) return valor.flatMap(clavesDe)
+  if (typeof valor !== 'object' || valor === null) return []
+  return Object.entries(valor).flatMap(([clave, v]) => [clave, ...clavesDe(v)])
+}
+
+describe('portal: el alumno sale de la sesión', () => {
+  const sinAlumno: Actor = { userId: 'usr_alumno_roto', role: 'ALUMNO' }
+
+  it('un actor sin alumno (otro rol o una cuenta ALUMNO sin alumno) → 403 en los cuatro', async () => {
+    for (const ajeno of [actor, sinAlumno]) {
+      await expect(service.habilitacion(ajeno)).rejects.toBeInstanceOf(ForbiddenError)
+      await expect(service.misMaterias(ajeno)).rejects.toBeInstanceOf(ForbiddenError)
+      await expect(service.miDisponibilidad({ materiaId: 3 }, ajeno)).rejects.toBeInstanceOf(
+        ForbiddenError,
+      )
+      await expect(service.crearMiTurno(MI_SESION, ajeno)).rejects.toBeInstanceOf(ForbiddenError)
+    }
+    expect(repos.repository.reservar).not.toHaveBeenCalled()
+    expect(repos.repository.deudaVencidaDe).not.toHaveBeenCalled()
+  })
+
+  it('un alumnoId de otro alumno en los datos no se usa: el turno es del alumno de la sesión', async () => {
+    const datos = { ...MI_SESION, alumnoId: 99 } as CrearMiTurno
+
+    await service.crearMiTurno(datos, actorAlumno)
+
+    expect(turnos).toEqual([expect.objectContaining({ alumnoId: 12 })])
+    expect(repos.alumnosRepository.buscarPorId).toHaveBeenCalledWith(12)
+  })
+})
+
+describe('portal: habilitacion', () => {
+  it('sin deuda vencida: habilitado y deuda null', async () => {
+    repos.repository.deudaVencidaDe.mockResolvedValue({ cantidad: 0, total: 0 })
+
+    expect(await service.habilitacion(actorAlumno)).toEqual({ habilitado: true, deuda: null })
+    expect(repos.repository.deudaVencidaDe).toHaveBeenCalledWith(12, '2026-09-22')
+  })
+
+  it('con deuda vencida: no habilitado, con la cantidad y el total', async () => {
+    repos.repository.deudaVencidaDe.mockResolvedValue({ cantidad: 3, total: 24000 })
+
+    expect(await service.habilitacion(actorAlumno)).toEqual({
+      habilitado: false,
+      deuda: { cantidad: 3, total: 24000 },
+    })
+  })
+})
+
+describe('portal: misMaterias', () => {
+  it('devuelve las materias ofertadas del repository', async () => {
+    repos.repository.listarMateriasOfertadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+
+    expect(await service.misMaterias(actorAlumno)).toEqual([{ id: 3, nombre: 'Matemática' }])
+  })
+})
+
+describe('portal: miDisponibilidad', () => {
+  const aula = { id: 3, nombre: 'Aula 3', capacidad: 8 }
+  const bloque = (id: number, diaSemana: number, horaInicio: number): BloqueDeProfesor => ({
+    id,
+    profesorId: 4,
+    profesorCapacidad: 6,
+    diaSemana,
+    horaInicio,
+    horaFin: horaInicio + 60,
+    aula,
+  })
+  const conPrecio = (precioHora: number | null) =>
+    ({ precioHora }) as Awaited<ReturnType<MateriasRepository['buscarPorId']>>
+
+  beforeEach(() => {
+    repos.profesoresRepository.listarProfesoresActivosDeMateria.mockResolvedValue([
+      { id: 4, apellido: 'Pérez', nombre: 'Ana', estado: 'ACTIVO' },
+    ])
+    // Martes 8–9 y 9–10 con Ana; la de 8 está llena.
+    repos.bloquesRepository.listarActivasDeProfesores.mockResolvedValue([
+      bloque(30, 2, 480),
+      bloque(31, 2, 540),
+    ])
+    repos.repository.contarOcupacionPorBloque.mockImplementation(async (pares) =>
+      pares.map((par) => ({ ...par, cantidad: par.bloqueAgendaId === 30 ? 6 : 2 })),
+    )
+    repos.materiasRepository.buscarPorId.mockResolvedValue(conPrecio(8000))
+  })
+
+  it('la misma búsqueda que la mesa, cada hora disponible o no, con el valor por clase y sin cupos', async () => {
+    const items = await service.miDisponibilidad({ materiaId: 3 }, actorAlumno)
+
+    expect(items).toEqual([
+      {
+        profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
+        diaSemana: 2,
+        // Hoy es martes 22/09: el alumno ve el martes siguiente (desde mañana), no hoy.
+        fecha: '2026-09-29',
+        aula: { id: 3, nombre: 'Aula 3' },
+        horaInicio: '08:00',
+        horaFin: '10:00',
+        valorPorClase: 8000,
+        horas: [
+          { bloqueId: 30, horaInicio: '08:00', horaFin: '09:00', disponible: false },
+          { bloqueId: 31, horaInicio: '09:00', horaFin: '10:00', disponible: true },
+        ],
+      },
+    ])
+    expect(clavesDe(items).filter((clave) => PROHIBIDAS_PORTAL.includes(clave))).toEqual([])
+    // La mesa, con la misma búsqueda, ve hoy y los cupos.
+    const mesa = await service.disponibilidad({ materiaId: 3 })
+    expect(mesa[0]?.fecha).toBe('2026-09-22')
+    expect(mesa[0]?.horas[0]).toMatchObject({ capacidadEfectiva: 6, ocupacion: 6, lleno: true })
+  })
+
+  it('con fecha: hoy → 400 "Los turnos se sacan desde el día siguiente"; mañana se acepta', async () => {
+    const error = await errorDe(
+      service.miDisponibilidad({ materiaId: 3, fecha: '2026-09-22' }, actorAlumno),
+    )
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([
+      { path: ['fecha'], message: 'Los turnos se sacan desde el día siguiente' },
+    ])
+    await expect(
+      service.miDisponibilidad({ materiaId: 3, fecha: '2026-09-23' }, actorAlumno),
+    ).resolves.toBeDefined()
+  })
+
+  it('materia sin precio: valorPorClase null; sin resultados, [] sin leer la materia', async () => {
+    repos.materiasRepository.buscarPorId.mockResolvedValue(conPrecio(null))
+    const items = await service.miDisponibilidad({ materiaId: 3 }, actorAlumno)
+    expect(items[0]?.valorPorClase).toBe(null)
+
+    repos.materiasRepository.buscarPorId.mockClear()
+    repos.bloquesRepository.listarActivasDeProfesores.mockResolvedValue([])
+    expect(await service.miDisponibilidad({ materiaId: 3 }, actorAlumno)).toEqual([])
+    expect(repos.materiasRepository.buscarPorId).not.toHaveBeenCalled()
+  })
+
+  it('materia inexistente o inactiva: los mismos 404 y 409 que la mesa', async () => {
+    materia = { id: 3, nombre: 'Matemática', estado: 'INACTIVO' }
+    const inactiva = await errorDe(service.miDisponibilidad({ materiaId: 3 }, actorAlumno))
+    expect(inactiva.code).toBe('MATERIA_INACTIVA')
+
+    materia = null
+    const inexistente = await errorDe(service.miDisponibilidad({ materiaId: 3 }, actorAlumno))
+    expect(inexistente).toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe('portal: crearMiTurno', () => {
+  it('recurrente: queda ACTIVO sin aprobación, del alumno, creado por su usuario, y responde el resumen', async () => {
+    const reservado = await service.crearMiTurno(
+      { ...MI_RECURRENTE, fechaFin: null, temas: null },
+      actorAlumno,
+    )
+
+    expect(turnos).toEqual([
+      expect.objectContaining({
+        estado: 'ACTIVO',
+        alumnoId: 12,
+        tipo: 'RECURRENTE',
+        fechaInicio: '2026-10-05',
+        fechaFin: null,
+        observaciones: null,
+      }),
+    ])
+    // El creador es el alumno: `reservar` recibe su actor, con el que el repository completa
+    // `createdById` y `updatedById`.
+    expect(repos.repository.reservar).toHaveBeenCalledWith(
+      expect.objectContaining({ alumnoId: 12 }),
+      expect.any(Function),
+      actorAlumno,
+    )
+    expect(reservado).toEqual({
+      cantidad: 1,
+      tipo: 'RECURRENTE',
+      diaSemana: 1,
+      materia: { id: 3, nombre: 'Matemática' },
+      profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
+      aula: { id: 3, nombre: 'Aula 3' },
+      temas: null,
+      turnos: [
+        {
+          id: turnos[0]!.id,
+          bloqueId: 11,
+          horaInicio: '09:00',
+          horaFin: '10:00',
+          fechaInicio: '2026-10-05',
+          fechaFin: null,
+        },
+      ],
+      fechasSinTurno: [],
+    })
+  })
+
+  it('la respuesta no trae observaciones, auditoría, cupos, prioridad ni datos del alumno', async () => {
+    const reservado = await service.crearMiTurno(MI_SESION, actorAlumno)
+
+    expect(clavesDe(reservado).filter((clave) => PROHIBIDAS_PORTAL.includes(clave))).toEqual([])
+    expect(Object.keys(reservado)).not.toContain('alumno')
+  })
+
+  it('fecha de hoy → 400 "Los turnos se sacan desde el día siguiente" (sólo en el portal)', async () => {
+    const hoyMartes = { ...MI_SESION, bloqueIds: [13], fechaInicio: '2026-09-22' }
+
+    const error = await errorDe(service.crearMiTurno(hoyMartes, actorAlumno))
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([
+      { path: ['fechaInicio'], message: 'Los turnos se sacan desde el día siguiente' },
+    ])
+    expect(repos.repository.reservar).not.toHaveBeenCalled()
+    // La mesa sí puede registrar hoy.
+    expect((await service.crear({ ...hoyMartes, alumnoId: 12 }, actor)).cantidad).toBe(1)
+  })
+
+  it('las reglas de HU-08 valen igual: fecha fuera del día del bloque → 400; materia no asignada → 409', async () => {
+    const martes = await errorDe(
+      service.crearMiTurno({ ...MI_SESION, fechaInicio: '2026-10-06' }, actorAlumno),
+    )
+    expect(martes).toBeInstanceOf(ValidationError)
+
+    asignacion = null
+    const noAsignada = await errorDe(service.crearMiTurno(MI_SESION, actorAlumno))
+    expect(noAsignada.code).toBe('MATERIA_NO_ASIGNADA')
+  })
+
+  it('superposición con un turno suyo → 409 ALUMNO_SUPERPUESTO con el mensaje para el alumno', async () => {
+    guardarTurno({
+      bloqueAgendaId: 20,
+      alumnoId: 12,
+      tipo: 'RECURRENTE',
+      fechaInicio: '2026-09-28',
+      fechaFin: '2026-10-26',
+    })
+
+    const error = await errorDe(service.crearMiTurno(MI_SESION, actorAlumno))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.code).toBe('ALUMNO_SUPERPUESTO')
+    expect(error.message).toBe('Ya tenés un turno ese día en ese horario')
+    expect(error.details).toEqual([expect.objectContaining({ turnoId: 100, diaSemana: 1 })])
+    // La mesa conserva su mensaje.
+    expect((await errorDe(service.crear(SESION, actor))).message).toBe(
+      'El alumno ya tiene un turno en ese horario',
+    )
+  })
+
+  it('semanal con fechas llenas: 409 BLOQUE_LLENO con las fechas (sin cupos); "Reservar sólo las fechas con lugar" crea los tramos', async () => {
+    llenar(11, '2026-10-26')
+
+    const error = await errorDe(service.crearMiTurno(MI_RECURRENTE, actorAlumno))
+    expect(error.code).toBe('BLOQUE_LLENO')
+    expect(error.details).toEqual([
+      {
+        path: ['bloqueIds', 0],
+        message: 'La hora de 9:00 a 10:00 está completa el lunes 26/10',
+        bloqueId: 11,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        fechas: ['2026-10-26'],
+        completoDesde: null,
+        sinLugar: false,
+      },
+    ])
+
+    const reservado = await service.crearMiTurno(
+      { ...MI_RECURRENTE, asignarDondeHayLugar: true },
+      actorAlumno,
+    )
+    expect(reservado.cantidad).toBe(2)
+    expect(reservado.turnos.map((t) => [t.fechaInicio, t.fechaFin])).toEqual([
+      ['2026-10-05', '2026-10-19'],
+      ['2026-11-02', '2026-11-30'],
+    ])
+    expect(reservado.fechasSinTurno).toEqual([
+      {
+        bloqueId: 11,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        fechas: ['2026-10-26'],
+        completoDesde: null,
+      },
+    ])
+  })
+
+  it('sesión única en una hora llena: 409 BLOQUE_LLENO sin la capacidad', async () => {
+    llenar(11, '2026-10-05')
+
+    const error = await errorDe(service.crearMiTurno(MI_SESION, actorAlumno))
+    expect(error.code).toBe('BLOQUE_LLENO')
+    expect(clavesDe(error.details)).not.toContain('capacidadEfectiva')
   })
 })
