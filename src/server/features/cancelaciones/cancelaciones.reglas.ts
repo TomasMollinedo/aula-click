@@ -1,5 +1,5 @@
 import { ConflictError, ValidationError } from '@/server/errors'
-import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import { tieneAsistencia, type Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import { detallesPorPosicion } from '@/server/shared/detalles'
 import type { OcurrenciaACancelar } from './cancelaciones.validation'
 
@@ -10,13 +10,20 @@ import type { OcurrenciaACancelar } from './cancelaciones.validation'
 
 export const CODIGO_TURNOS_NO_CANCELABLES = 'TURNOS_NO_CANCELABLES'
 
-export const MOTIVOS_NO_CANCELABLE = ['NO_EXISTE', 'YA_CANCELADO', 'PAGADO', 'PASADO'] as const
+export const MOTIVOS_NO_CANCELABLE = [
+  'NO_EXISTE',
+  'YA_CANCELADO',
+  'CON_ASISTENCIA',
+  'PAGADO',
+  'PASADO',
+] as const
 export type MotivoNoCancelable = (typeof MOTIVOS_NO_CANCELABLE)[number]
 
 /** Mensaje de cada motivo, en el orden en que se evalúan (el primero que se cumple gana). */
 export const MENSAJES_NO_CANCELABLE: Record<MotivoNoCancelable, string> = {
   NO_EXISTE: 'El turno no existe en esa fecha',
   YA_CANCELADO: 'El turno ya está cancelado',
+  CON_ASISTENCIA: 'El turno tiene asistencia registrada: no se puede cancelar',
   PAGADO: 'El turno está pagado: no se puede cancelar',
   PASADO: 'El turno ya pasó: no se puede cancelar',
 }
@@ -44,8 +51,12 @@ function motivoNoCancelable(
 ): MotivoNoCancelable | null {
   if (!ocurrencia) return 'NO_EXISTE'
   if (ocurrencia.estado === 'CANCELADO') return 'YA_CANCELADO'
+  // Con asistencia (HU-22) el turno ya ocurrió: va antes que PAGADO porque
+  // anular el pago no lo vuelve cancelable (T-83).
+  if (tieneAsistencia(ocurrencia.estado)) return 'CON_ASISTENCIA'
   if (ocurrencia.pago.estado === 'PAGADO') return 'PAGADO'
-  if (ocurrencia.estado === 'SIN_REGISTRAR') return 'PASADO'
+  // Sólo se cancela una AGENDADO: cualquier otro estado (SIN_REGISTRAR) es pasado.
+  if (ocurrencia.estado !== 'AGENDADO') return 'PASADO'
   return null
 }
 
@@ -56,8 +67,9 @@ function motivoNoCancelable(
  *    cada una que no es del alumno de la primera, con su posición en el body).
  * 2. 409 `TURNOS_NO_CANCELABLES` con un detalle por **cada** ocurrencia que no se puede cancelar,
  *    con un solo motivo por ocurrencia (el primero de `MOTIVOS_NO_CANCELABLE`). Cancelable =
- *    existe, está `AGENDADO` (no cancelada y de hoy en adelante) y su pago está `PENDIENTE`
- *    (definición D: un turno pagado no se cancela).
+ *    existe, está `AGENDADO` (no cancelada, sin asistencia y de hoy en adelante) y su pago
+ *    está `PENDIENTE` (definición D: un turno pagado no se cancela; uno con pago anulado vuelve a
+ *    `PENDIENTE` en el motor, T-74).
  *
  * Si no lanza: el alumno y una línea por ocurrencia, en el orden del pedido.
  */

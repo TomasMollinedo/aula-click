@@ -1,5 +1,8 @@
 import { z } from '@hono/zod-openapi'
-import type { MotivoCancelacion } from '@/server/features/turnos/ocurrencias.condiciones'
+import {
+  ESTADOS_CON_ASISTENCIA,
+  type MotivoCancelacion,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 import { fechaISO, horaHHmm } from '@/server/shared/zod'
 
 // Schemas Zod de entrada y salida de finalizaciones (HU-14, T-47). Son la fuente del OpenAPI. Sin
@@ -97,6 +100,24 @@ export const turnoPagadoSchema = z
 export type TurnoPagado = z.infer<typeof turnoPagadoSchema>
 
 /**
+ * Una ocurrencia con asistencia registrada desde `fechaDesde` (T-83): ya ocurrió, así que impide
+ * finalizar desde esa fecha, como una pagada. Sólo puede ser la de hoy.
+ */
+export const turnoConAsistenciaSchema = z
+  .object({
+    fecha: fechaISO.openapi({ example: '2026-10-19' }),
+    horaInicio: horaHHmm.openapi({ example: '09:00' }),
+    horaFin: horaHHmm.openapi({ example: '10:00' }),
+    estado: z.enum(ESTADOS_CON_ASISTENCIA).openapi({
+      description: 'Estado de la ocurrencia según su asistencia (Presente o Ausente)',
+      example: 'REALIZADO',
+    }),
+  })
+  .openapi('TurnoConAsistencia')
+
+export type TurnoConAsistencia = z.infer<typeof turnoConAsistenciaSchema>
+
+/**
  * Otra hora de la misma serie (decisión T-103) que sigue agendada desde `fechaDesde`: no se
  * finaliza con este pedido. `turnoId` + `fecha` es su primera ocurrencia desde `fechaDesde`, la
  * que abre su detalle.
@@ -139,9 +160,17 @@ export const previaFinalizacionSchema = z
       description: 'Fecha del último turno pagado; `null` si no hay pagados',
       example: null,
     }),
+    conAsistencia: z.array(turnoConAsistenciaSchema).openapi({
+      description:
+        'Turnos con asistencia registrada desde `fechaDesde` (sólo puede ser el de hoy), por fecha. Si hay alguno, no se finaliza',
+    }),
+    ultimaFechaConAsistencia: fechaISO.nullable().openapi({
+      description: 'Fecha del último turno con asistencia; `null` si no hay',
+      example: null,
+    }),
     fechaDesdeMinima: fechaISO.nullable().openapi({
       description:
-        'Primera `fechaDesde` posible: la ocurrencia siguiente al último pagado. `null` si no hay pagados, o si los pagados llegan hasta el final de la serie (no se puede finalizar)',
+        'Primera `fechaDesde` posible: la ocurrencia siguiente a la última que lo impide (pagada o con asistencia). `null` si no hay ninguna, o si llegan hasta el final de la serie (no se puede finalizar)',
       example: null,
     }),
     otrasHoras: z.array(otraHoraSchema).openapi({

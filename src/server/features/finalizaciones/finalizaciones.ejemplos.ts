@@ -14,6 +14,8 @@ export const ejemploPrevia = {
   hasta: '2026-11-30',
   pagadas: [],
   ultimaFechaPagada: null,
+  conAsistencia: [],
+  ultimaFechaConAsistencia: null,
   fechaDesdeMinima: null,
   otrasHoras: [{ turnoId: 42, fecha: '2026-10-19', horaInicio: '10:00', horaFin: '11:00' }],
 } satisfies PreviaFinalizacion
