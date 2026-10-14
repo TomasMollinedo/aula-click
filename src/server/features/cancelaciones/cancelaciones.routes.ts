@@ -51,7 +51,7 @@ export const cancelarTurnosRoute = createRoute({
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
     403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
     409: respuestaError(
-      'Alguna ocurrencia no se puede cancelar (TURNOS_NO_CANCELABLES): `details` con cada una y su motivo (`NO_EXISTE`, `YA_CANCELADO`, `PAGADO`, `PASADO`). Sin `details` si otra cancelación la registró al mismo tiempo',
+      'Alguna ocurrencia no se puede cancelar (TURNOS_NO_CANCELABLES): `details` con cada una y su motivo (`NO_EXISTE`, `YA_CANCELADO`, `CON_ASISTENCIA`, `PAGADO`, `PASADO`). Sin `details` si otra cancelación la registró al mismo tiempo',
       ejemploErrorNoCancelables,
     ),
   },

@@ -30,7 +30,8 @@ function idQuery(name: string, description: string, example: number) {
 
 /**
  * Filtros de cancelados y prioridad (T-57), iguales en todas las agendas y combinables con los
- * demás. Sin `incluirCancelados` salen sólo las agendadas y las sin registrar. Filtrar por
+ * demás. Sin `incluirCancelados` salen sólo las no canceladas (agendadas, sin registrar y con
+ * asistencia). Filtrar por
  * prioridad deja afuera las ocurrencias canceladas: no tienen.
  */
 const filtrosEstadoYPrioridad = {
@@ -40,7 +41,7 @@ const filtrosEstadoYPrioridad = {
     .openapi({
       param: { name: 'incluirCancelados', in: 'query' },
       description:
-        'Con `true`, además de las agendadas y las sin registrar salen las canceladas. Por defecto (`false` o sin el parámetro) no salen',
+        'Con `true`, además de las no canceladas (agendadas, sin registrar y con asistencia) salen las canceladas. Por defecto (`false` o sin el parámetro) no salen',
       example: 'true',
     }),
   prioridad: z

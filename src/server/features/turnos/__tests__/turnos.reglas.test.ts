@@ -14,6 +14,7 @@ import {
   planificarReserva,
   plazoDeAsistencia,
   primeraFechaLibre,
+  tieneAsistencia,
   type EstadoAsistencia,
   type EstadoOcurrencia,
   type PedidoReserva,
@@ -505,6 +506,32 @@ describe('ocupaLugarEn con fin efectivo y canceladas', () => {
     )
     expect(ocupaLugarEn(finalizada, '2026-10-12')).toBe(true)
     expect(ocupaLugarEn(finalizada, '2026-10-19')).toBe(false)
+  })
+})
+
+describe('tieneAsistencia', () => {
+  it.each<[EstadoOcurrencia, boolean]>([
+    ['REALIZADO', true],
+    ['AUSENTE', true],
+    ['AGENDADO', false],
+    ['SIN_REGISTRAR', false],
+    ['CANCELADO', false],
+  ])('%s → %s', (estado, esperado) => {
+    expect(tieneAsistencia(estado)).toBe(esperado)
+  })
+
+  it('coincide con estadoDeOcurrencia: con asistencia y no cancelada, en cualquier fecha', () => {
+    for (const asistencia of [null, 'PRESENTE', 'AUSENTE'] as const) {
+      for (const cancelada of [false, true]) {
+        for (const fecha of ['2026-09-28', '2026-10-05', '2026-10-12']) {
+          const estado = estadoDeOcurrencia(
+            { fecha, cancelada, asistencia: asistencia ? { estado: asistencia } : null },
+            '2026-10-05',
+          )
+          expect(tieneAsistencia(estado)).toBe(asistencia !== null && !cancelada)
+        }
+      }
+    }
   })
 })
 

@@ -1,9 +1,14 @@
+import { isValidElement, type ReactNode } from 'react'
 import { describe, expect, it } from 'vitest'
 import { encabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
 import { contarPaginas, idioma, metadato } from '@/server/shared/__tests__/pdf-inspeccion'
 import { nombreArchivoPdf } from '@/server/shared/pdf/respuesta'
-import { nombreArchivoAgenda, type AgendaDocumento } from '../agendas.documentos'
-import { renderizarAgendaPdf, textoFiltrosDeAgenda } from '../agendas.pdf'
+import {
+  etiquetaEstadoEnAgenda,
+  nombreArchivoAgenda,
+  type AgendaDocumento,
+} from '../agendas.documentos'
+import { AgendaPdf, renderizarAgendaPdf, textoFiltrosDeAgenda } from '../agendas.pdf'
 
 // El PDF de la agenda diaria de un profesor, con un render real (fuentes y logo del repo). No se
 // compara el dibujo: se comprueba que sale un PDF, cuántas hojas ocupa y sus metadatos.
@@ -60,6 +65,54 @@ describe('nombreArchivoAgenda', () => {
       profesor: { nombre: 'Nicolás', apellido: 'Villagrán Sosa' },
     })
     expect(nombreArchivoPdf(nombre)).toBe('agenda-2026-10-02-villagran-sosa-nicolas')
+  })
+})
+
+describe('etiquetaEstadoEnAgenda (T-86)', () => {
+  it.each([
+    ['AGENDADO', 'Agendado'],
+    ['CANCELADO', 'Cancelado'],
+    ['SIN_REGISTRAR', '—'],
+    ['REALIZADO', '—'],
+    ['AUSENTE', '—'],
+  ] as const)('%s → %s: como las vistas, sin la asistencia', (estado, texto) => {
+    expect(etiquetaEstadoEnAgenda(estado)).toBe(texto)
+  })
+})
+
+/** Los textos de la plantilla, recorriendo el árbol de elementos sin dibujar el PDF. */
+function textos(nodo: ReactNode): string[] {
+  if (typeof nodo === 'string' || typeof nodo === 'number') return [String(nodo)]
+  if (Array.isArray(nodo)) return nodo.flatMap(textos)
+  if (isValidElement<{ children?: ReactNode }>(nodo)) return textos(nodo.props.children)
+  return []
+}
+
+describe('AgendaPdf: estado de cada turno (T-86)', () => {
+  it('un turno con asistencia sale sin su estado de asistencia; Agendado y Cancelado como siempre', () => {
+    const base = agenda(5)
+    const estados = ['AGENDADO', 'CANCELADO', 'REALIZADO', 'AUSENTE', 'SIN_REGISTRAR'] as const
+    const documento = {
+      ...base,
+      turnos: base.turnos.map((turno, i) => ({ ...turno, estado: estados[i]! })),
+    }
+
+    const escritos = textos(AgendaPdf({ documento, ...encabezado }))
+
+    expect(escritos).toEqual(expect.arrayContaining(['Agendado', 'Cancelado']))
+    expect(escritos.filter((texto) => texto === '—')).toHaveLength(3)
+    expect(escritos).not.toEqual(
+      expect.arrayContaining([expect.stringMatching(/Realizado|Ausente|Sin registrar/)]),
+    )
+  })
+
+  it('sigue mostrando la fila del turno con asistencia (alumno y materia)', () => {
+    const base = agenda(1)
+    const documento = { ...base, turnos: [{ ...base.turnos[0]!, estado: 'REALIZADO' as const }] }
+
+    const escritos = textos(AgendaPdf({ documento, ...encabezado }))
+
+    expect(escritos).toEqual(expect.arrayContaining(['Pilar', 'Alderete', 'Estadística']))
   })
 })
 

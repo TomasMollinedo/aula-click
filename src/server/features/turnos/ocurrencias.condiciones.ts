@@ -6,6 +6,7 @@ import {
   CODIGO_MATERIA_INACTIVA,
   CODIGO_MATERIA_NO_ASIGNADA,
   CODIGO_PROFESOR_INACTIVO,
+  ESTADOS_CON_ASISTENCIA,
   ESTADOS_OCURRENCIA,
   MENSAJE_ALUMNO_SUPERPUESTO,
   MENSAJE_BLOQUE_NO_ENCONTRADO,
@@ -25,7 +26,9 @@ import {
   ocupaLugarEn,
   plazoDeAsistencia,
   primeraFechaLibre,
+  tieneAsistencia,
   type EstadoAsistencia,
+  type EstadoConAsistencia,
   type EstadoOcurrencia,
   type GrupoHorasSeguidas,
   type PlazoAsistencia,
@@ -69,16 +72,18 @@ export {
   nombreDia,
 }
 export type { EstadoOcurrencia, MotivoCancelacion, TipoTurno }
-// Estados de una ocurrencia, plazo de la asistencia y horas seguidas (T-74): una sola definición,
-// la de `turnos.reglas.ts`.
+// Estados de una ocurrencia, cuáles tienen asistencia (T-83), plazo de la asistencia y horas
+// seguidas (T-74): una sola definición, la de `turnos.reglas.ts`.
 export {
+  ESTADOS_CON_ASISTENCIA,
   ESTADOS_OCURRENCIA,
   OBSERVACION_CIERRE_SISTEMA,
   PLAZO_ASISTENCIA_DIAS,
   agruparHorasSeguidas,
   plazoDeAsistencia,
+  tieneAsistencia,
 }
-export type { EstadoAsistencia, GrupoHorasSeguidas, PlazoAsistencia }
+export type { EstadoAsistencia, EstadoConAsistencia, GrupoHorasSeguidas, PlazoAsistencia }
 // Cómo se escribe una ocurrencia en un documento (estado, prioridad, tipo y período de la serie):
 // lo usan las plantillas PDF de `ocurrencias` y `agendas`.
 export {

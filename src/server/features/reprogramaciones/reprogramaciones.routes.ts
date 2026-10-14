@@ -53,7 +53,7 @@ export const reprogramarRoute = createRoute({
     403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
     404: respuestaError('El turno, la ocurrencia en esa fecha o la hora de destino no existen'),
     409: respuestaError(
-      'La ocurrencia está cancelada o ya pasó; o el destino no sirve: profesor inactivo (PROFESOR_INACTIVO), materia inactiva (MATERIA_INACTIVA) o no asignada (MATERIA_NO_ASIGNADA), hora completa (BLOQUE_LLENO) o alumno con otro turno en ese horario (ALUMNO_SUPERPUESTO)',
+      'La ocurrencia está cancelada, tiene asistencia registrada (TURNO_CON_ASISTENCIA) o ya pasó; o el destino no sirve: profesor inactivo (PROFESOR_INACTIVO), materia inactiva (MATERIA_INACTIVA) o no asignada (MATERIA_NO_ASIGNADA), hora completa (BLOQUE_LLENO) o alumno con otro turno en ese horario (ALUMNO_SUPERPUESTO)',
       ejemploErrorBloqueLleno,
     ),
   },

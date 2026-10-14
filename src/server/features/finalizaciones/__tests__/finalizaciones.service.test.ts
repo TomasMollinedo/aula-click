@@ -102,6 +102,8 @@ describe('previa', () => {
       hasta: '2026-11-30',
       pagadas: [],
       ultimaFechaPagada: null,
+      conAsistencia: [],
+      ultimaFechaConAsistencia: null,
       fechaDesdeMinima: null,
       otrasHoras: [],
     })
@@ -127,6 +129,8 @@ describe('previa', () => {
       hasta: '2026-11-30',
       pagadas: [],
       ultimaFechaPagada: null,
+      conAsistencia: [],
+      ultimaFechaConAsistencia: null,
       fechaDesdeMinima: null,
       otrasHoras: [{ turnoId: 42, fecha: '2026-10-12', horaInicio: '10:00', horaFin: '11:00' }],
     })
@@ -478,6 +482,97 @@ describe('finalizar', () => {
       'El turno ya fue finalizado',
     )
     expect(memoria.finalizaciones.size).toBe(1)
+  })
+})
+
+describe('con asistencia (T-83)', () => {
+  // El 41 empieza el 21/09 para que hoy (lunes 05/10) sea una fechaDesde válida (posterior al
+  // inicio). La ocurrencia de hoy tiene asistencia: ya ocurrió.
+  function conAsistenciaHoy(
+    estado: 'REALIZADO' | 'AUSENTE' = 'REALIZADO',
+    fechaFin = '2026-11-30',
+  ) {
+    const ocurrencias = semanales('2026-09-21', fechaFin)
+    const hoy = ocurrencias.find((o) => o.fecha === '2026-10-05')
+    if (hoy) hoy.estado = estado
+    armar([turno({ fechaInicio: '2026-09-21', fechaFin, ocurrencias })])
+  }
+
+  it('previa desde hoy: informa la de hoy y la primera fecha posible es la siguiente, sin error', async () => {
+    conAsistenciaHoy()
+
+    expect(await service.previa({ turnoId: 41, fechaDesde: '2026-10-05' })).toMatchObject({
+      conAsistencia: [
+        { fecha: '2026-10-05', horaInicio: '09:00', horaFin: '10:00', estado: 'REALIZADO' },
+      ],
+      ultimaFechaConAsistencia: '2026-10-05',
+      fechaDesdeMinima: '2026-10-12',
+      pagadas: [],
+    })
+  })
+
+  it('finalizar desde hoy con asistencia → 409 TURNOS_CON_ASISTENCIA, sin llamar a finalizar', async () => {
+    conAsistenciaHoy('AUSENTE')
+
+    const error = await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-05' }), actor))
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.code).toBe('TURNOS_CON_ASISTENCIA')
+    expect(error.message).toBe(
+      'El turno del 05/10 tiene asistencia registrada: elegí una fecha posterior',
+    )
+    expect(error.details).toEqual({
+      ultimaFechaConAsistencia: '2026-10-05',
+      fechaDesdeMinima: '2026-10-12',
+      conAsistencia: [
+        { fecha: '2026-10-05', horaInicio: '09:00', horaFin: '10:00', estado: 'AUSENTE' },
+      ],
+    })
+    expect(memoria.repository.finalizar).not.toHaveBeenCalled()
+  })
+
+  it('desde la fecha siguiente se finaliza, y la de hoy (con asistencia) no se libera', async () => {
+    conAsistenciaHoy()
+
+    const res = await service.finalizar(pedido({ fechaDesde: '2026-10-12' }), actor)
+
+    expect(res).toMatchObject({ turnoId: 41, desde: '2026-10-12', hasta: '2026-11-30' })
+  })
+
+  it('si la de hoy es la última de la serie → 409 con fechaDesdeMinima null ("no se puede finalizar")', async () => {
+    conAsistenciaHoy('REALIZADO', '2026-10-05')
+
+    const error = await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-05' }), actor))
+
+    expect(error.code).toBe('TURNOS_CON_ASISTENCIA')
+    expect(error.message).toBe(
+      'El turno del 05/10 tiene asistencia registrada y es el último de la serie: no se puede finalizar',
+    )
+    expect(error.details).toMatchObject({ fechaDesdeMinima: null })
+  })
+
+  it('con asistencia hoy y un pagado después → 409 TURNOS_PAGADOS: la última pagada fija la fecha mínima', async () => {
+    conAsistenciaHoy()
+    pagar('2026-10-19')
+
+    const error = await errorDe(service.finalizar(pedido({ fechaDesde: '2026-10-05' }), actor))
+
+    expect(error.code).toBe('TURNOS_PAGADOS')
+    expect(error.details).toMatchObject({
+      ultimaFechaPagada: '2026-10-19',
+      fechaDesdeMinima: '2026-10-26',
+    })
+  })
+
+  it('con el pago anulado (el motor la devuelve PENDIENTE, T-74) se vuelve a poder finalizar', async () => {
+    // Un pago anulado no es vigente: `leerOcurrencias` informa la ocurrencia como PENDIENTE. La
+    // finalización no mira la anulación: decide con lo que dice el motor.
+    const ocurrencia = base[0]?.ocurrencias.find((o) => o.fecha === '2026-10-26')
+    if (ocurrencia) ocurrencia.pago = { estado: 'PENDIENTE' }
+
+    const res = await service.finalizar(pedido(), actor)
+
+    expect(res).toMatchObject({ turnoId: 41, desde: '2026-10-19' })
   })
 })
 

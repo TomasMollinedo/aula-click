@@ -1356,6 +1356,44 @@ El historial es una lectura, sin tablas propias: toma las ocurrencias pasadas de
 
 ---
 
+## T-115 · [Back] FIX · Refactor · Horario `HH:mm` de una ocurrencia centralizado en `shared/zod.ts`
+
+- **HU:** ninguna (refactor técnico, sin cambio de comportamiento)
+- **Área:** Backend
+- **Rama:** `fix/horario-hhmm-shared`
+- **Depende de:** nada. Conviene tomarla cuando no haya PR abiertos sobre los archivos de la lista (ver "Coordinación").
+- **Estimación:** 2
+
+**Descripción**
+Pasar la hora de inicio y de fin de minutos desde medianoche a `HH:mm` (`horaInicio: minutosAHora(x.horaInicio), horaFin: minutosAHora(x.horaFin)`) se repite **26 veces en 13 archivos de 9 features**. No tiene significado de negocio (es formato, como `minutosAHora`), así que va en `shared/` y se escribe una sola vez (`convenciones-backend.md` → `src/server/shared/`: se extrae a la tercera repetición). Lo detectó la revisión de cierre de T-83, que sólo lo ordenó dentro de `finalizaciones.reglas.ts` (helper local `fechaYHorario`) porque el resto no era de esa tarea.
+
+**Alcance**
+
+1. `src/server/shared/zod.ts`: `horarioHHmm({ horaInicio, horaFin })` → `{ horaInicio: 'HH:mm', horaFin: 'HH:mm' }`, al lado de `minutosAHora` y con su test en `shared/__tests__/zod.test.ts` (horas límite 00:00 y 23:59, y que lance `RangeError` como `minutosAHora` ante un valor inválido).
+2. Reemplazar el armado a mano por `...horarioHHmm(x)` en (cantidad de repeticiones entre paréntesis):
+   - `bloques/bloques.repository.ts` (6) y `bloques/bloques.service.ts` (2)
+   - `turnos/turnos.reglas.ts` (3), `turnos/turnos.condiciones.ts` (2), `turnos/turnos.service.ts` (1) y `turnos/turnos.repository.ts` (1)
+   - `asistencias/asistencias.service.ts` (3)
+   - `ocurrencias/ocurrencias.service.ts` (2)
+   - `agendas/agendas.service.ts` (2)
+   - `reprogramaciones/reprogramaciones.reglas.ts` (1)
+   - `pagos/pagos.repository.ts` (1)
+   - `cuentas/cuentas.service.ts` (1)
+   - `finalizaciones/finalizaciones.reglas.ts` (1): `fechaYHorario` pasa a ser `{ fecha, ...horarioHHmm(o) }`.
+3. Sin cambios en las respuestas de la API: los tests existentes de cada feature (que comparan los DTO completos) tienen que pasar sin tocarlos. Si alguno hay que cambiarlo, es que cambió el comportamiento y no corresponde a esta tarea.
+4. Documentación: `convenciones-backend.md` → Especificación de `src/server/shared/`, fila de `zod.ts` (suma `horarioHHmm`).
+
+**Coordinación**
+
+Toca archivos de otras tareas (el motor de T-74, `asistencias` de T-81, `pagos` de T-96, `cuentas` de T-76/T-101, `agendas` de T-86, `ocurrencias` de T-84): avisar en el issue de cada una antes de empezar y, si alguna tiene un PR abierto sobre esos archivos, esperar a que se mergee para no generar conflictos. El cambio es mecánico, así que conviene hacerlo en un PR chico y revisarlo en el día.
+
+**Criterios de aceptación**
+
+- `horaInicio: minutosAHora(` no aparece en ningún archivo de `src/server/features/` fuera de los tests.
+- `pnpm check` pasa sin modificar ningún test existente de las features.
+
+---
+
 ## Puntos a confirmar con las PO (no bloquean el inicio)
 
 Cada punto tiene una propuesta con la que las tareas pueden avanzar; si la respuesta es otra, se corrige la tarea abierta o se agrega un FIX, como en el Sprint 2. Conviene cerrarlos en la planning o, a más tardar, el día 2.
