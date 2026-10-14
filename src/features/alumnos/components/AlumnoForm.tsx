@@ -31,6 +31,7 @@ import {
 import { NIVEL_ESCOLARIDAD_LABEL, type AlumnoCrear, type AlumnoEditar } from '../alumnos.types'
 import { esMenorDeEdad, hoyLocal } from '../edad'
 import { aplicarErroresApi, interpretarErroresApi } from '../errores-api'
+import { AccesoPortalAlta } from './AccesoPortalAlta'
 import { AvisoMenorDeEdad } from './AvisoMenorDeEdad'
 
 const CAMPOS_TUTOR = [
@@ -89,6 +90,8 @@ export function AlumnoForm({
     control,
     name: ['fechaNacimiento', ...CAMPOS_TUTOR],
   })
+  // El acceso al portal del alta (HU-27) se sugiere con lo que se va escribiendo.
+  const [nombre, apellido, dni] = useWatch({ control, name: ['nombre', 'apellido', 'dni'] })
   // Solo ayuda visual (aviso y asteriscos): no bloquea el envío; la regla la valida la API (T-28).
   const esMenor = esMenorDeEdad(fechaNacimiento ?? '', hoyLocal()) === true
   // Un mayor con datos de tutor los conserva (docs/dominio.md): se muestran como opcionales.
@@ -316,6 +319,10 @@ export function AlumnoForm({
             {...register('observaciones')}
           />
         </Field>
+
+        {modo === 'crear' && (
+          <AccesoPortalAlta nombre={nombre ?? ''} apellido={apellido ?? ''} dni={dni ?? ''} />
+        )}
       </PanelBody>
 
       <PanelFooter>

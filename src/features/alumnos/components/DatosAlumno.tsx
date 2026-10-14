@@ -17,6 +17,7 @@ import { Dato, Datos } from '@/components/ui/datos'
 import { Trazabilidad } from '@/components/ui/trazabilidad'
 
 import { type AlumnoDetalle, NIVEL_ESCOLARIDAD_LABEL } from '../alumnos.types'
+import { AccesoPortalFicha } from './AccesoPortalFicha'
 
 /** La pestaña "Datos" de la ficha del alumno: datos personales, contacto, tutor, escolares y trazabilidad. */
 export function DatosAlumno({ alumno }: { alumno: AlumnoDetalle }) {
@@ -98,6 +99,8 @@ export function DatosAlumno({ alumno }: { alumno: AlumnoDetalle }) {
           </p>
         </Seccion>
       </div>
+
+      <AccesoPortalFicha alumno={alumno} />
 
       <Trazabilidad auditoria={alumno} />
     </div>

@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import {
   AlertCircle,
   ArrowLeft,
+  BookMarked,
   CalendarClock,
   ClipboardList,
   Pencil,
@@ -40,20 +41,22 @@ type AlumnoDetalleProps = {
    */
   puedeEditar?: boolean
   /**
-   * Contenido de las pestañas "Turnos", "Exámenes" y "Pagos". Las compone `app/` con componentes
-   * de otras features (`ocurrencias`, `examenes`, `cuentas`), porque una feature no importa
+   * Contenido de las pestañas "Turnos", "Historial académico", "Exámenes" y "Pagos". Las compone
+   * `app/` con componentes de otras features (`ocurrencias`, `historiales`, `examenes`, `cuentas`,
+   * `pagos`), porque una feature no importa
    * componentes de otra (docs/arquitectura-frontend.md → Quién importa a quién). Una pestaña
    * aparece solo si su prop está: cada rol arma la ficha que le corresponde. "Datos" siempre está.
    */
   renderTurnos?: (alumno: AlumnoDetalleType) => ReactNode
+  renderHistorial?: (alumno: AlumnoDetalleType) => ReactNode
   renderExamenes?: (alumno: AlumnoDetalleType) => ReactNode
   renderPagos?: (alumno: AlumnoDetalleType) => ReactNode
 }
 
-const TABS = ['datos', 'turnos', 'examenes', 'pagos'] as const
+const TABS = ['datos', 'turnos', 'historial', 'examenes', 'pagos'] as const
 type Tab = (typeof TABS)[number]
 
-// Página de detalle del alumno, con tabs en la URL (`?tab=datos|turnos|examenes|pagos`, como la del
+// Página de detalle del alumno, con tabs en la URL (`?tab=datos|turnos|historial|examenes|pagos`, como la del
 // profesor). "Editar" abre la edición como modal encima de esta página (slot @modal);
 // docs/arquitectura-frontend.md → Modales con URL propia.
 export function AlumnoDetalle({
@@ -61,6 +64,7 @@ export function AlumnoDetalle({
   rutaBase,
   puedeEditar = true,
   renderTurnos,
+  renderHistorial,
   renderExamenes,
   renderPagos,
 }: AlumnoDetalleProps) {
@@ -74,6 +78,7 @@ export function AlumnoDetalle({
   const disponibles: Record<Tab, boolean> = {
     datos: true,
     turnos: renderTurnos !== undefined,
+    historial: renderHistorial !== undefined,
     examenes: renderExamenes !== undefined,
     pagos: renderPagos !== undefined,
   }
@@ -180,7 +185,7 @@ export function AlumnoDetalle({
       ) : (
         // `relative`: el selector Calendario / Lista de "Turnos" se ubica al borde derecho de las pestañas.
         <Tabs value={tab} onValueChange={cambiarTab} className="relative space-y-6">
-          {/* Con cuatro tabs, en mobile la barra se desplaza sola en lugar de desbordar la página. */}
+          {/* Con cinco tabs, en mobile la barra se desplaza sola en lugar de desbordar la página. */}
           <div className="max-w-full overflow-x-auto">
             <TabsList>
               <TabsTrigger value="datos" className="px-4">
@@ -191,6 +196,12 @@ export function AlumnoDetalle({
                 <TabsTrigger value="turnos" className="px-4">
                   <CalendarClock />
                   Turnos
+                </TabsTrigger>
+              )}
+              {renderHistorial && (
+                <TabsTrigger value="historial" className="px-4">
+                  <BookMarked />
+                  Historial académico
                 </TabsTrigger>
               )}
               {renderExamenes && (
@@ -212,6 +223,9 @@ export function AlumnoDetalle({
             <DatosAlumno alumno={alumno} />
           </TabsContent>
           {renderTurnos && <TabsContent value="turnos">{renderTurnos(alumno)}</TabsContent>}
+          {renderHistorial && (
+            <TabsContent value="historial">{renderHistorial(alumno)}</TabsContent>
+          )}
           {renderExamenes && <TabsContent value="examenes">{renderExamenes(alumno)}</TabsContent>}
           {renderPagos && <TabsContent value="pagos">{renderPagos(alumno)}</TabsContent>}
         </Tabs>
