@@ -6,11 +6,13 @@ import {
   type TurnoDePrueba,
 } from '@/server/features/turnos/__tests__/turnos-en-memoria'
 import {
+  deudaVencida,
   leerAdeudados,
   leerProximos,
   totalAdeudado,
   type ClienteOcurrencias,
 } from '../cuentas.condiciones'
+import { totalDe } from '../cuentas.reglas'
 
 // Condiciones de la deuda (T-53). Excepcional, a nivel de consulta (como el motor de T-30): el
 // cliente es un falso que aplica el `where` sobre la tabla en memoria de `turnos-en-memoria.ts`,
@@ -18,6 +20,7 @@ import {
 // `aggregate` y los precios son falsos del mismo estilo.
 //
 // Hoy: lunes 05/10/2026. Ayer: domingo 04/10. Hoy + 56 = lunes 30/11; hoy + 57 = martes 01/12.
+// Hoy - 30 = sábado 05/09 (deuda vencida); hoy - 29 = domingo 06/09.
 
 const HOY = '2026-10-05'
 
@@ -25,6 +28,7 @@ const BLOQUES: BloqueDePrueba[] = [
   { id: 10, profesorId: 4, aulaId: 1, diaSemana: 1, horaInicio: 540 }, // lunes 9–10
   { id: 30, profesorId: 4, aulaId: 1, diaSemana: 7, horaInicio: 540 }, // domingo 9–10
   { id: 40, profesorId: 7, aulaId: 2, diaSemana: 2, horaInicio: 600 }, // martes 10–11
+  { id: 60, profesorId: 4, aulaId: 1, diaSemana: 6, horaInicio: 540 }, // sábado 9–10
 ]
 
 type WhereAggregate = {
@@ -473,5 +477,176 @@ describe('leerProximos', () => {
     expect(where.materiaId).toEqual({ in: [5] })
     expect(where.bloqueAgenda?.profesorId).toBe(7)
     expect(claves(proximos)).toEqual([[2, '2026-10-06']])
+  })
+})
+
+// T-76: la deuda con asistencia (HU-22) y los pagos anulados (lo resuelve el motor, T-74).
+describe('deuda con asistencia y pagos anulados', () => {
+  it.each([
+    ['PRESENTE', 'REALIZADO'],
+    ['AUSENTE', 'AUSENTE'],
+  ] as const)('un %s pasado e impago adeuda y suma al total (%s)', async (asistencia, estado) => {
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-28',
+        fechaFin: '2026-09-28',
+        asistencias: [{ fecha: '2026-09-28', estado: asistencia }],
+      },
+    ]
+
+    const adeudados = await leerAdeudados(cliente(), { hoy: HOY })
+
+    expect(claves(adeudados)).toEqual([[1, '2026-09-28']])
+    expect(adeudados[0]?.ocurrencia.estado).toBe(estado)
+    expect(await totalAdeudado(cliente(), { hoy: HOY })).toBe(8000)
+  })
+
+  it('un "Sin registrar" cerrado por el sistema (sin asistencia y con el plazo vencido) adeuda', async () => {
+    turnos = [{ id: 1, bloqueAgendaId: 10, fechaInicio: '2026-09-21', fechaFin: '2026-09-21' }]
+
+    const adeudados = await leerAdeudados(cliente(), { hoy: HOY })
+
+    expect(claves(adeudados)).toEqual([[1, '2026-09-21']])
+    expect(adeudados[0]?.ocurrencia.estado).toBe('SIN_REGISTRAR')
+    expect(adeudados[0]?.ocurrencia.plazoAsistencia?.vencido).toBe(true)
+  })
+
+  it('un pago anulado no cuenta: vuelve a los adeudados; con otro pago vigente de la misma fecha, no', async () => {
+    const anulado = { fecha: '2026-09-28', pagoId: 9, importe: 8000, vigente: false }
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-28',
+        fechaFin: '2026-09-28',
+        pagos: [anulado],
+      },
+    ]
+
+    expect(claves(await leerAdeudados(cliente(), { hoy: HOY }))).toEqual([[1, '2026-09-28']])
+
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-09-28',
+        fechaFin: '2026-09-28',
+        pagos: [anulado, { fecha: '2026-09-28', pagoId: 10, importe: 8000 }],
+      },
+    ]
+
+    expect(await leerAdeudados(cliente(), { hoy: HOY })).toEqual([])
+  })
+
+  it('un turno de hoy con asistencia es próximo, no adeudado', async () => {
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: HOY,
+        fechaFin: HOY,
+        asistencias: [{ fecha: HOY, estado: 'PRESENTE' }],
+      },
+    ]
+
+    const proximos = await leerProximos(cliente(), { hoy: HOY })
+
+    expect(claves(proximos)).toEqual([[1, HOY]])
+    expect(proximos[0]?.ocurrencia.estado).toBe('REALIZADO')
+    expect(await leerAdeudados(cliente(), { hoy: HOY })).toEqual([])
+  })
+})
+
+describe('deudaVencida', () => {
+  it('cuenta la de hace 30 días y no la de hace 29', async () => {
+    turnos = [
+      { id: 1, bloqueAgendaId: 60, fechaInicio: '2026-09-05', fechaFin: '2026-09-05' }, // hoy - 30
+      { id: 2, bloqueAgendaId: 30, fechaInicio: '2026-09-06', fechaFin: '2026-09-06' }, // hoy - 29
+    ]
+
+    expect(await deudaVencida(cliente(), { alumnoId: 12, hoy: HOY })).toEqual({
+      cantidad: 1,
+      total: 8000,
+    })
+  })
+
+  it('coincide con los adeudados de 30 días o más (cantidad y total)', async () => {
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        fechaInicio: '2026-07-06',
+        fechaFin: null,
+        cancelaciones: [{ fecha: '2026-07-13' }],
+        pagos: [
+          { fecha: '2026-07-20', pagoId: 9, importe: 8000 },
+          { fecha: '2026-07-27', pagoId: 8, importe: 8000, vigente: false },
+        ],
+        asistencias: [{ fecha: '2026-08-03', estado: 'PRESENTE' }],
+      },
+      {
+        id: 2,
+        bloqueAgendaId: 40,
+        materiaId: 5,
+        fechaInicio: '2026-08-04',
+        fechaFin: null,
+        asistencias: [{ fecha: '2026-08-11', estado: 'AUSENTE' }],
+      },
+    ]
+
+    const vencida = await deudaVencida(cliente(), { alumnoId: 12, hoy: HOY })
+    const adeudados = (await leerAdeudados(cliente(), { alumnoId: 12, hoy: HOY })).filter(
+      ({ ocurrencia }) => ocurrencia.fecha <= '2026-09-05',
+    )
+
+    // Lunes 06/07, 27/07 (pago anulado) y 03/08 a 31/08 (5); martes 04/08 a 01/09 (5).
+    expect(adeudados).toHaveLength(12)
+    expect(vencida).toEqual({ cantidad: adeudados.length, total: totalDe(adeudados) })
+    expect(vencida.total).toBe(7 * 8000 + 5 * 9000)
+  })
+
+  it('una materia sin precio suma a la cantidad pero no al total', async () => {
+    precios.set(5, null)
+    turnos = [
+      {
+        id: 1,
+        bloqueAgendaId: 10,
+        materiaId: 3,
+        fechaInicio: '2026-08-31',
+        fechaFin: '2026-08-31',
+      },
+      {
+        id: 2,
+        bloqueAgendaId: 40,
+        materiaId: 5,
+        fechaInicio: '2026-09-01',
+        fechaFin: '2026-09-01',
+      },
+    ]
+
+    expect(await deudaVencida(cliente(), { alumnoId: 12, hoy: HOY })).toEqual({
+      cantidad: 2,
+      total: 8000,
+    })
+  })
+
+  it('la deuda de otro alumno no cuenta', async () => {
+    turnos = [
+      { id: 1, bloqueAgendaId: 10, alumnoId: 15, fechaInicio: '2026-08-03', fechaFin: null },
+    ]
+
+    expect(await deudaVencida(cliente(), { alumnoId: 12, hoy: HOY })).toEqual({
+      cantidad: 0,
+      total: 0,
+    })
+  })
+
+  it('sin turnos → { cantidad: 0, total: 0 }', async () => {
+    expect(await deudaVencida(cliente(), { alumnoId: 12, hoy: HOY })).toEqual({
+      cantidad: 0,
+      total: 0,
+    })
   })
 })

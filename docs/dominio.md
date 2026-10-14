@@ -203,9 +203,9 @@ HU-15 (T-51; modelo de datos: T-29).
 
 HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla vale para la cuenta del alumno, la vista global "Pagos" y el tablero del gerente.
 
-- **Adeudado:** una ocurrencia con fecha **anterior a hoy**, estado "Sin registrar" (no cancelada) y pago pendiente. La ocurrencia de hoy no se adeuda todavía: es un próximo turno. Las canceladas no se adeudan.
-- **Pagada:** hay un pago registrado para esa ocurrencia. No hay anulación de pagos en este sprint (definición D): una ocurrencia pagada no vuelve a la deuda.
-- **Próximos turnos:** ocurrencias agendadas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos): 8 semanas). **Nunca son deuda:** no suman al total, pero se pueden cobrar por adelantado.
+- **Adeudado:** una ocurrencia con fecha **anterior a hoy**, no cancelada y con pago pendiente. Entran los "Sin registrar" (también los cerrados por el sistema), los "Realizado" y los "Ausente": haya ido o no el alumno, su lugar estuvo reservado (HU-22). La ocurrencia de hoy no se adeuda todavía: es un próximo turno. Las canceladas no se adeudan.
+- **Pagada:** tiene un pago **vigente**. Si el pago se anula (HU-42), sus turnos vuelven solos a adeudados o a próximos, según su fecha.
+- **Próximos turnos:** ocurrencias no canceladas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos): 8 semanas). Un turno de **hoy** con asistencia ("Realizado" o "Ausente") sigue en próximos hasta mañana: la fecha separa las dos secciones (propuesta pendiente de confirmación de las PO, punto 6 de "Puntos a confirmar" del Sprint 3). **Nunca son deuda:** no suman al total, pero se pueden cobrar por adelantado.
 - **Importe:** el precio por hora **vigente** de la materia. Si el gerente cambia el precio, los turnos impagos muestran el precio nuevo; lo ya pagado conserva el importe que se cobró. Una materia sin precio muestra el turno sin importe y no suma al total.
 - **Dos secciones, en las dos vistas:** "Turnos adeudados" y "Próximos turnos" se muestran por separado, tanto en la cuenta de un alumno como en la vista global (de todos los alumnos, o de uno). Hoy las separa: una ocurrencia nunca está en las dos.
 - **Filtros:** período (desde y hasta, cada uno opcional y sin tope de días), materia y profesor en las dos vistas; en la global, además, el alumno.
@@ -304,7 +304,9 @@ HU-34 y HU-35 (T-106).
 
 ## Tope de deuda
 
-A completar por T-93 (HU-29, amplía HU-08): la regla de los 30 días la deja escrita T-76.
+- **Deuda vencida:** los turnos adeudados ([Deuda](#deuda)) con fecha de hace **30 días o más** (`DIAS_DEUDA_VENCIDA`): con hoy 05/10, el turno del 05/09 está vencido y el del 06/09 todavía no. Se calcula al consultar, con la misma regla que la deuda: es la parte de los adeudados del alumno que cumple esa fecha, con su cantidad de turnos (también los de materia sin precio) y su total (los sin precio no suman).
+
+A completar por T-93 (HU-29, amplía HU-08): el bloqueo al sacar un turno nuevo.
 
 ## Auditoría
 

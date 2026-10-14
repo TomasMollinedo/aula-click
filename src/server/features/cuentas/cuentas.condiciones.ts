@@ -3,17 +3,29 @@ import {
   type ClienteOcurrencias,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
-import { dateAFecha, fechaADate, type Reloj } from '@/server/shared/fechas'
-import { esAdeudado, esProximo, importeVigente, rangosDelPeriodo, totalDe } from './cuentas.reglas'
+import { dateAFecha, fechaADate, sumarDias, type Reloj } from '@/server/shared/fechas'
+import {
+  DIAS_DEUDA_VENCIDA,
+  esAdeudado,
+  esDeudaVencida,
+  esProximo,
+  importeVigente,
+  rangosDelPeriodo,
+  totalDe,
+} from './cuentas.reglas'
 
-// Deuda del alumno (HU-16, T-53): la **única** implementación de qué se adeuda y cuánto. La usan
-// el repository de `cuentas` (ficha del alumno y vista global) y el tablero del gerente (T-61),
-// con `prisma` o con su `tx`. No crea el cliente de Prisma (lo recibe): de Prisma solo importa
+// Deuda del alumno (HU-16, T-53; con asistencia y deuda vencida, T-76): la **única**
+// implementación de qué se adeuda y cuánto. La usan el repository de `cuentas` (ficha del alumno y
+// vista global), el tablero del gerente (T-61) y el tope de deuda al sacar un turno (T-93), con
+// `prisma` o con su `tx`. No crea el cliente de Prisma (lo recibe): de Prisma solo importa
 // tipos. Las ocurrencias salen del motor de `turnos` (`leerOcurrencias`), nunca de una expansión
 // propia; qué adeuda y qué es próximo lo deciden las reglas puras de `cuentas.reglas.ts`.
 
 // Tipos que necesitan quienes consumen estas condiciones sin importar otras features.
 export type { ClienteOcurrencias, Ocurrencia }
+// El importe vigente de una materia y desde cuántos días un adeudado es deuda vencida (HU-29): una
+// sola definición, la de `cuentas.reglas.ts`.
+export { DIAS_DEUDA_VENCIDA, importeVigente }
 
 /**
  * Una ocurrencia de la cuenta con el importe **vigente** de su materia (`null` si no tiene
@@ -98,8 +110,9 @@ async function primerInicio(
 }
 
 /**
- * Ocurrencias adeudadas (`esAdeudado`: anteriores a hoy, `SIN_REGISTRAR` y pago `PENDIENTE`), con
- * el importe vigente de su materia, del filtro (todo opcional salvo `hoy`: sin `alumnoId`, de
+ * Ocurrencias adeudadas (`esAdeudado`: anteriores a hoy, no canceladas y sin un pago vigente; con
+ * o sin asistencia, también las cerradas por el sistema), con el importe vigente de su materia, del
+ * filtro (todo opcional salvo `hoy`: sin `alumnoId`, de
  * todos los alumnos). Ordenadas del más antiguo al más reciente (fecha, hora de inicio y
  * `turnoId`).
  *
@@ -132,9 +145,9 @@ export async function leerAdeudados(
 
 /**
  * Total adeudado del filtro (alumno, período, materia y profesor): la suma en centavos de los
- * importes de `leerAdeudados` (los `null` no suman). No tiene otra implementación: el tablero
- * (T-61) y la vista global dan el mismo número con el mismo filtro. Los próximos nunca suman: con
- * un período sólo futuro es 0.
+ * importes de `leerAdeudados` (los `null` no suman), con los `REALIZADO` y `AUSENTE` impagos y sin
+ * contar los pagos anulados. No tiene otra implementación: el tablero (T-61) y la vista global dan
+ * el mismo número con el mismo filtro. Los próximos nunca suman: con un período sólo futuro es 0.
  */
 export async function totalAdeudado(
   client: ClienteOcurrencias,
@@ -144,8 +157,8 @@ export async function totalAdeudado(
 }
 
 /**
- * Próximos del filtro (`esProximo`: de hoy a `limiteDeCobro(hoy)`, `AGENDADO` y pago `PENDIENTE`,
- * de series y sesiones únicas; sin `alumnoId`, de todos los alumnos), con el importe vigente,
+ * Próximos del filtro (`esProximo`: de hoy a `limiteDeCobro(hoy)`, no cancelados y sin un pago
+ * vigente, también los de hoy con asistencia; de series y sesiones únicas; sin `alumnoId`, de todos los alumnos), con el importe vigente,
  * ordenados por fecha, hora de inicio y `turnoId`. Es lo mismo que `POST /pagos` puede cobrar
  * hacia adelante (mismo tope de 8 semanas, decisión T-60). No suman a la deuda.
  *
@@ -170,4 +183,28 @@ export async function leerProximos(
     client,
     ocurrencias.filter((o) => esProximo(o, hoy)),
   )
+}
+
+/** Deuda vencida de un alumno: cuántos turnos y su total en centavos. */
+export type DeudaVencida = { cantidad: number; total: number }
+
+/**
+ * Deuda vencida del alumno (HU-29, `esDeudaVencida`): sus adeudados de hace `DIAS_DEUDA_VENCIDA`
+ * días o más. Es `leerAdeudados` con `hasta = hoy - 30`, sin otra implementación de la deuda ni
+ * otras consultas (`aggregate`, motor y precios). `cantidad` cuenta todas las ocurrencias, también
+ * las de materia sin precio; `total` es `totalDe` (los `null` no suman). Sin deuda vencida,
+ * `{ cantidad: 0, total: 0 }`. Recibe `prisma` o el `tx` de quien llama: el tope al sacar un turno
+ * (T-93) la lee dentro de su transacción, con el lock del alumno.
+ */
+export async function deudaVencida(
+  client: ClienteOcurrencias,
+  { alumnoId, hoy }: { alumnoId: number; hoy: string },
+): Promise<DeudaVencida> {
+  const adeudados = await leerAdeudados(client, {
+    alumnoId,
+    hasta: sumarDias(hoy, -DIAS_DEUDA_VENCIDA),
+    hoy,
+  })
+  const vencidos = adeudados.filter(({ ocurrencia }) => esDeudaVencida(ocurrencia, hoy))
+  return { cantidad: vencidos.length, total: totalDe(vencidos) }
 }
