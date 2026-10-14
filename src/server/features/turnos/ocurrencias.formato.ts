@@ -1,5 +1,5 @@
 import { fechaCorta } from '@/server/shared/formato'
-import type { EstadoOcurrencia } from './turnos.reglas'
+import type { EstadoOcurrencia, PlazoAsistencia } from './turnos.reglas'
 import type { TipoTurno } from './turnos.validation'
 
 // Cómo se escribe una ocurrencia en un documento (los PDF del turno, de los turnos de un alumno y
@@ -11,11 +11,26 @@ const ETIQUETA_ESTADO: Record<EstadoOcurrencia, string> = {
   AGENDADO: 'Agendado',
   CANCELADO: 'Cancelado',
   SIN_REGISTRAR: 'Sin registrar',
+  REALIZADO: 'Realizado',
+  AUSENTE: 'Ausente',
 }
 
 /** `'SIN_REGISTRAR'` → `'Sin registrar'`. */
 export function etiquetaEstado(estado: EstadoOcurrencia): string {
   return ETIQUETA_ESTADO[estado]
+}
+
+/**
+ * La etiqueta de un "Sin registrar" con su plazo: `'Sin registrar · vence el 12/10'` o, vencido,
+ * `'Sin registrar · cerrado por el sistema'`. Cualquier otro estado (o sin plazo), `etiquetaEstado`.
+ */
+export function etiquetaEstadoConPlazo(
+  estado: EstadoOcurrencia,
+  plazo: PlazoAsistencia | null,
+): string {
+  if (estado !== 'SIN_REGISTRAR' || !plazo) return etiquetaEstado(estado)
+  const detalle = plazo.vencido ? 'cerrado por el sistema' : `vence el ${fechaCorta(plazo.vence)}`
+  return `${etiquetaEstado(estado)} · ${detalle}`
 }
 
 /**

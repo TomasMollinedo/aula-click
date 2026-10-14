@@ -1,6 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { PRIORIDADES } from '@/server/features/examenes/examenes.condiciones'
-import { TIPOS_TURNO } from '@/server/features/turnos/ocurrencias.condiciones'
+import { ESTADOS_OCURRENCIA, TIPOS_TURNO } from '@/server/features/turnos/ocurrencias.condiciones'
 import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
@@ -9,11 +9,10 @@ import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 // pasó a ocurrencias con estado, pago y prioridad, y sumó la agenda del centro). Son la fuente del
 // OpenAPI. Sin reglas de negocio: el rango máximo y las fechas por defecto los decide el service.
 
-// Valores de enums que ningún `*.condiciones.ts` publica como array (a diferencia de `TIPOS_TURNO`
-// y `PRIORIDADES`): se declaran acá para no importar `@/generated/*` ni `turnos.reglas.ts` fuera de
-// un repository (lo prohíbe ESLint). `ESTADOS_OCURRENCIA` es el de `turnos.reglas.ts` (definición
-// F: sólo estos tres) y `ESTADOS_PAGO` el de `Ocurrencia.pago.estado`.
-const ESTADOS_OCURRENCIA = ['AGENDADO', 'CANCELADO', 'SIN_REGISTRAR'] as const
+// Valores de enums que ningún `*.condiciones.ts` publica como array (a diferencia de `TIPOS_TURNO`,
+// `ESTADOS_OCURRENCIA` y `PRIORIDADES`): se declaran acá para no importar `@/generated/*` ni
+// `turnos.reglas.ts` fuera de un repository (lo prohíbe ESLint). `ESTADOS_PAGO` es el de
+// `Ocurrencia.pago.estado`.
 const ESTADOS_PAGO = ['PENDIENTE', 'PAGADO'] as const
 const TIPOS_EXAMEN = ['PARCIAL', 'FINAL', 'RECUPERATORIO', 'TRABAJO_PRACTICO', 'OTRO'] as const
 

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import {
+  agruparHorasSeguidas,
   analizarHora,
   estadoDeOcurrencia,
   fechasDeLaSerie,
@@ -8,8 +9,13 @@ import {
   horizonte,
   ocupacionMaxima,
   ocupaLugarEn,
+  OBSERVACION_CIERRE_SISTEMA,
+  PLAZO_ASISTENCIA_DIAS,
   planificarReserva,
+  plazoDeAsistencia,
   primeraFechaLibre,
+  type EstadoAsistencia,
+  type EstadoOcurrencia,
   type PedidoReserva,
 } from '../turnos.reglas'
 import type { SerieFechas, SnapshotReserva, TurnoFechas } from '../turnos.validation'
@@ -503,16 +509,201 @@ describe('ocupaLugarEn con fin efectivo y canceladas', () => {
 })
 
 describe('estadoDeOcurrencia', () => {
-  const hoy = '2026-09-29'
+  const hoy = '2026-10-05'
+  const fechas = { pasada: '2026-09-28', hoy, futura: '2026-10-12' } as const
 
-  it('cancelada → CANCELADO, aunque sea pasada', () => {
-    expect(estadoDeOcurrencia('2026-09-28', true, hoy)).toBe('CANCELADO')
+  // Precedencia: cancelada gana; después la asistencia (sin mirar la fecha); sin asistencia, la
+  // fecha decide entre SIN_REGISTRAR (pasada) y AGENDADO (hoy o futura).
+  it.each<[boolean, EstadoAsistencia | null, keyof typeof fechas, EstadoOcurrencia]>([
+    [true, null, 'pasada', 'CANCELADO'],
+    [true, null, 'hoy', 'CANCELADO'],
+    [true, null, 'futura', 'CANCELADO'],
+    [true, 'PRESENTE', 'pasada', 'CANCELADO'],
+    [true, 'PRESENTE', 'hoy', 'CANCELADO'],
+    [true, 'PRESENTE', 'futura', 'CANCELADO'],
+    [true, 'AUSENTE', 'pasada', 'CANCELADO'],
+    [true, 'AUSENTE', 'hoy', 'CANCELADO'],
+    [true, 'AUSENTE', 'futura', 'CANCELADO'],
+    [false, null, 'pasada', 'SIN_REGISTRAR'],
+    [false, null, 'hoy', 'AGENDADO'],
+    [false, null, 'futura', 'AGENDADO'],
+    [false, 'PRESENTE', 'pasada', 'REALIZADO'],
+    [false, 'PRESENTE', 'hoy', 'REALIZADO'],
+    [false, 'PRESENTE', 'futura', 'REALIZADO'],
+    [false, 'AUSENTE', 'pasada', 'AUSENTE'],
+    [false, 'AUSENTE', 'hoy', 'AUSENTE'],
+    [false, 'AUSENTE', 'futura', 'AUSENTE'],
+  ])('cancelada %s, asistencia %s, fecha %s → %s', (cancelada, asistencia, cual, esperado) => {
+    expect(
+      estadoDeOcurrencia(
+        { fecha: fechas[cual], cancelada, asistencia: asistencia ? { estado: asistencia } : null },
+        hoy,
+      ),
+    ).toBe(esperado)
+  })
+})
+
+describe('plazoDeAsistencia', () => {
+  it('vence 7 días de calendario después de la fecha', () => {
+    expect(PLAZO_ASISTENCIA_DIAS).toBe(7)
+    expect(plazoDeAsistencia('2026-09-28', '2026-09-28')).toEqual({
+      vence: '2026-10-05',
+      vencido: false,
+    })
   })
 
-  it('anterior a hoy → SIN_REGISTRAR; hoy o posterior → AGENDADO', () => {
-    expect(estadoDeOcurrencia('2026-09-28', false, hoy)).toBe('SIN_REGISTRAR')
-    expect(estadoDeOcurrencia(hoy, false, hoy)).toBe('AGENDADO')
-    expect(estadoDeOcurrencia('2026-10-05', false, hoy)).toBe('AGENDADO')
+  it('el día 7 entero está dentro del plazo; el día 8 está vencido', () => {
+    expect(plazoDeAsistencia('2026-09-28', '2026-10-05')).toEqual({
+      vence: '2026-10-05',
+      vencido: false,
+    })
+    expect(plazoDeAsistencia('2026-09-28', '2026-10-06')).toEqual({
+      vence: '2026-10-05',
+      vencido: true,
+    })
+  })
+
+  it('cruza de mes y de año', () => {
+    expect(plazoDeAsistencia('2026-10-27', '2026-11-03').vence).toBe('2026-11-03')
+    expect(plazoDeAsistencia('2026-12-28', '2027-01-05')).toEqual({
+      vence: '2027-01-04',
+      vencido: true,
+    })
+  })
+})
+
+describe('OBSERVACION_CIERRE_SISTEMA', () => {
+  it('es el texto exacto del cierre automático', () => {
+    expect(OBSERVACION_CIERRE_SISTEMA).toBe(
+      'No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema',
+    )
+  })
+})
+
+describe('agruparHorasSeguidas', () => {
+  // Una hora (en minutos) de la alumna 1 con el profesor 1 en la materia 1 el 05/10, salvo lo que
+  // se pise. `id` sólo sirve para reconocerla en la salida.
+  const hora = (
+    id: string,
+    desde: number,
+    cambios: Partial<{
+      alumnoId: number
+      profesorId: number
+      materiaId: number
+      fecha: string
+      estado: EstadoOcurrencia
+    }> = {},
+  ) => ({
+    id,
+    alumnoId: 1,
+    profesorId: 1,
+    materiaId: 1,
+    fecha: '2026-10-05',
+    horaInicio: desde * 60,
+    horaFin: (desde + 1) * 60,
+    estado: 'AGENDADO' as EstadoOcurrencia,
+    ...cambios,
+  })
+  const ids = (grupos: { ocurrencias: { id: string }[] }[]) =>
+    grupos.map((grupo) => grupo.ocurrencias.map((ocurrencia) => ocurrencia.id))
+
+  it('8–9, 9–10 y 10–11 → un grupo de 3 h (480–660)', () => {
+    const ocurrencias = [hora('a', 8), hora('b', 9), hora('c', 10)]
+    expect(agruparHorasSeguidas(ocurrencias)).toEqual([
+      {
+        alumnoId: 1,
+        profesorId: 1,
+        materiaId: 1,
+        fecha: '2026-10-05',
+        horaInicio: 480,
+        horaFin: 660,
+        horas: 3,
+        ocurrencias,
+      },
+    ])
+  })
+
+  it('con un hueco (8–9 y 10–11) → dos grupos de una hora', () => {
+    const grupos = agruparHorasSeguidas([hora('a', 8), hora('b', 10)])
+    expect(ids(grupos)).toEqual([['a'], ['b']])
+    expect(grupos.map((grupo) => [grupo.horaInicio, grupo.horaFin, grupo.horas])).toEqual([
+      [480, 540, 1],
+      [600, 660, 1],
+    ])
+  })
+
+  it('otra materia en el medio corta el grupo', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('b', 9, { materiaId: 2 }),
+      hora('c', 10),
+    ])
+    expect(ids(grupos)).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it('otro profesor en el medio corta el grupo', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('b', 9, { profesorId: 2 }),
+      hora('c', 10),
+    ])
+    expect(ids(grupos)).toEqual([['a'], ['b'], ['c']])
+  })
+
+  it('otro alumno no se mezcla, aunque sus horas sean seguidas', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('x', 8, { alumnoId: 2 }),
+      hora('b', 9),
+      hora('y', 9, { alumnoId: 2 }),
+    ])
+    expect(ids(grupos)).toEqual([
+      ['a', 'b'],
+      ['x', 'y'],
+    ])
+    expect(grupos.map((grupo) => grupo.alumnoId)).toEqual([1, 2])
+  })
+
+  it('una cancelada en el medio corta el grupo y no aparece', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8),
+      hora('b', 9, { estado: 'CANCELADO' }),
+      hora('c', 10),
+    ])
+    expect(ids(grupos)).toEqual([['a'], ['c']])
+  })
+
+  it('cada hora conserva su estado dentro del grupo', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('a', 8, { estado: 'REALIZADO' }),
+      hora('b', 9, { estado: 'AUSENTE' }),
+      hora('c', 10, { estado: 'SIN_REGISTRAR' }),
+    ])
+    expect(grupos).toHaveLength(1)
+    expect(grupos[0].horas).toBe(3)
+    expect(grupos[0].ocurrencias.map((ocurrencia) => ocurrencia.estado)).toEqual([
+      'REALIZADO',
+      'AUSENTE',
+      'SIN_REGISTRAR',
+    ])
+    expect(grupos[0]).not.toHaveProperty('estado')
+  })
+
+  it('una entrada desordenada sale ordenada por fecha, horaInicio, alumno, profesor y materia', () => {
+    const grupos = agruparHorasSeguidas([
+      hora('manana', 8, { fecha: '2026-10-12' }),
+      hora('b10', 10, { alumnoId: 2 }),
+      hora('a9', 9),
+      hora('m2', 10, { materiaId: 2 }),
+      hora('a8', 8),
+      hora('p2', 10, { profesorId: 2 }),
+      hora('a10', 10, { alumnoId: 3 }),
+    ])
+    expect(ids(grupos)).toEqual([['a8', 'a9'], ['m2'], ['p2'], ['b10'], ['a10'], ['manana']])
+  })
+
+  it('una lista vacía devuelve []', () => {
+    expect(agruparHorasSeguidas([])).toEqual([])
   })
 })
 
