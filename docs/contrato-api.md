@@ -183,7 +183,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`, también en las escrituras llamadas
 
 ## Turnos
 
-Todos los endpoints son de `MESA_ENTRADAS`. En `turnos` quedan la disponibilidad, el alta y el detalle; las agendas se movieron a `/api/v1/agendas/*` (T-30, ver Agendas). Reglas en `dominio.md` → Turnos.
+Los endpoints son de `MESA_ENTRADAS`, salvo los de `/turnos/mis-turnos/…`, que son del portal del alumno (`ALUMNO`, HU-29; ver [Sacar un turno desde el portal](#sacar-un-turno-desde-el-portal-hu-29)). En `turnos` quedan la disponibilidad, el alta y el detalle; las agendas se movieron a `/api/v1/agendas/*` (T-30, ver Agendas). Reglas en `dominio.md` → Turnos y Tope de deuda.
 
 - **Estado:** `ACTIVO` / `CANCELADO`. La UI muestra `ACTIVO` como **"Agendado"**: es el texto de la pantalla, no un valor del enum, y el frontend no lo inventa como estado.
 - **Tipos:** `SESION_UNICA` (una fecha, `fechaFin = fechaInicio`) o `RECURRENTE` (de `fechaInicio` a `fechaFin`, o sin fin con `fechaFin: null`). Las dos fechas caen en el día de la semana de la hora.
@@ -247,7 +247,101 @@ Todos los endpoints son de `MESA_ENTRADAS`. En `turnos` quedan la disponibilidad
   - `temas` ("Temas a trabajar", HU-08): opcional y hasta 500 caracteres en `RECURRENTE`; **obligatorio** en `SESION_UNICA` (400 `VALIDACION` en `temas` si falta o queda vacío). Con "Asignar igual", todos los tramos creados de una hora llevan las mismas `observaciones` y `temas` del pedido.
   - `asignarDondeHayLugar` (default `false`): con un 409 `BLOQUE_LLENO` por fechas llenas, la UI ofrece "Asignar igual" (con la aclaración "Se crea solo en las fechas con lugar") o "Cancelar" y reenvía con `true`. En `SESION_UNICA` no cambia nada. Todo se recalcula al reenviar.
   - Respuesta `201`: `{ "cantidad", "turnos", "fechasSinTurno" }`. `cantidad` = filas creadas (puede ser mayor que la cantidad de horas, por los tramos); `turnos` (detalle, ver abajo) ordenados por hora y fecha de inicio; `fechasSinTurno` es `[]` sin conflictos, o `[{ "bloqueId", "horaInicio", "horaFin", "fechas", "completoDesde" }]` con lo que la UI muestra en el mensaje de éxito ("en estas fechas no hay turno").
-  - Errores, agrupados por status (no es el orden en que se validan: por ejemplo, `PROFESOR_INACTIVO` se decide antes que el 404 de materia): 400 (formato, fecha pasada, horas de más de un profesor o día, fechas que no caen en el día, `temas` faltante en una sesión única), 404 (alumno, horas por posición en `bloqueIds`, materia), 409 `PROFESOR_INACTIVO`, `MATERIA_INACTIVA`, `MATERIA_NO_ASIGNADA`, `ALUMNO_SUPERPUESTO` y `BLOQUE_LLENO` (ver Errores).
+  - Errores, agrupados por status (no es el orden en que se validan: por ejemplo, `PROFESOR_INACTIVO` se decide antes que el 404 de materia): 400 (formato, fecha pasada, horas de más de un profesor o día, fechas que no caen en el día, `temas` faltante en una sesión única), 404 (alumno, horas por posición en `bloqueIds`, materia), 409 `DEUDA_VENCIDA`, `PROFESOR_INACTIVO`, `MATERIA_INACTIVA`, `MATERIA_NO_ASIGNADA`, `ALUMNO_SUPERPUESTO` y `BLOQUE_LLENO` (ver Errores).
+  - **Tope de deuda (HU-29, T-93):** si el alumno tiene deuda vencida (turnos adeudados de hace 30 días o más, `dominio.md` → Tope de deuda), 409 `DEUDA_VENCIDA` con "El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos" y `details: { "cantidad", "total" }`. Se calcula al confirmar, con el alumno bloqueado, y se decide antes que la capacidad: un pedido con deuda vencida no recibe `BLOQUE_LLENO`. Vale para la sesión única y el recurrente; no cambia cancelar, reprogramar ni los turnos que el alumno ya tiene.
+
+### Sacar un turno desde el portal (HU-29)
+
+Rol `ALUMNO`. El alumno sale de la sesión (`actor.alumnoId`): ninguno de estos endpoints recibe un `alumnoId`, y uno en el body se descarta. Una cuenta `ALUMNO` sin alumno vinculado, o cualquier otro rol, recibe 403 `SIN_PERMISO`. Las reglas son las del alta de la mesa (la misma función): capacidad por hora y fecha, materia asignada al profesor, fechas en el día del bloque, temas obligatorios en una sesión única, superposición y fechas sin lugar. Lo que cambia para el alumno: las fechas son **desde mañana**, los textos se le dirigen a él y nunca ve cupos, ocupación, observaciones ni la auditoría (ver [Portal del alumno](#portal-del-alumno)).
+
+| Ruta                                                                                | Qué hace                                                                              |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------- |
+| `GET /api/v1/turnos/mis-turnos/habilitacion`                                        | Si puede sacar un turno: `{ "habilitado", "deuda": { "cantidad", "total" } \| null }` |
+| `GET /api/v1/turnos/mis-turnos/materias`                                            | Paso 1: `[{ "id", "nombre" }]`, sin paginar y por nombre                              |
+| `GET /api/v1/turnos/mis-turnos/disponibilidad?materiaId&diaSemana&profesorId&fecha` | Pasos 2 y 3: la disponibilidad de la mesa, sin cupos y con el valor por clase         |
+| `POST /api/v1/turnos/mis-turnos`                                                    | Saca el turno (201): el resumen de "Turno reservado"                                  |
+
+- **`habilitacion`** es el aviso que se muestra al entrar a "Sacar turno", antes del paso 1: `{ "habilitado": false, "deuda": { "cantidad": 3, "total": 24000 } }` si tiene deuda vencida (`dominio.md` → Tope de deuda), o `{ "habilitado": true, "deuda": null }`. El alta lo vuelve a decidir: un pago o una deuda nueva entre el aviso y la confirmación cuentan.
+- **`materias`**: las activas con al menos un profesor activo que la tenga asignada (con asignación activa) y que tenga bloques activos.
+- **`disponibilidad`**: el mismo query y la misma búsqueda que `GET /turnos/disponibilidad` (materia obligatoria; profesor y día opcionales y combinables; sólo profesores activos con la materia; materia inexistente → 404, inactiva → 409 `MATERIA_INACTIVA`). Sin `fecha`, la próxima ocurrencia de cada día **desde mañana**; con `fecha`, tiene que ser posterior a hoy (400 en `fecha`: "Los turnos se sacan desde el día siguiente"). Cada hora dice sólo si se puede elegir; cada resultado trae `valorPorClase`, el precio por hora vigente de la materia (HU-12), o `null` si no tiene:
+
+  ```json
+  [
+    {
+      "profesor": { "id": 4, "nombre": "Ana", "apellido": "Pérez" },
+      "diaSemana": 1,
+      "fecha": "2026-09-28",
+      "aula": { "id": 3, "nombre": "Aula 3" },
+      "horaInicio": "08:00",
+      "horaFin": "10:00",
+      "valorPorClase": 8000,
+      "horas": [
+        { "bloqueId": 10, "horaInicio": "08:00", "horaFin": "09:00", "disponible": false },
+        { "bloqueId": 11, "horaInicio": "09:00", "horaFin": "10:00", "disponible": true }
+      ]
+    }
+  ]
+  ```
+
+- **`POST /turnos/mis-turnos`**: el body de `POST /turnos` **sin `alumnoId` ni `observaciones`** (las observaciones son internas de la mesa; el alumno escribe los `temas`, "¿Qué querés trabajar en la clase?", obligatorios en `SESION_UNICA`):
+
+  ```json
+  {
+    "materiaId": 3,
+    "bloqueIds": [11],
+    "tipo": "RECURRENTE",
+    "fechaInicio": "2026-10-05",
+    "fechaFin": null,
+    "temas": "Funciones cuadráticas",
+    "asignarDondeHayLugar": false
+  }
+  ```
+
+  - `fechaInicio` posterior a hoy: hoy o antes → 400 en `fechaInicio`, "Los turnos se sacan desde el día siguiente". El resto de los 400 y 404, como la mesa.
+  - El turno queda `ACTIVO` ("Agendado") sin aprobación, y su auditoría es del **usuario del alumno**: el detalle del turno muestra que lo registró él.
+  - 409, como la mesa: `DEUDA_VENCIDA` con "Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada" (mismos `details`); `ALUMNO_SUPERPUESTO` con "Ya tenés un turno ese día en ese horario" (mismos `details`: sus turnos en conflicto); `BLOQUE_LLENO` con las fechas llenas, **sin `capacidadEfectiva`**, y reenviado con `asignarDondeHayLugar: true` se crea sólo en las fechas con lugar ("Reservar sólo las fechas con lugar"); `PROFESOR_INACTIVO`, `MATERIA_INACTIVA`, `MATERIA_NO_ASIGNADA`.
+  - Respuesta `201`, el resumen de "Turno reservado" (sin observaciones, auditoría ni cupos):
+
+  ```json
+  {
+    "cantidad": 2,
+    "tipo": "RECURRENTE",
+    "diaSemana": 1,
+    "materia": { "id": 3, "nombre": "Matemática" },
+    "profesor": { "id": 4, "nombre": "Ana", "apellido": "Pérez" },
+    "aula": { "id": 3, "nombre": "Aula 3" },
+    "temas": "Funciones cuadráticas",
+    "turnos": [
+      {
+        "id": 55,
+        "bloqueId": 11,
+        "horaInicio": "09:00",
+        "horaFin": "10:00",
+        "fechaInicio": "2026-10-05",
+        "fechaFin": "2026-10-19"
+      },
+      {
+        "id": 56,
+        "bloqueId": 11,
+        "horaInicio": "09:00",
+        "horaFin": "10:00",
+        "fechaInicio": "2026-11-02",
+        "fechaFin": null
+      }
+    ],
+    "fechasSinTurno": [
+      {
+        "bloqueId": 11,
+        "horaInicio": "09:00",
+        "horaFin": "10:00",
+        "fechas": ["2026-10-26"],
+        "completoDesde": null
+      }
+    ]
+  }
+  ```
+
+  `turnos` es uno por hora y por tramo; `fechasSinTurno`, como en el alta de la mesa.
 
 - **`GET /api/v1/turnos/{turnoId}`**: `{ "id", "tipo", "estado", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "bloqueId", "alumno": { "id", "nombre", "apellido", "dni" }, "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" }, "aula": { "id", "nombre" }, "observaciones", "temas" }` más la auditoría plana. `fechaFin` es `null` en un recurrente sin fin. 404 si no existe.
 
@@ -1202,13 +1296,12 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
-
 | Feature       | Endpoints del portal                                                              | Tarea |
 | ------------- | --------------------------------------------------------------------------------- | ----- |
 | `ocurrencias` | A completar por T-84                                                              | T-84  |
-| `alumnos`     | `GET /alumnos/mi-perfil`                                                              | T-88  |
+| `alumnos`     | `GET /alumnos/mi-perfil`                                                          | T-88  |
 | `usuarios`    | A completar por T-91                                                              | T-91  |
-| `turnos`      | A completar por T-93                                                              | T-93  |
+| `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`   | T-93  |
 | `pagos`       | A completar por T-98                                                              | T-98  |
 | `cuentas`     | A completar por T-101                                                             | T-101 |
 | `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106)) | T-106 |
@@ -1328,6 +1421,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `CAPACIDAD_INSUFICIENTE` | "La capacidad no puede ser menor que la cantidad de turnos que el profesor ya tiene a la vez en una hora", al editar la capacidad de un profesor (T-15). `details`: una entrada por hora en conflicto, sobre el campo: `[{ "path": ["capacidad"], "message", "bloqueId", "diaSemana", "horaInicio", "horaFin", "fecha", "cantidad" }]`, con la fecha en que esa hora tiene más turnos a la vez desde hoy y cuántos                                                                                                                                                                                                                                                                                                                                                                                                                              |
 | 409    | `TURNO_CANCELADO`        | "El turno está cancelado: no se puede registrar su asistencia", al registrar o corregir una asistencia (`PUT /asistencias`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `FUERA_DE_PLAZO`         | "El plazo para registrar esta asistencia venció el DD/MM", al registrar o corregir una asistencia pasado el séptimo día (`PUT /asistencias`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| 409    | `DEUDA_VENCIDA`          | Sacar un turno (`POST /turnos` y `POST /turnos/mis-turnos`, T-93) si el alumno tiene deuda vencida (turnos adeudados de hace 30 días o más). Mesa: "El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos"; alumno: "Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada". `details` es un **objeto**: `{ "cantidad", "total" }` (`total` en pesos, sin los turnos de materia sin precio)                                                                                                                                                                                                                                                                                                                           |
 | 409    | `ALUMNO_SUPERPUESTO`     | "El alumno ya tiene un turno en ese horario". Rechazo total (ninguna bandera lo saltea). `details`: un ítem por turno en conflicto (de cualquier profesor), `[{ "turnoId", "tipo", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" } }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 409    | `MATERIA_NO_ASIGNADA`    | "La materia no está asignada al profesor" (o su asignación está dada de baja), al registrar un turno. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |

@@ -70,6 +70,10 @@ const aulaResumenSchema = z
   .object({ id: z.number().int(), nombre: z.string() })
   .openapi('TurnoAula')
 
+const materiaResumenSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('TurnoMateria')
+
 /** Una hora (una fila de `bloque_agenda`) dentro de un resultado de disponibilidad. */
 export const horaDisponibleSchema = z
   .object({
@@ -121,89 +125,115 @@ const observaciones = textoOpcional(MAX_OBSERVACIONES, 'Observaciones', 'Repaso 
 const temas = textoOpcional(MAX_TEMAS, 'Temas a trabajar', 'Fracciones y ecuaciones')
 
 /**
+ * Campos del alta comunes a la mesa (`POST /turnos`) y al portal (`POST /turnos/mis-turnos`):
+ * todos salvo el alumno, que la mesa elige y el portal toma de la sesión, y las observaciones,
+ * que son internas de la mesa de entrada.
+ */
+const camposAlta = {
+  materiaId: idBody('Id de la materia', 3),
+  bloqueIds: z
+    .array(
+      z
+        .number({ error: 'Debe ser un número' })
+        .int({ error: 'Debe ser un número entero' })
+        .positive({ error: 'Debe ser mayor a 0' }),
+      { error: 'Debe ser una lista de ids de bloques' },
+    )
+    .min(1, { error: 'Debe elegir al menos una hora' })
+    .max(MAX_HORAS_TURNO, { error: `No puede elegir más de ${MAX_HORAS_TURNO} horas` })
+    .superRefine((ids, ctx) => {
+      ids.forEach((id, i) => {
+        if (ids.indexOf(id) !== i) {
+          ctx.addIssue({ code: 'custom', message: 'No puede repetir horas', path: [i] })
+        }
+      })
+    })
+    .openapi({
+      description: 'Ids de las filas (horas) elegidas, del mismo profesor y día',
+      example: [10, 12],
+    }),
+  tipo: z
+    .enum(TIPOS_TURNO, { error: `Tipo inválido: debe ser ${TIPOS_TURNO.join(', ')}` })
+    .openapi({ example: 'RECURRENTE' }),
+  fechaInicio: fechaISO.openapi({
+    description: 'Primera fecha (la única en una sesión única). Hoy o posterior',
+    example: '2026-10-05',
+  }),
+  fechaFin: fechaISO
+    .openapi({
+      description:
+        'RECURRENTE: última fecha, o null/omitido si no tiene fin. SESION_UNICA: si viene, igual a fechaInicio',
+      example: '2026-11-30',
+    })
+    .nullable()
+    .optional(),
+  temas,
+  asignarDondeHayLugar: z.boolean({ error: 'Debe ser verdadero o falso' }).default(false).openapi({
+    description:
+      'Con fechas sin lugar en un RECURRENTE, crearlo solo en las fechas con lugar (en tramos). En SESION_UNICA no cambia nada',
+    example: false,
+  }),
+}
+
+/** Reglas de formato entre campos del alta (las mismas para la mesa y el portal). */
+function refinarAlta(
+  datos: {
+    tipo: TipoTurno
+    fechaInicio: string
+    fechaFin?: string | null
+    temas?: string | null
+  },
+  ctx: z.RefinementCtx,
+) {
+  if (datos.tipo === 'SESION_UNICA' && (datos.temas === null || datos.temas === undefined)) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'Los temas a trabajar son obligatorios en una sesión única',
+      path: ['temas'],
+    })
+  }
+  if (datos.fechaFin === undefined || datos.fechaFin === null) return
+  if (datos.tipo === 'SESION_UNICA' && datos.fechaFin !== datos.fechaInicio) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'En una sesión única, la fecha de fin debe ser igual a la de inicio',
+      path: ['fechaFin'],
+    })
+  }
+  // `YYYY-MM-DD`: la comparación de textos es la de fechas.
+  if (datos.tipo === 'RECURRENTE' && datos.fechaFin < datos.fechaInicio) {
+    ctx.addIssue({
+      code: 'custom',
+      message: 'La fecha de fin no puede ser anterior a la de inicio',
+      path: ['fechaFin'],
+    })
+  }
+}
+
+/**
  * Body de `POST /turnos`. Formato solamente: que las filas existan, sean del mismo profesor y día,
  * que las fechas caigan en ese día y no sean pasadas, la capacidad y los solapamientos los decide
  * el service.
  */
 export const crearTurnoSchema = z
-  .object({
-    alumnoId: idBody('Id del alumno', 12),
-    materiaId: idBody('Id de la materia', 3),
-    bloqueIds: z
-      .array(
-        z
-          .number({ error: 'Debe ser un número' })
-          .int({ error: 'Debe ser un número entero' })
-          .positive({ error: 'Debe ser mayor a 0' }),
-        { error: 'Debe ser una lista de ids de bloques' },
-      )
-      .min(1, { error: 'Debe elegir al menos una hora' })
-      .max(MAX_HORAS_TURNO, { error: `No puede elegir más de ${MAX_HORAS_TURNO} horas` })
-      .superRefine((ids, ctx) => {
-        ids.forEach((id, i) => {
-          if (ids.indexOf(id) !== i) {
-            ctx.addIssue({ code: 'custom', message: 'No puede repetir horas', path: [i] })
-          }
-        })
-      })
-      .openapi({
-        description: 'Ids de las filas (horas) elegidas, del mismo profesor y día',
-        example: [10, 12],
-      }),
-    tipo: z
-      .enum(TIPOS_TURNO, { error: `Tipo inválido: debe ser ${TIPOS_TURNO.join(', ')}` })
-      .openapi({ example: 'RECURRENTE' }),
-    fechaInicio: fechaISO.openapi({
-      description: 'Primera fecha (la única en una sesión única). Hoy o posterior',
-      example: '2026-10-05',
-    }),
-    fechaFin: fechaISO
-      .openapi({
-        description:
-          'RECURRENTE: última fecha, o null/omitido si no tiene fin. SESION_UNICA: si viene, igual a fechaInicio',
-        example: '2026-11-30',
-      })
-      .nullable()
-      .optional(),
-    observaciones,
-    temas,
-    asignarDondeHayLugar: z
-      .boolean({ error: 'Debe ser verdadero o falso' })
-      .default(false)
-      .openapi({
-        description:
-          'Con fechas sin lugar en un RECURRENTE, crearlo solo en las fechas con lugar (en tramos). En SESION_UNICA no cambia nada',
-        example: false,
-      }),
-  })
-  .superRefine((datos, ctx) => {
-    if (datos.tipo === 'SESION_UNICA' && (datos.temas === null || datos.temas === undefined)) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'Los temas a trabajar son obligatorios en una sesión única',
-        path: ['temas'],
-      })
-    }
-    if (datos.fechaFin === undefined || datos.fechaFin === null) return
-    if (datos.tipo === 'SESION_UNICA' && datos.fechaFin !== datos.fechaInicio) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'En una sesión única, la fecha de fin debe ser igual a la de inicio',
-        path: ['fechaFin'],
-      })
-    }
-    // `YYYY-MM-DD`: la comparación de textos es la de fechas.
-    if (datos.tipo === 'RECURRENTE' && datos.fechaFin < datos.fechaInicio) {
-      ctx.addIssue({
-        code: 'custom',
-        message: 'La fecha de fin no puede ser anterior a la de inicio',
-        path: ['fechaFin'],
-      })
-    }
-  })
+  .object({ alumnoId: idBody('Id del alumno', 12), ...camposAlta, observaciones })
+  .superRefine(refinarAlta)
   .openapi('TurnoCrear')
 
 export type CrearTurno = z.infer<typeof crearTurnoSchema>
+
+/**
+ * Body de `POST /turnos/mis-turnos` (portal, HU-29): el de `POST /turnos` sin `alumnoId`, que
+ * sale de la sesión (un `alumnoId` en el body se descarta, como toda clave desconocida), y sin
+ * `observaciones`, que son internas de la mesa de entrada y el alumno no ve. Que las fechas sean
+ * desde mañana lo decide el service (depende de hoy).
+ */
+export const crearMiTurnoSchema = z
+  .object(camposAlta)
+  .superRefine(refinarAlta)
+  .openapi('MiTurnoCrear')
+
+export type CrearMiTurno = z.infer<typeof crearMiTurnoSchema>
 
 /** `turnoId` del path. */
 export const turnoIdParamsSchema = z.object({
@@ -239,7 +269,7 @@ export const turnoDetalleSchema = z
       })
       .openapi('TurnoAlumno'),
     profesor: profesorResumenSchema,
-    materia: z.object({ id: z.number().int(), nombre: z.string() }).openapi('TurnoMateria'),
+    materia: materiaResumenSchema,
     aula: aulaResumenSchema,
     observaciones: z.string().nullable(),
     temas: z.string().nullable(),
@@ -280,6 +310,135 @@ export const turnosAltaSchema = z
   .openapi('TurnosAlta')
 
 export type TurnosAlta = z.infer<typeof turnosAltaSchema>
+
+// ---------------------------------------------------------------------------------------------
+// Portal del alumno (HU-29): `/turnos/mis-turnos/*`
+// ---------------------------------------------------------------------------------------------
+
+/** Deuda vencida (HU-29): turnos adeudados de hace 30 días o más y su total en pesos. */
+export const deudaVencidaSchema = z
+  .object({
+    cantidad: z.number().int().openapi({
+      description: 'Turnos adeudados de hace 30 días o más (también los de materia sin precio)',
+      example: 3,
+    }),
+    total: z.number().openapi({
+      description: 'Su total en pesos (los de materia sin precio no suman)',
+      example: 24000,
+    }),
+  })
+  .openapi('DeudaVencida')
+
+export type DeudaVencida = z.infer<typeof deudaVencidaSchema>
+
+/** `GET /turnos/mis-turnos/habilitacion`: si el alumno de la sesión puede sacar un turno nuevo. */
+export const habilitacionSchema = z
+  .object({
+    habilitado: z.boolean().openapi({
+      description: 'false si tiene deuda vencida (el tope de deuda, HU-29)',
+      example: false,
+    }),
+    deuda: deudaVencidaSchema
+      .nullable()
+      .openapi({ description: 'La deuda vencida, o null si no tiene' }),
+  })
+  .openapi('MisTurnosHabilitacion')
+
+export type Habilitacion = z.infer<typeof habilitacionSchema>
+
+/** Una materia que el alumno puede elegir en el paso 1 de "Sacar turno". */
+export const materiaOfertadaSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('MisTurnosMateria')
+
+export type MateriaOfertada = z.infer<typeof materiaOfertadaSchema>
+
+export const materiasOfertadasSchema = z.array(materiaOfertadaSchema)
+
+/**
+ * Query de `GET /turnos/mis-turnos/disponibilidad`: el mismo de `GET /turnos/disponibilidad`
+ * (materia obligatoria; día, profesor y fecha opcionales). La `fecha`, si viene, es desde mañana.
+ */
+export const miDisponibilidadQuerySchema = disponibilidadQuerySchema
+
+/**
+ * Una hora para el alumno: sólo si se puede elegir. Sin capacidad ni ocupación (el alumno no ve
+ * cuántos lugares hay ni quiénes están anotados, HU-29).
+ */
+export const miHoraDisponibleSchema = z
+  .object({
+    bloqueId: z.number().int().openapi({ description: 'Id de la fila (hora)', example: 10 }),
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    disponible: z.boolean().openapi({
+      description: 'false si la hora está completa en `fecha` ("Completo": no se puede elegir)',
+      example: true,
+    }),
+  })
+  .openapi('MisTurnosHora')
+
+/** Un resultado de la disponibilidad del portal: como el de la mesa, con el valor por clase. */
+export const miDisponibilidadItemSchema = z
+  .object({
+    profesor: profesorResumenSchema,
+    diaSemana,
+    fecha: fechaISO.openapi({
+      description:
+        'Fecha de la disponibilidad: la pedida o la próxima ocurrencia del día desde mañana',
+      example: '2026-09-28',
+    }),
+    aula: aulaResumenSchema,
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    valorPorClase: z.number().nullable().openapi({
+      description:
+        'Precio por hora vigente de la materia (HU-12), o null si no tiene. Se abona en la mesa de entrada',
+      example: 8000,
+    }),
+    horas: z.array(miHoraDisponibleSchema),
+  })
+  .openapi('MisTurnosDisponibilidad')
+
+export type MiDisponibilidadItem = z.infer<typeof miDisponibilidadItemSchema>
+
+export const miDisponibilidadSchema = z.array(miDisponibilidadItemSchema)
+
+/** Un turno creado por el alumno, sin observaciones ni auditoría. */
+const miTurnoCreadoSchema = z
+  .object({
+    id: z.number().int(),
+    bloqueId: z.number().int(),
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    fechaInicio: fechaISO.openapi({ example: '2026-10-05' }),
+    fechaFin: fechaISO
+      .openapi({ description: 'null en un recurrente sin fin', example: '2026-11-30' })
+      .nullable(),
+  })
+  .openapi('MiTurnoCreado')
+
+/**
+ * Respuesta de `POST /turnos/mis-turnos`: lo que la UI muestra en "Turno reservado". Sin lo que el
+ * alumno no ve (observaciones, auditoría, cupos ni ocupación).
+ */
+export const turnoReservadoSchema = z
+  .object({
+    cantidad: z.number().int().openapi({
+      description: 'Turnos creados: uno por hora y por tramo',
+      example: 1,
+    }),
+    tipo: z.enum(TIPOS_TURNO),
+    diaSemana,
+    materia: materiaResumenSchema,
+    profesor: profesorResumenSchema,
+    aula: aulaResumenSchema,
+    temas: z.string().nullable(),
+    turnos: z.array(miTurnoCreadoSchema),
+    fechasSinTurno: z.array(fechasSinTurnoSchema),
+  })
+  .openapi('MiTurnoReservado')
+
+export type TurnoReservado = z.infer<typeof turnoReservadoSchema>
 
 // ---------------------------------------------------------------------------------------------
 // Tipos internos (no viajan por HTTP así)
@@ -343,8 +502,12 @@ export type SerieFechas = {
   canceladas: readonly string[]
 }
 
-/** Lo que el service le pasa a `turnosRepository.reservar` para bloquear y leer. */
+/**
+ * Lo que el service le pasa a `turnosRepository.reservar` para bloquear y leer. `hoy` es el del
+ * reloj del service: con él se lee la deuda vencida del alumno dentro de la transacción (HU-29).
+ */
 export type EntradaReserva = {
+  hoy: string
   alumnoId: number
   profesorId: number
   materiaId: number
@@ -398,6 +561,13 @@ export type SnapshotReserva = {
    */
   turnosAlumno: TurnoDelAlumno[]
 }
+
+/**
+ * Lo que `reservar` le pasa a su callback: el snapshot de `planificarReserva` más la deuda vencida
+ * del alumno (`deudaVencida` de `cuentas.condiciones`, T-76), leída con el lock del alumno tomado:
+ * el tope de deuda (HU-29) decide con este dato antes de planificar.
+ */
+export type SnapshotAlta = SnapshotReserva & { deudaVencida: DeudaVencida }
 
 /** Una fila `turno` a insertar (sin auditoría: la completa el repository con el actor). */
 export type TurnoNuevo = {
