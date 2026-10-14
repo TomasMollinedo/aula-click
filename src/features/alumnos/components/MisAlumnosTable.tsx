@@ -5,7 +5,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { Eye } from 'lucide-react'
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Badge } from '@/components/ui/badge'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -97,6 +97,7 @@ export function MisAlumnosTable({
                 <TableCell>
                   <div className="flex items-center gap-3">
                     <Avatar>
+                      {alumno.fotoUrl && <AvatarImage src={alumno.fotoUrl} alt="" />}
                       <AvatarFallback className="bg-cobalto/10 text-cobalto text-xs font-semibold">
                         {getInitials(alumno.nombre, alumno.apellido)}
                       </AvatarFallback>

@@ -5,6 +5,7 @@ import { useToast } from '@/hooks/use-toast'
 
 import type { AlumnoDetalle } from '../alumnos.types'
 import { useCrearAlumno } from '../hooks/use-crear-alumno'
+import { useSubirFotoAlumno } from '../hooks/use-subir-foto-alumno'
 import { AlumnoForm } from './AlumnoForm'
 
 type AlumnoNuevoProps = {
@@ -15,6 +16,7 @@ type AlumnoNuevoProps = {
 
 export function AlumnoNuevo({ mode, onCerrar, onCreado }: AlumnoNuevoProps) {
   const mutation = useCrearAlumno()
+  const subirFoto = useSubirFotoAlumno()
   const toast = useToast()
 
   return (
@@ -27,16 +29,33 @@ export function AlumnoNuevo({ mode, onCerrar, onCreado }: AlumnoNuevoProps) {
       </PanelHeader>
       <AlumnoForm
         modo="crear"
-        onSubmit={(datos) =>
+        onSubmit={(datos, foto) =>
           mutation.mutate(datos, {
             onSuccess: (alumno) => {
               toast.success(`Se registró a ${alumno.nombre} ${alumno.apellido}`)
-              onCreado(alumno)
+              // La foto se sube recién después del alta: hasta entonces el alumno no tiene id.
+              if (!foto) {
+                onCreado(alumno)
+                return
+              }
+              subirFoto.mutate(
+                { id: alumno.id, foto },
+                {
+                  onSuccess: (actualizado) => onCreado(actualizado),
+                  // El alumno ya existe: no se reintenta el alta. La foto se agrega desde "Editar".
+                  onError: (error) => {
+                    toast.error(
+                      `El alumno se creó, pero la foto no se pudo subir: ${error.message}`,
+                    )
+                    onCreado(alumno)
+                  },
+                },
+              )
             },
           })
         }
         onCancelar={onCerrar}
-        isPending={mutation.isPending}
+        isPending={mutation.isPending || subirFoto.isPending}
         error={mutation.error}
       />
     </Panel>

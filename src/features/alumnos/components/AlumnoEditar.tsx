@@ -49,6 +49,8 @@ export function AlumnoEditar({ alumnoId, mode, onCerrar, onGuardado }: AlumnoEdi
       </PanelHeader>
       <AlumnoForm
         modo="editar"
+        alumnoId={alumno.id}
+        fotoUrl={alumno.fotoUrl}
         defaultValues={detalleAValoresForm(alumno)}
         onSubmit={(cambios) => {
           // Cambios que se deshicieron a mano: no hay nada que mandar.
