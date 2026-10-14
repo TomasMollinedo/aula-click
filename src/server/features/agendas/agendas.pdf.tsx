@@ -1,16 +1,17 @@
 import { StyleSheet, View } from '@react-pdf/renderer'
 import type { EncabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
-import { etiquetaEstado, etiquetaPrioridad } from '@/server/features/turnos/ocurrencias.condiciones'
+import { etiquetaPrioridad } from '@/server/features/turnos/ocurrencias.condiciones'
 import { fechaConDia, rangoHoras } from '@/server/shared/formato'
 import { DestacadoPdf, MensajePdf, SeccionPdf } from '@/server/shared/pdf/campos'
 import { DocumentoOficialPdf } from '@/server/shared/pdf/documento'
 import { SEPARACION_BLOQUES } from '@/server/shared/pdf/estilos'
 import { renderizarPdf } from '@/server/shared/pdf/renderizar'
 import { CeldaPdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pdf/tabla'
-import type { AgendaDocumento } from './agendas.documentos'
+import { etiquetaEstadoEnAgenda, type AgendaDocumento } from './agendas.documentos'
 
 // El documento PDF de la agenda diaria de un profesor (HU-11, T-60). Solo presentación: recibe lo
-// que arma el service, ya filtrado y ordenado.
+// que arma el service, ya filtrado y ordenado. El estado se escribe como en las vistas, sin la
+// asistencia (`etiquetaEstadoEnAgenda`, T-86).
 
 export type DatosAgendaPdf = EncabezadoDeDocumento & { documento: AgendaDocumento }
 
@@ -67,7 +68,7 @@ export function AgendaPdf({ documento, ...encabezado }: DatosAgendaPdf) {
                 </CeldaPdf>
                 <CeldaPdf>{turno.materia.nombre}</CeldaPdf>
                 <CeldaPdf>{turno.aula.nombre}</CeldaPdf>
-                <CeldaPdf>{etiquetaEstado(turno.estado)}</CeldaPdf>
+                <CeldaPdf>{etiquetaEstadoEnAgenda(turno.estado)}</CeldaPdf>
               </FilaPdf>
             ))}
           </TablaPdf>
