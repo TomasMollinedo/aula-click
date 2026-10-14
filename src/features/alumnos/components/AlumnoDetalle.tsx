@@ -194,7 +194,7 @@ export function AlumnoDetalle({
 
       {/* Una sola pestaña no se envuelve en tabs (ver docs/arquitectura-frontend.md → Modales con URL propia). */}
       {TABS.filter((t) => disponibles[t]).length === 1 ? (
-        <DatosAlumno alumno={alumno} />
+        <DatosAlumno alumno={alumno} puedeEditar={puedeEditar} />
       ) : (
         // `relative`: el selector Calendario / Lista de "Turnos" se ubica al borde derecho de las pestañas.
         <Tabs value={tab} onValueChange={cambiarTab} className="relative space-y-6">
@@ -233,7 +233,7 @@ export function AlumnoDetalle({
           </div>
 
           <TabsContent value="datos">
-            <DatosAlumno alumno={alumno} />
+            <DatosAlumno alumno={alumno} puedeEditar={puedeEditar} />
           </TabsContent>
           {renderTurnos && <TabsContent value="turnos">{renderTurnos(alumno)}</TabsContent>}
           {renderHistorial && (
