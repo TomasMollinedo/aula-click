@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { archivoSchema } from '@/server/shared/archivos'
+import type { UsuarioAuditoria } from '@/server/shared/auditoria'
 
 // Schemas Zod de entrada, salida y params del comprobante adjunto de un pago (HU-24, T-95). Son la
 // fuente del OpenAPI. Sin reglas de negocio.
@@ -51,6 +52,21 @@ export const adjuntoSubidoSchema = z
   .openapi('AdjuntoSubido')
 
 export type AdjuntoSubido = z.infer<typeof adjuntoSubidoSchema>
+
+/**
+ * El último adjunto **activo** de un pago (decisión T-136), como lo lee `ultimoAdjunto`. Lleva la
+ * clave del objeto, no la URL: quien lo muestra genera la URL prefirmada. No viaja por HTTP así.
+ */
+export type UltimoAdjunto = {
+  id: number
+  archivoKey: string
+  nombre: string
+  tipo: TipoAdjunto
+  bytes: number
+  adjuntadoPor: UsuarioAuditoria
+  /** Instante ISO 8601 UTC, como la auditoría. */
+  adjuntadoEl: string
+}
 
 /** Lo que el service le pasa al repository para guardar un archivo ya validado. */
 export type ArchivoAGuardar = { bytes: Uint8Array; tipo: TipoAdjunto; nombre: string }
