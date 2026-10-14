@@ -416,3 +416,113 @@ export type OcurrenciaDelAlumnoItem = z.infer<typeof ocurrenciaDelAlumnoItemSche
 export const ocurrenciasDelAlumnoListadoSchema = z.array(ocurrenciaDelAlumnoItemSchema)
 
 export type OcurrenciasDelAlumnoListado = z.infer<typeof ocurrenciasDelAlumnoListadoSchema>
+
+// ---------------------------------------------------------------------------------------------
+// Portal del alumno (HU-30): GET /ocurrencias/mis-turnos y GET /ocurrencias/mis-turnos/{turnoId}/{fecha}
+// El alumno sale de la sesión. Nunca se devuelven prioridad, observaciones del turno, ocupación,
+// acciones, datos del pago ni auditoría (docs/contrato-api.md → Portal del alumno).
+// ---------------------------------------------------------------------------------------------
+
+export const misTurnosQuerySchema = z.object({
+  desde: fechaISO.openapi({
+    param: { name: 'desde', in: 'query' },
+    description: 'Primer día del rango (YYYY-MM-DD)',
+    example: '2026-10-01',
+  }),
+  hasta: fechaISO.openapi({
+    param: { name: 'hasta', in: 'query' },
+    description: 'Último día del rango, incluido (hasta 31 días)',
+    example: '2026-10-31',
+  }),
+})
+
+export type MisTurnosQuery = z.infer<typeof misTurnosQuerySchema>
+
+const profesorDelPortalSchema = z.object({
+  id: z.number().int(),
+  nombre: z.string(),
+  apellido: z.string(),
+})
+
+/** Una ocurrencia del alumno de la sesión, para "Mi calendario". */
+export const miTurnoItemSchema = z
+  .object({
+    turnoId: z.number().int(),
+    fecha: fechaISO,
+    diaSemana,
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    materia: z.object({ id: z.number().int(), nombre: z.string() }),
+    profesor: profesorDelPortalSchema,
+    aula: z.object({ id: z.number().int(), nombre: z.string() }),
+    tipo: z.enum(TIPOS_TURNO),
+    estado: z.enum(ESTADOS_OCURRENCIA),
+    estadoPago: z.enum(ESTADOS_PAGO).openapi({
+      description: 'Una cancelada viene `PENDIENTE`: nunca se cobró',
+    }),
+  })
+  .openapi('MiTurnoItem')
+
+export type MiTurnoItem = z.infer<typeof miTurnoItemSchema>
+
+/** Sin paginar: el rango ya está acotado a 31 días. */
+export const misTurnosSchema = z.array(miTurnoItemSchema)
+
+export type MisTurnos = z.infer<typeof misTurnosSchema>
+
+/** La asistencia de esa hora para el alumno: sin auditoría ni observación. */
+const asistenciaDelPortalSchema = z
+  .object({
+    estado: z
+      .enum(ESTADOS_ASISTENCIA)
+      .nullable()
+      .openapi({ description: '`null` en una cerrada por el sistema' }),
+    trabajado: z.string().nullable().openapi({ description: 'Qué se trabajó' }),
+    indicaciones: z
+      .string()
+      .nullable()
+      .openapi({ description: 'Indicaciones para la próxima sesión' }),
+    cerradaPorSistema: z.boolean(),
+  })
+  .openapi('AsistenciaDelPortal')
+
+export type AsistenciaDelPortal = z.infer<typeof asistenciaDelPortalSchema>
+
+const horasSeguidasDelPortalSchema = horasSeguidasSchema
+  .extend({
+    ocurrencias: z.array(
+      horaSeguidaSchema
+        .omit({ registrable: true, observacion: true })
+        .openapi('HoraSeguidaDelPortal'),
+    ),
+  })
+  .openapi('HorasSeguidasDelPortal')
+
+export type HorasSeguidasDelPortal = z.infer<typeof horasSeguidasDelPortalSchema>
+
+/** El detalle de una ocurrencia del alumno de la sesión. */
+export const miTurnoDetalleSchema = z
+  .object({
+    turnoId: z.number().int(),
+    fecha: fechaISO,
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    materia: z.object({ id: z.number().int(), nombre: z.string() }),
+    profesor: profesorDelPortalSchema,
+    aula: z.object({ id: z.number().int(), nombre: z.string() }),
+    tipo: z.enum(TIPOS_TURNO),
+    temas: z.string().nullable().openapi({ description: 'Temas a trabajar' }),
+    estado: z.enum(ESTADOS_OCURRENCIA),
+    plazoAsistencia: plazoAsistenciaSchema,
+    estadoPago: z.enum(ESTADOS_PAGO),
+    asistencia: asistenciaDelPortalSchema.nullable().openapi({
+      description:
+        '`null` si está agendada, cancelada o sin registrar dentro del plazo (con su `plazoAsistencia`)',
+    }),
+    horasSeguidas: horasSeguidasDelPortalSchema.nullable().openapi({
+      description: '`null` si la hora no tiene horas seguidas o si está cancelada',
+    }),
+  })
+  .openapi('MiTurnoDetalle')
+
+export type MiTurnoDetalle = z.infer<typeof miTurnoDetalleSchema>

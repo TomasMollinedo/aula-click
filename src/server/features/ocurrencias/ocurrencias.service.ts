@@ -1,23 +1,35 @@
 import { AppError, ForbiddenError, NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
-import type { Actor } from '@/server/shared/actor'
+import { alumnoDeLaSesion, type Actor } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import type { TurnosDelAlumnoDocumento } from './ocurrencias.documentos'
-import type { Ocurrencia, OcurrenciasRepository, PrioridadDeTurno } from './ocurrencias.repository'
+import type {
+  DatosAdicionalesTurno,
+  Ocurrencia,
+  OcurrenciasRepository,
+  PrioridadDeTurno,
+} from './ocurrencias.repository'
 import {
   ACCIONES_SIN_PERMISO,
   asistenciaDelDetalle,
+  asistenciaDelPortal,
   calcularAcciones,
   filtrarParaDocumento,
   horasSeguidasDelDetalle,
+  horasSeguidasDelPortal,
   puedeRegistrarAsistencia,
   usuariosDeLaAsistencia,
+  validarRangoMisTurnos,
   validarRangoOcurrencias,
   ventanaOcurrencias,
 } from './ocurrencias.reglas'
 import type {
+  MiTurnoDetalle,
+  MiTurnoItem,
+  MisTurnos,
+  MisTurnosQuery,
   OcurrenciaDelAlumnoItem,
   OcurrenciaDetalle,
   OcurrenciasDelAlumnoListado,
@@ -81,6 +93,32 @@ export function crearOcurrenciasService({
     return { estado, pagoId, importe: importeAplicado, ...pago }
   }
 
+  /** Lo del turno que no trae el motor, con su alumno; 404 si el turno no existe. */
+  async function buscarTurno(turnoId: number): Promise<DatosAdicionalesTurno> {
+    const datos = await repository.buscarDatosAdicionales(turnoId)
+    if (!datos) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+    return datos
+  }
+
+  /**
+   * La lectura del detalle (del personal y del portal): **una sola** llamada al motor, las
+   * ocurrencias del alumno del turno en esa fecha. De ahí salen la pedida y sus horas seguidas. Si
+   * la fecha no es una de las ocurrencias del turno, el mismo 404 que un turno inexistente.
+   */
+  async function leerDelDia(
+    turnoId: number,
+    fecha: string,
+    alumnoId: number,
+  ): Promise<{ ocurrencia: Ocurrencia; ocurrenciasDelDia: Ocurrencia[] }> {
+    const ocurrenciasDelDia = await repository.leerOcurrenciasDelAlumno(
+      { desde: fecha, hasta: fecha, alumnoId },
+      reloj,
+    )
+    const ocurrencia = ocurrenciasDelDia.find((o) => o.turnoId === turnoId)
+    if (!ocurrencia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+    return { ocurrencia, ocurrenciasDelDia }
+  }
+
   /**
    * Detalle de una ocurrencia (HU-02, HU-13 a HU-20): combina la ocurrencia calculada por el
    * motor (estado, pago, cancelación, fin efectivo), lo que le falta del turno (DNI, observaciones,
@@ -105,15 +143,8 @@ export function crearOcurrenciasService({
     fecha: string,
     actor: Actor,
   ): Promise<OcurrenciaDetalle> {
-    const datos = await repository.buscarDatosAdicionales(turnoId)
-    if (!datos) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
-
-    const ocurrenciasDelDia = await repository.leerOcurrenciasDelAlumno(
-      { desde: fecha, hasta: fecha, alumnoId: datos.alumnoId },
-      reloj,
-    )
-    const ocurrencia = ocurrenciasDelDia.find((o) => o.turnoId === turnoId)
-    if (!ocurrencia) throw new NotFoundError(MENSAJE_NO_ENCONTRADA)
+    const datos = await buscarTurno(turnoId)
+    const { ocurrencia, ocurrenciasDelDia } = await leerDelDia(turnoId, fecha, datos.alumnoId)
 
     const esProfesor = actor.role === 'PROFESOR'
     let esProfesorDelTurno = false
@@ -304,8 +335,82 @@ export function crearOcurrenciasService({
     })
   }
 
+  /** Ítem de `GET /ocurrencias/mis-turnos`: sin prioridad, ocupación, `cancelable` ni auditoría. */
+  function aMiTurno(ocurrencia: Ocurrencia): MiTurnoItem {
+    return {
+      turnoId: ocurrencia.turnoId,
+      fecha: ocurrencia.fecha,
+      diaSemana: ocurrencia.diaSemana,
+      horaInicio: minutosAHora(ocurrencia.horaInicio),
+      horaFin: minutosAHora(ocurrencia.horaFin),
+      materia: ocurrencia.materia,
+      profesor: {
+        id: ocurrencia.profesor.id,
+        nombre: ocurrencia.profesor.nombre,
+        apellido: ocurrencia.profesor.apellido,
+      },
+      aula: ocurrencia.aula,
+      tipo: ocurrencia.tipo,
+      estado: ocurrencia.estado,
+      estadoPago: ocurrencia.pago.estado,
+    }
+  }
+
   return {
     obtenerDetalle,
+
+    /**
+     * Portal (HU-30, "Mi calendario"): las ocurrencias del alumno de la sesión en `[desde, hasta]`
+     * (hasta `MAX_DIAS_MIS_TURNOS` días; si no, o invertido, 400 en `hasta`), incluidas las
+     * canceladas, en el orden del motor. El alumno sale de la sesión, nunca de un parámetro.
+     */
+    async misTurnos(query: MisTurnosQuery, actor: Actor): Promise<MisTurnos> {
+      const alumnoId = alumnoDeLaSesion(actor)
+      validarRangoMisTurnos(query.desde, query.hasta)
+      const ocurrencias = await repository.leerOcurrenciasDelAlumno(
+        { desde: query.desde, hasta: query.hasta, alumnoId },
+        reloj,
+      )
+      return ocurrencias.map(aMiTurno)
+    },
+
+    /**
+     * Portal (HU-30): el detalle de una ocurrencia del alumno de la sesión, con la misma lectura y
+     * las mismas reglas que el del personal (`leerDelDia`, `asistenciaDelPortal` y
+     * `horasSeguidasDelPortal`). Un turno de otro alumno → 403, sin leer el motor; uno que no
+     * existe (o una fecha que no es suya) → 404. Sin prioridad, observaciones, acciones, datos del
+     * pago ni auditoría.
+     */
+    async miTurno(turnoId: number, fecha: string, actor: Actor): Promise<MiTurnoDetalle> {
+      const alumnoId = alumnoDeLaSesion(actor)
+      const datos = await buscarTurno(turnoId)
+      if (datos.alumnoId !== alumnoId) throw new ForbiddenError(MENSAJE_SIN_PERMISO)
+      const { ocurrencia, ocurrenciasDelDia } = await leerDelDia(turnoId, fecha, alumnoId)
+
+      return {
+        turnoId: ocurrencia.turnoId,
+        fecha: ocurrencia.fecha,
+        horaInicio: minutosAHora(ocurrencia.horaInicio),
+        horaFin: minutosAHora(ocurrencia.horaFin),
+        materia: ocurrencia.materia,
+        profesor: {
+          id: ocurrencia.profesor.id,
+          nombre: ocurrencia.profesor.nombre,
+          apellido: ocurrencia.profesor.apellido,
+        },
+        aula: ocurrencia.aula,
+        tipo: ocurrencia.tipo,
+        temas: datos.temas,
+        estado: ocurrencia.estado,
+        plazoAsistencia: plazoAsistencia(ocurrencia),
+        estadoPago: ocurrencia.pago.estado,
+        asistencia: asistenciaDelPortal(ocurrencia),
+        // El alumno nunca registra: ninguna hora es `registrable` (y el portal no la publica).
+        horasSeguidas: horasSeguidasDelPortal(
+          horasSeguidasDelDetalle(ocurrenciasDelDia, turnoId, false),
+        ),
+      }
+    },
 
     /**
      * Ocurrencias del alumno en `[desde, hasta]` (HU-02, pestaña "Turnos" de la ficha), incluidas

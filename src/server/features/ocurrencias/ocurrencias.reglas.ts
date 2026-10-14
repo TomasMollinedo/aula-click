@@ -12,8 +12,14 @@ import {
   type TipoTurno,
 } from '@/server/features/turnos/ocurrencias.condiciones'
 import type { UsuarioAuditoria } from '@/server/shared/auditoria'
+import { sumarDias } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
-import type { AsistenciaDeOcurrencia, HorasSeguidas } from './ocurrencias.validation'
+import type {
+  AsistenciaDeOcurrencia,
+  AsistenciaDelPortal,
+  HorasSeguidas,
+  HorasSeguidasDelPortal,
+} from './ocurrencias.validation'
 
 // Reglas puras de `ocurrencias`: sin Prisma y sin `hoy()` (lo recibe quien llama). Las acciones
 // miran el pago de la ocurrencia, que ya trae el motor (`Ocurrencia.pago`). Lo que es de otra
@@ -49,6 +55,27 @@ export function validarRangoOcurrencias(desde: string, hasta: string, fechaHoy: 
   if (desde < ventana.desde || hasta > ventana.hasta) {
     throw new ValidationError(MENSAJE_FUERA_DE_VENTANA, {
       details: [{ path: ['hasta'], message: MENSAJE_FUERA_DE_VENTANA }],
+    })
+  }
+}
+
+/** Tope de días de `GET /ocurrencias/mis-turnos` (portal, HU-30), extremos incluidos. */
+export const MAX_DIAS_MIS_TURNOS = 31
+export const MENSAJE_RANGO_MIS_TURNOS = `El rango no puede superar los ${MAX_DIAS_MIS_TURNOS} días`
+
+/**
+ * El rango de `GET /ocurrencias/mis-turnos` está en orden y no supera `MAX_DIAS_MIS_TURNOS` días
+ * (extremos incluidos); si no, 400 en `hasta`, como el resto de los rangos de la API.
+ */
+export function validarRangoMisTurnos(desde: string, hasta: string): void {
+  if (hasta < desde) {
+    throw new ValidationError(MENSAJE_RANGO_INVERTIDO, {
+      details: [{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }],
+    })
+  }
+  if (hasta > sumarDias(desde, MAX_DIAS_MIS_TURNOS - 1)) {
+    throw new ValidationError(MENSAJE_RANGO_MIS_TURNOS, {
+      details: [{ path: ['hasta'], message: MENSAJE_RANGO_MIS_TURNOS }],
     })
   }
 }
@@ -267,6 +294,11 @@ function asistenciaRegistrada(ocurrencia: OcurrenciaParaAsistencia) {
   return tieneAsistencia(ocurrencia.estado) ? ocurrencia.asistencia : null
 }
 
+/** Un "Sin registrar" con el plazo vencido: cerrado por el sistema (decisión T-138). */
+function estaCerradaPorSistema(ocurrencia: OcurrenciaParaAsistencia): boolean {
+  return ocurrencia.estado === 'SIN_REGISTRAR' && ocurrencia.plazoAsistencia?.vencido === true
+}
+
 /**
  * Los usuarios que el service tiene que resolver para `asistenciaDelDetalle`: quién registró y
  * quién modificó la asistencia, sin repetir. `[]` si no hay una asistencia registrada que mostrar.
@@ -311,7 +343,7 @@ export function asistenciaDelDetalle(
       cerradaPorSistema: false,
     }
   }
-  if (ocurrencia.estado === 'SIN_REGISTRAR' && ocurrencia.plazoAsistencia?.vencido) {
+  if (estaCerradaPorSistema(ocurrencia)) {
     return {
       estado: null,
       trabajado: null,
@@ -325,4 +357,54 @@ export function asistenciaDelDetalle(
     }
   }
   return null
+}
+
+/**
+ * La `asistencia` del detalle del portal (HU-30): la misma forma que decide `asistenciaDelDetalle`
+ * (registrada, cerrada por el sistema o `null`), sin auditoría ni observación. Al alumno se le
+ * muestran qué se trabajó y las indicaciones.
+ */
+export function asistenciaDelPortal(
+  ocurrencia: OcurrenciaParaAsistencia,
+): AsistenciaDelPortal | null {
+  const asistencia = asistenciaRegistrada(ocurrencia)
+  if (asistencia) {
+    return {
+      estado: asistencia.estado,
+      trabajado: asistencia.trabajado,
+      indicaciones: asistencia.indicaciones,
+      cerradaPorSistema: false,
+    }
+  }
+  if (estaCerradaPorSistema(ocurrencia)) {
+    return { estado: null, trabajado: null, indicaciones: null, cerradaPorSistema: true }
+  }
+  return null
+}
+
+/**
+ * Las `horasSeguidas` del portal: las del detalle del personal (`horasSeguidasDelDetalle`, misma
+ * regla y mismos textos) sin `registrable` ni `observacion`, que el alumno no ve.
+ */
+export function horasSeguidasDelPortal(
+  horasSeguidas: HorasSeguidas | null,
+): HorasSeguidasDelPortal | null {
+  return (
+    horasSeguidas && {
+      horaInicio: horasSeguidas.horaInicio,
+      horaFin: horasSeguidas.horaFin,
+      horas: horasSeguidas.horas,
+      textos: horasSeguidas.textos,
+      ocurrencias: horasSeguidas.ocurrencias.map((hora) => ({
+        turnoId: hora.turnoId,
+        fecha: hora.fecha,
+        horaInicio: hora.horaInicio,
+        horaFin: hora.horaFin,
+        estado: hora.estado,
+        plazoAsistencia: hora.plazoAsistencia,
+        actual: hora.actual,
+        textosPropios: hora.textosPropios,
+      })),
+    }
+  )
 }

@@ -3,8 +3,16 @@ import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as ocurrenciasController from './ocurrencias.controller'
-import { ejemploOcurrenciaDetalle, ejemploOcurrenciasDelAlumno } from './ocurrencias.ejemplos'
 import {
+  ejemploMiTurno,
+  ejemploMisTurnos,
+  ejemploOcurrenciaDetalle,
+  ejemploOcurrenciasDelAlumno,
+} from './ocurrencias.ejemplos'
+import {
+  miTurnoDetalleSchema,
+  misTurnosQuerySchema,
+  misTurnosSchema,
   ocurrenciaDetalleSchema,
   ocurrenciaParamsSchema,
   ocurrenciasDelAlumnoListadoSchema,
@@ -129,9 +137,62 @@ export const turnosDelAlumnoPdfRoute = createRoute({
   },
 })
 
-// `/pdf` (un segmento), `/{turnoId}/{fecha}` (dos) y `/{turnoId}/{fecha}/pdf` (tres) no se pisan: el
-// orden en que se registran no cambia cuál atiende cada pedido.
+// Portal (HU-30): el alumno sale de la sesión, nunca de un parámetro.
+export const misTurnosRoute = createRoute({
+  method: 'get',
+  path: '/mis-turnos',
+  tags,
+  summary: 'Mis turnos (portal del alumno)',
+  description:
+    'Las ocurrencias del alumno de la sesión en `[desde, hasta]` (ambos obligatorios, hasta 31 días), incluidas las canceladas, para "Mi calendario": horario, materia, profesor, aula, tipo, estado y estado de pago. Sin prioridad, ocupación, observaciones ni auditoría. Sin paginar, en el orden del motor (fecha y hora).',
+  middleware: [requireAuth(), requireRole('ALUMNO')] as const,
+  request: { query: misTurnosQuerySchema },
+  responses: {
+    200: {
+      description: 'Mis turnos (arreglo vacío si no hay ninguno en el rango)',
+      content: { 'application/json': { schema: misTurnosSchema, example: ejemploMisTurnos } },
+    },
+    400: respuestaError(
+      '`desde` o `hasta` faltante o inválido, `hasta` anterior a `desde`, o un rango de más de 31 días (VALIDACION)',
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(
+      'El rol no es alumno, el usuario está inhabilitado o la cuenta no tiene alumno (SIN_PERMISO)',
+    ),
+  },
+})
+
+export const miTurnoRoute = createRoute({
+  method: 'get',
+  path: '/mis-turnos/{turnoId}/{fecha}',
+  tags,
+  summary: 'Detalle de mi turno (portal del alumno)',
+  description:
+    'Una ocurrencia del alumno de la sesión: horario, materia, profesor, aula, tipo, temas a trabajar, estado con su plazo de asistencia, estado de pago, la asistencia de esa hora (qué se trabajó e indicaciones, sin auditoría) y sus horas seguidas con los textos una sola vez, con las mismas reglas que el detalle del personal. Sin prioridad, observaciones, acciones, datos del pago ni auditoría.',
+  middleware: [requireAuth(), requireRole('ALUMNO')] as const,
+  request: { params: ocurrenciaParamsSchema },
+  responses: {
+    200: {
+      description: 'Detalle de mi turno',
+      content: { 'application/json': { schema: miTurnoDetalleSchema, example: ejemploMiTurno } },
+    },
+    400: respuestaError('Datos de entrada inválidos (VALIDACION)'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(
+      'El turno es de otro alumno, el rol no es alumno, el usuario está inhabilitado o la cuenta no tiene alumno (SIN_PERMISO)',
+    ),
+    404: respuestaError(
+      'El turno no existe o esa fecha no es una de sus ocurrencias (NO_ENCONTRADO)',
+    ),
+  },
+})
+
+// Las de `mis-turnos` van primero: `/mis-turnos/{turnoId}/{fecha}` (tres segmentos) no debe caer en
+// `/{turnoId}/{fecha}/pdf`. El resto no se pisa: `/pdf` (un segmento), `/{turnoId}/{fecha}` (dos) y
+// `/{turnoId}/{fecha}/pdf` (tres).
 export const ocurrenciasRoutes = createRouter()
+  .openapi(misTurnosRoute, ocurrenciasController.misTurnos)
+  .openapi(miTurnoRoute, ocurrenciasController.miTurno)
   .openapi(obtenerOcurrenciaRoute, ocurrenciasController.obtenerOcurrencia)
   .openapi(obtenerOcurrenciaPdfRoute, ocurrenciasController.obtenerOcurrenciaPdf)
   .openapi(listarOcurrenciasDelAlumnoRoute, ocurrenciasController.listarOcurrenciasDelAlumno)

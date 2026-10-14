@@ -11,7 +11,11 @@ import type {
   PagoDeOcurrencia,
 } from '../ocurrencias.repository'
 import { OBSERVACION_CIERRE_SISTEMA } from '@/server/features/turnos/ocurrencias.condiciones'
-import { MENSAJE_FUERA_DE_VENTANA, MENSAJE_RANGO_INVERTIDO } from '../ocurrencias.reglas'
+import {
+  MENSAJE_FUERA_DE_VENTANA,
+  MENSAJE_RANGO_INVERTIDO,
+  MENSAJE_RANGO_MIS_TURNOS,
+} from '../ocurrencias.reglas'
 import { crearOcurrenciasService } from '../ocurrencias.service'
 
 // El service de `ocurrencias` (T-43): arma el detalle de una ocurrencia (con su pago) y los turnos
@@ -91,6 +95,7 @@ const PAGO: PagoDeOcurrencia = {
 const actorMesa: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
 const actorProfesorDueño: Actor = { userId: 'usr_ana', role: 'PROFESOR' }
 const actorProfesorAjeno: Actor = { userId: 'usr_otro', role: 'PROFESOR' }
+const actorAlumno: Actor = { userId: 'usr_lucia', role: 'ALUMNO', alumnoId: 12 }
 
 function crearRepositories() {
   return {
@@ -1164,6 +1169,250 @@ describe('listarDelAlumno', () => {
 
   it('sin turnos en el rango, devuelve un arreglo vacío', async () => {
     await expect(service.listarDelAlumno({ alumnoId: 12 })).resolves.toEqual([])
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Portal (HU-30): misTurnos y miTurno
+// ---------------------------------------------------------------------------------------------
+
+describe('portal: misTurnos', () => {
+  const RANGO = { desde: '2026-09-01', hasta: '2026-09-30' }
+
+  it('las ocurrencias del alumno de la sesión en el rango, incluidas las canceladas, campo por campo', async () => {
+    repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: HOY }),
+      ocurrencia({ turnoId: 2, fecha: HOY, estado: 'CANCELADO' }),
+    ])
+
+    const turnos = await service.misTurnos(RANGO, actorAlumno)
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledExactlyOnceWith(
+      { ...RANGO, alumnoId: 12 },
+      relojFijo,
+    )
+    expect(turnos).toEqual([
+      {
+        turnoId: 1,
+        fecha: HOY,
+        diaSemana: 1,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        materia: { id: 3, nombre: 'Matemática' },
+        profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
+        aula: { id: 3, nombre: 'Aula 3' },
+        tipo: 'RECURRENTE',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+      },
+      expect.objectContaining({ turnoId: 2, estado: 'CANCELADO' }),
+    ])
+    expect(repos.repository.leerPrioridades).not.toHaveBeenCalled()
+  })
+
+  it('un rango de 31 días (extremos incluidos) se acepta', async () => {
+    repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
+    await expect(
+      service.misTurnos({ desde: '2026-10-01', hasta: '2026-10-31' }, actorAlumno),
+    ).resolves.toEqual([])
+  })
+
+  it('un rango de 32 días → 400 en `hasta`, sin leer el motor', async () => {
+    const error = await errorDe(
+      service.misTurnos({ desde: '2026-10-01', hasta: '2026-11-01' }, actorAlumno),
+    )
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_MIS_TURNOS }])
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('un rango invertido → 400 en `hasta`', async () => {
+    const error = await errorDe(
+      service.misTurnos({ desde: '2026-10-10', hasta: '2026-10-01' }, actorAlumno),
+    )
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }])
+  })
+
+  it('un actor sin alumno (otro rol) → 403, sin leer el motor', async () => {
+    const error = await errorDe(service.misTurnos(RANGO, actorMesa))
+    expect(error).toBeInstanceOf(ForbiddenError)
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+})
+
+describe('portal: miTurno', () => {
+  const AYER = '2026-09-21'
+  const PLAZO = { vence: '2026-09-28', vencido: false }
+  const presente = (trabajado: string): NonNullable<Ocurrencia['asistencia']> => ({
+    estado: 'PRESENTE',
+    trabajado,
+    indicaciones: 'Guía 3',
+    observacion: null,
+    createdById: 'usr_ana',
+    createdAt: '2026-09-21T15:00:00.000Z',
+    updatedById: 'usr_ana',
+    updatedAt: '2026-09-21T15:00:00.000Z',
+  })
+  /** Lucas ayer de 8 a 9 y de 9 a 10, las dos presentes; la segunda corregida con otro texto. */
+  const deOcho = () =>
+    ocurrencia({
+      turnoId: 31,
+      fecha: AYER,
+      horaInicio: 480,
+      horaFin: 540,
+      estado: 'REALIZADO',
+      asistencia: presente('Fracciones'),
+      plazoAsistencia: PLAZO,
+      pago: { estado: 'PAGADO', pagoId: 5, importeAplicado: 8000 },
+    })
+  const deNueve = () =>
+    ocurrencia({
+      turnoId: 32,
+      fecha: AYER,
+      horaInicio: 540,
+      horaFin: 600,
+      estado: 'REALIZADO',
+      asistencia: presente('Decimales'),
+      plazoAsistencia: PLAZO,
+    })
+
+  it('el propio alumno ve su turno con la asistencia sin auditoría y sus horas seguidas', async () => {
+    repos.repository.buscarDatosAdicionales.mockResolvedValue({
+      ...DATOS_ADICIONALES,
+      temas: 'Fracciones',
+      observaciones: 'Interna: no la ve el alumno',
+    })
+    delDia(deOcho(), deNueve())
+
+    const detalle = await service.miTurno(31, AYER, actorAlumno)
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledExactlyOnceWith(
+      { desde: AYER, hasta: AYER, alumnoId: 12 },
+      relojFijo,
+    )
+    expect(detalle).toEqual({
+      turnoId: 31,
+      fecha: AYER,
+      horaInicio: '08:00',
+      horaFin: '09:00',
+      materia: { id: 3, nombre: 'Matemática' },
+      profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
+      aula: { id: 3, nombre: 'Aula 3' },
+      tipo: 'RECURRENTE',
+      temas: 'Fracciones',
+      estado: 'REALIZADO',
+      plazoAsistencia: PLAZO,
+      estadoPago: 'PAGADO',
+      asistencia: {
+        estado: 'PRESENTE',
+        trabajado: 'Fracciones',
+        indicaciones: 'Guía 3',
+        cerradaPorSistema: false,
+      },
+      horasSeguidas: {
+        horaInicio: '08:00',
+        horaFin: '10:00',
+        horas: 2,
+        textos: { trabajado: 'Fracciones', indicaciones: 'Guía 3' },
+        ocurrencias: [
+          {
+            turnoId: 31,
+            fecha: AYER,
+            horaInicio: '08:00',
+            horaFin: '09:00',
+            estado: 'REALIZADO',
+            plazoAsistencia: PLAZO,
+            actual: true,
+            textosPropios: null,
+          },
+          {
+            turnoId: 32,
+            fecha: AYER,
+            horaInicio: '09:00',
+            horaFin: '10:00',
+            estado: 'REALIZADO',
+            plazoAsistencia: PLAZO,
+            actual: false,
+            textosPropios: { trabajado: 'Decimales', indicaciones: 'Guía 3' },
+          },
+        ],
+      },
+    })
+    // Ni la auditoría de la asistencia ni los datos del pago: no se resuelve nada más.
+    expect(repos.repository.resolverUsuariosAuditoria).not.toHaveBeenCalled()
+    expect(repos.repository.buscarPago).not.toHaveBeenCalled()
+  })
+
+  it('cerrada por el sistema: sin estado ni textos, y sin la observación del cierre', async () => {
+    delDia(
+      ocurrencia({
+        turnoId: 31,
+        fecha: '2026-09-14',
+        estado: 'SIN_REGISTRAR',
+        plazoAsistencia: { vence: '2026-09-21', vencido: true },
+      }),
+    )
+
+    const detalle = await service.miTurno(31, '2026-09-14', actorAlumno)
+    expect(detalle.asistencia).toEqual({
+      estado: null,
+      trabajado: null,
+      indicaciones: null,
+      cerradaPorSistema: true,
+    })
+    expect(detalle.horasSeguidas).toBeNull()
+  })
+
+  it('el turno de otro alumno → 403, sin leer el motor', async () => {
+    repos.repository.buscarDatosAdicionales.mockResolvedValue({
+      ...DATOS_ADICIONALES,
+      alumnoId: 99,
+    })
+
+    const error = await errorDe(service.miTurno(31, AYER, actorAlumno))
+    expect(error).toBeInstanceOf(ForbiddenError)
+    expect(error.code).toBe('SIN_PERMISO')
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('un turno inexistente → 404; una fecha que no es suya → el mismo 404', async () => {
+    repos.repository.buscarDatosAdicionales.mockResolvedValue(null)
+    expect(await errorDe(service.miTurno(31, AYER, actorAlumno))).toBeInstanceOf(NotFoundError)
+
+    repos.repository.buscarDatosAdicionales.mockResolvedValue(DATOS_ADICIONALES)
+    delDia(null)
+    expect(await errorDe(service.miTurno(31, AYER, actorAlumno))).toBeInstanceOf(NotFoundError)
+  })
+
+  it('un actor sin alumno (otro rol) → 403, sin buscar el turno', async () => {
+    const error = await errorDe(service.miTurno(31, AYER, actorMesa))
+    expect(error).toBeInstanceOf(ForbiddenError)
+    expect(repos.repository.buscarDatosAdicionales).not.toHaveBeenCalled()
+  })
+
+  it('la respuesta del portal no trae prioridad, observaciones, acciones, cancelable ni auditoría', async () => {
+    repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([deOcho(), deNueve()])
+    const lista = await service.misTurnos({ desde: AYER, hasta: AYER }, actorAlumno)
+    const detalle = await service.miTurno(31, AYER, actorAlumno)
+
+    for (const respuesta of [...lista, detalle]) {
+      for (const clave of [
+        'prioridad',
+        'observaciones',
+        'acciones',
+        'cancelable',
+        'createdBy',
+        'updatedBy',
+      ]) {
+        expect(respuesta).not.toHaveProperty(clave)
+      }
+      expect(respuesta).not.toHaveProperty('pago')
+    }
+    expect(detalle.asistencia).not.toHaveProperty('observacion')
+    expect(detalle.asistencia).not.toHaveProperty('registradaPor')
+    for (const hora of detalle.horasSeguidas?.ocurrencias ?? []) {
+      expect(hora).not.toHaveProperty('registrable')
+      expect(hora).not.toHaveProperty('observacion')
+    }
   })
 })
 
