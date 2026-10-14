@@ -952,7 +952,90 @@ Los documentos PDF no piden estos endpoints: el backend arma el encabezado con l
 
 ## Asistencias
 
-A completar por T-81 (HU-22).
+Registro de la asistencia de los turnos por su profesor (HU-22, T-81). Rol: **sólo `PROFESOR`** en los tres endpoints (mesa de entradas y gerente reciben 403; ven la asistencia en el detalle del turno, el historial y el tablero). El profesor sale de la sesión, nunca de un parámetro (sin ficha de profesor: 404). Estados, plazo y horas seguidas los calcula el motor de ocurrencias (`convenciones-backend.md` → Ocurrencias): la UI no los calcula.
+
+**`GET /api/v1/asistencias?fecha`**: las clases del profesor en `fecha` (sin ella, hoy; posterior a hoy → 400 en `fecha`). Cualquier día pasado se puede pedir: con el plazo vencido se devuelve igual, con `editable: false` (sólo lectura).
+
+- Una **clase** es una hora de un bloque con al menos un turno no cancelado, en orden horario, con su horario y su aula. Los turnos cancelados no aparecen.
+- Cada **fila** es un grupo de horas seguidas de un alumno (mismo alumno, materia y fecha, una hora a continuación de la otra) y va en la clase de su **primera** hora (una clase puede quedar sin filas). `temas` son los del turno de la primera hora. `ocurrencias` trae cada hora con su propio `estado` y su `asistencia` (`null` si no se registró).
+- `indicacionesAnteriores`: las de la última asistencia "Presente" con indicaciones de ese alumno en esa materia antes de esa fecha (de cualquier profesor), con su fecha, o `null`.
+- `plazo` es el de la fecha (`vence` = fecha + 7; `vencido` si hoy es posterior) y `editable` = no vencido.
+
+```json
+{
+  "fecha": "2026-10-13",
+  "plazo": { "vence": "2026-10-20", "vencido": false },
+  "editable": true,
+  "clases": [
+    {
+      "bloqueAgendaId": 7,
+      "horaInicio": "08:00",
+      "horaFin": "09:00",
+      "aula": { "id": 1, "nombre": "Aula 1" },
+      "filas": [
+        {
+          "alumno": { "id": 12, "apellido": "Pérez", "nombre": "Juan", "fotoUrl": null },
+          "materia": { "id": 3, "nombre": "Matemática" },
+          "temas": "Ecuaciones de primer grado",
+          "horaInicio": "08:00",
+          "horaFin": "11:00",
+          "horas": 3,
+          "ocurrencias": [
+            {
+              "turnoId": 41,
+              "fecha": "2026-10-13",
+              "horaInicio": "08:00",
+              "horaFin": "09:00",
+              "estado": "REALIZADO",
+              "asistencia": {
+                "estado": "PRESENTE",
+                "trabajado": "Despeje de incógnitas",
+                "indicaciones": "Repasar los ejercicios 1 a 5",
+                "observacion": null
+              }
+            }
+          ],
+          "indicacionesAnteriores": { "fecha": "2026-10-06", "indicaciones": "Traer la carpeta" }
+        }
+      ]
+    }
+  ]
+}
+```
+
+**`GET /api/v1/asistencias/pendientes`**: turnos del profesor de días **anteriores** a hoy, sin asistencia y con el plazo sin vencer: `{ "cantidad": 3, "masAntiguo": { "fecha": "2026-10-08", "vence": "2026-10-15" } }` (`masAntiguo` es `null` si no hay). Para "Tenés 3 turnos sin registrar de días anteriores. El más antiguo se puede registrar hasta el 15/10".
+
+**`PUT /api/v1/asistencias`**: registra o corrige, **todo o nada**. Responde `200` con `{ "filas": [...] }`: las filas registradas, con la misma forma que en el `GET`.
+
+```json
+{
+  "registros": [
+    {
+      "ocurrencias": [
+        { "turnoId": 41, "fecha": "2026-10-13" },
+        { "turnoId": 42, "fecha": "2026-10-13" }
+      ],
+      "estado": "PRESENTE",
+      "trabajado": "Despeje de incógnitas",
+      "indicaciones": "Repasar los ejercicios 1 a 5"
+    }
+  ]
+}
+```
+
+- Cada **registro** es una fila: una o varias horas seguidas del mismo alumno, materia y fecha, con el mismo estado y los mismos textos en **cada** hora. Con "Ajustar por hora", un registro por hora.
+- `PRESENTE`: `trabajado` e `indicaciones` opcionales, hasta 1000 caracteres. `AUSENTE`: `observacion` opcional, hasta 500; con `trabajado` o `indicaciones` → 400 en ese campo. Un texto vacío se guarda como `null`.
+- **Corregir** es volver a mandar la misma ocurrencia: actualiza la misma asistencia (una por ocurrencia) y quién y cuándo la modificó. Si dos pedidos llegan a la vez, el último gana.
+- **"Marcar todos presentes"** es un `PUT` con un registro `PRESENTE` por cada fila de la clase **sin asistencia**: las ya registradas no se mandan y no cambian.
+- Errores, en este orden:
+
+  | Status | `code`            | Cuándo                                                                                                                          |
+  | ------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+  | 400    | `VALIDACION`      | Body inválido; una ocurrencia de fecha futura (`path` `["registros", i, "ocurrencias", j, "fecha"]`) o repetida en el pedido    |
+  | 403    | `SIN_PERMISO`     | Alguna ocurrencia no existe o no es del profesor de la sesión                                                                   |
+  | 409    | `TURNO_CANCELADO` | Alguna ocurrencia está cancelada: "El turno está cancelado: no se puede registrar su asistencia"                                |
+  | 400    | `VALIDACION`      | Las horas de un registro no son seguidas, o no son del mismo alumno, materia y fecha (`path` `["registros", i, "ocurrencias"]`) |
+  | 409    | `FUERA_DE_PLAZO`  | El plazo venció (pasado el séptimo día): "El plazo para registrar esta asistencia venció el DD/MM". Tampoco se puede corregir   |
 
 ## Historiales
 
@@ -1103,6 +1186,8 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `BLOQUE_SUPERPUESTO`     | `details`: una entrada por cada hora en conflicto, `[{ "diaSemana", "horaInicio", "horaFin", "bloqueExistenteId" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | 409    | `AULA_OCUPADA`           | "No hay un aula disponible en ese horario. Por favor, elija otro horario." `details`: una entrada por cada hora en conflicto, `[{ "diaSemana", "horaInicio", "horaFin", "profesorId" }]` (quién ocupa el aula a esa hora)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 409    | `CAPACIDAD_INSUFICIENTE` | "La capacidad no puede ser menor que la cantidad de turnos que el profesor ya tiene a la vez en una hora", al editar la capacidad de un profesor (T-15). `details`: una entrada por hora en conflicto, sobre el campo: `[{ "path": ["capacidad"], "message", "bloqueId", "diaSemana", "horaInicio", "horaFin", "fecha", "cantidad" }]`, con la fecha en que esa hora tiene más turnos a la vez desde hoy y cuántos                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| 409    | `TURNO_CANCELADO`        | "El turno está cancelado: no se puede registrar su asistencia", al registrar o corregir una asistencia (`PUT /asistencias`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| 409    | `FUERA_DE_PLAZO`         | "El plazo para registrar esta asistencia venció el DD/MM", al registrar o corregir una asistencia pasado el séptimo día (`PUT /asistencias`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 409    | `ALUMNO_SUPERPUESTO`     | "El alumno ya tiene un turno en ese horario". Rechazo total (ninguna bandera lo saltea). `details`: un ítem por turno en conflicto (de cualquier profesor), `[{ "turnoId", "tipo", "fechaInicio", "fechaFin", "diaSemana", "horaInicio", "horaFin", "profesor": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" } }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | 409    | `MATERIA_NO_ASIGNADA`    | "La materia no está asignada al profesor" (o su asignación está dada de baja), al registrar un turno. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |
