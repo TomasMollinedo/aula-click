@@ -4,8 +4,11 @@ import { Suspense } from 'react'
 
 import { AlumnoDetalle } from '@/features/alumnos/components/AlumnoDetalle'
 import { ExamenesDelAlumno } from '@/features/examenes/components/ExamenesDelAlumno'
+import { HistorialAcademico } from '@/features/historiales/components/HistorialAcademico'
 
-// La ficha del alumno para el profesor: Datos y Exámenes, sin "Editar". Los turnos y los pagos del
+import { DetalleTurno } from './detalle-turno'
+
+// La ficha del alumno para el profesor: Datos, Historial académico y Exámenes, sin "Editar". Los turnos y los pagos del
 // alumno son de mesa de entradas.
 export function FichaAlumno({ alumnoId }: { alumnoId: string }) {
   // Suspense: el detalle lee el tab de la URL con useSearchParams.
@@ -15,6 +18,13 @@ export function FichaAlumno({ alumnoId }: { alumnoId: string }) {
         alumnoId={alumnoId}
         rutaBase="/profesor/alumnos"
         puedeEditar={false}
+        renderHistorial={(alumno) => (
+          <HistorialAcademico
+            alumnoId={alumno.id}
+            rol="PROFESOR"
+            renderDetalle={(detalle) => <DetalleTurno {...detalle} />}
+          />
+        )}
         renderExamenes={(alumno) => <ExamenesDelAlumno alumnoId={alumno.id} rol="PROFESOR" />}
       />
     </Suspense>

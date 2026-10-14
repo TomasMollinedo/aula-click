@@ -3,24 +3,45 @@
 import { Suspense } from 'react'
 
 import { DetalleTurno } from '@/app/mesa/_componentes/detalle-turno'
+import { DetallePago } from '@/app/mesa/_componentes/detalle-pago'
+import { PagosConVistas } from '@/app/mesa/_componentes/pagos-con-vistas'
 import { PageHeader } from '@/components/layout/page-header'
 import { PagosGlobal } from '@/features/cuentas/components/PagosGlobal'
+import { PagosRealizados } from '@/features/pagos/components/PagosRealizados'
 import { RegistrarPagoDialog } from '@/features/pagos/components/RegistrarPagoDialog'
+import { useDetallePagoEnUrl } from '@/features/pagos/hooks/use-detalle-pago-en-url'
 
-// Vista global de turnos adeudados y próximos (HU-16). Client Component: le pasa funciones (el
-// diálogo de registrar el pago de varios turnos y el detalle del turno, desde donde se cobra uno
-// solo; los dos de otras features). Suspense: PagosGlobal lee los filtros y el detalle de la URL
-// con useSearchParams.
+// Vista global de pagos: "Por cobrar" (turnos adeudados y próximos, HU-16) y "Pagos realizados"
+// (HU-36), en subpestañas (`?vista=`). Client Component: le pasa funciones (el diálogo de registrar
+// el pago de varios turnos y el detalle del turno, desde donde se cobra uno solo; los dos de otras
+// features) y monta una sola vez el detalle del pago. Suspense: lee los filtros, la subpestaña y los
+// detalles de la URL con useSearchParams.
 export default function PagosPage() {
   return (
     <div className="space-y-8">
-      <PageHeader title="Pagos" description="Turnos adeudados y próximos turnos de los alumnos" />
+      <PageHeader title="Pagos" description="Turnos por cobrar y pagos realizados de los alumnos" />
       <Suspense>
-        <PagosGlobal
-          renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
-          renderDetalle={(detalle) => <DetalleTurno {...detalle} soloPago />}
-        />
+        <PagosDeMesa />
       </Suspense>
     </div>
+  )
+}
+
+function PagosDeMesa() {
+  const { pagoId, abrir, cerrar } = useDetallePagoEnUrl()
+
+  return (
+    <>
+      <PagosConVistas
+        porCobrar={
+          <PagosGlobal
+            renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
+            renderDetalle={(detalle) => <DetalleTurno {...detalle} soloPago />}
+          />
+        }
+        realizados={<PagosRealizados onAbrirPago={abrir} />}
+      />
+      {pagoId !== null && <DetallePago pagoId={pagoId} onCerrar={cerrar} />}
+    </>
   )
 }

@@ -9,13 +9,19 @@ import { AccionCancelarVarios } from '@/features/cancelaciones/components/Accion
 import { PagosDelAlumno } from '@/features/cuentas/components/PagosDelAlumno'
 import { AccionPdfTurnosAlumno } from '@/features/documentos/components/AccionPdfTurnosAlumno'
 import { ExamenesDelAlumno } from '@/features/examenes/components/ExamenesDelAlumno'
+import { HistorialAcademico } from '@/features/historiales/components/HistorialAcademico'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import { TurnosDelAlumno } from '@/features/ocurrencias/components/TurnosDelAlumno'
+import { PagosRealizados } from '@/features/pagos/components/PagosRealizados'
 import { RegistrarPagoDialog } from '@/features/pagos/components/RegistrarPagoDialog'
+import { useDetallePagoEnUrl } from '@/features/pagos/hooks/use-detalle-pago-en-url'
 
+import { DetallePago } from './detalle-pago'
 import { DetalleTurno } from './detalle-turno'
+import { PagosConVistas } from './pagos-con-vistas'
 
-// La ficha del alumno para mesa de entradas: las cuatro pestañas (Datos, Turnos, Exámenes y Pagos).
+// La ficha del alumno para mesa de entradas: las cinco pestañas (Datos, Turnos, Historial académico,
+// Exámenes y Pagos, que a su vez tiene las subpestañas "Por cobrar" y "Pagos realizados").
 // La usan el detalle (`/mesa/alumnos/[alumnoId]`) y `editar`, que lo monta de fondo del modal.
 // Cada pestaña de otra feature se compone acá (docs/arquitectura-frontend.md → Quién importa a
 // quién).
@@ -33,6 +39,9 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
   // agendas (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia). En el calendario de
   // "Turnos" `?fecha=` es la semana que se ve: al cerrar el detalle se conserva.
   const { detalle, cerrar } = useDetalleEnUrl({ fechaEsDeLaPantalla: true })
+  // El detalle de un pago abierto desde "Pagos realizados" (`?pago=<pagoId>`): se monta una sola vez,
+  // para todas las pestañas.
+  const { pagoId, abrir: abrirPago, cerrar: cerrarPago } = useDetallePagoEnUrl()
   // Abierto desde "Pagos" (`?tab=pagos`), el detalle solo ofrece "Registrar pago".
   const enPagos = useSearchParams().get('tab') === 'pagos'
 
@@ -59,15 +68,29 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
             />
           </AgendaDelAlumno>
         )}
+        renderHistorial={(alumno) => (
+          <HistorialAcademico
+            alumnoId={alumno.id}
+            rol="MESA_ENTRADAS"
+            renderDetalle={(detalle) => <DetalleTurno {...detalle} />}
+          />
+        )}
         renderExamenes={(alumno) => <ExamenesDelAlumno alumnoId={alumno.id} rol="MESA_ENTRADAS" />}
         renderPagos={(alumno) => (
-          <PagosDelAlumno
-            alumnoId={alumno.id}
-            renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
+          <PagosConVistas
+            enFicha
+            porCobrar={
+              <PagosDelAlumno
+                alumnoId={alumno.id}
+                renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
+              />
+            }
+            realizados={<PagosRealizados alumnoId={alumno.id} onAbrirPago={abrirPago} />}
           />
         )}
       />
       {detalle && <DetalleTurno {...detalle} onCerrar={cerrar} soloPago={enPagos} />}
+      {pagoId !== null && <DetallePago pagoId={pagoId} onCerrar={cerrarPago} />}
     </>
   )
 }
