@@ -8,7 +8,7 @@ import {
 } from '@/features/auth/codigos-error'
 
 const MENSAJE_INESPERADO = 'No se pudo iniciar sesión. Intentá de nuevo en unos minutos.'
-const MENSAJE_CREDENCIALES = 'Usuario o contraseña incorrectos'
+const MENSAJE_CREDENCIALES = 'Usuario/email o contraseña incorrectos'
 
 // Los dos caminos de ingreso (email y usuario) dicen lo mismo ante una credencial incorrecta, sin
 // decir qué falló (HU-28): tampoco ante el 422 de un usuario con formato inválido, que el plugin
