@@ -9,8 +9,10 @@ import {
   ejemploDetalle,
   ejemploEdicion,
   ejemploErrorDni,
+  ejemploErrorFoto,
   ejemploErrorTutor,
   ejemploListado,
+  ejemploMiPerfil,
   ejemploMisAlumnos,
 } from './alumnos.ejemplos'
 import {
@@ -22,6 +24,10 @@ import {
   editarAlumnoSchema,
   listarAlumnosQuerySchema,
   listarMisAlumnosQuerySchema,
+  miPerfilSchema,
+  subirFotoAlumnoSchema,
+  usuarioSugeridoQuerySchema,
+  usuarioSugeridoSchema,
 } from './alumnos.validation'
 
 // Contrato HTTP de alumnos: cada endpoint se declara con createRoute() y se registra acá.
@@ -97,6 +103,48 @@ export const listarMisAlumnosRoute = createRoute({
   },
 })
 
+// También antes de `/{id}`, por lo mismo que `/mis-alumnos`.
+export const usuarioSugeridoRoute = createRoute({
+  method: 'get',
+  path: '/usuario-sugerido',
+  tags,
+  summary: 'Usuario del portal que se le asignaría al alumno',
+  description:
+    'Arma el usuario con la regla de HU-27 (inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n"; con sufijo `-2`, `-3`… si ya está tomado) para mostrarlo en el formulario de alta. Es una **sugerencia**: el usuario definitivo se calcula al guardar, porque entre la consulta y el alta otro alumno puede quedarse con él.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { query: usuarioSugeridoQuerySchema },
+  responses: {
+    200: {
+      description: 'Usuario sugerido',
+      content: {
+        'application/json': { schema: usuarioSugeridoSchema, example: { usuario: 'jperez456' } },
+      },
+    },
+    ...errores,
+  },
+})
+
+// Endpoint del portal (`mi-…`): el alumno sale de la sesión. También antes de `/{id}`.
+export const miPerfilRoute = createRoute({
+  method: 'get',
+  path: '/mi-perfil',
+  tags,
+  summary: 'Perfil del alumno de la sesión',
+  description:
+    'Nombre, apellido, usuario de ingreso y foto del alumno de la sesión (sale del `Actor`, nunca de un parámetro), para el menú del portal. No devuelve ningún otro dato de la ficha.',
+  middleware: [requireAuth(), requireRole('ALUMNO')] as const,
+  request: {},
+  responses: {
+    200: {
+      description: 'Perfil del alumno',
+      content: { 'application/json': { schema: miPerfilSchema, example: ejemploMiPerfil } },
+    },
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es alumno, o la cuenta no tiene alumno vinculado (SIN_PERMISO)'),
+    404: respuestaError('El alumno de la sesión no existe (NO_ENCONTRADO)'),
+  },
+})
+
 export const obtenerAlumnoRoute = createRoute({
   method: 'get',
   path: '/{id}',
@@ -169,9 +217,87 @@ export const editarAlumnoRoute = createRoute({
   },
 })
 
+export const subirFotoRoute = createRoute({
+  method: 'post',
+  path: '/{id}/foto',
+  tags,
+  summary: 'Subir o reemplazar la foto del alumno',
+  description:
+    'Multipart con un único campo `foto` (JPG o PNG, hasta 5 MB). Si ya tenía una, la reemplaza y borra la anterior. Actualiza la auditoría del alumno.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: {
+    params: alumnoIdParamsSchema,
+    body: { required: true, content: { 'multipart/form-data': { schema: subirFotoAlumnoSchema } } },
+  },
+  responses: {
+    200: detalle('Alumno con la foto actualizada'),
+    ...errores,
+    400: respuestaError(
+      'La foto no es JPG ni PNG, o supera el tamaño máximo (VALIDACION)',
+      ejemploErrorFoto,
+    ),
+    404: noEncontrado,
+  },
+})
+
+export const quitarFotoRoute = createRoute({
+  method: 'delete',
+  path: '/{id}/foto',
+  tags,
+  summary: 'Quitar la foto del alumno',
+  description: 'Borra el objeto y limpia la clave. Sin foto no es un error: no cambia nada.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: alumnoIdParamsSchema },
+  responses: {
+    200: detalle('Alumno sin foto'),
+    ...errores,
+    404: noEncontrado,
+  },
+})
+
+export const crearAccesoRoute = createRoute({
+  method: 'post',
+  path: '/{id}/acceso',
+  tags,
+  summary: 'Crear el acceso al portal de un alumno',
+  description:
+    'Para los alumnos anteriores a este incremento (HU-27): genera el usuario con la misma regla del alta y deja el DNI (sin puntos) como contraseña inicial. La contraseña no se devuelve. Si el alumno ya tiene acceso, 409.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: alumnoIdParamsSchema },
+  responses: {
+    201: detalle('Alumno con su acceso al portal'),
+    ...errores,
+    404: noEncontrado,
+    409: respuestaError('El alumno ya tiene acceso al portal (CONFLICTO)'),
+  },
+})
+
+export const restablecerContrasenaRoute = createRoute({
+  method: 'post',
+  path: '/{id}/acceso/restablecimiento',
+  tags,
+  summary: 'Restablecer la contraseña del alumno',
+  description:
+    'La contraseña vuelve a ser el DNI del alumno (sin puntos) y queda marcada como inicial, para que el portal recomiende cambiarla (HU-28). Registra quién la restableció y cuándo. Si el alumno no tiene acceso, 409.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: alumnoIdParamsSchema },
+  responses: {
+    200: detalle('Alumno con la contraseña restablecida'),
+    ...errores,
+    404: noEncontrado,
+    409: respuestaError('El alumno no tiene acceso al portal (CONFLICTO)'),
+  },
+})
+
 export const alumnosRoutes = createRouter()
   .openapi(listarAlumnosRoute, alumnosController.listar)
   .openapi(listarMisAlumnosRoute, alumnosController.listarMisAlumnos)
+  .openapi(usuarioSugeridoRoute, alumnosController.usuarioSugerido)
+  .openapi(miPerfilRoute, alumnosController.miPerfil)
   .openapi(obtenerAlumnoRoute, alumnosController.obtener)
   .openapi(crearAlumnoRoute, alumnosController.crear)
   .openapi(editarAlumnoRoute, alumnosController.editar)
+  .openapi(subirFotoRoute, alumnosController.subirFoto)
+  .openapi(quitarFotoRoute, alumnosController.quitarFoto)
+  .openapi(crearAccesoRoute, alumnosController.crearAcceso)
+  .openapi(restablecerContrasenaRoute, alumnosController.restablecerContrasena)

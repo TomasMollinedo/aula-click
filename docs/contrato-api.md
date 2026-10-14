@@ -76,6 +76,71 @@ Como un selector de catálogo (arreglo, sin paginar, salvo aclaración solo lo a
 
 Ejemplo: `GET /api/v1/aulas/disponibles?diaSemana=1&horaInicio=14:00&horaFin=16:00&excluirBloqueId=10` → `[{ "id": 1, "nombre": "Aula 1", "capacidad": 8 }, { "id": 3, "nombre": "Aula 3", "capacidad": 10 }]`.
 
+## Alumnos
+
+Rol `MESA_ENTRADAS`, salvo lo que diga cada fila. Reglas en `dominio.md` → Alumnos y Portal del alumno.
+
+| Ruta                                                        | Rol                         | Qué hace                                                                                                 |
+| ----------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/alumnos?page&pageSize&q`                       | `MESA_ENTRADAS`             | Listado paginado por apellido y nombre. Cada ítem: `id`, `apellido`, `nombre`, `dni` y `fotoUrl` (HU-26) |
+| `GET /api/v1/alumnos/mis-alumnos?page&pageSize&q&materiaId` | `PROFESOR`                  | Alumnos con turno vigente con el profesor de la sesión; lo mismo más `materias`                          |
+| `GET /api/v1/alumnos/usuario-sugerido?nombre&apellido&dni`  | `MESA_ENTRADAS`             | `{ "usuario" }`: el usuario del portal que se le asignaría (HU-27). Es una sugerencia                    |
+| `GET /api/v1/alumnos/mi-perfil`                             | `ALUMNO`                    | Perfil del alumno de la sesión para el menú del portal (HU-28)                                           |
+| `GET /api/v1/alumnos/{id}`                                  | `MESA_ENTRADAS`, `PROFESOR` | Detalle: todos sus datos, `menorDeEdad`, `fotoUrl`, `acceso` y la auditoría                              |
+| `POST /api/v1/alumnos`                                      | `MESA_ENTRADAS`             | Alta del alumno **y de su acceso al portal**, todo o nada (HU-27)                                        |
+| `PATCH /api/v1/alumnos/{id}`                                | `MESA_ENTRADAS`             | Edición parcial. El DNI no se puede modificar; el usuario del portal tampoco cambia                      |
+| `POST /api/v1/alumnos/{id}/foto`                            | `MESA_ENTRADAS`             | Sube o reemplaza la foto (multipart, campo `foto`, JPG o PNG hasta 5 MB)                                 |
+| `DELETE /api/v1/alumnos/{id}/foto`                          | `MESA_ENTRADAS`             | Quita la foto. Sin foto no es un error                                                                   |
+| `POST /api/v1/alumnos/{id}/acceso`                          | `MESA_ENTRADAS`             | Crea el acceso de un alumno anterior a este incremento. 409 si ya lo tiene                               |
+| `POST /api/v1/alumnos/{id}/acceso/restablecimiento`         | `MESA_ENTRADAS`             | La contraseña vuelve a ser el DNI. 409 si el alumno no tiene acceso                                      |
+
+### Foto (HU-26)
+
+- Se sube con **multipart**, en un único campo `foto`: JPG o PNG de hasta 5 MB, con las mismas reglas y mensajes que la del profesor. Además del tipo que declara el navegador se verifica la firma del archivo: un PNG renombrado a `.jpg` se rechaza con 400 `VALIDACION` y `details` sobre `foto` ("La foto debe ser JPG o PNG", "La foto no puede superar los 5 MB").
+- En la base se guarda la **clave** del objeto, no la URL. El listado, el detalle, `mis-alumnos` y `mi-perfil` devuelven `fotoUrl`: una URL prefirmada (15 min), o `null` si el alumno no tiene foto.
+- Subirla, reemplazarla o quitarla actualiza la auditoría del alumno (`updatedBy`, `updatedAt`). Al reemplazar o quitar, el archivo anterior se borra.
+- Las dos respuestas son el detalle del alumno, igual que el alta y la edición.
+
+### Acceso al portal (HU-27)
+
+El alumno ingresa al portal con un **usuario** (no con su email; ver [Autenticación](#autenticación)). El alta lo crea junto con el alumno, en la misma transacción.
+
+- **Cómo se arma el usuario:** inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n" (Juan Pérez, DNI 45.123.456 → `jperez456`). Si ya está tomado, se agrega `-2`, `-3`… El usuario **no cambia** aunque después se corrija el nombre o el apellido.
+- **Contraseña inicial:** el DNI del alumno, sin puntos. **Nunca se devuelve** en ninguna respuesta.
+- `GET /alumnos/usuario-sugerido` responde `{ "usuario": "jperez456" }` para mostrarlo en el formulario de alta en cuanto están nombre, apellido y DNI. Es sólo una **sugerencia**: el definitivo se calcula al guardar, porque entre la consulta y el alta otro alumno puede quedarse con él.
+- **El detalle trae `acceso`** (o `null` si el alumno todavía no lo tiene):
+
+  ```json
+  {
+    "acceso": {
+      "usuario": "jperez456",
+      "creadoPor": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+      "creadoEl": "2026-10-14T13:45:00.000Z",
+      "restablecidaPor": null,
+      "restablecidaEl": null
+    }
+  }
+  ```
+
+- `POST /alumnos/{id}/acceso` responde **201** con el detalle del alumno ya con su `acceso`; 409 `CONFLICTO` ("El alumno ya tiene acceso al portal") si lo tenía.
+- `POST /alumnos/{id}/acceso/restablecimiento` responde 200 con el detalle: la contraseña vuelve a ser el DNI, queda marcada como inicial (el portal recomienda cambiarla, HU-28) y `restablecidaPor` / `restablecidaEl` dicen quién y cuándo. 409 `CONFLICTO` ("El alumno no tiene acceso al portal") si no tiene.
+- **Un DNI que ya tiene usuario** (por ejemplo, el de un profesor que además toma clases) hace que el alta responda 409 `CONFLICTO` con "Ya existe un usuario con ese DNI" y `details` sobre `dni`: cada persona tiene un solo usuario por DNI. **Pendiente de confirmación de las PO** (punto 10 de "Puntos a confirmar" del Sprint 3).
+
+### Perfil del portal (HU-28)
+
+`GET /api/v1/alumnos/mi-perfil` (rol `ALUMNO`) devuelve sólo lo que el menú del portal necesita, del alumno **de la sesión**: no recibe ningún `alumnoId` ni devuelve ningún otro dato de la ficha.
+
+```json
+{
+  "nombre": "Lucía",
+  "apellido": "Álvarez",
+  "usuario": "lalvarez678",
+  "fotoUrl": "https://…"
+}
+```
+
+Un rol que no sea `ALUMNO`, o una cuenta `ALUMNO` sin alumno vinculado, reciben 403 `SIN_PERMISO`.
+
 ## Materias
 
 HU-12 (T-39). El catálogo lo administra el **gerente**; mesa de entradas conserva la lectura (la necesita para registrar turnos y exámenes). Asignar materias a un profesor sigue siendo de mesa de entradas (`/profesores/{id}/materias`).
@@ -831,7 +896,7 @@ Con un período sólo pasado (`?desde=2026-09-01&hasta=2026-09-30`), `"proximos"
 
 ## Exámenes
 
-Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de los turnos (HU-18, `examenes.condiciones.ts`, T-31). Roles: `MESA_ENTRADAS` y `PROFESOR` en los cinco endpoints. "Eliminar" un examen es darlo de baja (`PATCH /{id}/baja`): nada se borra.
+Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de los turnos (HU-18, `examenes.condiciones.ts`, T-31). Roles: `MESA_ENTRADAS` y `PROFESOR` en los cinco endpoints (y en la carga de la nota); `ALUMNO` en `mis-examenes`. "Eliminar" un examen es darlo de baja (`PATCH /{id}/baja`): nada se borra.
 
 **`GET /api/v1/examenes?alumnoId`**: exámenes `ACTIVO` del alumno, separados en `proximos` (fecha de hoy en adelante, orden ascendente, con `diasRestantes`) y `pasados` (sin `diasRestantes`). Cada uno trae su materia y la auditoría **con el rol** (`MESA_ENTRADAS` o `PROFESOR`) de quien lo cargó y de quien lo modificó por última vez, y `administrable`: si quien consulta puede editarlo y darlo de baja (mesa de entradas, siempre; el profesor, sólo los de las materias que le dicta a ese alumno). El front muestra editar y eliminar según ese campo.
 
@@ -881,6 +946,36 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
   - **Un examen pendiente por materia:** si el alumno ya tiene un examen `ACTIVO` con fecha `>= hoy` en la misma materia → 409 `EXAMEN_PENDIENTE`, con el existente (`{ id, tipo, fecha }`, sin arreglo) en `details`, para ofrecer editarlo. Un examen pasado no cuenta: después de la fecha, se puede cargar el siguiente.
   - **Profesor:** sólo puede cargar, editar o dar de baja un examen de una materia que le dicta a ese alumno; si no, 403 `SIN_PERMISO`.
 - Errores comunes a los cinco endpoints: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `MESA_ENTRADAS` o `PROFESOR`, o un usuario inhabilitado.
+
+### Nota del examen (HU-34, T-106)
+
+**`PATCH /api/v1/examenes/{id}/nota`** (`MESA_ENTRADAS`; `PROFESOR` con las reglas de HU-17): carga o corrige la nota, con las mismas reglas. Body `{ "resultado": "CON_NOTA", "nota": 7.5 }` o `{ "resultado": "AUSENTE" }`. Devuelve el detalle del examen (`200`).
+
+- `CON_NOTA`: `nota` obligatoria, de 1 a 10 con hasta dos decimales (400 en `nota`). `AUSENTE`: sin `nota` (400 en `nota` si viene) y no cuenta para los promedios.
+- Sólo un examen **ya rendido** (fecha hoy o anterior): uno futuro → 409 `EXAMEN_FUTURO` ("Un examen futuro no admite nota"). Inexistente → 404. El profesor sólo puede cargarla en una materia que le dicta a ese alumno (403).
+- La nota tiene **su propia trazabilidad**, con el rol, como la del examen: `notaCreatedBy` / `notaCreatedAt` (quién la cargó y cuándo) y `notaUpdatedBy` / `notaUpdatedAt` (quién la modificó por última vez). Cargarla o corregirla no cambia la auditoría del examen.
+- Las observaciones se siguen editando con `PATCH /examenes/{id}`.
+
+**En `GET /examenes?alumnoId`** (y en el detalle que devuelven los `PATCH`), cada examen suma `resultado` (`CON_NOTA`, `AUSENTE` o `null`), `nota` (número o `null`) y su trazabilidad (`notaCreatedBy`, `notaCreatedAt`, `notaUpdatedBy`, `notaUpdatedAt`, `null` si no se cargó). El ítem del listado suma además `cargarNota`: si quien consulta puede cargarla (ya rendido y `administrable`; un examen de hoy está en `proximos` y ya admite nota). La respuesta suma `rendidosSinNota`, para "2 exámenes rendidos sin nota". El profesor sigue viendo todos los exámenes del alumno y sólo carga la nota de los suyos (HU-31).
+
+**`GET /api/v1/examenes/mis-examenes?materiaId`** (`ALUMNO`, portal, HU-35): el alumno sale de la sesión. Sin observaciones ni auditoría.
+
+```json
+{
+  "proximo": { "fecha": "2026-10-22", "tipo": "PARCIAL", "diasRestantes": 8 },
+  "rendidos": [
+    { "fecha": "2026-10-01", "tipo": "PARCIAL", "resultado": "CON_NOTA", "nota": 7.5 },
+    { "fecha": "2026-09-20", "tipo": "TRABAJO_PRACTICO", "resultado": "AUSENTE", "nota": null },
+    { "fecha": "2026-09-05", "tipo": "PARCIAL", "resultado": "CON_NOTA", "nota": 9 }
+  ],
+  "promedio": 8.25
+}
+```
+
+- `proximo`: el próximo examen de la materia (a lo sumo uno), con los días que faltan, o `null`.
+- `rendidos`: del más reciente al más antiguo; un examen de hoy pasa a rendidos cuando tiene nota. `resultado` `null` es "Sin nota".
+- `promedio`: de las notas (`CON_NOTA`), sin los ausentes ni los sin nota, con dos decimales; `null` si no hay.
+- Una materia sin exámenes del alumno responde todo vacío. 403 `SIN_PERMISO` para cualquier rol que no sea `ALUMNO` o una cuenta sin alumno.
 
 ## Tablero
 
@@ -1050,7 +1145,42 @@ A completar por T-108 (HU-31, HU-33). El PDF del historial lo suma T-110 en [Doc
 
 ## Adjuntos
 
-A completar por T-95 (HU-24).
+HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia para respaldar un pago por transferencia o con débito (no confundir con el comprobante de pago en PDF que emite el centro, HU-15). Reglas en `dominio.md` → Comprobante adjunto.
+
+| Endpoint                                 | Roles                      | Qué hace                                                                                                 |
+| ---------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/adjuntos`                  | `MESA_ENTRADAS`            | Sube el archivo **antes** de registrar el pago. 201 `{ id, nombre, tipo, bytes }`; 400                   |
+| `GET /api/v1/adjuntos/pagos/{pagoId}`    | `MESA_ENTRADAS`, `GERENTE` | El último adjunto activo del pago, con la URL para abrirlo. 200; 404                                     |
+| `PUT /api/v1/adjuntos/pagos/{pagoId}`    | `MESA_ENTRADAS`            | Reemplaza el comprobante (conserva el anterior) o lo adjunta a un débito sin adjunto. 200; 400; 404; 409 |
+| `DELETE /api/v1/adjuntos/pagos/{pagoId}` | `MESA_ENTRADAS`            | Quita el comprobante de un pago **con débito** (baja lógica). 204; 404; 409                              |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante adjunto** (HU-24).
+
+**El archivo** (`POST` y `PUT`): multipart con un único campo `archivo`, JPG, PNG o PDF de hasta 5 MB. Además del tipo que declara el navegador se verifica el contenido (la firma): un PNG renombrado a `.pdf` se rechaza. Errores, 400 `VALIDACION` en `["archivo"]`: "El archivo debe ser JPG, PNG o PDF" o "El archivo supera los 5 MB". Se guarda con su nombre original (hasta 200 caracteres; vacío, "comprobante").
+
+**Respuesta 201 del `POST`:** `{ "id": 18, "nombre": "transferencia.pdf", "tipo": "application/pdf", "bytes": 248312 }`. El `id` es el que se manda como `comprobanteAdjuntoId` al registrar el pago (`POST /pagos`, T-96), que lo vincula **dentro de su transacción**: si el pago falla, el adjunto queda sin pago. Un adjunto sólo se vincula a un pago, y sólo lo puede vincular quien lo subió; si no, el `POST /pagos` responde 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]`. Uno que nunca se vincula queda guardado y no se muestra.
+
+**Respuesta 200 del `GET` (y del `PUT`):**
+
+```json
+{
+  "id": 21,
+  "nombre": "transferencia.pdf",
+  "tipo": "application/pdf",
+  "bytes": 248312,
+  "url": "https://…/adjuntos/3f1c….pdf?X-Amz-…",
+  "adjuntadoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+  "adjuntadoEl": "2026-10-14T13:45:00.000Z"
+}
+```
+
+- Es el **último activo** del pago: los reemplazados se conservan y no se muestran. Un pago anulado lo sigue mostrando.
+- `url`: prefirmada, vence a los 15 min. **Abre el archivo en otra pestaña** (`Content-Disposition: inline`) y, si se guarda, se guarda con su nombre. El frontend la usa como enlace (`target="_blank"`); no la guarda.
+- 404 si el pago no existe ("Pago no encontrado") o no tiene adjunto: nunca tuvo, o se quitó ("El pago no tiene comprobante adjunto").
+
+**`PUT` (reemplazar):** adjunta el archivo nuevo y conserva el anterior (la fila y el archivo); el `GET` muestra el nuevo, con quién lo adjuntó y cuándo. En un pago con débito sin adjunto, lo adjunta. Errores, en orden: 404 si el pago no existe; 409 `PAGO_ANULADO` si está anulado (conserva todo como estaba, HU-42); 409 `CONFLICTO` "Un pago en efectivo no lleva comprobante adjunto" si su forma de pago no lleva comprobante.
+
+**`DELETE` (quitar):** sólo en un pago con débito, donde el comprobante es opcional. Es una baja lógica: los adjuntos activos del pago pasan a inactivos con quién y cuándo, y no se borran ni las filas ni los archivos; después, `GET` → 404 y el pago se ve sin comprobante. 204 sin cuerpo. Errores, en orden: 404 si el pago no existe; 409 `PAGO_ANULADO`; 409 `ADJUNTO_OBLIGATORIO` "Un pago por transferencia no puede quedar sin comprobante: reemplazalo"; 404 si es en efectivo o no tiene adjunto activo.
 
 ## Anulaciones
 
@@ -1072,16 +1202,17 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
-| Feature       | Endpoints del portal  | Tarea |
-| ------------- | --------------------- | ----- |
-| `ocurrencias` | A completar por T-84  | T-84  |
-| `alumnos`     | A completar por T-88  | T-88  |
-| `usuarios`    | A completar por T-91  | T-91  |
-| `turnos`      | A completar por T-93  | T-93  |
-| `pagos`       | A completar por T-98  | T-98  |
-| `cuentas`     | A completar por T-101 | T-101 |
-| `examenes`    | A completar por T-106 | T-106 |
-| `historiales` | A completar por T-108 | T-108 |
+
+| Feature       | Endpoints del portal                                                              | Tarea |
+| ------------- | --------------------------------------------------------------------------------- | ----- |
+| `ocurrencias` | A completar por T-84                                                              | T-84  |
+| `alumnos`     | `GET /alumnos/mi-perfil`                                                              | T-88  |
+| `usuarios`    | A completar por T-91                                                              | T-91  |
+| `turnos`      | A completar por T-93                                                              | T-93  |
+| `pagos`       | A completar por T-98                                                              | T-98  |
+| `cuentas`     | A completar por T-101                                                             | T-101 |
+| `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106)) | T-106 |
+| `historiales` | A completar por T-108                                                             | T-108 |
 
 ## Documentos PDF
 
@@ -1181,11 +1312,13 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 
 | Status | `code`                   | Mensaje / `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 400    | `ADJUNTO_INVALIDO`       | Registrar un pago con `comprobanteAdjuntoId` (T-95/T-96), si el adjunto no existe, ya está vinculado a otro pago, está dado de baja o lo subió otro usuario: "El comprobante adjunto no existe o ya se usó en otro pago: volvé a subirlo". `details`: `[{ "path": ["comprobanteAdjuntoId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | 403    | `USUARIO_INHABILITADO`   | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 409    | `BLOQUE_LLENO`           | Alta de turnos. Mensaje general: "No hay lugar: …" si alguna hora no tiene lugar en ninguna fecha (incluida una sesión única llena; se rechaza siempre, aun con `asignarDondeHayLugar`), o "Hay fechas sin lugar: …" si solo algunas fechas de un recurrente están llenas (se puede reenviar con `asignarDondeHayLugar: true`). `details`: una entrada por hora con problema, `{ "path": ["bloqueIds", <posición>], "message", "bloqueId", "horaInicio", "horaFin", "capacidadEfectiva", "fechas", "completoDesde", "sinLugar" }`. `fechas`: las fechas llenas (lista finita); `completoDesde`: la fecha desde la cual todas las siguientes están llenas, o `null`. `message` sigue la HU: "La hora de 9:00 a 10:00 está completa el lunes 26/10", "… está completa desde el lunes 02/11" o "… no tiene lugar en ninguna de las fechas pedidas" |
 | 409    | `PROFESOR_INACTIVO`      | El mensaje depende de la operación: "El profesor está inactivo: no se le pueden asignar materias" (materias), "… no se le puede cargar un bloque" (bloques) o "… no se le pueden asignar turnos" (turnos). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 409    | `TURNOS_VIGENTES`        | `details` según el recurso: al quitar materias de un profesor, una entrada por cada una con turnos vigentes (no cancelados), con `path` `["materiaIds", <posición>]`, `message` y `cantidad`; al dar de baja varias horas de un bloque (`DELETE /bloques`), lo mismo con `path` `["bloqueIds", <posición>]`; al editar o dar de baja una sola hora (un solo recurso, no una lista), `{ "cantidad" }` directo; al dar de baja un profesor, un arreglo con cada turno vigente: `{ "alumno": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" }, "tipo", "fecha", "fechaFin", "horaInicio", "horaFin" }` (`fecha` es la de inicio; `fechaFin` es `null` en un recurrente sin fin)                                                                                                                                                       |
 | 409    | `MATERIA_INACTIVA`       | Al asignar materias a un profesor, `details`: una entrada por cada materia inactiva pedida, con `path` `["materiaIds", <posición>]`. Al registrar un turno, `[{ "path": ["materiaId"], "message" }]`. En la disponibilidad de turnos, sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 409    | `EXAMEN_FUTURO`          | "Un examen futuro no admite nota", al cargar o corregir la nota de un examen con fecha posterior a hoy (`PATCH /examenes/{id}/nota`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 409    | `MATERIA_SIN_TURNOS`     | "El alumno no tiene turnos próximos de esa materia", al cargar un examen o moverlo a otra materia. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 409    | `MATERIA_CON_PROFESORES` | "No se puede dar de baja una materia con profesores asignados". `details`: los profesores con una asignación activa, `[{ "id", "apellido", "nombre", "estado" }]`, para que la UI los liste y enlace a su ficha                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 409    | `MATERIA_SIN_PRECIO`     | "La materia no tiene precio: cárguelo antes de reactivarla", al reactivar una materia sin precio (`PATCH /materias/{id}/reactivacion`): primero hay que cargarle el precio con `PATCH /materias/{id}`. Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
@@ -1201,6 +1334,8 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_PAGADOS`         | Finalizar un turno recurrente, si hay turnos pagados desde `fechaDesde` (no se finaliza): "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (DD/MM)" o, si llegan hasta el final de la serie, "Los turnos pagados llegan hasta el final de la serie (DD/MM): no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaPagada", "fechaDesdeMinima", "pagadas": [{ "fecha", "horaInicio", "horaFin", "importe" }] }`; `fechaDesdeMinima` es la primera fecha que se puede elegir, o `null` si no queda ninguna; `pagadas` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                |
 | 409    | `TURNOS_CON_ASISTENCIA`  | Finalizar un turno recurrente desde hoy, si el turno de hoy tiene asistencia registrada (no se finaliza, T-83): "El turno del DD/MM tiene asistencia registrada: elegí una fecha posterior" o, si es la última fecha de la serie, "El turno del DD/MM tiene asistencia registrada y es el último de la serie: no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaConAsistencia", "fechaDesdeMinima", "conAsistencia": [{ "fecha", "horaInicio", "horaFin", "estado" }] }`, como `TURNOS_PAGADOS`; `conAsistencia` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                                                    |
+| 409    | `PAGO_ANULADO`           | "El pago está anulado: su comprobante adjunto se conserva como estaba", al reemplazar o quitar el comprobante adjunto de un pago anulado (`PUT`/`DELETE /adjuntos/pagos/{pagoId}`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 409    | `ADJUNTO_OBLIGATORIO`    | "Un pago por transferencia no puede quedar sin comprobante: reemplazalo", al quitar el comprobante adjunto de un pago por transferencia (`DELETE /adjuntos/pagos/{pagoId}`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNO_CON_ASISTENCIA`   | "El turno tiene asistencia registrada: no se puede reprogramar", al reprogramar una ocurrencia con asistencia ("Presente" o "Ausente"), aunque sea de hoy (T-83). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
@@ -1230,21 +1365,21 @@ Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de 
 - `/api/auth/*` responde con el **formato de Better Auth**, `{ "code", "message" }` (el `authClient` lo expone como `error.code` / `error.message`), no con `{ "error": { … } }`. El `message` de Better Auth viene en inglés: la UI elige el texto según el `code`.
 - Códigos que la UI maneja en el login (`POST /api/auth/sign-in/email`):
 
-  | Status | `code`                      | Cuándo                                                                                        | Texto en la UI                     |
-  | ------ | --------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------- |
-  | 401    | `INVALID_EMAIL_OR_PASSWORD` | Email inexistente o contraseña incorrecta (siempre el mismo, sin indicar cuál falló)          | "Usuario o contraseña incorrectos" |
-  | 403    | `USUARIO_INHABILITADO`      | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
-  | 400    | `INVALID_EMAIL`             | El email no tiene formato válido (el formulario lo valida antes de enviarlo)                  | Error de formato del campo         |
+  | Status | `code`                      | Cuándo                                                                                        | Texto en la UI                           |
+  | ------ | --------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+  | 401    | `INVALID_EMAIL_OR_PASSWORD` | Email inexistente o contraseña incorrecta (siempre el mismo, sin indicar cuál falló)          | "Usuario/email o contraseña incorrectos" |
+  | 403    | `USUARIO_INHABILITADO`      | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"          |
+  | 400    | `INVALID_EMAIL`             | El email no tiene formato válido (el formulario lo valida antes de enviarlo)                  | Error de formato del campo               |
 
 - Códigos que la UI maneja en el ingreso del alumno (`POST /api/auth/sign-in/username`). Usuario inexistente, contraseña incorrecta o usuario con formato inválido muestran **lo mismo**, sin indicar cuál falló:
 
-  | Status | `code`                         | Cuándo                                                                                        | Texto en la UI                     |
-  | ------ | ------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------- |
-  | 401    | `INVALID_USERNAME_OR_PASSWORD` | Usuario inexistente o contraseña incorrecta                                                   | "Usuario o contraseña incorrectos" |
-  | 422    | `USERNAME_TOO_SHORT`           | Usuario de menos de 3 caracteres (antes de mirar la contraseña)                               | "Usuario o contraseña incorrectos" |
-  | 422    | `USERNAME_TOO_LONG`            | Usuario de más de 50 caracteres (antes de mirar la contraseña)                                | "Usuario o contraseña incorrectos" |
-  | 422    | `INVALID_USERNAME`             | Usuario con algo que no sea minúsculas, números, `.` o `-` (antes de mirar la contraseña)     | "Usuario o contraseña incorrectos" |
-  | 403    | `USUARIO_INHABILITADO`         | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
+  | Status | `code`                         | Cuándo                                                                                        | Texto en la UI                           |
+  | ------ | ------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------------- |
+  | 401    | `INVALID_USERNAME_OR_PASSWORD` | Usuario inexistente o contraseña incorrecta                                                   | "Usuario/email o contraseña incorrectos" |
+  | 422    | `USERNAME_TOO_SHORT`           | Usuario de menos de 3 caracteres (antes de mirar la contraseña)                               | "Usuario/email o contraseña incorrectos" |
+  | 422    | `USERNAME_TOO_LONG`            | Usuario de más de 50 caracteres (antes de mirar la contraseña)                                | "Usuario/email o contraseña incorrectos" |
+  | 422    | `INVALID_USERNAME`             | Usuario con algo que no sea minúsculas, números, `.` o `-` (antes de mirar la contraseña)     | "Usuario/email o contraseña incorrectos" |
+  | 403    | `USUARIO_INHABILITADO`         | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"          |
 
 - El usuario no se cambia: `POST /api/auth/update-user` con un `username` distinto responde 400 `USERNAME_IS_IMMUTABLE`.
 

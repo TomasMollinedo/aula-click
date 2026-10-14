@@ -6,12 +6,13 @@ import type { ProfesoresRepository } from '@/server/features/profesores/profesor
 import type { Actor } from '@/server/shared/actor'
 import type { ExamenesRepository } from '../examenes.repository'
 import {
+  CODIGO_EXAMEN_FUTURO,
   CODIGO_EXAMEN_PENDIENTE,
   CODIGO_MATERIA_INACTIVA,
   CODIGO_MATERIA_SIN_TURNOS,
   crearExamenesService,
 } from '../examenes.service'
-import type { ExamenGuardado } from '../examenes.validation'
+import { cargarNotaSchema, type ExamenGuardado } from '../examenes.validation'
 
 // Los repositories se reemplazan por falsos: sin Docker ni Postgres. El service los importa solo
 // como tipo, así que no hace falta mockear los módulos reales.
@@ -41,6 +42,12 @@ function examen(campos: Partial<ExamenGuardado> = {}): ExamenGuardado {
     updatedAt: '2026-09-22T13:45:00.000Z',
     createdBy: auditoriaMesa,
     updatedBy: auditoriaMesa,
+    resultado: null,
+    nota: null,
+    notaCreatedAt: null,
+    notaUpdatedAt: null,
+    notaCreatedBy: null,
+    notaUpdatedBy: null,
     ...campos,
   }
 }
@@ -53,6 +60,7 @@ function crearRepository() {
     crear: vi.fn<ExamenesRepository['crear']>(),
     actualizar: vi.fn<ExamenesRepository['actualizar']>(),
     darDeBaja: vi.fn<ExamenesRepository['darDeBaja']>(),
+    cargarNota: vi.fn<ExamenesRepository['cargarNota']>(),
     materiasDictadas: vi.fn<ExamenesRepository['materiasDictadas']>(),
     materiasConTurnoVigente: vi.fn<ExamenesRepository['materiasConTurnoVigente']>(),
   }
@@ -132,7 +140,11 @@ describe('listar', () => {
 
   it('sin exámenes, listas vacías', async () => {
     repository.listarDelAlumno.mockResolvedValue([])
-    expect(await service.listar(12, actorMesa)).toEqual({ proximos: [], pasados: [] })
+    expect(await service.listar(12, actorMesa)).toEqual({
+      proximos: [],
+      pasados: [],
+      rendidosSinNota: 0,
+    })
   })
 
   it('mesa de entradas: todos son administrables, sin consultar materias dictadas', async () => {
@@ -426,5 +438,196 @@ describe('darDeBaja', () => {
     repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
 
     await expect(service.darDeBaja(1, actorProfesor)).resolves.toMatchObject({ id: 1 })
+  })
+})
+
+describe('nota en el listado', () => {
+  it('trae la nota y cargarNota (rendido hoy o antes y administrable); cuenta los rendidos sin nota', async () => {
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ id: 1, fecha: '2026-10-05' }), // hoy, sin nota: ya admite nota
+      examen({ id: 2, fecha: '2026-10-15' }), // futuro: todavía no
+      examen({ id: 3, fecha: '2026-09-01', resultado: 'CON_NOTA', nota: 8 }),
+      examen({ id: 4, fecha: '2026-09-10' }), // rendido sin nota
+    ])
+
+    const listado = await service.listar(12, actorMesa)
+
+    expect(listado.proximos.map((e) => [e.id, e.cargarNota])).toEqual([
+      [1, true],
+      [2, false],
+    ])
+    expect(listado.pasados.map((e) => [e.id, e.resultado, e.nota, e.cargarNota])).toEqual([
+      [4, null, null, true],
+      [3, 'CON_NOTA', 8, true],
+    ])
+    expect(listado.rendidosSinNota).toBe(2)
+  })
+
+  it('profesor: ve todos, pero sólo puede cargar la nota de sus materias', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(8)
+    repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ id: 1, materiaId: 3, fecha: '2026-09-01' }),
+      examen({ id: 2, materiaId: 5, fecha: '2026-09-02' }),
+    ])
+
+    const listado = await service.listar(12, actorProfesor)
+
+    expect(listado.pasados.map((e) => [e.id, e.cargarNota])).toEqual([
+      [2, false],
+      [1, true],
+    ])
+  })
+})
+
+describe('cargarNota', () => {
+  const nota = { resultado: 'CON_NOTA', nota: 7.5 } as const
+
+  beforeEach(() => {
+    repository.cargarNota.mockImplementation(async (actual, datos) =>
+      examen({ ...actual, resultado: datos.resultado, nota: datos.nota ?? null }),
+    )
+  })
+
+  it('el profesor carga la nota de un examen rendido de su materia', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(8)
+    repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    const actual = examen({ id: 7, fecha: '2026-10-01', materiaId: 3 })
+    repository.buscarPorId.mockResolvedValue(actual)
+
+    const detalle = await service.cargarNota(7, nota, actorProfesor)
+
+    expect(detalle).toMatchObject({ id: 7, resultado: 'CON_NOTA', nota: 7.5, pasado: true })
+    expect(repository.cargarNota).toHaveBeenCalledWith(actual, nota, actorProfesor)
+  })
+
+  it('el profesor no puede cargar la nota de otra materia → 403', async () => {
+    profesoresRepository.buscarIdPorUsuario.mockResolvedValue(8)
+    repository.materiasDictadas.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+    repository.buscarPorId.mockResolvedValue(examen({ fecha: '2026-10-01', materiaId: 5 }))
+
+    await expect(service.cargarNota(1, nota, actorProfesor)).rejects.toBeInstanceOf(ForbiddenError)
+    expect(repository.cargarNota).not.toHaveBeenCalled()
+  })
+
+  it('un examen futuro no admite nota → 409 EXAMEN_FUTURO', async () => {
+    repository.buscarPorId.mockResolvedValue(examen({ fecha: '2026-10-06' }))
+
+    const error = await service.cargarNota(1, nota, actorMesa).catch((e: unknown) => e)
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error).toMatchObject({
+      code: CODIGO_EXAMEN_FUTURO,
+      message: 'Un examen futuro no admite nota',
+    })
+    expect(repository.cargarNota).not.toHaveBeenCalled()
+  })
+
+  it('el de hoy ya admite nota; un ausente también', async () => {
+    repository.buscarPorId.mockResolvedValue(examen({ fecha: '2026-10-05' }))
+
+    await expect(service.cargarNota(1, { resultado: 'AUSENTE' }, actorMesa)).resolves.toMatchObject(
+      { resultado: 'AUSENTE', nota: null },
+    )
+  })
+
+  it('corregir es la misma operación sobre un examen que ya tiene nota', async () => {
+    const actual = examen({ fecha: '2026-10-01', resultado: 'CON_NOTA', nota: 4 })
+    repository.buscarPorId.mockResolvedValue(actual)
+
+    await expect(service.cargarNota(1, nota, actorMesa)).resolves.toMatchObject({ nota: 7.5 })
+    expect(repository.cargarNota).toHaveBeenCalledWith(actual, nota, actorMesa)
+  })
+
+  it('examen inexistente → 404', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    await expect(service.cargarNota(99, nota, actorMesa)).rejects.toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe('body de la nota (Zod)', () => {
+  it.each([
+    ['nota entera', { resultado: 'CON_NOTA', nota: 7 }],
+    ['nota con dos decimales', { resultado: 'CON_NOTA', nota: 7.15 }],
+    ['los extremos', { resultado: 'CON_NOTA', nota: 10 }],
+    ['ausente sin nota', { resultado: 'AUSENTE' }],
+  ])('acepta %s', (_caso, body) => {
+    expect(cargarNotaSchema.safeParse(body).success).toBe(true)
+  })
+
+  it.each([
+    ['sin nota', { resultado: 'CON_NOTA' }],
+    ['menor a 1', { resultado: 'CON_NOTA', nota: 0.5 }],
+    ['mayor a 10', { resultado: 'CON_NOTA', nota: 10.5 }],
+    ['tres decimales', { resultado: 'CON_NOTA', nota: 7.155 }],
+    ['ausente con nota', { resultado: 'AUSENTE', nota: 5 }],
+  ])('rechaza %s → 400 en nota', (_caso, body) => {
+    const r = cargarNotaSchema.safeParse(body)
+    expect(r.success).toBe(false)
+    expect(r.error?.issues[0]?.path).toEqual(['nota'])
+  })
+})
+
+describe('misExamenes (portal)', () => {
+  const actorAlumno: Actor = { userId: 'usr_alu', role: 'ALUMNO', alumnoId: 12 }
+
+  it('el alumno sale de la sesión; próximo, rendidos y promedio sin ausentes', async () => {
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ id: 1, fecha: '2026-09-05', resultado: 'CON_NOTA', nota: 9 }),
+      examen({ id: 2, fecha: '2026-09-20', resultado: 'AUSENTE' }),
+      examen({ id: 3, fecha: '2026-10-01', resultado: 'CON_NOTA', nota: 7.5 }),
+      examen({ id: 4, fecha: '2026-10-03' }), // rendido sin nota
+      examen({ id: 5, fecha: '2026-10-13', tipo: 'FINAL' }),
+      examen({ id: 6, fecha: '2026-10-20' }),
+      examen({ id: 7, fecha: '2026-09-01', materiaId: 5 }), // otra materia
+    ])
+
+    const mis = await service.misExamenes(3, actorAlumno)
+
+    expect(repository.listarDelAlumno).toHaveBeenCalledWith(12)
+    expect(mis).toEqual({
+      proximo: { fecha: '2026-10-13', tipo: 'FINAL', diasRestantes: 8 },
+      rendidos: [
+        { fecha: '2026-10-03', tipo: 'PARCIAL', resultado: null, nota: null },
+        { fecha: '2026-10-01', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 7.5 },
+        { fecha: '2026-09-20', tipo: 'PARCIAL', resultado: 'AUSENTE', nota: null },
+        { fecha: '2026-09-05', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 9 },
+      ],
+      promedio: 8.25,
+    })
+  })
+
+  it('no trae observaciones ni auditoría', async () => {
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ fecha: '2026-09-05', observaciones: 'Interna', resultado: 'CON_NOTA', nota: 9 }),
+      examen({ fecha: '2026-10-20', observaciones: 'Interna' }),
+    ])
+
+    const mis = await service.misExamenes(3, actorAlumno)
+
+    expect(Object.keys(mis.rendidos[0] ?? {}).sort()).toEqual([
+      'fecha',
+      'nota',
+      'resultado',
+      'tipo',
+    ])
+    expect(Object.keys(mis.proximo ?? {}).sort()).toEqual(['diasRestantes', 'fecha', 'tipo'])
+    expect(JSON.stringify(mis)).not.toContain('Interna')
+  })
+
+  it('sin notas, promedio null; sin próximos, proximo null', async () => {
+    repository.listarDelAlumno.mockResolvedValue([
+      examen({ fecha: '2026-09-05', resultado: 'AUSENTE' }),
+    ])
+
+    expect(await service.misExamenes(3, actorAlumno)).toMatchObject({
+      proximo: null,
+      promedio: null,
+    })
+  })
+
+  it('una cuenta que no es de alumno → 403', async () => {
+    await expect(service.misExamenes(3, actorMesa)).rejects.toBeInstanceOf(ForbiddenError)
+    expect(repository.listarDelAlumno).not.toHaveBeenCalled()
   })
 })

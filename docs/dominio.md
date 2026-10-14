@@ -24,6 +24,8 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - La fecha de nacimiento no puede ser posterior a hoy.
 - La regla de contacto vale también al editar, sobre el alumno resultante: no se puede borrar un dato obligatorio del tutor de un menor, ni el email o el teléfono propios de un mayor. Si una edición hace que un menor pase a ser mayor y no tiene email o teléfono cargados, se rechaza. Los datos del tutor de un mayor se conservan.
 - Los alumnos tienen baja lógica (estado activo / inactivo, `ACTIVO` por defecto), pero la baja no se implementa en este release.
+- **Foto del alumno** (HU-26, amplía HU-02): opcional, JPG o PNG de hasta 5 MB, con las mismas reglas que la del profesor (HU-03). Se puede reemplazar o quitar; sin foto, la UI muestra un avatar genérico. Al reemplazarla o quitarla se borra el archivo anterior, y el cambio queda en la auditoría del alumno. El alumno no puede cambiarla desde el portal en este incremento.
+- **Cada alumno tiene su acceso al portal** (HU-27): el alta lo crea junto con el alumno (ver Portal del alumno). Un alumno anterior a este incremento lo obtiene desde su ficha.
 
 ## Profesores y materias
 
@@ -156,7 +158,18 @@ HU-22 (T-74: estados y plazo). La asistencia se registra por ocurrencia (`Asiste
 - **Plazo para registrar:** hasta las 23:59 del **séptimo día** después de la fecha del turno (vence = fecha + 7 días de calendario; el día 7 entero está dentro del plazo). Un "Sin registrar" dentro del plazo se muestra **"Sin registrar · vence el DD/MM"**; vencido, **"Sin registrar · cerrado por el sistema"**, con la observación "No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema". Si el plazo venció o no, lo dice la API: la UI no lo calcula.
 - **Pasado el plazo, el estado es definitivo:** un "Sin registrar" cerrado por el sistema no se puede registrar ni corregir, y lo ya registrado tampoco se puede corregir.
 - **El cierre se calcula al leer** (decisión T-138, **pendiente de confirmación de las PO**, punto 2 de "Puntos a confirmar" del Sprint 3): no hay un proceso programado ni una fila que lo guarde. La fecha y hora del cierre que se muestra es el vencimiento (las 23:59 del séptimo día), no el momento en que corrió un proceso.
-- **Horas seguidas:** cada hora es una ocurrencia con su propio estado y su propia asistencia. Sólo la pantalla "Asistencia" del profesor agrupa las horas seguidas de un alumno, profesor y materia en una fila, para registrarlas de una vez; el resto de las vistas muestra cada hora por separado.
+- **Horas seguidas:** cada hora es una ocurrencia con su propio estado y su propia asistencia. Sólo la pantalla "Asistencia" del profesor permite registrar las horas seguidas de un alumno, profesor y materia de una vez; todas las vistas, también esa, muestran cada hora por separado.
+
+HU-22 (T-81: registro).
+
+- **Quién:** sólo el **profesor del turno** registra y corrige su asistencia. Mesa de entrada y gerente no registran ni corrigen: la ven en el detalle del turno, el historial y el tablero.
+- **Cuándo:** turnos de **hoy** (también antes de su hora) y de días anteriores dentro del plazo. Una fecha futura o una ocurrencia cancelada no se registran. Un día vencido se sigue viendo, en sólo lectura.
+- **Campos:** "Presente" con "Qué se trabajó" e "Indicaciones para la próxima sesión" (opcionales, hasta 1000 caracteres cada uno), o "Ausente" con una "Observación" (opcional, hasta 500). Un ausente no lleva "Qué se trabajó" ni indicaciones.
+- **Horas seguidas:** cada clase (una hora) muestra a todos sus alumnos, así un alumno de 16 a 18 aparece en las dos. Se registra cada hora, o, con "Aplicar también a…", todas sus horas seguidas de una vez: el estado y los textos quedan en **cada** hora.
+- **Corrección:** registrar de nuevo la misma ocurrencia la corrige: es la misma asistencia (una por ocurrencia), y queda quién y cuándo la modificó. Dentro del plazo se puede corregir; pasado el plazo, no.
+- **"Marcar todos presentes"** marca sólo las filas sin asistencia: un ausente ya registrado no cambia (propuesta, punto 4 de "Puntos a confirmar" del Sprint 3).
+- **Cierre:** pasado el séptimo día, lo que quedó "Sin registrar" se cierra solo (ver Plazo para registrar) y nada de esa fecha se puede registrar ni corregir.
+- **Indicaciones anteriores:** al registrar, se muestran las indicaciones de la última clase "Presente" con indicaciones de ese alumno en esa materia.
 
 HU-22 (T-81: registro).
 
@@ -253,11 +266,26 @@ A completar por T-108 (HU-31, HU-33).
 
 ## Portal del alumno
 
-A completar por T-88 (acceso al portal, HU-27) y T-91 (contraseña, HU-28). La convención de sus endpoints está en `contrato-api.md` → Portal del alumno.
+El alumno (o su familia) entra al portal con una cuenta propia. La convención de sus endpoints está en `contrato-api.md` → Portal del alumno; la contraseña y su cambio, en T-91 (HU-28).
+
+- **Cada alumno tiene una sola cuenta** y **cada persona, un solo usuario por DNI**: si el DNI ya tiene usuario (por ejemplo, el de un profesor que además toma clases), el alta del alumno se rechaza. _Pendiente de confirmación de las PO_ (punto 10 de "Puntos a confirmar" del Sprint 3).
+- **El usuario lo genera el sistema** y no se escribe a mano: inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n" (Juan Pérez, DNI 45.123.456 → `jperez456`). Si ya está tomado, se agrega un número al final (`jperez456-2`).
+- **El usuario no cambia nunca**, aunque después se corrija el nombre o el apellido: es el dato con el que el alumno ingresa. El nombre que muestra la sesión sí se sincroniza con el del alumno.
+- **La contraseña inicial es el DNI del alumno**, sin puntos, y queda marcada como inicial mientras siga siendo la que puso el sistema (el portal recomienda cambiarla, HU-28). No se muestra ni se devuelve nunca.
+- **Restablecer la contraseña** (mesa de entradas) la vuelve a dejar en el DNI y marcada como inicial. Es la forma de resolver un olvido: no hay recuperación por email. Queda registrado quién la restableció y cuándo, igual que quién creó el acceso.
+- **Fuera de alcance en este incremento:** recuperación por email, y baja o reactivación del acceso.
 
 ## Comprobante adjunto
 
-A completar por T-95 (HU-24).
+HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la imagen o el PDF de la transferencia, o la foto del cupón de débito) y respalda el cobro. No es el comprobante de pago que emite el centro (HU-15): la UI los nombra siempre distinto.
+
+- **Qué pagos lo llevan:** los por **transferencia** (obligatorio) y con **tarjeta de débito** (opcional). Uno en efectivo no lleva.
+- **El archivo:** JPG, PNG o PDF de hasta 5 MB. La API verifica también el contenido, no sólo la extensión.
+- **Se sube antes de registrar el pago**, así el formulario lo muestra en vista previa y el pago se registra todo junto; queda vinculado al registrarlo. Sólo lo puede vincular quien lo subió, y a un solo pago. Uno que se subió y nunca se vinculó (el pago no se registró) queda guardado y no se muestra en ningún lado.
+- **Se ve el último:** el detalle del pago muestra el último comprobante adjunto activo, con quién lo adjuntó y cuándo, y se abre en otra pestaña. Lo ven mesa de entrada y el gerente; **el alumno no**.
+- **Reemplazar** adjunta uno nuevo y **conserva el anterior** (nada se borra); se muestra sólo el último. En un pago con débito sin comprobante (nunca tuvo, o se quitó), reemplazar lo adjunta.
+- **Quitar** sólo se puede en un pago **con débito**, donde es opcional: el comprobante deja de mostrarse, pero la fila y el archivo se conservan, con quién lo quitó y cuándo (baja lógica, decisión T-136). En uno por transferencia no se puede quitar: se reemplaza.
+- **Un pago anulado** (HU-42) conserva su comprobante como estaba: se sigue viendo y no se reemplaza ni se quita.
 
 ## Anulación de pagos
 
@@ -265,7 +293,14 @@ A completar por T-104 (HU-42).
 
 ## Notas de exámenes
 
-A completar por T-106 (HU-34, HU-35).
+HU-34 y HU-35 (T-106).
+
+- **Quién:** mesa de entrada y el profesor, con las reglas de HU-17: el profesor sólo carga la nota de los exámenes de las materias que le dicta a ese alumno. El profesor ve todos los exámenes del alumno.
+- **Cuándo:** sólo de un examen **ya rendido**, con fecha de hoy o anterior. Un examen futuro no admite nota.
+- **Resultado:** "Con nota", con una nota de 1 a 10 con hasta dos decimales, o "Ausente", sin nota. Un ausente no cuenta para los promedios.
+- **Corrección:** cargar y corregir siguen las mismas reglas. La nota tiene su propia trazabilidad: quién la cargó y quién la modificó por última vez, con fecha, hora y rol. Cargar o corregir la nota no cambia la auditoría del examen.
+- **Rendidos sin nota:** la ficha avisa cuántos exámenes ya rendidos no tienen nota cargada.
+- **Portal (HU-35):** el alumno ve, por materia, su próximo examen con los días que faltan, los rendidos del más reciente al más antiguo (la nota, "Ausente" o "Sin nota") y el promedio de sus notas sin los ausentes. No ve las observaciones ni quién cargó cada dato.
 
 ## Tope de deuda
 

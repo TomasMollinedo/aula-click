@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/server/errors'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { Actor } from '@/server/shared/actor'
 import type { AlumnosRepository } from '../alumnos.repository'
 import { crearAlumnosService } from '../alumnos.service'
-import type { AlumnoGuardado, CrearAlumno } from '../alumnos.validation'
+import type { AlumnoDetalle, AlumnoGuardado, CrearAlumno } from '../alumnos.validation'
 
 // El repository se reemplaza por un falso: sin Docker ni Postgres. El service importa el
 // repository solo como tipo, así que no hace falta mockear el módulo real.
@@ -50,11 +50,23 @@ function guardado(campos: Partial<AlumnoGuardado> = {}): AlumnoGuardado {
     tutorTelefono: null,
     tutorEmail: null,
     estado: 'ACTIVO',
+    avatarKey: null,
+    acceso: null,
     createdAt: '2026-09-01T12:00:00.000Z',
     updatedAt: '2026-09-01T12:00:00.000Z',
     createdBy: { id: 'usr_mesa', nombre: 'Ana', apellido: 'Pérez' },
     updatedBy: { id: 'usr_mesa', nombre: 'Ana', apellido: 'Pérez' },
     ...campos,
+  }
+}
+
+/** Lo que el service devuelve a partir de una fila del repository: sin `avatarKey`, con `fotoUrl`. */
+function detalle(alumno: AlumnoGuardado, menorDeEdad: boolean): AlumnoDetalle {
+  const { avatarKey, ...resto } = alumno
+  return {
+    ...resto,
+    menorDeEdad,
+    fotoUrl: avatarKey === null ? null : `https://minio.local/${avatarKey}`,
   }
 }
 
@@ -65,6 +77,13 @@ function crearRepository() {
     buscarPorId: vi.fn<AlumnosRepository['buscarPorId']>(),
     crear: vi.fn<AlumnosRepository['crear']>(),
     actualizar: vi.fn<AlumnosRepository['actualizar']>(),
+    buscarPerfil: vi.fn<AlumnosRepository['buscarPerfil']>(),
+    usuariosTomados: vi.fn<AlumnosRepository['usuariosTomados']>(),
+    existeUsuarioConDni: vi.fn<AlumnosRepository['existeUsuarioConDni']>(),
+    crearAcceso: vi.fn<AlumnosRepository['crearAcceso']>(),
+    restablecerContrasena: vi.fn<AlumnosRepository['restablecerContrasena']>(),
+    actualizarFoto: vi.fn<AlumnosRepository['actualizarFoto']>(),
+    quitarFoto: vi.fn<AlumnosRepository['quitarFoto']>(),
   }
 }
 
@@ -75,11 +94,22 @@ function crearProfesoresRepository() {
 let repository: ReturnType<typeof crearRepository>
 let profesoresRepository: ReturnType<typeof crearProfesoresRepository>
 let service: ReturnType<typeof crearAlumnosService>
+// La URL prefirmada se inyecta (como en `profesores`): el service no conoce `lib/storage`.
+const getPresignedUrl = vi.fn<(key: string) => Promise<string>>()
 
 beforeEach(() => {
   repository = crearRepository()
   profesoresRepository = crearProfesoresRepository()
-  service = crearAlumnosService({ repository, profesoresRepository, reloj: relojFijo })
+  getPresignedUrl.mockReset()
+  getPresignedUrl.mockImplementation((key) => Promise.resolve(`https://minio.local/${key}`))
+  repository.existeUsuarioConDni.mockResolvedValue(false)
+  repository.usuariosTomados.mockResolvedValue([])
+  service = crearAlumnosService({
+    repository,
+    profesoresRepository,
+    getPresignedUrl,
+    reloj: relojFijo,
+  })
 })
 
 /** Ejecuta `accion`, que debe fallar con `ValidationError`, y devuelve sus `details`. */
@@ -165,10 +195,7 @@ describe('obtener', () => {
     const alumno = await service.obtener(1)
 
     expect(repository.buscarPorId).toHaveBeenCalledWith(1)
-    expect(alumno).toEqual({
-      ...guardado({ fechaNacimiento: menor.fechaNacimiento }),
-      menorDeEdad: true,
-    })
+    expect(alumno).toEqual(detalle(guardado({ fechaNacimiento: menor.fechaNacimiento }), true))
   })
 
   it('un adulto tiene menorDeEdad false', async () => {
@@ -194,7 +221,7 @@ describe('crear', () => {
       { ...adulto, busqueda: 'gonzalez juan 30123456' },
       actor,
     )
-    expect(alumno).toEqual({ ...guardado(), menorDeEdad: false })
+    expect(alumno).toEqual(detalle(guardado(), false))
   })
 
   it('menor sin tutor → un solo ValidationError con los 4 campos del tutor', async () => {
@@ -280,6 +307,7 @@ describe('crear', () => {
     const service = crearAlumnosService({
       repository,
       profesoresRepository,
+      getPresignedUrl,
       reloj: () => new Date('2026-09-22T02:30:00Z'),
     })
     const details = await detallesDe(
@@ -391,7 +419,7 @@ describe('editar', () => {
       { nivelEscolaridad: null, grado: null, busqueda: 'gonzalez juan 30123456' },
       actor,
     )
-    expect(alumno).toEqual({ ...guardado(), menorDeEdad: false })
+    expect(alumno).toEqual(detalle(guardado(), false))
   })
 
   it('editar otro dato de un menor con tutor completo → ok', async () => {
@@ -401,5 +429,235 @@ describe('editar', () => {
     const alumno = await service.editar(1, { grado: '3° año' }, actor)
 
     expect(alumno.menorDeEdad).toBe(true)
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// Foto (HU-26) y acceso al portal (HU-27, HU-28)
+// ---------------------------------------------------------------------------------------------
+
+/** Acceso tal como lo devuelve el repository dentro del detalle. */
+const acceso = {
+  usuario: 'jgonzalez456',
+  creadoPor: { id: 'usr_mesa', nombre: 'Ana', apellido: 'Pérez' },
+  creadoEl: '2026-09-01T12:00:00.000Z',
+  restablecidaPor: null,
+  restablecidaEl: null,
+}
+
+describe('foto', () => {
+  const jpg = () =>
+    new File([new Uint8Array([0xff, 0xd8, 0xff])], 'foto.jpg', { type: 'image/jpeg' })
+
+  it('subir la foto: la manda al repository con sus bytes y devuelve la URL prefirmada', async () => {
+    repository.actualizarFoto.mockResolvedValue(guardado({ avatarKey: 'alumnos/1/abc.jpg' }))
+
+    const alumno = await service.subirFoto(1, jpg(), actor)
+
+    expect(repository.actualizarFoto).toHaveBeenCalledWith(
+      1,
+      { bytes: new Uint8Array([0xff, 0xd8, 0xff]), mimeType: 'image/jpeg' },
+      actor,
+    )
+    expect(alumno.fotoUrl).toBe('https://minio.local/alumnos/1/abc.jpg')
+  })
+
+  it('subir la foto de un alumno que no existe → 404', async () => {
+    repository.actualizarFoto.mockResolvedValue(null)
+
+    await expect(service.subirFoto(99, jpg(), actor)).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it('quitar la foto de un alumno que no tiene no es un error', async () => {
+    repository.quitarFoto.mockResolvedValue(guardado({ avatarKey: null }))
+
+    const alumno = await service.quitarFoto(1, actor)
+
+    expect(repository.quitarFoto).toHaveBeenCalledWith(1, actor)
+    expect(alumno.fotoUrl).toBe(null)
+  })
+
+  it('quitar la foto de un alumno que no existe → 404', async () => {
+    repository.quitarFoto.mockResolvedValue(null)
+
+    await expect(service.quitarFoto(99, actor)).rejects.toBeInstanceOf(NotFoundError)
+  })
+
+  it('sin foto, el detalle no pide ninguna URL prefirmada', async () => {
+    repository.buscarPorId.mockResolvedValue(guardado())
+
+    expect((await service.obtener(1)).fotoUrl).toBe(null)
+    expect(getPresignedUrl).not.toHaveBeenCalled()
+  })
+})
+
+describe('usuarioSugerido', () => {
+  const datos = { nombre: 'Juan', apellido: 'Pérez', dni: '45123456' }
+
+  it('arma el usuario con la regla de la HU', async () => {
+    await expect(service.usuarioSugerido(datos)).resolves.toEqual({ usuario: 'jperez456' })
+    expect(repository.usuariosTomados).toHaveBeenCalledWith('jperez456')
+  })
+
+  it('con el usuario tomado, sugiere el sufijo siguiente', async () => {
+    repository.usuariosTomados.mockResolvedValue(['jperez456', 'jperez456-2'])
+
+    await expect(service.usuarioSugerido(datos)).resolves.toEqual({ usuario: 'jperez456-3' })
+  })
+
+  it('normaliza tildes, "ñ" y un apellido compuesto', async () => {
+    await expect(
+      service.usuarioSugerido({ nombre: 'Ángel', apellido: 'Peña Gutiérrez', dni: '40222333' }),
+    ).resolves.toEqual({ usuario: 'apenagutierrez333' })
+  })
+})
+
+describe('crear con acceso al portal', () => {
+  beforeEach(() => {
+    repository.crear.mockResolvedValue(guardado({ acceso }))
+  })
+
+  it('el alta devuelve el alumno con su acceso', async () => {
+    const alumno = await service.crear(adulto, actor)
+
+    expect(repository.crear).toHaveBeenCalledWith(
+      { ...adulto, busqueda: 'gonzalez juan 30123456' },
+      actor,
+    )
+    expect(alumno.acceso?.usuario).toBe('jgonzalez456')
+  })
+
+  it('un DNI que ya tiene usuario → 409, sin crear nada', async () => {
+    repository.existeUsuarioConDni.mockResolvedValue(true)
+
+    const error = await service.crear(adulto, actor).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect((error as ConflictError).message).toBe('Ya existe un usuario con ese DNI')
+    expect((error as ConflictError).details).toEqual([
+      { path: ['dni'], message: 'Ya existe un usuario con ese DNI' },
+    ])
+    expect(repository.crear).not.toHaveBeenCalled()
+  })
+
+  it('los datos inválidos se rechazan antes de mirar si el DNI ya tiene usuario', async () => {
+    await detallesDe(service.crear({ ...menor }, actor))
+
+    expect(repository.existeUsuarioConDni).not.toHaveBeenCalled()
+  })
+})
+
+describe('crearAcceso', () => {
+  it('un alumno sin acceso lo obtiene', async () => {
+    repository.buscarPorId.mockResolvedValue(guardado({ acceso: null }))
+    repository.crearAcceso.mockResolvedValue(guardado({ acceso }))
+
+    const alumno = await service.crearAcceso(1, actor)
+
+    expect(repository.crearAcceso).toHaveBeenCalledWith(1, actor)
+    expect(alumno.acceso?.usuario).toBe('jgonzalez456')
+  })
+
+  it('crear el acceso dos veces → 409', async () => {
+    repository.buscarPorId.mockResolvedValue(guardado({ acceso }))
+
+    const error = await service.crearAcceso(1, actor).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect((error as ConflictError).message).toBe('El alumno ya tiene acceso al portal')
+    expect(repository.crearAcceso).not.toHaveBeenCalled()
+  })
+
+  it('un alumno que no existe → 404', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    await expect(service.crearAcceso(99, actor)).rejects.toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe('restablecerContrasena', () => {
+  it('con acceso, lo restablece y devuelve quién y cuándo', async () => {
+    const restablecido = {
+      ...acceso,
+      restablecidaPor: { id: 'usr_mesa', nombre: 'Ana', apellido: 'Pérez' },
+      restablecidaEl: '2026-09-22T15:00:00.000Z',
+    }
+    repository.buscarPorId.mockResolvedValue(guardado({ acceso }))
+    repository.restablecerContrasena.mockResolvedValue(guardado({ acceso: restablecido }))
+
+    const alumno = await service.restablecerContrasena(1, actor)
+
+    expect(repository.restablecerContrasena).toHaveBeenCalledWith(1, actor)
+    expect(alumno.acceso?.restablecidaEl).toBe('2026-09-22T15:00:00.000Z')
+  })
+
+  it('restablecer sin acceso → 409', async () => {
+    repository.buscarPorId.mockResolvedValue(guardado({ acceso: null }))
+
+    const error = await service.restablecerContrasena(1, actor).catch((e: unknown) => e)
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect((error as ConflictError).message).toBe('El alumno no tiene acceso al portal')
+    expect(repository.restablecerContrasena).not.toHaveBeenCalled()
+  })
+
+  it('un alumno que no existe → 404', async () => {
+    repository.buscarPorId.mockResolvedValue(null)
+
+    await expect(service.restablecerContrasena(99, actor)).rejects.toBeInstanceOf(NotFoundError)
+  })
+})
+
+describe('editar no cambia el usuario (HU-27)', () => {
+  it('cambiar el nombre deja el mismo usuario de ingreso', async () => {
+    repository.buscarPorId.mockResolvedValue(guardado({ acceso }))
+    repository.actualizar.mockResolvedValue(guardado({ nombre: 'Juan Carlos', acceso }))
+
+    const alumno = await service.editar(1, { nombre: 'Juan Carlos' }, actor)
+
+    expect(alumno.acceso?.usuario).toBe('jgonzalez456')
+    // La edición no toca la cuenta: el usuario no se regenera ni se consulta.
+    expect(repository.usuariosTomados).not.toHaveBeenCalled()
+    expect(repository.crearAcceso).not.toHaveBeenCalled()
+  })
+})
+
+describe('miPerfil', () => {
+  const sesionDelAlumno: Actor = { userId: 'usr_alumno', role: 'ALUMNO', alumnoId: 12 }
+
+  it('devuelve el perfil del alumno de la sesión, con su foto', async () => {
+    repository.buscarPerfil.mockResolvedValue({
+      nombre: 'Lucía',
+      apellido: 'Álvarez',
+      usuario: 'lalvarez678',
+      avatarKey: 'alumnos/12/foto.jpg',
+    })
+
+    const perfil = await service.miPerfil(sesionDelAlumno)
+
+    expect(repository.buscarPerfil).toHaveBeenCalledWith(12)
+    expect(perfil).toEqual({
+      nombre: 'Lucía',
+      apellido: 'Álvarez',
+      usuario: 'lalvarez678',
+      fotoUrl: 'https://minio.local/alumnos/12/foto.jpg',
+    })
+  })
+
+  it('un usuario de otro rol → 403, sin consultar nada', async () => {
+    await expect(service.miPerfil(actor)).rejects.toBeInstanceOf(ForbiddenError)
+    expect(repository.buscarPerfil).not.toHaveBeenCalled()
+  })
+
+  it('una cuenta ALUMNO sin alumno vinculado → 403', async () => {
+    await expect(service.miPerfil({ userId: 'usr_alumno', role: 'ALUMNO' })).rejects.toBeInstanceOf(
+      ForbiddenError,
+    )
+  })
+
+  it('el alumno de la sesión ya no existe → 404', async () => {
+    repository.buscarPerfil.mockResolvedValue(null)
+
+    await expect(service.miPerfil(sesionDelAlumno)).rejects.toBeInstanceOf(NotFoundError)
   })
 })

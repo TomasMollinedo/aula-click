@@ -1394,6 +1394,66 @@ Toca archivos de otras tareas (el motor de T-74, `asistencias` de T-81, `pagos` 
 
 ---
 
+## T-116 · [Back] FIX · Refactor · `respuestaError` del OpenAPI centralizado en `server/errors`
+
+- **HU:** ninguna (refactor técnico, sin cambio de comportamiento)
+- **Área:** Backend
+- **Rama:** `fix/respuesta-error-openapi`
+- **Depende de:** nada. Conviene tomarla cuando no haya PR abiertos sobre los archivos de la lista (ver "Coordinación").
+- **Estimación:** 2
+
+**Descripción**
+Cada `<feature>.routes.ts` declara su propio `respuestaError(description, example?)`, el helper que arma una respuesta de error del OpenAPI con `ErrorResponseSchema`. Está copiado en **18 archivos**, con 4 variantes que dicen lo mismo de distinta forma: sin ejemplo, con un ejemplo opcional (la mayoría), con el ejemplo obligatorio y con varios ejemplos con nombre. Va una sola vez al lado de `ErrorResponseSchema`. Lo detectó la revisión de cierre de T-95.
+
+**Alcance**
+
+1. `src/server/errors/error-response.ts`: `respuestaError(description, { example?, examples? })`, exportado desde `@/server/errors`. `example` es un ejemplo; `examples`, varios con nombre (`{ nombre: valor }` → `{ nombre: { value } }`, como hoy en finalizaciones). Sin ninguno de los dos, sólo el schema. Test en `src/server/errors/__tests__/` con los tres casos.
+2. Reemplazar la copia local por el helper en los `routes.ts` de: `adjuntos`, `agendas`, `alumnos`, `asistencias`, `aulas`, `bloques`, `cancelaciones`, `centro`, `cuentas`, `examenes`, `finalizaciones`, `materias`, `ocurrencias`, `pagos`, `profesores`, `reprogramaciones`, `tablero` y `turnos`.
+   - Las 12 con `respuestaError(description, example?)` pasan a `respuestaError(description, { example })`.
+   - `finalizaciones` (varios ejemplos) pasa a `{ examples }`; `tablero` (ejemplo obligatorio), a `{ example }`.
+3. Sin cambios en el OpenAPI: `GET /api/v1/openapi.json` tiene que quedar igual (compararlo antes y después) y los tests de rutas que revisan los status codes pasan sin tocarlos.
+4. Documentación: `arquitectura-backend.md` → Errores (el helper, junto a `ErrorResponseSchema`) y `.claude/commands/nueva-feature-api.md`, si el esqueleto lo menciona.
+
+**Coordinación**
+
+Toca el `routes.ts` de 18 features que tienen dueña en este sprint: avisar en sus issues antes de empezar y, si alguna tiene un PR abierto sobre su `routes.ts`, esperar a que se mergee. El cambio es mecánico: un PR chico y revisado en el día.
+
+**Criterios de aceptación**
+
+- `function respuestaError` no aparece en ningún archivo de `src/server/features/`.
+- `openapi.json` no cambia y `pnpm check` pasa sin modificar ningún test existente.
+
+---
+
+## T-117 · [Back] FIX · Refactor · Id entero positivo (path y query) centralizado en `shared/zod.ts`
+
+- **HU:** ninguna (refactor técnico, sin cambio de comportamiento)
+- **Área:** Backend
+- **Rama:** `fix/id-positivo-shared`
+- **Depende de:** nada. Conviene tomarla junto con T-116 o después, por los mismos archivos de rutas y validation (ver "Coordinación").
+- **Estimación:** 2
+
+**Descripción**
+Un id que llega como texto (en el path o en el query) se valida igual en todas las features: `z.coerce.number({ error: 'Debe ser un número' }).int({ error: 'Debe ser un número entero' }).positive({ error: 'Debe ser mayor a 0' })`, más su `.openapi({ param, description, example })`. Está repetido **35 veces en 16 archivos** `*.validation.ts`. Es formato, no negocio: va en `shared/zod.ts`, con las otras primitivas (`dni`, `fechaISO`), y se escribe una sola vez. Lo detectó la revisión de cierre de T-95: `adjuntos` tuvo que escribir su propio `pagoId` porque no puede importar el de `pagos` (ESLint) y además el parámetro se llama distinto.
+
+**Alcance**
+
+1. `src/server/shared/zod.ts`: `idPositivo()` con los tres mensajes de hoy, al que cada feature le agrega su `.openapi({ param: { name, in }, description, example })` (o un helper `idDelPath(nombre, descripcion)` si hace falta, sin repetir los mensajes). Test en `shared/__tests__/zod.test.ts`: `"abc"`, `"0"`, `"-1"` y `"1.5"` → los mensajes de hoy; `"12"` → `12`. Si se suma una función nueva, actualizar la especificación de `shared/` en `convenciones-backend.md`.
+2. Reemplazar las 35 repeticiones en: `adjuntos`, `agendas`, `alumnos`, `asistencias`, `aulas`, `bloques`, `cancelaciones`, `cuentas`, `examenes`, `finalizaciones`, `materias`, `ocurrencias`, `pagos`, `profesores`, `reprogramaciones` y `turnos` (`*.validation.ts`). Incluye los ids de los filtros del query (`materiaId`, `profesorId`, `aulaId`…), no sólo los del path.
+3. Sin cambios en el comportamiento: los mensajes de error, el 400 y el OpenAPI quedan iguales (`openapi.json` comparado antes y después) y los tests de rutas que prueban ids inválidos pasan sin tocarlos.
+4. Documentación: `convenciones-backend.md` → Especificación de `src/server/shared/`, fila de `zod.ts`.
+
+**Coordinación**
+
+Toca la validation de 16 features que tienen dueña en este sprint: avisar en sus issues y esperar los PR abiertos sobre esos archivos. Hacerla junto con T-116 (o una detrás de la otra) evita tocar dos veces las mismas features.
+
+**Criterios de aceptación**
+
+- `.number({ error: 'Debe ser un número' })` no aparece en ningún `*.validation.ts` de `src/server/features/`.
+- `openapi.json` no cambia y `pnpm check` pasa sin modificar ningún test existente.
+
+---
+
 ## Puntos a confirmar con las PO (no bloquean el inicio)
 
 Cada punto tiene una propuesta con la que las tareas pueden avanzar; si la respuesta es otra, se corrige la tarea abierta o se agrega un FIX, como en el Sprint 2. Conviene cerrarlos en la planning o, a más tardar, el día 2.

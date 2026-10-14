@@ -2,10 +2,11 @@ import { ConflictError, ForbiddenError, NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { MateriasRepository } from '@/server/features/materias/materias.repository'
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
-import type { Actor } from '@/server/shared/actor'
+import { type Actor, alumnoDeLaSesion } from '@/server/shared/actor'
 import { fechaADate, hoy, type Reloj } from '@/server/shared/fechas'
 import type { ExamenesRepository } from './examenes.repository'
 import type {
+  CargarNota,
   CrearExamen,
   EditarExamen,
   ExamenDetalle,
@@ -13,6 +14,7 @@ import type {
   ExamenGuardado,
   ExamenItem,
   MateriasExamenSelector,
+  MisExamenes,
 } from './examenes.validation'
 
 // Reglas de negocio de exámenes (HU-17). No conoce HTTP ni Prisma: lanza AppError o sus
@@ -34,6 +36,27 @@ export const CODIGO_MATERIA_INACTIVA = 'MATERIA_INACTIVA'
 export const CODIGO_MATERIA_SIN_TURNOS = 'MATERIA_SIN_TURNOS'
 /** Código del 409 al cargar o mover un examen a una materia con un pendiente (HU-17). */
 export const CODIGO_EXAMEN_PENDIENTE = 'EXAMEN_PENDIENTE'
+/** Código del 409 al cargar la nota de un examen que todavía no se rindió (HU-34). */
+export const CODIGO_EXAMEN_FUTURO = 'EXAMEN_FUTURO'
+const MENSAJE_EXAMEN_FUTURO = 'Un examen futuro no admite nota'
+
+/** La nota de un examen tal como la guarda el repository (HU-34). */
+function camposNota(examen: ExamenGuardado) {
+  return {
+    resultado: examen.resultado,
+    nota: examen.nota,
+    notaCreatedAt: examen.notaCreatedAt,
+    notaUpdatedAt: examen.notaUpdatedAt,
+    notaCreatedBy: examen.notaCreatedBy,
+    notaUpdatedBy: examen.notaUpdatedBy,
+  }
+}
+
+/** Promedio con dos decimales, o `null` sin notas. */
+function promedio(notas: number[]): number | null {
+  if (notas.length === 0) return null
+  return Math.round((notas.reduce((a, b) => a + b, 0) / notas.length) * 100) / 100
+}
 
 const MS_POR_DIA = 24 * 60 * 60 * 1000
 
@@ -62,6 +85,7 @@ export function crearExamenesService({
     | 'crear'
     | 'actualizar'
     | 'darDeBaja'
+    | 'cargarNota'
     | 'materiasDictadas'
     | 'materiasConTurnoVigente'
   >
@@ -81,6 +105,9 @@ export function crearExamenesService({
       pasado,
       diasRestantes: pasado ? null : diasEntre(fechaHoy, examen.fecha),
       administrable,
+      ...camposNota(examen),
+      // Rendido = fecha hoy o anterior (HU-34): el de hoy ya admite nota.
+      cargarNota: administrable && examen.fecha <= fechaHoy,
       createdAt: examen.createdAt,
       updatedAt: examen.updatedAt,
       createdBy: examen.createdBy,
@@ -97,6 +124,7 @@ export function crearExamenesService({
       tipo: examen.tipo,
       observaciones: examen.observaciones,
       pasado: examen.fecha < fechaHoy,
+      ...camposNota(examen),
       createdAt: examen.createdAt,
       updatedAt: examen.updatedAt,
       createdBy: examen.createdBy,
@@ -207,6 +235,63 @@ export function crearExamenesService({
           .filter((examen) => examen.fecha < fechaHoy)
           .reverse()
           .map(item),
+        rendidosSinNota: examenes.filter((e) => e.fecha <= fechaHoy && e.resultado === null).length,
+      }
+    },
+
+    /**
+     * Carga o corrige la nota de un examen (HU-34), con las mismas reglas: examen inexistente (404),
+     * materia propia si es `PROFESOR` (403, como HU-17) y ya rendido, fecha hoy o anterior (409
+     * `EXAMEN_FUTURO`). El body ya lo validó Zod (nota de 1 a 10 con dos decimales; ausente sin
+     * nota). La nota lleva su propia trazabilidad; la auditoría del examen no cambia.
+     */
+    async cargarNota(id: number, datos: CargarNota, actor: Actor): Promise<ExamenDetalle> {
+      const fechaHoy = hoy(reloj)
+      const actual = await repository.buscarPorId(id)
+      if (!actual) throw new NotFoundError(MENSAJE_NO_ENCONTRADO)
+
+      await exigirMateriaPropia(actor, actual.alumnoId, actual.materiaId)
+      if (actual.fecha > fechaHoy) {
+        throw new ConflictError(MENSAJE_EXAMEN_FUTURO, { code: CODIGO_EXAMEN_FUTURO })
+      }
+
+      const examen = await repository.cargarNota(actual, datos, actor)
+      return aDetalle(examen, fechaHoy)
+    },
+
+    /**
+     * "Mis exámenes" de una materia (HU-35, portal): el alumno sale de la sesión. El próximo (a lo
+     * sumo uno: el primero con fecha hoy o posterior y sin nota cargada), los rendidos (fecha
+     * anterior a hoy, o de hoy ya con nota) del más reciente al más antiguo, y el promedio de las
+     * notas sin los ausentes. Sin observaciones ni auditoría.
+     */
+    async misExamenes(materiaId: number, actor: Actor): Promise<MisExamenes> {
+      const alumnoId = alumnoDeLaSesion(actor)
+      const fechaHoy = hoy(reloj)
+      const examenes = (await repository.listarDelAlumno(alumnoId)).filter(
+        (e) => e.materiaId === materiaId,
+      )
+      const rendido = (e: ExamenGuardado) => e.fecha < fechaHoy || e.resultado !== null
+      const proximo = examenes.find((e) => !rendido(e))
+      const rendidos = examenes.filter(rendido).reverse()
+
+      return {
+        proximo: proximo
+          ? {
+              fecha: proximo.fecha,
+              tipo: proximo.tipo,
+              diasRestantes: diasEntre(fechaHoy, proximo.fecha),
+            }
+          : null,
+        rendidos: rendidos.map((e) => ({
+          fecha: e.fecha,
+          tipo: e.tipo,
+          resultado: e.resultado,
+          nota: e.nota,
+        })),
+        promedio: promedio(
+          rendidos.flatMap((e) => (e.resultado === 'CON_NOTA' && e.nota !== null ? [e.nota] : [])),
+        ),
       }
     },
 

@@ -1,14 +1,29 @@
-import { INVALID_EMAIL_OR_PASSWORD, USUARIO_INHABILITADO } from '@/features/auth/codigos-error'
+import {
+  INVALID_EMAIL_OR_PASSWORD,
+  INVALID_USERNAME,
+  INVALID_USERNAME_OR_PASSWORD,
+  USERNAME_TOO_LONG,
+  USERNAME_TOO_SHORT,
+  USUARIO_INHABILITADO,
+} from '@/features/auth/codigos-error'
 
 const MENSAJE_INESPERADO = 'No se pudo iniciar sesión. Intentá de nuevo en unos minutos.'
+const MENSAJE_CREDENCIALES = 'Usuario/email o contraseña incorrectos'
 
+// Los dos caminos de ingreso (email y usuario) dicen lo mismo ante una credencial incorrecta, sin
+// decir qué falló (HU-28): tampoco ante el 422 de un usuario con formato inválido, que el plugin
+// responde antes de mirar la contraseña (T-75).
 const MENSAJE_POR_CODE: Record<string, string | undefined> = {
-  [INVALID_EMAIL_OR_PASSWORD]: 'Usuario o contraseña incorrectos',
+  [INVALID_EMAIL_OR_PASSWORD]: MENSAJE_CREDENCIALES,
+  [INVALID_USERNAME_OR_PASSWORD]: MENSAJE_CREDENCIALES,
+  [USERNAME_TOO_SHORT]: MENSAJE_CREDENCIALES,
+  [USERNAME_TOO_LONG]: MENSAJE_CREDENCIALES,
+  [INVALID_USERNAME]: MENSAJE_CREDENCIALES,
   [USUARIO_INHABILITADO]: 'Su usuario no está habilitado',
 }
 
-// Forma mínima del error de authClient.signIn.email: `/api/auth` responde con el formato de
-// Better Auth ({ code, message }) y better-fetch le agrega el status del response.
+// Forma mínima del error de authClient.signIn.email / signIn.username: `/api/auth` responde con el
+// formato de Better Auth ({ code, message }) y better-fetch le agrega el status del response.
 export interface ErrorDeLogin {
   status?: number
   code?: string

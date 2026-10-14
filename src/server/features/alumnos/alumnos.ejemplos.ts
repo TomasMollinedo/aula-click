@@ -7,6 +7,7 @@ import type {
   AlumnosListado,
   CrearAlumno,
   EditarAlumno,
+  MiPerfil,
 } from './alumnos.validation'
 
 // Ejemplos del OpenAPI de alumnos (Swagger en /api/v1/docs), usados en alumnos.routes. Solo datos:
@@ -49,10 +50,14 @@ export const ejemploListadoItem = {
   apellido: 'Álvarez',
   nombre: 'Lucía',
   dni: '52345678',
+  fotoUrl: 'https://minio.local/alumnos/12/foto.jpg?X-Amz-Signature=…',
 } satisfies AlumnoListadoItem
 
 export const ejemploListado = {
-  data: [ejemploListadoItem, { id: 7, apellido: 'González', nombre: 'Juan', dni: '30123456' }],
+  data: [
+    ejemploListadoItem,
+    { id: 7, apellido: 'González', nombre: 'Juan', dni: '30123456', fotoUrl: null },
+  ],
   meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
 } satisfies AlumnosListado
 
@@ -61,6 +66,7 @@ export const ejemploDeProfesorItem = {
   apellido: 'Álvarez',
   nombre: 'Lucía',
   dni: '52345678',
+  fotoUrl: 'https://minio.local/alumnos/12/foto.jpg?X-Amz-Signature=…',
   materias: [{ id: 2, nombre: 'Matemática' }],
 } satisfies AlumnoDeProfesorItem
 
@@ -72,6 +78,7 @@ export const ejemploMisAlumnos = {
       apellido: 'González',
       nombre: 'Juan',
       dni: '30123456',
+      fotoUrl: null,
       materias: [
         { id: 2, nombre: 'Matemática' },
         { id: 7, nombre: 'Física' },
@@ -88,11 +95,36 @@ export const ejemploDetalle = {
   observaciones: null,
   estado: 'ACTIVO',
   menorDeEdad: true,
+  fotoUrl: 'https://minio.local/alumnos/12/foto.jpg?X-Amz-Signature=…',
+  acceso: {
+    usuario: 'lalvarez678',
+    creadoPor: { id: 'usr_mesa_01', nombre: 'Ana', apellido: 'Pérez' },
+    creadoEl: '2026-09-22T13:45:00.000Z',
+    restablecidaPor: null,
+    restablecidaEl: null,
+  },
   createdAt: '2026-09-22T13:45:00.000Z',
   updatedAt: '2026-09-23T10:02:17.000Z',
   createdBy: { id: 'usr_mesa_01', nombre: 'Ana', apellido: 'Pérez' },
   updatedBy: { id: 'usr_mesa_01', nombre: 'Ana', apellido: 'Pérez' },
 } satisfies AlumnoDetalle
+
+/** Perfil del alumno de la sesión (HU-28): sólo lo que el menú del portal necesita. */
+export const ejemploMiPerfil = {
+  nombre: 'Lucía',
+  apellido: 'Álvarez',
+  usuario: 'lalvarez678',
+  fotoUrl: 'https://minio.local/alumnos/12/foto.jpg?X-Amz-Signature=…',
+} satisfies MiPerfil
+
+/** 400 del schema: la foto no es JPG ni PNG (o su contenido no coincide con el tipo). */
+export const ejemploErrorFoto = {
+  error: {
+    code: 'VALIDACION',
+    message: 'Datos de entrada inválidos',
+    details: [{ path: ['foto'], message: 'La foto debe ser JPG o PNG' }],
+  },
+} satisfies ErrorResponse
 
 /** 400 del service: alta de un menor sin los datos del tutor. */
 export const ejemploErrorTutor = {
