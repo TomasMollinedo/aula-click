@@ -23,9 +23,12 @@ export function fechaCortaAsistencia(fecha: string): string {
   return format(parseISO(fecha), 'dd/MM')
 }
 
-/** El horario de una fila: `'8:00 a 11:00 (3 h)'`. */
-export function textoHorarioFila(horaInicio: string, horaFin: string, horas: number): string {
-  return `${rangoHoras(horaInicio, horaFin)} (${horas} h)`
+/** Las otras horas de un alumno, para "Aplicar también a…": `'17:00 a 18:00 y 18:00 a 19:00'`. */
+export function textoOtrasHoras(horas: { horaInicio: string; horaFin: string }[]): string {
+  const rangos = horas.map((h) => rangoHoras(h.horaInicio, h.horaFin))
+  return rangos.length <= 1
+    ? (rangos[0] ?? '')
+    : `${rangos.slice(0, -1).join(', ')} y ${rangos.at(-1)}`
 }
 
 /**

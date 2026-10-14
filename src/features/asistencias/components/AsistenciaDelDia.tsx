@@ -13,6 +13,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { mensajeErrorCarga } from '../errores-asistencias'
 import { useAsistenciasDelDia } from '../hooks/use-asistencias-del-dia'
 import { useFechaAsistencia } from '../hooks/use-fecha-asistencia'
+import { clasesPorHora } from '../registro-asistencia'
 import { AvisoPendientes } from './AvisoPendientes'
 import { TarjetaClase } from './TarjetaClase'
 
@@ -70,14 +71,18 @@ export function AsistenciaDelDia() {
               </AlertDescription>
             </Alert>
           )}
-          {data.clases.map((clase) => (
-            <TarjetaClase
-              key={clase.bloqueAgendaId}
-              clase={clase}
-              plazo={data.plazo}
-              editable={data.editable}
-            />
-          ))}
+          {/* Cada clase lista a todos los alumnos de esa hora (los de varias horas seguidas
+              aparecen en cada una). */}
+          {clasesPorHora(data)
+            .filter((clase) => clase.filas.length > 0)
+            .map((clase) => (
+              <TarjetaClase
+                key={clase.bloqueAgendaId}
+                clase={clase}
+                plazo={data.plazo}
+                editable={data.editable}
+              />
+            ))}
         </div>
       )}
     </div>
