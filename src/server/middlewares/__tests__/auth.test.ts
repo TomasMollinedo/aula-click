@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest'
 import type { Session } from '@/lib/auth'
 import { ErrorResponseSchema, errorHandler } from '@/server/errors'
 import { createRouter } from '@/server/router'
-import type { Role } from '@/server/shared/actor'
+import { alumnoDeLaSesion, type Role } from '@/server/shared/actor'
 import { requireAuth, requireRole } from '../auth'
 
 const { mockGetSession } = vi.hoisted(() => ({ mockGetSession: vi.fn() }))
@@ -29,6 +29,9 @@ function crearApp() {
   app.get('/mesa', requireAuth(), requireRole('MESA_ENTRADAS'), (c) => c.json(c.get('actor')))
   app.get('/varios', requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE'), (c) =>
     c.json(c.get('actor')),
+  )
+  app.get('/portal', requireAuth(), requireRole('ALUMNO'), (c) =>
+    c.json({ actor: c.get('actor'), alumnoId: alumnoDeLaSesion(c.get('actor')) }),
   )
   app.get('/sin-auth', requireRole('MESA_ENTRADAS'), (c) => c.json({ ok: true }))
   return app
@@ -105,6 +108,36 @@ describe('requireAuth', () => {
     mockGetSession.mockResolvedValue(sesion(user))
 
     const { res, body } = await pedir('/mesa')
+
+    expect(res.status).toBe(403)
+    expect(body.error.code).toBe('SIN_PERMISO')
+  })
+
+  it('el Actor del personal no lleva alumnoId', async () => {
+    mockGetSession.mockResolvedValue(sesion({ alumnoId: null }))
+
+    const { body } = await pedir('/mesa')
+
+    expect(body).toEqual({ userId: 'u-1', role: 'MESA_ENTRADAS' })
+  })
+
+  it('con sesión ALUMNO deja actor.alumnoId, sacado de la sesión', async () => {
+    mockGetSession.mockResolvedValue(sesion({ role: 'ALUMNO', alumnoId: 7 }))
+
+    const { res, body } = await pedir('/portal')
+
+    expect(res.status).toBe(200)
+    expect(body).toEqual({ actor: { userId: 'u-1', role: 'ALUMNO', alumnoId: 7 }, alumnoId: 7 })
+    expect(mockGetSession).toHaveBeenCalledTimes(1)
+  })
+
+  it.each([
+    ['sin alumnoId', { alumnoId: undefined }],
+    ['alumnoId null', { alumnoId: null }],
+  ])('una cuenta ALUMNO %s responde 403 SIN_PERMISO', async (_caso, user) => {
+    mockGetSession.mockResolvedValue(sesion({ role: 'ALUMNO', ...user }))
+
+    const { res, body } = await pedir('/portal')
 
     expect(res.status).toBe(403)
     expect(body.error.code).toBe('SIN_PERMISO')

@@ -1122,6 +1122,7 @@ Valores del campo `role` de la sesión: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y
 | `GERENTE`       | Gerente          |
 | `ALUMNO`        | Alumno           |
 
+- `ALUMNO` está activo: ingresa con su usuario (ver [Autenticación](#autenticación)) y usa los endpoints del [Portal del alumno](#portal-del-alumno). Su cuenta lleva el alumno vinculado (`Usuario.alumnoId`), que la API toma de la sesión.
 - Base de datos: catálogo `rol` (lo carga el seed); `Usuario.role` es un FK a él.
 - Backend: `ROLES` en `src/server/shared/actor.ts`.
 - Frontend: el tipo `Role` de `src/types/index.ts`.
@@ -1130,7 +1131,7 @@ Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de 
 
 ## Autenticación
 
-- Login con email y contraseña contra `/api/auth/...`, siempre a través del `authClient`.
+- El personal ingresa con email y contraseña (`POST /api/auth/sign-in/email`); el alumno, con su usuario y contraseña (`POST /api/auth/sign-in/username`, HU-28). Siempre a través del `authClient`. La contraseña inicial del alumno es su DNI (puede tener 7 dígitos: el ingreso no mide el largo; el mínimo de 8 rige para la contraseña nueva).
 - No hay registro público: las cuentas se crean desde el servidor (el seed crea los usuarios de desarrollo y mesa de entradas crea la cuenta de cada profesor al darlo de alta). `POST /api/auth/sign-up/email` responde 400 `EMAIL_PASSWORD_SIGN_UP_DISABLED` y el frontend no tiene pantalla de registro.
 - `/api/auth/*` responde con el **formato de Better Auth**, `{ "code", "message" }` (el `authClient` lo expone como `error.code` / `error.message`), no con `{ "error": { … } }`. El `message` de Better Auth viene en inglés: la UI elige el texto según el `code`.
 - Códigos que la UI maneja en el login (`POST /api/auth/sign-in/email`):
@@ -1141,6 +1142,18 @@ Los dos lados no pueden compartir código, así que un rol nuevo o un cambio de 
   | 403    | `USUARIO_INHABILITADO`      | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
   | 400    | `INVALID_EMAIL`             | El email no tiene formato válido (el formulario lo valida antes de enviarlo)                  | Error de formato del campo         |
 
+- Códigos que la UI maneja en el ingreso del alumno (`POST /api/auth/sign-in/username`). Usuario inexistente, contraseña incorrecta o usuario con formato inválido muestran **lo mismo**, sin indicar cuál falló:
+
+  | Status | `code`                         | Cuándo                                                                                        | Texto en la UI                     |
+  | ------ | ------------------------------ | --------------------------------------------------------------------------------------------- | ---------------------------------- |
+  | 401    | `INVALID_USERNAME_OR_PASSWORD` | Usuario inexistente o contraseña incorrecta                                                   | "Usuario o contraseña incorrectos" |
+  | 422    | `USERNAME_TOO_SHORT`           | Usuario de menos de 3 caracteres (antes de mirar la contraseña)                               | "Usuario o contraseña incorrectos" |
+  | 422    | `USERNAME_TOO_LONG`            | Usuario de más de 50 caracteres (antes de mirar la contraseña)                                | "Usuario o contraseña incorrectos" |
+  | 422    | `INVALID_USERNAME`             | Usuario con algo que no sea minúsculas, números, `.` o `-` (antes de mirar la contraseña)     | "Usuario o contraseña incorrectos" |
+  | 403    | `USUARIO_INHABILITADO`         | Contraseña correcta, pero el usuario está inactivo (message: "Su usuario no está habilitado") | "Su usuario no está habilitado"    |
+
+- El usuario no se cambia: `POST /api/auth/update-user` con un `username` distinto responde 400 `USERNAME_IS_IMMUTABLE`.
+
 - La sesión vence por inactividad (60 minutos sin pedidos) y se renueva sola con el uso. `rememberMe` no cambia la duración. Una sesión vencida se ve en `/api/v1` como 401 `NO_AUTENTICADO`.
-- Los endpoints de `/api/v1` responden 401 sin sesión válida, 403 `USUARIO_INHABILITADO` si el usuario fue dado de baja y 403 `SIN_PERMISO` si el rol no alcanza (ver tabla de errores).
+- Los endpoints de `/api/v1` responden 401 sin sesión válida, 403 `USUARIO_INHABILITADO` si el usuario fue dado de baja y 403 `SIN_PERMISO` si el rol no alcanza o si una cuenta `ALUMNO` no tiene alumno vinculado (ver tabla de errores).
 - De qué capa sale cada respuesta: `arquitectura-backend.md` → Autenticación y autorización → Qué responde cada falla.

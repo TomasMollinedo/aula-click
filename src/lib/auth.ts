@@ -2,13 +2,14 @@ import { betterAuth } from 'better-auth'
 import { prismaAdapter } from 'better-auth/adapters/prisma'
 import { createAuthMiddleware } from 'better-auth/api'
 import { nextCookies } from 'better-auth/next-js'
-import { openAPI } from 'better-auth/plugins'
+import { openAPI, username } from 'better-auth/plugins'
 import { env } from '@/config/env'
 import {
   crearGuardaSesion,
   forzarRecordarSesion,
   LARGO_MAXIMO_PASSWORD,
   LARGO_MINIMO_PASSWORD,
+  OPCIONES_USUARIO,
   SESION_INACTIVIDAD_SEGUNDOS,
   SESION_RENOVACION_SEGUNDOS,
 } from '@/lib/auth-reglas'
@@ -57,6 +58,9 @@ export const auth = betterAuth({
       busqueda: { ...campoInterno, returned: false },
       telefono: campoInterno,
       estado: { ...campoInterno, defaultValue: 'ACTIVO' },
+      // Alumno de la cuenta (solo rol ALUMNO, decisión T-131): viaja en la sesión y
+      // requireAuth() arma actor.alumnoId sin otra consulta.
+      alumnoId: { type: 'number', required: false, input: false },
     },
   },
   databaseHooks: {
@@ -80,6 +84,9 @@ export const auth = betterAuth({
     // API de negocio (Hono) y no puede listar Better Auth, que es otro motor (decisión T-03,
     // arquitectura-backend.md). openAPI() genera la suya propia, aparte, en /api/auth/reference.
     openAPI(),
+    // Ingreso del alumno con su usuario (HU-28): POST /api/auth/sign-in/username. Con un
+    // usuario de largo o formato inválido responde 422 antes de mirar la contraseña.
+    username(OPCIONES_USUARIO),
     nextCookies(), // debe ir último
   ],
 })
