@@ -19,7 +19,7 @@ describe('interpretarErrorLogin', () => {
       message: 'Invalid email or password',
     })
 
-    expect(mensaje).toBe('Usuario o contraseña incorrectos')
+    expect(mensaje).toBe('Usuario/email o contraseña incorrectos')
   })
 
   it.each([
@@ -31,7 +31,7 @@ describe('interpretarErrorLogin', () => {
     'ingreso por usuario: %i %s dice lo mismo que una credencial incorrecta (T-75)',
     (status, code) => {
       expect(interpretarErrorLogin({ status, code, message: 'Invalid username' })).toBe(
-        'Usuario o contraseña incorrectos',
+        'Usuario/email o contraseña incorrectos',
       )
     },
   )
