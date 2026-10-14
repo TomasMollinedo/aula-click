@@ -14,6 +14,7 @@ import {
   planificarReserva,
   plazoDeAsistencia,
   primeraFechaLibre,
+  textosDeHorasSeguidas,
   tieneAsistencia,
   type EstadoAsistencia,
   type EstadoOcurrencia,
@@ -731,6 +732,89 @@ describe('agruparHorasSeguidas', () => {
 
   it('una lista vacía devuelve []', () => {
     expect(agruparHorasSeguidas([])).toEqual([])
+  })
+})
+
+describe('textosDeHorasSeguidas', () => {
+  // Una hora con su asistencia (sólo lo que mira la regla); `null` = sin registrar.
+  const presente = (trabajado: string | null, indicaciones: string | null) => ({
+    asistencia: { estado: 'PRESENTE' as const, trabajado, indicaciones },
+  })
+  const ausente = () => ({
+    asistencia: {
+      estado: 'AUSENTE' as const,
+      trabajado: null,
+      indicaciones: null,
+      observacion: 'Avisó que no venía',
+    },
+  })
+  const sinRegistrar = () => ({ asistencia: null })
+
+  it('tres horas presentes con los mismos textos → textos una vez y porHora [null, null, null]', () => {
+    const horas = [
+      presente('Fracciones', 'Guía 3'),
+      presente('Fracciones', 'Guía 3'),
+      presente('Fracciones', 'Guía 3'),
+    ]
+    expect(textosDeHorasSeguidas(horas)).toEqual({
+      textos: { trabajado: 'Fracciones', indicaciones: 'Guía 3' },
+      porHora: [null, null, null],
+    })
+  })
+
+  it('la segunda corregida con otro trabajado → sólo porHora[1] trae sus textos', () => {
+    const horas = [
+      presente('Fracciones', 'Guía 3'),
+      presente('Decimales', 'Guía 3'),
+      presente('Fracciones', 'Guía 3'),
+    ]
+    expect(textosDeHorasSeguidas(horas)).toEqual({
+      textos: { trabajado: 'Fracciones', indicaciones: 'Guía 3' },
+      porHora: [null, { trabajado: 'Decimales', indicaciones: 'Guía 3' }, null],
+    })
+  })
+
+  it('la segunda con otras indicaciones (mismo trabajado) → sólo porHora[1] trae sus textos', () => {
+    const horas = [
+      presente('Fracciones', 'Guía 3'),
+      presente('Fracciones', 'Guía 4'),
+      presente('Fracciones', 'Guía 3'),
+    ]
+    expect(textosDeHorasSeguidas(horas)).toEqual({
+      textos: { trabajado: 'Fracciones', indicaciones: 'Guía 3' },
+      porHora: [null, { trabajado: 'Fracciones', indicaciones: 'Guía 4' }, null],
+    })
+  })
+
+  it('la primera ausente y las otras presentes → textos de la segunda y el ausente da null', () => {
+    const horas = [ausente(), presente('Fracciones', 'Guía 3'), presente('Fracciones', 'Guía 3')]
+    expect(textosDeHorasSeguidas(horas)).toEqual({
+      textos: { trabajado: 'Fracciones', indicaciones: 'Guía 3' },
+      porHora: [null, null, null],
+    })
+  })
+
+  it('ninguna presente (ausentes o sin registrar) → textos: null', () => {
+    expect(textosDeHorasSeguidas([ausente(), sinRegistrar(), ausente()])).toEqual({
+      textos: null,
+      porHora: [null, null, null],
+    })
+  })
+
+  it('una sola hora presente → sus textos y porHora [null]', () => {
+    expect(textosDeHorasSeguidas([presente('Fracciones', null)])).toEqual({
+      textos: { trabajado: 'Fracciones', indicaciones: null },
+      porHora: [null],
+    })
+  })
+
+  it('una presente con textos null y otra con texto → la segunda trae los suyos', () => {
+    expect(textosDeHorasSeguidas([presente(null, null), presente('Fracciones', 'Guía 3')])).toEqual(
+      {
+        textos: { trabajado: null, indicaciones: null },
+        porHora: [null, { trabajado: 'Fracciones', indicaciones: 'Guía 3' }],
+      },
+    )
   })
 })
 

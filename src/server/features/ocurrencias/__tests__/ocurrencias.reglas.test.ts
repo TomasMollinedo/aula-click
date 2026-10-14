@@ -1,19 +1,28 @@
 import { describe, expect, it } from 'vitest'
-import { ValidationError } from '@/server/errors'
+import { AppError, ValidationError } from '@/server/errors'
 import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelaciones.condiciones'
 import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
+import {
+  OBSERVACION_CIERRE_SISTEMA,
+  type Ocurrencia,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 import {
   ACCIONES_SIN_PERMISO,
   MENSAJE_FUERA_DE_VENTANA,
   MENSAJE_RANGO_INVERTIDO,
+  MENSAJE_USUARIO_ASISTENCIA_NO_ENCONTRADO,
+  asistenciaDelDetalle,
   calcularAcciones,
+  puedeRegistrarAsistencia,
+  usuariosDeLaAsistencia,
   validarRangoOcurrencias,
   ventanaOcurrencias,
   type FilaDeLaHora,
 } from '../ocurrencias.reglas'
 
 // Reglas puras de `ocurrencias` (T-43): la ventana de `GET /ocurrencias` y las acciones permitidas
-// sobre una ocurrencia, que miran su estado, su pago y, para cobrar, el tope de `POST /pagos`.
+// sobre una ocurrencia, que miran su estado, su pago y, para cobrar, el tope de `POST /pagos`; y la
+// forma de la asistencia del detalle (T-84), según el estado, la asistencia y el plazo.
 
 /** Ejecuta `accion`, que debe lanzar, y devuelve el error. */
 function errorDe(accion: () => unknown): unknown {
@@ -81,7 +90,7 @@ describe('validarRangoOcurrencias', () => {
  * hoy y con el pago pendiente.
  */
 function ocurrencia(datos: {
-  estado: 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR'
+  estado: 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR' | 'REALIZADO' | 'AUSENTE'
   tipo: 'SESION_UNICA' | 'RECURRENTE'
   fecha?: string
   pago?: 'PENDIENTE' | 'PAGADO'
@@ -111,6 +120,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: false },
       reprogramar: { visible: true },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -125,6 +135,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -139,6 +150,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -153,6 +165,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 
@@ -227,6 +240,7 @@ describe('calcularAcciones', () => {
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
     expect(acciones.cancelar.motivo).toBe('El turno está pagado: no se puede cancelar')
   })
@@ -290,18 +304,176 @@ describe('calcularAcciones', () => {
         finalizar: { visible: false },
         reprogramar: { visible: true },
         registrarPago: { visible: false },
+        registrarAsistencia: { visible: false },
       })
     })
   })
 })
 
+describe('calcularAcciones con asistencia (REALIZADO o AUSENTE, T-84)', () => {
+  // Ya ocurrió: cancelar y reprogramar no se ofrecen (sólo en AGENDADO); el cobro sí, si está impago.
+  it.each([
+    ['REALIZADO', 'de hoy', HOY],
+    ['REALIZADO', 'pasada', '2026-09-15'],
+    ['AUSENTE', 'de hoy', HOY],
+    ['AUSENTE', 'pasada', '2026-09-15'],
+  ] as const)('%s %s', (estado, _cuando, fecha) => {
+    const impaga = calcularAcciones(ocurrencia({ estado, tipo: 'SESION_UNICA', fecha }), [], HOY)
+    expect(impaga).toEqual({
+      cancelar: { visible: false, habilitada: false },
+      finalizar: { visible: false },
+      reprogramar: { visible: false },
+      registrarPago: { visible: true },
+      registrarAsistencia: { visible: false },
+    })
+
+    const pagada = calcularAcciones(
+      ocurrencia({ estado, tipo: 'SESION_UNICA', fecha, pago: 'PAGADO' }),
+      [],
+      HOY,
+    )
+    expect(pagada).toEqual({
+      cancelar: { visible: false, habilitada: false },
+      finalizar: { visible: false },
+      reprogramar: { visible: false },
+      registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
+    })
+  })
+})
+
+describe('asistenciaDelDetalle y usuariosDeLaAsistencia', () => {
+  const ANA = { id: 'usr_ana', nombre: 'Ana', apellido: 'Pérez' }
+  const BRUNO = { id: 'usr_bruno', nombre: 'Bruno', apellido: 'Álvarez' }
+  const USUARIOS = new Map([
+    [ANA.id, ANA],
+    [BRUNO.id, BRUNO],
+  ])
+  const PRESENTE: NonNullable<Ocurrencia['asistencia']> = {
+    estado: 'PRESENTE',
+    trabajado: 'Fracciones',
+    indicaciones: 'Guía 3',
+    observacion: null,
+    createdById: 'usr_ana',
+    createdAt: '2026-09-21T15:00:00.000Z',
+    updatedById: 'usr_ana',
+    updatedAt: '2026-09-21T15:00:00.000Z',
+  }
+  const EN_PLAZO = { vence: '2026-09-28', vencido: false }
+  const VENCIDO = { vence: '2026-09-21', vencido: true }
+
+  it('REALIZADO: la registrada, con quién y cuándo la registró y la modificó', () => {
+    const o = { estado: 'REALIZADO' as const, asistencia: PRESENTE, plazoAsistencia: EN_PLAZO }
+    expect(usuariosDeLaAsistencia(o)).toEqual(['usr_ana'])
+    expect(asistenciaDelDetalle(o, USUARIOS)).toEqual({
+      estado: 'PRESENTE',
+      trabajado: 'Fracciones',
+      indicaciones: 'Guía 3',
+      observacion: null,
+      registradaPor: ANA,
+      registradaEl: '2026-09-21T15:00:00.000Z',
+      modificadaPor: ANA,
+      modificadaEl: '2026-09-21T15:00:00.000Z',
+      cerradaPorSistema: false,
+    })
+  })
+
+  it('AUSENTE corregida por otro: la observación y los dos usuarios, sin repetir ids', () => {
+    const o = {
+      estado: 'AUSENTE' as const,
+      asistencia: {
+        ...PRESENTE,
+        estado: 'AUSENTE' as const,
+        trabajado: null,
+        indicaciones: null,
+        observacion: 'Avisó que estaba enfermo',
+        updatedById: 'usr_bruno',
+        updatedAt: '2026-09-22T10:00:00.000Z',
+      },
+      plazoAsistencia: EN_PLAZO,
+    }
+    expect(usuariosDeLaAsistencia(o)).toEqual(['usr_ana', 'usr_bruno'])
+    expect(asistenciaDelDetalle(o, USUARIOS)).toEqual({
+      estado: 'AUSENTE',
+      trabajado: null,
+      indicaciones: null,
+      observacion: 'Avisó que estaba enfermo',
+      registradaPor: ANA,
+      registradaEl: '2026-09-21T15:00:00.000Z',
+      modificadaPor: BRUNO,
+      modificadaEl: '2026-09-22T10:00:00.000Z',
+      cerradaPorSistema: false,
+    })
+  })
+
+  it('SIN_REGISTRAR con el plazo vencido: cerrada por el sistema, sin estado ni personas', () => {
+    const o = { estado: 'SIN_REGISTRAR' as const, asistencia: null, plazoAsistencia: VENCIDO }
+    expect(usuariosDeLaAsistencia(o)).toEqual([])
+    expect(asistenciaDelDetalle(o, new Map())).toEqual({
+      estado: null,
+      trabajado: null,
+      indicaciones: null,
+      observacion: OBSERVACION_CIERRE_SISTEMA,
+      registradaPor: null,
+      registradaEl: null,
+      modificadaPor: null,
+      modificadaEl: null,
+      cerradaPorSistema: true,
+    })
+  })
+
+  it.each([
+    ['AGENDADO de hoy', { estado: 'AGENDADO', asistencia: null, plazoAsistencia: EN_PLAZO }],
+    ['AGENDADO futura', { estado: 'AGENDADO', asistencia: null, plazoAsistencia: null }],
+    [
+      'SIN_REGISTRAR en plazo',
+      { estado: 'SIN_REGISTRAR', asistencia: null, plazoAsistencia: EN_PLAZO },
+    ],
+    // El estado manda (decisión T-137): la cancelación gana aunque quede una asistencia en la base.
+    [
+      'CANCELADO con una asistencia en la base',
+      { estado: 'CANCELADO', asistencia: PRESENTE, plazoAsistencia: null },
+    ],
+  ] as const)('%s → null, sin usuarios que resolver', (_caso, o) => {
+    expect(usuariosDeLaAsistencia(o)).toEqual([])
+    expect(asistenciaDelDetalle(o, USUARIOS)).toBeNull()
+  })
+
+  it('falta el usuario que la registró → 500', () => {
+    const o = { estado: 'REALIZADO' as const, asistencia: PRESENTE, plazoAsistencia: EN_PLAZO }
+    const error = errorDe(() => asistenciaDelDetalle(o, new Map()))
+    expect(error).toBeInstanceOf(AppError)
+    expect((error as AppError).statusCode).toBe(500)
+    expect((error as AppError).message).toBe(MENSAJE_USUARIO_ASISTENCIA_NO_ENCONTRADO)
+  })
+})
+
+describe('puedeRegistrarAsistencia', () => {
+  it('con plazo y sin vencer (de hoy o anterior, no cancelada): true', () => {
+    expect(
+      puedeRegistrarAsistencia({ plazoAsistencia: { vence: '2026-09-29', vencido: false } }),
+    ).toBe(true)
+  })
+
+  it('con el plazo vencido: false', () => {
+    expect(
+      puedeRegistrarAsistencia({ plazoAsistencia: { vence: '2026-09-21', vencido: true } }),
+    ).toBe(false)
+  })
+
+  it('sin plazo (cancelada o posterior a hoy): false', () => {
+    expect(puedeRegistrarAsistencia({ plazoAsistencia: null })).toBe(false)
+  })
+})
+
 describe('ACCIONES_SIN_PERMISO', () => {
-  it('las cuatro acciones no visibles / no habilitadas', () => {
+  it('todas las acciones no visibles / no habilitadas, también registrarAsistencia', () => {
     expect(ACCIONES_SIN_PERMISO).toEqual({
       cancelar: { visible: false, habilitada: false },
       finalizar: { visible: false },
       reprogramar: { visible: false },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 })

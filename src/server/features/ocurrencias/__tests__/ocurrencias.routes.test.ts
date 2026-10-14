@@ -10,13 +10,14 @@ import { ocurrenciasRoutes } from '../ocurrencias.routes'
 
 const { repository, profesoresRepository, alumnosRepository, getSession } = vi.hoisted(() => ({
   repository: {
-    buscarOcurrencia: vi.fn(),
     buscarDatosAdicionales: vi.fn(),
     leerFilasDeLaHora: vi.fn(),
     buscarFinalizacion: vi.fn(),
     buscarPago: vi.fn(),
     leerOcurrenciasDelAlumno: vi.fn(),
     resolverUsuarioAuditoria: vi.fn(),
+    resolverUsuariosAuditoria: vi.fn(),
+    profesorTieneAlumno: vi.fn(),
     leerPrioridades: vi.fn(),
   },
   profesoresRepository: { buscarIdPorUsuario: vi.fn() },
@@ -47,6 +48,8 @@ const OCURRENCIA = {
   tipo: 'RECURRENTE',
   estado: 'AGENDADO',
   pago: { estado: 'PENDIENTE' },
+  asistencia: null,
+  plazoAsistencia: null,
   serie: { serieId: null, fechaInicio: '2099-01-05', fechaFin: null, finEfectivo: null },
   alumno: { id: 12, nombre: 'Lucía', apellido: 'González', busqueda: 'gonzalez lucia 40123456' },
   profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez', busqueda: 'perez ana 30111222' },
@@ -55,13 +58,14 @@ const OCURRENCIA = {
 }
 
 const DATOS_ADICIONALES = {
+  alumnoId: 12,
   alumnoDni: '40123456',
   observaciones: null,
   temas: null,
   precioVigente: 8000,
   createdAt: '2026-08-01T13:00:00.000Z',
   updatedAt: '2026-08-01T13:00:00.000Z',
-  createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
+  createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez', rol: 'MESA_ENTRADAS' },
   updatedBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
 }
 
@@ -119,7 +123,7 @@ async function esperarErrorJson(res: Response, status: number, code: string) {
 
 describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
   it('responde 200 con el detalle que arma el service, sin `busqueda`', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     const res = await pedir('/31/2099-01-05')
     const texto = await res.text()
@@ -142,25 +146,23 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
       finalizar: { visible: true },
       reprogramar: { visible: true },
       registrarPago: { visible: false },
+      registrarAsistencia: { visible: false },
     })
   })
 
   it('una pasada y pendiente ofrece registrar el pago', async () => {
-    repository.buscarOcurrencia.mockResolvedValue({
-      ...OCURRENCIA,
-      fecha: '2020-01-06',
-      estado: 'SIN_REGISTRAR',
-    })
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      { ...OCURRENCIA, fecha: '2020-01-06', estado: 'SIN_REGISTRAR' },
+    ])
 
     const cuerpo = await (await pedir('/31/2020-01-06')).json()
     expect(cuerpo.acciones.registrarPago).toEqual({ visible: true })
   })
 
   it('una pagada sale con los datos de su pago y `cancelar` deshabilitada con su motivo', async () => {
-    repository.buscarOcurrencia.mockResolvedValue({
-      ...OCURRENCIA,
-      pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 },
-    })
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      { ...OCURRENCIA, pago: { estado: 'PAGADO', pagoId: 31, importeAplicado: 7500 } },
+    ])
     repository.buscarPago.mockResolvedValue({
       numeroComprobante: 1024,
       fechaPago: '2026-10-01',
@@ -193,7 +195,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
   })
 
   it('el turno no existe, o la fecha no es una de sus ocurrencias → 404', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(null)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
     expect((await pedir('/31/2099-01-05')).status).toBe(404)
   })
 
@@ -218,10 +220,10 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
     expect((await pedir('/31/2099-01-05')).status).toBe(403)
   })
 
-  it('profesor ajeno al turno → 403', async () => {
+  it('profesor ajeno al turno, sin turnos con el alumno → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_otro'))
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(99)
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     expect((await pedir('/31/2099-01-05')).status).toBe(403)
   })
@@ -229,7 +231,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}', () => {
   it('profesor dueño del turno → 200, con `pago: null`', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     const res = await pedir('/31/2099-01-05')
     expect(res.status).toBe(200)
@@ -264,6 +266,7 @@ describe('GET /ocurrencias', () => {
         estadoPago: 'PENDIENTE',
         prioridad: null,
         cancelable: true,
+        plazoAsistencia: null,
       },
     ])
   })
@@ -295,9 +298,164 @@ describe('GET /ocurrencias', () => {
 // GET /ocurrencias/{turnoId}/{fecha}/pdf
 // ---------------------------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------------------------
+// Portal (HU-30): GET /ocurrencias/mis-turnos y GET /ocurrencias/mis-turnos/{turnoId}/{fecha}
+// ---------------------------------------------------------------------------------------------
+
+/** La sesión de un alumno: el actor lleva su `alumnoId` (requireAuth). */
+function sesionAlumno(alumnoId = 12) {
+  return {
+    headers: new Headers(),
+    response: {
+      user: {
+        id: 'usr_lucia',
+        role: 'ALUMNO',
+        estado: 'ACTIVO',
+        name: 'Lucía',
+        apellido: 'González',
+        alumnoId,
+      },
+      session: { id: 's-2' },
+    },
+  }
+}
+
+describe('GET /ocurrencias/mis-turnos', () => {
+  beforeEach(() => {
+    getSession.mockResolvedValue(sesionAlumno())
+  })
+
+  it('200 con las ocurrencias del alumno de la sesión, sin `busqueda`', async () => {
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
+
+    const res = await pedir('/mis-turnos?desde=2099-01-01&hasta=2099-01-31')
+    const texto = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(texto).not.toContain('busqueda')
+    expect(repository.leerOcurrenciasDelAlumno).toHaveBeenCalledExactlyOnceWith(
+      { desde: '2099-01-01', hasta: '2099-01-31', alumnoId: 12 },
+      undefined,
+    )
+    expect(JSON.parse(texto)).toEqual([
+      {
+        turnoId: 31,
+        fecha: '2099-01-05',
+        diaSemana: 1,
+        horaInicio: '09:00',
+        horaFin: '10:00',
+        materia: { id: 3, nombre: 'Matemática' },
+        profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez' },
+        aula: { id: 3, nombre: 'Aula 3' },
+        tipo: 'RECURRENTE',
+        estado: 'AGENDADO',
+        estadoPago: 'PENDIENTE',
+      },
+    ])
+  })
+
+  it.each([
+    ['un rango de 32 días', '?desde=2099-01-01&hasta=2099-02-01'],
+    ['un rango invertido', '?desde=2099-01-10&hasta=2099-01-01'],
+    ['sin desde', '?hasta=2099-01-31'],
+    ['sin hasta', '?desde=2099-01-01'],
+    ['una fecha inválida', '?desde=2099-02-30&hasta=2099-03-01'],
+  ])('%s → 400 VALIDACION', async (_caso, query) => {
+    await esperarErrorJson(await pedir(`/mis-turnos${query}`), 400, 'VALIDACION')
+    expect(repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('un rango de 32 días marca `hasta`', async () => {
+    const cuerpo = await (await pedir('/mis-turnos?desde=2099-01-01&hasta=2099-02-01')).json()
+    expect(cuerpo.error.details).toEqual([
+      { path: ['hasta'], message: 'El rango no puede superar los 31 días' },
+    ])
+  })
+
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'])('con el rol %s → 403', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+    await esperarErrorJson(
+      await pedir('/mis-turnos?desde=2099-01-01&hasta=2099-01-31'),
+      403,
+      'SIN_PERMISO',
+    )
+    expect(repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    await esperarErrorJson(
+      await pedir('/mis-turnos?desde=2099-01-01&hasta=2099-01-31'),
+      401,
+      'NO_AUTENTICADO',
+    )
+  })
+})
+
+describe('GET /ocurrencias/mis-turnos/{turnoId}/{fecha}', () => {
+  beforeEach(() => {
+    getSession.mockResolvedValue(sesionAlumno())
+  })
+
+  it('200 con el detalle de su turno y sus horas seguidas, sin lo que el portal no muestra', async () => {
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([
+      OCURRENCIA,
+      { ...OCURRENCIA, turnoId: 32, horaInicio: 600, horaFin: 660 },
+    ])
+
+    const res = await pedir('/mis-turnos/31/2099-01-05')
+    const texto = await res.text()
+
+    expect(res.status).toBe(200)
+    expect(texto).not.toContain('busqueda')
+    const cuerpo = JSON.parse(texto)
+    expect(cuerpo).toMatchObject({
+      turnoId: 31,
+      fecha: '2099-01-05',
+      estado: 'AGENDADO',
+      estadoPago: 'PENDIENTE',
+      asistencia: null,
+      horasSeguidas: { horaInicio: '09:00', horaFin: '11:00', horas: 2, textos: null },
+    })
+    for (const clave of [
+      'prioridad',
+      'observaciones',
+      'acciones',
+      'cancelable',
+      'createdBy',
+      'updatedBy',
+    ]) {
+      expect(cuerpo).not.toHaveProperty(clave)
+    }
+    expect(cuerpo).not.toHaveProperty('pago')
+    expect(cuerpo.horasSeguidas.ocurrencias[0]).not.toHaveProperty('registrable')
+  })
+
+  it('el turno de otro alumno → 403 SIN_PERMISO', async () => {
+    repository.buscarDatosAdicionales.mockResolvedValue({ ...DATOS_ADICIONALES, alumnoId: 99 })
+    await esperarErrorJson(await pedir('/mis-turnos/31/2099-01-05'), 403, 'SIN_PERMISO')
+    expect(repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('un turno inexistente → 404', async () => {
+    repository.buscarDatosAdicionales.mockResolvedValue(null)
+    await esperarErrorJson(await pedir('/mis-turnos/31/2099-01-05'), 404, 'NO_ENCONTRADO')
+  })
+
+  it('parámetros inválidos → 400 VALIDACION', async () => {
+    await esperarErrorJson(await pedir('/mis-turnos/abc/2099-01-05'), 400, 'VALIDACION')
+  })
+
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'])('con el rol %s → 403', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+    await esperarErrorJson(await pedir('/mis-turnos/31/2099-01-05'), 403, 'SIN_PERMISO')
+    expect(repository.buscarDatosAdicionales).not.toHaveBeenCalled()
+  })
+})
+
 describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
   it('200 con el PDF del turno y los headers del contrato común', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
 
     const res = await pedir('/31/2099-01-05/pdf')
 
@@ -307,12 +465,15 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(contarPaginas(pdf)).toBe(1)
     expect(metadato(pdf, 'Title')).toBe('Detalle del turno')
-    // El mismo detalle que el JSON: una sola lectura de la ocurrencia.
-    expect(repository.buscarOcurrencia).toHaveBeenCalledExactlyOnceWith(31, '2099-01-05', undefined)
+    // El mismo detalle que el JSON: una sola lectura del motor (las del alumno ese día).
+    expect(repository.leerOcurrenciasDelAlumno).toHaveBeenCalledExactlyOnceWith(
+      { desde: '2099-01-05', hasta: '2099-01-05', alumnoId: 12 },
+      undefined,
+    )
   })
 
   it('el turno no existe, o la fecha no es una de sus ocurrencias → 404 en JSON', async () => {
-    repository.buscarOcurrencia.mockResolvedValue(null)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
     await esperarErrorJson(await pedir('/31/2099-01-05/pdf'), 404, 'NO_ENCONTRADO')
   })
 
@@ -320,7 +481,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
     '%s → 400 VALIDACION en JSON',
     async (path) => {
       await esperarErrorJson(await pedir(path), 400, 'VALIDACION')
-      expect(repository.buscarOcurrencia).not.toHaveBeenCalled()
+      expect(repository.buscarDatosAdicionales).not.toHaveBeenCalled()
     },
   )
 
@@ -332,12 +493,12 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
   it.each(['GERENTE', 'ALUMNO'])('con el rol %s → 403', async (role) => {
     getSession.mockResolvedValue(sesion(role))
     await esperarErrorJson(await pedir('/31/2099-01-05/pdf'), 403, 'SIN_PERMISO')
-    expect(repository.buscarOcurrencia).not.toHaveBeenCalled()
+    expect(repository.buscarDatosAdicionales).not.toHaveBeenCalled()
   })
 
-  it('profesor ajeno al turno → 403', async () => {
+  it('profesor ajeno al turno, sin turnos con el alumno → 403', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_otro'))
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(99)
 
     await esperarErrorJson(await pedir('/31/2099-01-05/pdf'), 403, 'SIN_PERMISO')
@@ -345,7 +506,7 @@ describe('GET /ocurrencias/{turnoId}/{fecha}/pdf', { timeout: 30_000 }, () => {
 
   it('profesor dueño del turno → 200 con el PDF', async () => {
     getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
-    repository.buscarOcurrencia.mockResolvedValue(OCURRENCIA)
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
     profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
 
     const res = await pedir('/31/2099-01-05/pdf')
@@ -456,6 +617,8 @@ describe('OpenAPI de ocurrencias', () => {
   it('declara los endpoints con todos sus status codes', () => {
     expect(codigos('/{turnoId}/{fecha}')).toEqual(['200', '400', '401', '403', '404'])
     expect(codigos('')).toEqual(['200', '400', '401', '403'])
+    expect(codigos('/mis-turnos')).toEqual(['200', '400', '401', '403'])
+    expect(codigos('/mis-turnos/{turnoId}/{fecha}')).toEqual(['200', '400', '401', '403', '404'])
   })
 
   it('registra los componentes de `ocurrencias`', () => {
@@ -471,6 +634,11 @@ describe('OpenAPI de ocurrencias', () => {
         'Finalizacion',
         'PagoDeOcurrenciaPendiente',
         'PagoDeOcurrenciaPagado',
+        'HorasSeguidas',
+        'HoraSeguida',
+        'TextosAsistencia',
+        'AsistenciaDeOcurrencia',
+        'UsuarioAuditoriaConRol',
       ]),
     )
   })

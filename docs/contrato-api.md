@@ -456,7 +456,10 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
 
 ### Detalle de una ocurrencia
 
-**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas). `PROFESOR` sólo puede pedir un turno suyo: si no lo es, 403. Con `MESA_ENTRADAS` o con el profesor dueño del turno, el resto de la respuesta es igual — salvo `acciones`, que para `PROFESOR` siempre viene con las cuatro en `false` (el profesor no cancela, finaliza, reprograma ni registra pagos en este incremento; sólo lee), y `pago`, que para `PROFESOR` es `null` (no ve pagos).
+**`GET /api/v1/ocurrencias/{turnoId}/{fecha}`** (roles `MESA_ENTRADAS` y `PROFESOR`): la ocurrencia `turnoId` + `fecha` (mismo identificador que en las agendas), **de esa hora**: su estado, su asistencia y su auditoría son los de esa ocurrencia, aunque tenga horas seguidas. La respuesta es la misma para todos, salvo:
+
+- `PROFESOR` del turno: `acciones` viene con todas en `false` salvo `registrarAsistencia` (no cancela, finaliza, reprograma ni cobra) y `pago` es `null` (no ve pagos).
+- `PROFESOR` de otro turno (HU-31, se abre desde el historial): si el alumno tiene algún turno `ACTIVO` con él (`materiasDelProfesorConAlumno` del motor), ve el detalle en **sólo lectura**: todas las acciones en `false`, `pago: null` y ninguna hora `registrable`. Si no, 403.
 
 ```json
 {
@@ -487,20 +490,91 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
     "materiaNombre": "Matemática",
     "dias": 7
   },
+  "plazoAsistencia": null,
+  "asistencia": null,
+  "horasSeguidas": null,
   "acciones": {
     "cancelar": { "visible": true, "habilitada": true },
     "finalizar": { "visible": true },
     "reprogramar": { "visible": true },
-    "registrarPago": { "visible": true }
+    "registrarPago": { "visible": true },
+    "registrarAsistencia": { "visible": false }
   },
   "createdAt": "2026-08-01T13:00:00.000Z",
   "updatedAt": "2026-08-01T13:00:00.000Z",
-  "createdBy": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+  "createdBy": {
+    "id": "usr_mesa_01",
+    "nombre": "Ana",
+    "apellido": "Pérez",
+    "rol": "MESA_ENTRADAS"
+  },
   "updatedBy": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" }
 }
 ```
 
-- `estado`: sólo `AGENDADO`, `CANCELADO` o `SIN_REGISTRAR` (definición F de las PO: cancelada, o pasada sin cancelar, o de hoy en adelante).
+- `estado`: el del motor (T-74, decisión T-137): `AGENDADO`, `CANCELADO`, `SIN_REGISTRAR` (pasada, sin asistencia), `REALIZADO` o `AUSENTE` (con asistencia "Presente" o "Ausente").
+- `plazoAsistencia`: `{ vence, vencido }`, tal como lo da el motor: `vence` es el último día para registrar o corregir la asistencia (hasta las 23:59) y `vencido`, si ya pasó. `null` en una cancelada o de fecha posterior a hoy; las de hoy y las pasadas lo tienen, también las ya registradas.
+- `asistencia`: la de **esa hora**, en una de tres formas (el estado manda, decisión T-137):
+  - **Registrada** (`REALIZADO` o `AUSENTE`): con quién y cuándo la registró y la modificó (los dos siempre, como la auditoría de cualquier entidad). Un ausente trae `observacion` y no trae textos.
+
+    ```json
+    {
+      "estado": "PRESENTE",
+      "trabajado": "Suma y resta de fracciones",
+      "indicaciones": "Hacer la guía 3",
+      "observacion": null,
+      "registradaPor": { "id": "usr_prof_03", "nombre": "Ana", "apellido": "Pérez" },
+      "registradaEl": "2026-10-05T12:10:00.000Z",
+      "modificadaPor": { "id": "usr_prof_03", "nombre": "Ana", "apellido": "Pérez" },
+      "modificadaEl": "2026-10-06T09:00:00.000Z",
+      "cerradaPorSistema": false
+    }
+    ```
+
+  - **Cerrada por el sistema** (`SIN_REGISTRAR` con el plazo vencido): `estado`, `trabajado`, `indicaciones`, las personas e instantes en `null`, `observacion` con el texto del cierre ("No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema") y `cerradaPorSistema: true`. El cierre se calcula al leer (decisión T-138): `registradaEl` es `null` y la fecha del cierre es `plazoAsistencia.vence` (las 23:59 de ese día).
+  - **`null`** en cualquier otro caso: agendada, sin registrar dentro del plazo (con su `plazoAsistencia`) o cancelada, aunque una cancelada tenga una asistencia guardada.
+- `horasSeguidas`: las **horas seguidas** de la ocurrencia (mismo alumno, profesor, materia y fecha, una a continuación de la otra; ver `dominio.md` → Asistencia), o `null` si la hora no tiene otra seguida o está cancelada. Lo ven todos los que pueden ver el detalle.
+
+  ```json
+  {
+    "horaInicio": "08:00",
+    "horaFin": "10:00",
+    "horas": 2,
+    "textos": { "trabajado": "Suma y resta de fracciones", "indicaciones": "Hacer la guía 3" },
+    "ocurrencias": [
+      {
+        "turnoId": 31,
+        "fecha": "2026-10-05",
+        "horaInicio": "08:00",
+        "horaFin": "09:00",
+        "estado": "REALIZADO",
+        "plazoAsistencia": { "vence": "2026-10-12", "vencido": false },
+        "actual": true,
+        "registrable": false,
+        "textosPropios": null,
+        "observacion": null
+      },
+      {
+        "turnoId": 32,
+        "fecha": "2026-10-05",
+        "horaInicio": "09:00",
+        "horaFin": "10:00",
+        "estado": "SIN_REGISTRAR",
+        "plazoAsistencia": { "vence": "2026-10-12", "vencido": false },
+        "actual": false,
+        "registrable": true,
+        "textosPropios": null,
+        "observacion": null
+      }
+    ]
+  }
+  ```
+
+  - Ejemplo: Lucas viene de 8 a 9, de 9 a 10 y de 20 a 21, con la misma materia y el mismo profesor. Los detalles de 8 a 9 y de 9 a 10 traen el mismo grupo (`08:00` a `10:00`, 2 horas), cada uno con `actual: true` en su hora; el de 20 a 21, `null`. Una hora cancelada en el medio, otra materia u otro profesor cortan el grupo.
+  - `ocurrencias`: todas las horas del grupo en orden, cada una con su propio `estado` y `plazoAsistencia`. `observacion` es la de la asistencia si la hora es `AUSENTE`; si no, `null`.
+  - `textos` (los de la primera hora presente, que se muestran una sola vez; `null` si ninguna está presente) y `textosPropios` (los de esa hora, sólo si es presente y sus textos difieren de `textos`; si no, `null`) los decide la API con una sola regla del motor (`textosDeHorasSeguidas`): la UI no compara textos.
+  - `registrable`: `true` si quien mira puede registrar la asistencia (`acciones.registrarAsistencia.visible`) y esa hora no tiene asistencia ni está vencida. Son las horas que ofrece "Aplicar también a…"; una ya registrada se corrige desde su propio detalle.
+
 - `serie`: período del turno o tramo (`fechaInicio`, `fechaFin`, `null` sin fin) y, si tiene una, la `finalizacion` (`fechaDesde` es el fin efectivo, definición C, más `motivo`, `detalle`, `createdBy`, `createdAt`); `null` si no está finalizada. La finalización es **de la hora** (decisión T-104): la del propio turno o, si no tiene, la de otro tramo de su misma hora en su serie, así que un tramo anterior también la muestra. El `serieId` que agrupa los turnos de un alta no viaja en la respuesta. Sin sección de reprogramación: un turno reprogramado ya está en su fecha y bloque nuevos, y no muestra desde cuándo se movió (definición A).
 - `cancelacion`: `null` salvo `estado = "CANCELADO"` (`motivo`, `detalle`, `createdBy`, `createdAt`).
 - `pago`: `null` para `PROFESOR`. Para `MESA_ENTRADAS`, según su `estado`:
@@ -525,11 +599,12 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
   - `cancelar`: `{ visible, habilitada, motivo? }`. Visible si está `AGENDADO` (agendada, hoy o posterior). Si además está pagada, viene `habilitada: false` con `motivo: "El turno está pagado: no se puede cancelar"` (el mismo texto con el que `POST /cancelaciones` la rechaza); `motivo` sólo viene en ese caso.
   - `finalizar`: si el turno es `RECURRENTE`, su hora está vigente (algún tramo de esa hora en su serie tiene `fechaFin` nula o de hoy en adelante) y **ningún tramo de esa hora tiene una finalización** (decisión T-104: si se ve, `POST /finalizaciones` no rechaza por "no vigente" ni por "ya finalizado"; la otra hora de la misma serie se evalúa aparte). No mira el pago de esta ocurrencia: las pagadas de la hora se validan al finalizar (409 `TURNOS_PAGADOS`).
   - `reprogramar`: si está `AGENDADO`. Una pagada se reprograma igual (el pago acompaña al turno).
-  - `registrarPago`: si no está `CANCELADO`, su pago está `PENDIENTE` y su fecha no pasa el tope de cobro de `POST /pagos` (hoy + 56 días; las pasadas no tienen tope). Una materia sin precio sí lo muestra: decide el 409 `SIN_PRECIO` del cobro.
-- `createdBy`/`updatedBy`: quién creó el turno y quién lo modificó por última vez. Si el turno se reprogramó, quien lo modificó es quien lo reprogramó (no hay un campo aparte).
-- Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` (rol distinto de `MESA_ENTRADAS`/`PROFESOR`, o un `PROFESOR` que no es dueño del turno) o `USUARIO_INHABILITADO`; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias (incluida una posterior al fin efectivo de una serie ya finalizada).
+  - `registrarPago`: si no está `CANCELADO`, su pago está `PENDIENTE` y su fecha no pasa el tope de cobro de `POST /pagos` (hoy + 56 días; las pasadas no tienen tope). Una materia sin precio sí lo muestra: decide el 409 `SIN_PRECIO` del cobro. Un turno con asistencia (`REALIZADO` o `AUSENTE`) se cobra igual: no ofrece cancelar ni reprogramar, pero sí registrar el pago si está impago.
+  - `registrarAsistencia`: `{ visible }`. `true` sólo para el **profesor del turno** y con el plazo abierto (`plazoAsistencia` no nulo y no vencido); también con la asistencia ya registrada, porque corregir es volver a guardar. Mesa de entrada, un profesor de otro turno y cualquier otro rol: `false`. No hay un endpoint nuevo: se guarda con `PUT /asistencias` ([Asistencias](#asistencias)), un registro por cada hora tildada (esta y las de "Aplicar también a…").
+- `createdBy`/`updatedBy`: quién creó el turno y quién lo modificó por última vez. Si el turno se reprogramó, quien lo modificó es quien lo reprogramó (no hay un campo aparte). `createdBy` trae además su `rol`, para que el detalle diga si el turno lo sacó el propio alumno desde el portal (`ALUMNO`, HU-29).
+- Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` (rol distinto de `MESA_ENTRADAS`/`PROFESOR`, o un `PROFESOR` de otro turno sin turnos `ACTIVO` con el alumno) o `USUARIO_INHABILITADO`; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias (incluida una posterior al fin efectivo de una serie ya finalizada).
 
-**`GET /api/v1/ocurrencias/{turnoId}/{fecha}/pdf`** (roles `MESA_ENTRADAS` y `PROFESOR`): el detalle del turno como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismos params, mismas reglas de acceso y mismos errores que el detalle (400, 401, 403 —también el del `PROFESOR` que pide un turno ajeno— y 404), y los mismos datos.
+**`GET /api/v1/ocurrencias/{turnoId}/{fecha}/pdf`** (roles `MESA_ENTRADAS` y `PROFESOR`): el detalle del turno como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismos params, mismas reglas de acceso y mismos errores que el detalle (400, 401, 403 y 404), y los mismos datos, porque usa el mismo detalle: un `PROFESOR` de otro turno lo descarga si el alumno tiene algún turno `ACTIVO` con él, y si no, 403.
 
 - Contenido: Alumno, DNI, Materia, Profesor, Aula, "Día y horario" (la fecha con su día: `jueves 01/10`), Horario (`8:00 a 9:00`), Tipo (`Recurrente` / `Sesión única`) y, sólo en un recurrente, "Período de la serie" (`03/09 – 08/10`, o `03/09 – sin fin`); en otra tarjeta, "Temas a trabajar" (`—` si no hay).
 - Nombre del archivo: `turno-<fecha>-<apellido>-<nombre>.pdf`, con la fecha `YYYY-MM-DD` y el alumno (`turno-2026-10-01-colque-renata.pdf`).
@@ -555,12 +630,14 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
       "estado": "AGENDADO",
       "estadoPago": "PENDIENTE",
       "prioridad": "ALTA",
-      "cancelable": true
+      "cancelable": true,
+      "plazoAsistencia": null
     }
   ]
   ```
 
 - `estadoPago`: `PENDIENTE` o `PAGADO`; una cancelada viene `PENDIENTE` (nunca se cobró) y la UI no lo muestra. `prioridad`: `null` en una ocurrencia cancelada. `cancelable`: mismas reglas que `acciones.cancelar` del detalle (agendada y con el pago pendiente: una pagada no se puede tildar).
+- `plazoAsistencia`: el mismo que en el detalle (`{ vence, vencido }` o `null`). Es una lista: no trae la asistencia ni las horas seguidas, que se ven en el detalle.
 - Errores: 400 `VALIDACION` (`alumnoId` faltante o inválido, `hasta` anterior a `desde`, o rango fuera de la ventana permitida, `details` sobre `hasta`); 401 `NO_AUTENTICADO`; 403 para cualquier rol que no sea `MESA_ENTRADAS`.
 
 **`GET /api/v1/ocurrencias/pdf?alumnoId&desde?&hasta?&estado?&seleccion?`** (rol `MESA_ENTRADAS`): los turnos del alumno como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). `alumnoId`, `desde` y `hasta` valen lo mismo que en el listado: mismos valores por defecto, misma ventana del año en curso y mismos 400. El documento lista los mismos turnos, en el mismo orden.
@@ -575,6 +652,24 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
 - Errores: 400 `VALIDACION` (los del listado, más `estado` y `seleccion`); 401; 403 para cualquier rol que no sea `MESA_ENTRADAS`; 404 si el alumno no existe.
 
 Todo sale de `leerOcurrencias` (T-30), `leerPrioridades` (T-31) y, para una pagada, `leerPagoDeOcurrencia` (`pagos`): la feature no reimplementa ninguna de las tres.
+
+### Mis turnos (portal del alumno)
+
+HU-30 (T-84). Rol `ALUMNO`: el alumno sale de la sesión y ningún endpoint recibe un `alumnoId` ([Portal del alumno](#portal-del-alumno)).
+
+**`GET /api/v1/ocurrencias/mis-turnos?desde&hasta`**: las ocurrencias del alumno de la sesión en `[desde, hasta]`, para "Mi calendario". **Incluye las canceladas**, en el orden del motor (fecha y hora), sin paginar.
+
+- `desde` y `hasta` (`YYYY-MM-DD`) son **obligatorios**, con un rango de hasta **31 días** contando los dos extremos. Invertido o más largo: 400 `VALIDACION` en `["hasta"]`.
+- Cada ítem: `turnoId`, `fecha`, `diaSemana`, `horaInicio`, `horaFin`, `materia` (`{ id, nombre }`), `profesor` (`{ id, nombre, apellido }`), `aula` (`{ id, nombre }`), `tipo`, `estado` y `estadoPago` (`PENDIENTE` o `PAGADO`; una cancelada viene `PENDIENTE`). Sin prioridad, ocupación, observaciones, `cancelable` ni auditoría.
+- Errores: 400 `VALIDACION`; 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para otro rol o una cuenta sin alumno.
+
+**`GET /api/v1/ocurrencias/mis-turnos/{turnoId}/{fecha}`**: el detalle de una ocurrencia del alumno de la sesión, con la misma lectura y las mismas reglas que el del personal.
+
+- Trae `turnoId`, `fecha`, `horaInicio`, `horaFin`, `materia`, `profesor`, `aula`, `tipo`, `temas` (los temas a trabajar), `estado`, `plazoAsistencia` y `estadoPago` (`PAGADO` o `PENDIENTE`).
+- `asistencia`: la de esa hora, con las mismas tres formas que el detalle del personal pero **sin auditoría ni observación**: `{ estado, trabajado, indicaciones, cerradaPorSistema }` o `null`. Al alumno se le muestran qué se trabajó y las indicaciones.
+- `horasSeguidas`: la misma regla y los mismos textos que el detalle del personal (`textos` una vez y `textosPropios` en la hora que cambió), **sin `registrable` ni `observacion`** en cada hora.
+- Nunca trae prioridad, observaciones del turno, acciones, `pago` con sus datos ni auditoría (`createdBy`, `updatedBy`, quién registró la asistencia).
+- Errores: 400 `VALIDACION` (`turnoId` o `fecha` inválidos); 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` si el turno es de otro alumno, para otro rol o una cuenta sin alumno; 404 `NO_ENCONTRADO` si el turno no existe o esa fecha no es una de sus ocurrencias.
 
 ## Cancelaciones
 
@@ -1298,7 +1393,7 @@ Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuan
 
 | Feature       | Endpoints del portal                                                              | Tarea |
 | ------------- | --------------------------------------------------------------------------------- | ----- |
-| `ocurrencias` | A completar por T-84                                                              | T-84  |
+| `ocurrencias` | `GET /ocurrencias/mis-turnos?desde&hasta` y `/mis-turnos/{turnoId}/{fecha}`       | T-84  |
 | `alumnos`     | `GET /alumnos/mi-perfil`                                                          | T-88  |
 | `usuarios`    | A completar por T-91                                                              | T-91  |
 | `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`   | T-93  |
