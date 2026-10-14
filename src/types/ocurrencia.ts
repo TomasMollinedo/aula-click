@@ -16,8 +16,11 @@ import type { Auditoria, UsuarioAuditoria } from './index'
 
 export type TipoOcurrencia = 'RECURRENTE' | 'SESION_UNICA'
 
-/** Lo calcula la API. La UI lo muestra como "Agendado", "Cancelado" y "Sin registrado". */
-export type EstadoOcurrencia = 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR'
+/**
+ * Lo calcula la API. La UI lo muestra como "Agendado", "Cancelado", "Sin registrar", "Realizado" y
+ * "Ausente" (los dos últimos salen de la asistencia registrada, HU-22).
+ */
+export type EstadoOcurrencia = 'AGENDADO' | 'CANCELADO' | 'SIN_REGISTRAR' | 'REALIZADO' | 'AUSENTE'
 
 /** Estado de pago de una ocurrencia: el de las agendas, la lista de turnos del alumno y el detalle. */
 export type EstadoPagoOcurrencia = 'PENDIENTE' | 'PAGADO'
