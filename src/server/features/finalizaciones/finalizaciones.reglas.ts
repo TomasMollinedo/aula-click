@@ -85,6 +85,18 @@ export type PlanFinalizacion = {
   turnoIds: number[]
 }
 
+/**
+ * Fecha y horario (`HH:mm`) de una ocurrencia, como los muestran la previa y los `details` de los
+ * 409: la base de `otrasHoras`, `pagadas` y `conAsistencia`.
+ */
+function fechaYHorario(o: Pick<OcurrenciaDeLaSerie, 'fecha' | 'horaInicio' | 'horaFin'>) {
+  return {
+    fecha: o.fecha,
+    horaInicio: minutosAHora(o.horaInicio),
+    horaFin: minutosAHora(o.horaFin),
+  }
+}
+
 function errorDeFecha(mensaje: string): ValidationError {
   return new ValidationError(mensaje, { details: [{ path: ['fechaDesde'], message: mensaje }] })
 }
@@ -164,12 +176,7 @@ function otrasHorasDe(snapshot: SnapshotFinalizacion, conjunto: ConjuntoAFinaliz
   }
   return [...primeras.values()]
     .sort((a, b) => a.horaInicio - b.horaInicio || a.turnoId - b.turnoId)
-    .map((o) => ({
-      turnoId: o.turnoId,
-      fecha: o.fecha,
-      horaInicio: minutosAHora(o.horaInicio),
-      horaFin: minutosAHora(o.horaFin),
-    }))
+    .map((o) => ({ turnoId: o.turnoId, ...fechaYHorario(o) }))
 }
 
 /**
@@ -197,24 +204,10 @@ export function armarPrevia(
   const sinFin = ultimoFin === null
   const pagadas = liberadas
     .filter((o) => o.pago.estado === 'PAGADO')
-    .map((o) => ({
-      fecha: o.fecha,
-      horaInicio: minutosAHora(o.horaInicio),
-      horaFin: minutosAHora(o.horaFin),
-      importe: o.pago.importeAplicado ?? 0,
-    }))
+    .map((o) => ({ ...fechaYHorario(o), importe: o.pago.importeAplicado ?? 0 }))
   const ultimaFechaPagada = pagadas.at(-1)?.fecha ?? null
   const conAsistencia: TurnoConAsistencia[] = liberadas.flatMap((o) =>
-    tieneAsistencia(o.estado)
-      ? [
-          {
-            fecha: o.fecha,
-            horaInicio: minutosAHora(o.horaInicio),
-            horaFin: minutosAHora(o.horaFin),
-            estado: o.estado,
-          },
-        ]
-      : [],
+    tieneAsistencia(o.estado) ? [{ ...fechaYHorario(o), estado: o.estado }] : [],
   )
   const ultimaFechaConAsistencia = conAsistencia.at(-1)?.fecha ?? null
   // La última fecha que impide finalizar: la mayor entre la última pagada y la última con asistencia.
