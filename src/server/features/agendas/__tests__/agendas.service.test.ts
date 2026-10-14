@@ -246,6 +246,22 @@ describe('listarAgenda', () => {
     expect(porDefecto.meta.total).toBe(2)
   })
 
+  it('un turno con asistencia (REALIZADO o AUSENTE) se sigue mostrando, con el estado del motor para abrir el detalle (T-86)', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 15, fecha: HOY, estado: 'REALIZADO' }),
+      ocurrencia({ turnoId: 16, fecha: HOY, alumnoId: 13, estado: 'AUSENTE' }),
+      ocurrencia({ turnoId: 17, fecha: HOY, alumnoId: 14, estado: 'CANCELADO' }),
+    ])
+
+    const pagina = await service.listarAgenda({ page: 1, pageSize: 20 })
+
+    expect(pagina.data.map(({ turnoId, estado }) => ({ turnoId, estado }))).toEqual([
+      { turnoId: 15, estado: 'REALIZADO' },
+      { turnoId: 16, estado: 'AUSENTE' },
+    ])
+    expect(pagina.meta.total).toBe(2)
+  })
+
   it('una ocurrencia pasada del día (SIN_REGISTRAR) se sigue mostrando', async () => {
     repos.repository.leerOcurrencias.mockResolvedValue([
       ocurrencia({ turnoId: 15, fecha: '2026-09-21', estado: 'SIN_REGISTRAR' }),
@@ -800,6 +816,20 @@ describe('listarAgendaDelCentro', () => {
     expect(conCanceladas.map((item) => item.turnoId)).toContain(21)
   })
 
+  it('el calendario semanal sigue trayendo los turnos con asistencia, con su estado (T-86)', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 20, fecha: LUNES, estado: 'REALIZADO' }),
+      ocurrencia({ turnoId: 22, fecha: LUNES, alumnoId: 13, estado: 'AUSENTE' }),
+    ])
+
+    const agenda = await service.listarAgendaDelCentro({ desde: LUNES, hasta: DOMINGO })
+
+    expect(agenda.map(({ turnoId, estado }) => ({ turnoId, estado }))).toEqual([
+      { turnoId: 20, estado: 'REALIZADO' },
+      { turnoId: 22, estado: 'AUSENTE' },
+    ])
+  })
+
   it('un rango de 31 días (el máximo) se acepta', async () => {
     await expect(
       service.listarAgendaDelCentro({ desde: LUNES, hasta: '2026-10-28' }),
@@ -1108,6 +1138,18 @@ describe('agendaParaDocumento', () => {
       prioridad: null,
     })
     expect(documento.turnos.every((turno) => turno.estado !== 'CANCELADO')).toBe(true)
+  })
+
+  it('un turno con asistencia va al documento con su estado: la plantilla decide cómo se escribe (T-86)', async () => {
+    repos.repository.leerOcurrencias.mockResolvedValue([
+      ocurrencia({ turnoId: 1, fecha: HOY, estado: 'REALIZADO' }),
+    ])
+
+    const documento = await service.agendaParaDocumento({ profesorId: 4 })
+
+    expect(documento.turnos.map(({ turnoId, estado }) => ({ turnoId, estado }))).toEqual([
+      { turnoId: 1, estado: 'REALIZADO' },
+    ])
   })
 
   it('no calcula los cupos: el documento no los muestra', async () => {

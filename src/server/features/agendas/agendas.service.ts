@@ -30,7 +30,8 @@ import type {
 
 // Reglas de las agendas. No conoce HTTP ni Prisma: lanza AppError o sus subclases. Las ocurrencias
 // salen del motor de `turnos` y la prioridad del de `examenes` (vía el repository) y acá sólo se
-// filtran, ordenan y paginan. Las agendas muestran las agendadas y las sin registrar, y las canceladas
+// filtran, ordenan y paginan. Las agendas muestran las no canceladas (agendadas, sin registrar y, con
+// el motor v3, las que tienen asistencia: T-86, con su estado para abrir el detalle), y las canceladas
 // sólo con `incluirCancelados` (HU-13: se siguen viendo con su estado); una cancelada no tiene
 // prioridad. Sólo los selectores de materias y aulas siguen contando las no canceladas. De
 // profesores y aulas solo lee, por sus repositories.
@@ -148,7 +149,8 @@ export function crearAgendasService({
 
   /**
    * Aplica los filtros de cancelados y de prioridad y le suma a cada ocurrencia su prioridad
-   * (HU-18). Sin `incluirCancelados` quedan sólo las agendadas y las sin registrar. Una sola
+   * (HU-18). Sin `incluirCancelados` quedan sólo las no canceladas (agendadas, sin registrar y con
+   * asistencia). Una sola
    * consulta de prioridades para todas las no canceladas (las canceladas no tienen y no se piden).
    * Filtrar por prioridad deja afuera las canceladas. Mantiene el orden que recibe.
    */

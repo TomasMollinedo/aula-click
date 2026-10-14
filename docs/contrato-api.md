@@ -198,7 +198,7 @@ Todos los endpoints son de `MESA_ENTRADAS`. En `turnos` quedan la disponibilidad
 | `GET /api/v1/turnos/materias`        | `GET /api/v1/agendas/materias` | `MESA_ENTRADAS` |
 | `GET /api/v1/turnos/aulas`           | `GET /api/v1/agendas/aulas`    | `MESA_ENTRADAS` |
 
-Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backend.md` → Ocurrencias) y **muestran las agendadas y las sin registrar; las canceladas sólo con `incluirCancelados=true`** (HU-13, T-57: se siguen viendo con su estado). Una ocurrencia posterior al fin efectivo de una serie finalizada no existe y no sale.
+Las agendas leen **ocurrencias** (un turno en una fecha, ver `convenciones-backend.md` → Ocurrencias) y **muestran todas las no canceladas (agendadas, sin registrar y con asistencia); las canceladas sólo con `incluirCancelados=true`** (HU-13, T-57: se siguen viendo con su estado). **La asistencia se ve sólo en el detalle del turno** (decisión de las PO, T-86): las agendas, el calendario semanal, la vista lista y el PDF de la agenda no la muestran, aunque cada ocurrencia traiga su `estado` del motor. Una ocurrencia posterior al fin efectivo de una serie finalizada no existe y no sale.
 
 ### La ocurrencia de una agenda
 
@@ -232,12 +232,12 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 ```
 
 - La ocurrencia se identifica por `turnoId` + `fecha` (`turnoId` se repite en un recurrente): es el identificador de `GET /api/v1/ocurrencias/{turnoId}/{fecha}`. `bloqueAgendaId` identifica la clase junto con `fecha`: dos ocurrencias con la misma `fecha` y el mismo `bloqueAgendaId` son la misma clase, y agruparlas es presentación (lo hace el cliente).
-- `estado`: `AGENDADO`, `SIN_REGISTRAR` (pasada, sin asistencia: HU-22 es del próximo sprint) o `CANCELADO` (definición F). La UI muestra `AGENDADO` como "Agendado".
+- `estado`: el del motor (T-74): `AGENDADO`, `CANCELADO`, `SIN_REGISTRAR` (pasada, sin asistencia), `REALIZADO` o `AUSENTE` (con asistencia "Presente" o "Ausente"). Viaja para abrir el detalle, que sí muestra la asistencia (`GET /ocurrencias/{turnoId}/{fecha}`). **Las vistas de agenda no la muestran** (variante "sin asistencia" de `EstadoTurnoBadge`, T-77): "Agendado" y "Cancelado" como siempre y un turno pasado no cancelado sin distintivo, sea `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`.
 - `estadoPago`: `PAGADO` si la ocurrencia tiene un pago aplicado, si no `PENDIENTE` (una cancelada nunca se cobró: `PENDIENTE`).
 - `prioridad` (`ALTA`, `MEDIA`, `BAJA`) y `examen` (el que la determina, T-31): `null` en una ocurrencia **cancelada**; `examen` también es `null` si no hay un examen próximo. Es la misma regla que el detalle y las ocurrencias del alumno.
 - `cupo` (`{ ocupados, capacidad }`, HU-19): el de la **clase** (`fecha` + `bloqueAgendaId`), el mismo para todas las ocurrencias de esa clase. `capacidad` es la efectiva de la hora, `min(profesor.capacidad, aula.capacidad)`, y `ocupados` cuenta los turnos que ocupan lugar (los cancelados no) con la misma regla que el alta de turnos. **No depende de los filtros** de la agenda: con un filtro que deja ver un solo turno de la clase, `cupo` sigue siendo el de la clase entera. La clase está llena si `ocupados >= capacidad`.
 - **No hay `fechaOriginal` ni `reprogramada`**: un turno reprogramado es un turno más, en su fecha y bloque nuevos (definiciones A y B). Tampoco hay `id` ni el `estado: "ACTIVO"` de antes: `estado` es el de la ocurrencia y el id es `turnoId`.
-- **Filtros `incluirCancelados` y `prioridad`**, opcionales y combinables entre sí y con los demás filtros de cada agenda. `incluirCancelados` es `true` o `false`: sin el parámetro (o en `false`) salen las agendadas y las sin registrar; con `true` salen además las canceladas. No hay un filtro por estado suelto. `prioridad` deja afuera las canceladas (no tienen). Valores inválidos: 400 `VALIDACION`.
+- **Filtros `incluirCancelados` y `prioridad`**, opcionales y combinables entre sí y con los demás filtros de cada agenda. `incluirCancelados` es `true` o `false`: sin el parámetro (o en `false`) salen todas las no canceladas (agendadas, sin registrar y con asistencia); con `true` salen además las canceladas. No hay un filtro por estado suelto ni por asistencia. `prioridad` deja afuera las canceladas (no tienen). Valores inválidos: 400 `VALIDACION`.
 
 ### Agenda diaria
 
@@ -253,7 +253,7 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
 - **`profesorId` es obligatorio** (si falta o es inválido, 400 `VALIDACION` en `["profesorId"]`): la agenda de todo el centro en un día puede ser demasiado larga para un documento y no tiene PDF. Un profesor inexistente responde 404; su estado no importa (uno inactivo conserva sus turnos).
 - `fecha` (sin ella, hoy), `incluirCancelados` y `prioridad` valen lo mismo que en la agenda diaria. **No acepta** `q`, `materiaId`, `aulaId`, `page` ni `pageSize`: si llegan, se ignoran.
 - Trae **todas** las ocurrencias del día, sin paginar, con los mismos filtros y el mismo orden que `GET /agendas/diaria` (hora de inicio y, dentro de la hora, profesor e id del turno): es la misma lectura, sin el corte de la página.
-- Contenido: la fecha con su día (`viernes 02/10`) y la línea `Profesor: <nombre apellido>`, seguida de `· Incluye cancelados` y `· Prioridad: <etiqueta>` si se pidieron; y una tabla Horario · Alumno · Profesor · Materia · Aula · Estado. Sin turnos, "No hay turnos para este día." (el nombre del profesor sale igual).
+- Contenido: la fecha con su día (`viernes 02/10`) y la línea `Profesor: <nombre apellido>`, seguida de `· Incluye cancelados` y `· Prioridad: <etiqueta>` si se pidieron; y una tabla Horario · Alumno · Profesor · Materia · Aula · Estado. La columna Estado se ve como las vistas, sin la asistencia (T-86): "Agendado", "Cancelado" o `—` para un turno pasado no cancelado (sin registrar o con asistencia). Sin turnos, "No hay turnos para este día." (el nombre del profesor sale igual).
 - Nombre del archivo: `agenda-<fecha>-<apellido>-<nombre>.pdf`, con el profesor (`agenda-2026-10-02-cornejo-bautista.pdf`).
 - Errores: 400 `VALIDACION` (`profesorId`, `fecha`, `incluirCancelados`, `prioridad`); 401; 403 para cualquier rol que no sea `MESA_ENTRADAS`; 404 si el profesor no existe.
 

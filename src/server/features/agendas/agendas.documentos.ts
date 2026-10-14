@@ -18,6 +18,26 @@ export type TurnoDeAgendaDocumento = {
   estado: EstadoOcurrencia
 }
 
+/**
+ * Estado de un turno como lo muestra el PDF de la agenda: igual que las vistas de las agendas
+ * (variante "sin asistencia" de la UI, decisión de las PO, T-86). "Agendado" y "Cancelado" como
+ * siempre y un turno pasado no cancelado sin estado (`—`), tenga o no asistencia: la asistencia se
+ * ve sólo en el detalle del turno. No usa `etiquetaEstado` del motor, que sí distingue "Realizado",
+ * "Ausente" y "Sin registrar". Un estado nuevo del motor no compila hasta decidir cómo se ve acá.
+ */
+const ESTADO_EN_AGENDA: Record<EstadoOcurrencia, string> = {
+  AGENDADO: 'Agendado',
+  CANCELADO: 'Cancelado',
+  SIN_REGISTRAR: '—',
+  REALIZADO: '—',
+  AUSENTE: '—',
+}
+
+/** `'REALIZADO'` → `'—'`; `'AGENDADO'` → `'Agendado'` (ver `ESTADO_EN_AGENDA`). */
+export function etiquetaEstadoEnAgenda(estado: EstadoOcurrencia): string {
+  return ESTADO_EN_AGENDA[estado]
+}
+
 /** Lo que va en el PDF de la agenda diaria de un profesor. */
 export type AgendaDocumento = {
   /** El día de la agenda: el pedido o, sin él, hoy. */
