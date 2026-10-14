@@ -6,14 +6,19 @@ import * as examenesController from './examenes.controller'
 import {
   ejemploAlta,
   ejemploDetalle,
+  ejemploDetalleConNota,
   ejemploEdicion,
   ejemploErrorMateriaInactiva,
   ejemploErrorMateriaSinTurnos,
+  ejemploErrorExamenFuturo,
   ejemploErrorPendiente,
   ejemploListado,
+  ejemploMisExamenes,
+  ejemploNota,
   ejemploSelector,
 } from './examenes.ejemplos'
 import {
+  cargarNotaSchema,
   crearExamenSchema,
   editarExamenSchema,
   examenDetalleSchema,
@@ -21,9 +26,11 @@ import {
   examenesQuerySchema,
   examenIdParamsSchema,
   materiasExamenSelectorSchema,
+  misExamenesQuerySchema,
+  misExamenesSchema,
 } from './examenes.validation'
 
-// Contrato HTTP de exámenes (HU-17, T-55): cada endpoint se declara con createRoute() y se
+// Contrato HTTP de exámenes (HU-17, T-55; nota y portal, HU-34 y HU-35, T-106): cada endpoint se declara con createRoute() y se
 // registra acá. El router lo creó T-32 y ya está registrado en `app.ts`.
 
 const tags = ['Exámenes']
@@ -168,9 +175,62 @@ export const darDeBajaExamenRoute = createRoute({
   },
 })
 
+export const cargarNotaRoute = createRoute({
+  method: 'patch',
+  path: '/{id}/nota',
+  tags,
+  summary: 'Cargar o corregir la nota de un examen',
+  description:
+    'Sólo de un examen ya rendido (fecha hoy o anterior). `CON_NOTA` lleva una nota de 1 a 10 con hasta dos decimales; `AUSENTE` va sin nota y no cuenta para los promedios. Cargar y corregir usan las mismas reglas; la nota tiene su propia trazabilidad (quién la cargó y quién la modificó por última vez, con el rol) y no cambia la auditoría del examen. Un profesor sólo puede cargarla en una materia que le dicte a ese alumno. Las observaciones se siguen editando con `PATCH /examenes/{id}`.',
+  middleware: [requireAuth(), requireRole(...roles)] as const,
+  request: {
+    params: examenIdParamsSchema,
+    body: {
+      required: true,
+      content: { 'application/json': { schema: cargarNotaSchema, example: ejemploNota } },
+    },
+  },
+  responses: {
+    200: {
+      description: 'Nota cargada',
+      content: {
+        'application/json': { schema: examenDetalleSchema, example: ejemploDetalleConNota },
+      },
+    },
+    ...errores,
+    404: noEncontrado,
+    409: respuestaError('El examen todavía no se rindió (EXAMEN_FUTURO)', ejemploErrorExamenFuturo),
+  },
+})
+
+// Portal (HU-35): el alumno sale de la sesión, nunca de un parámetro.
+export const misExamenesRoute = createRoute({
+  method: 'get',
+  path: '/mis-examenes',
+  tags,
+  summary: 'Mis exámenes y notas de una materia (portal del alumno)',
+  description:
+    'El alumno de la sesión: el próximo examen de la materia (a lo sumo uno) con los días que faltan, los rendidos del más reciente al más antiguo (la nota, ausente o sin nota) y el promedio de las notas sin los ausentes. Sin observaciones ni auditoría.',
+  middleware: [requireAuth(), requireRole('ALUMNO')] as const,
+  request: { query: misExamenesQuerySchema },
+  responses: {
+    200: {
+      description: 'Mis exámenes',
+      content: { 'application/json': { schema: misExamenesSchema, example: ejemploMisExamenes } },
+    },
+    400: errores[400],
+    401: errores[401],
+    403: respuestaError(
+      'El rol no es alumno, el usuario está inhabilitado o la cuenta no tiene alumno (SIN_PERMISO)',
+    ),
+  },
+})
+
 export const examenesRoutes = createRouter()
   .openapi(listarExamenesRoute, examenesController.listar)
+  .openapi(misExamenesRoute, examenesController.misExamenes)
   .openapi(materiasExamenRoute, examenesController.materias)
+  .openapi(cargarNotaRoute, examenesController.cargarNota)
   .openapi(crearExamenRoute, examenesController.crear)
   .openapi(editarExamenRoute, examenesController.editar)
   .openapi(darDeBajaExamenRoute, examenesController.darDeBaja)

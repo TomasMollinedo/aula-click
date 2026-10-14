@@ -4,6 +4,7 @@ import {
   type PedidoPrioridad,
   type TipoExamen,
   clavePrioridad,
+  leerExamenesDelPeriodo,
   leerPrioridades,
   prioridadPorDias,
 } from '../examenes.condiciones'
@@ -242,5 +243,90 @@ describe('leerPrioridades', () => {
     expect(await prioridadDe()).toStrictEqual({ prioridad: 'BAJA' })
 
     expect(findMany).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('leerExamenesDelPeriodo', () => {
+  const fecha = (iso: string) => new Date(`${iso}T00:00:00.000Z`)
+  const decimal = (n: number) => ({ toNumber: () => n })
+
+  function clienteCon(filas: unknown[]) {
+    const findMany = vi.fn().mockResolvedValue(filas)
+    return { findMany, client: { examen: { findMany } } as unknown as ClienteExamenes }
+  }
+
+  it('una consulta con el período, el alumno y las materias; devuelve la nota como número', async () => {
+    const { client, findMany } = clienteCon([
+      {
+        id: 1,
+        materiaId: 10,
+        fecha: fecha('2026-09-05'),
+        tipo: 'PARCIAL',
+        resultado: 'CON_NOTA',
+        nota: decimal(7.5),
+        materia: { nombre: 'Matemática' },
+      },
+      {
+        id: 2,
+        materiaId: 10,
+        fecha: fecha('2026-09-20'),
+        tipo: 'FINAL',
+        resultado: 'AUSENTE',
+        nota: null,
+        materia: { nombre: 'Matemática' },
+      },
+    ])
+
+    const examenes = await leerExamenesDelPeriodo(client, {
+      alumnoId: 12,
+      desde: '2026-09-01',
+      hasta: '2026-09-30',
+      materiaIds: [10],
+    })
+
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(findMany.mock.calls[0]?.[0].where).toEqual({
+      estado: 'ACTIVO',
+      alumnoId: 12,
+      fecha: { gte: fecha('2026-09-01'), lte: fecha('2026-09-30') },
+      materiaId: { in: [10] },
+    })
+    expect(examenes).toEqual([
+      {
+        id: 1,
+        materiaId: 10,
+        materiaNombre: 'Matemática',
+        fecha: '2026-09-05',
+        tipo: 'PARCIAL',
+        resultado: 'CON_NOTA',
+        nota: 7.5,
+      },
+      {
+        id: 2,
+        materiaId: 10,
+        materiaNombre: 'Matemática',
+        fecha: '2026-09-20',
+        tipo: 'FINAL',
+        resultado: 'AUSENTE',
+        nota: null,
+      },
+    ])
+  })
+
+  it('sin materiaIds no filtra por materia', async () => {
+    const { client, findMany } = clienteCon([])
+
+    await leerExamenesDelPeriodo(client, { alumnoId: 12, desde: '2026-09-01', hasta: '2026-09-30' })
+
+    expect(findMany.mock.calls[0]?.[0].where).not.toHaveProperty('materiaId')
+  })
+
+  it('una fecha inválida lanza RangeError antes de consultar', async () => {
+    const { client, findMany } = clienteCon([])
+
+    await expect(
+      leerExamenesDelPeriodo(client, { alumnoId: 12, desde: '2026-02-30', hasta: '2026-03-01' }),
+    ).rejects.toBeInstanceOf(RangeError)
+    expect(findMany).not.toHaveBeenCalled()
   })
 })

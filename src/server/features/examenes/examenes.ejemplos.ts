@@ -5,7 +5,9 @@ import type {
   ExamenDetalle,
   ExamenesListado,
   ExamenItem,
+  CargarNota,
   MateriasExamenSelector,
+  MisExamenes,
 } from './examenes.validation'
 
 // Ejemplos del OpenAPI de exámenes (Swagger en /api/v1/docs), usados en examenes.routes. Solo
@@ -44,6 +46,13 @@ export const ejemploItemProximo = {
   pasado: false,
   diasRestantes: 10,
   administrable: true,
+  resultado: null,
+  nota: null,
+  notaCreatedAt: null,
+  notaUpdatedAt: null,
+  notaCreatedBy: null,
+  notaUpdatedBy: null,
+  cargarNota: false,
   createdAt: '2026-09-22T13:45:00.000Z',
   updatedAt: '2026-09-22T13:45:00.000Z',
   createdBy: ejemploAuditoriaProfesor,
@@ -59,6 +68,13 @@ const ejemploItemPasado = {
   pasado: true,
   diasRestantes: null,
   administrable: true,
+  resultado: 'CON_NOTA',
+  nota: 7.5,
+  notaCreatedAt: '2026-08-02T14:00:00.000Z',
+  notaUpdatedAt: '2026-08-02T14:00:00.000Z',
+  notaCreatedBy: ejemploAuditoriaProfesor,
+  notaUpdatedBy: ejemploAuditoriaProfesor,
+  cargarNota: true,
   createdAt: '2026-07-10T09:00:00.000Z',
   updatedAt: '2026-07-10T09:00:00.000Z',
   createdBy: ejemploAuditoriaMesa,
@@ -68,6 +84,7 @@ const ejemploItemPasado = {
 export const ejemploListado = {
   proximos: [ejemploItemProximo],
   pasados: [ejemploItemPasado],
+  rendidosSinNota: 0,
 } satisfies ExamenesListado
 
 export const ejemploDetalle = {
@@ -78,6 +95,12 @@ export const ejemploDetalle = {
   tipo: 'PARCIAL',
   observaciones: 'Trae calculadora y formulario',
   pasado: false,
+  resultado: null,
+  nota: null,
+  notaCreatedAt: null,
+  notaUpdatedAt: null,
+  notaCreatedBy: null,
+  notaUpdatedBy: null,
   createdAt: '2026-09-22T13:45:00.000Z',
   updatedAt: '2026-09-22T13:45:00.000Z',
   createdBy: ejemploAuditoriaProfesor,
@@ -119,3 +142,33 @@ export const ejemploErrorMateriaInactiva = {
     ],
   },
 } satisfies ErrorResponse
+
+export const ejemploNota = { resultado: 'CON_NOTA', nota: 7.5 } satisfies CargarNota
+
+/** Lo que devuelve la carga de la nota: el detalle con la nota y su trazabilidad. */
+export const ejemploDetalleConNota = {
+  ...ejemploDetalle,
+  fecha: '2026-10-01',
+  pasado: true,
+  resultado: 'CON_NOTA',
+  nota: 7.5,
+  notaCreatedAt: '2026-10-02T14:00:00.000Z',
+  notaUpdatedAt: '2026-10-02T14:00:00.000Z',
+  notaCreatedBy: ejemploAuditoriaProfesor,
+  notaUpdatedBy: ejemploAuditoriaProfesor,
+} satisfies ExamenDetalle
+
+/** 409 del service: el examen todavía no se rindió. */
+export const ejemploErrorExamenFuturo = {
+  error: { code: 'EXAMEN_FUTURO', message: 'Un examen futuro no admite nota' },
+} satisfies ErrorResponse
+
+export const ejemploMisExamenes = {
+  proximo: { fecha: '2026-10-22', tipo: 'PARCIAL', diasRestantes: 8 },
+  rendidos: [
+    { fecha: '2026-10-01', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 7.5 },
+    { fecha: '2026-09-20', tipo: 'TRABAJO_PRACTICO', resultado: 'AUSENTE', nota: null },
+    { fecha: '2026-09-05', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 9 },
+  ],
+  promedio: 8.25,
+} satisfies MisExamenes

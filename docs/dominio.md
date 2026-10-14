@@ -265,7 +265,14 @@ A completar por T-104 (HU-42).
 
 ## Notas de exámenes
 
-A completar por T-106 (HU-34, HU-35).
+HU-34 y HU-35 (T-106).
+
+- **Quién:** mesa de entrada y el profesor, con las reglas de HU-17: el profesor sólo carga la nota de los exámenes de las materias que le dicta a ese alumno. El profesor ve todos los exámenes del alumno.
+- **Cuándo:** sólo de un examen **ya rendido**, con fecha de hoy o anterior. Un examen futuro no admite nota.
+- **Resultado:** "Con nota", con una nota de 1 a 10 con hasta dos decimales, o "Ausente", sin nota. Un ausente no cuenta para los promedios.
+- **Corrección:** cargar y corregir siguen las mismas reglas. La nota tiene su propia trazabilidad: quién la cargó y quién la modificó por última vez, con fecha, hora y rol. Cargar o corregir la nota no cambia la auditoría del examen.
+- **Rendidos sin nota:** la ficha avisa cuántos exámenes ya rendidos no tienen nota cargada.
+- **Portal (HU-35):** el alumno ve, por materia, su próximo examen con los días que faltan, los rendidos del más reciente al más antiguo (la nota, "Ausente" o "Sin nota") y el promedio de sus notas sin los ausentes. No ve las observaciones ni quién cargó cada dato.
 
 ## Tope de deuda
 
