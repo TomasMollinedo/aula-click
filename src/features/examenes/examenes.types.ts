@@ -39,18 +39,42 @@ export type ExamenItem = {
   updatedAt: string
   createdBy: ExamenUsuarioAuditoria | null
   updatedBy: ExamenUsuarioAuditoria | null
+  /**
+   * Quien consulta puede cargar o corregir la nota, según la API: el examen ya se rindió (hoy o
+   * antes) y es `administrable` (HU-34).
+   */
+  cargarNota: boolean
+} & NotaDeExamen
+
+/** `CON_NOTA` (con `nota`) o `AUSENTE` (sin nota, no cuenta para los promedios). */
+export type ResultadoExamen = 'CON_NOTA' | 'AUSENTE'
+
+/** La nota de un examen con su trazabilidad propia (HU-34); todo `null` si no se cargó. */
+export type NotaDeExamen = {
+  resultado: ResultadoExamen | null
+  /** De 1 a 10, con hasta dos decimales. */
+  nota: number | null
+  notaCreatedAt: string | null
+  notaUpdatedAt: string | null
+  notaCreatedBy: ExamenUsuarioAuditoria | null
+  notaUpdatedBy: ExamenUsuarioAuditoria | null
 }
 
 export type ExamenesListado = {
   /** De hoy en adelante, por fecha ascendente. */
   proximos: ExamenItem[]
   pasados: ExamenItem[]
+  /** Exámenes ya rendidos (hoy o antes) sin nota cargada. */
+  rendidosSinNota: number
 }
 
-/** Lo que devuelven el alta, la edición y la baja. */
-export type ExamenDetalle = Omit<ExamenItem, 'diasRestantes' | 'administrable'> & {
+/** Lo que devuelven el alta, la edición, la baja y la carga de la nota. */
+export type ExamenDetalle = Omit<ExamenItem, 'diasRestantes' | 'administrable' | 'cargarNota'> & {
   alumnoId: number
 }
+
+/** Body de `PATCH /examenes/{id}/nota`. */
+export type NotaCargar = { resultado: 'CON_NOTA'; nota: number } | { resultado: 'AUSENTE' }
 
 export type ExamenCrear = {
   alumnoId: number

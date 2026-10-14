@@ -23,11 +23,12 @@ Cómo está armado el frontend y qué reglas sigue. Lo que se acuerda con el bac
 | `lib/`, `server/`, `config/` | **Backend.** Ver `arquitectura-backend.md`                                                                                                                 | El frontend tiene prohibido importarlos (ESLint)                                              |
 
 ## Quién importa a quién
-app/                   → features/, components/, hooks/, types/, utils/
-features/<X>/          → components/, hooks/, types/, utils/, y features/<Y>/hooks/* (solo hooks de otra feature)
-components/            → hooks/, types/, utils/            (nunca features/: ESLint)
-hooks/, types/, utils/ → entre sí                          (nunca features/ ni components/: ESLint)
-nadie del frontend     → server/, lib/, config/, generated/ (ESLint, con alias o con ruta relativa)
+
+app/ → features/, components/, hooks/, types/, utils/
+features/<X>/ → components/, hooks/, types/, utils/, y features/<Y>/hooks/* (solo hooks de otra feature)
+components/ → hooks/, types/, utils/ (nunca features/: ESLint)
+hooks/, types/, utils/ → entre sí (nunca features/ ni components/: ESLint)
+nadie del frontend → server/, lib/, config/, generated/ (ESLint, con alias o con ruta relativa)
 
 Ejemplo: el formulario de turno necesita un selector de alumnos. `TurnoForm.tsx` usa el hook `use-alumnos` de `features/alumnos/hooks/`; no llama a `alumnos.api.ts` ni importa `AlumnosTable`.
 
@@ -37,234 +38,233 @@ Cuando una pantalla de una feature tiene que mostrar un **componente** de otra (
 
 src/
 ├── app/
-│   ├── layout.tsx                      # layout raíz: solo <Providers> (sin Header ni Sidebar)
-│   ├── providers.tsx                   # QueryClientProvider (TanStack Query) + ToastProvider
-│   ├── page.tsx                        # "/": redirige al segmento del rol de la sesión
-│   ├── login/page.tsx                  # pública; usa features/auth
-│   ├── mesa/                           # rol MESA_ENTRADAS → /mesa/...
-│   │   ├── layout.tsx                  # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
-│   │   ├── page.tsx                    # raíz del segmento: lleva a /mesa/alumnos
-│   │   ├── alumnos/
-│   │   │   ├── layout.tsx              # {children} + {modal}
-│   │   │   ├── page.tsx                # listado (q y page en la URL)
-│   │   │   ├── nuevo/page.tsx          # alta entrando por URL: el listado de fondo
-│   │   │   ├── [alumnoId]/
-│   │   │   │   ├── layout.tsx          # {children} + {modal}: el slot de la edición
-│   │   │   │   ├── page.tsx            # página de detalle (una sola sección hoy; ver "Modales con URL propia" → tabs)
-│   │   │   │   ├── editar/page.tsx     # edición entrando por URL: el detalle de fondo
-│   │   │   │   └── @modal/             # edición, siempre como modal sobre el detalle
-│   │   │   │       ├── default.tsx, page.tsx   # null (igual que en el slot del listado)
-│   │   │   │       ├── (.)editar/page.tsx      # navegando desde el detalle (intercepción)
-│   │   │   │       └── editar/page.tsx         # entrando por URL o al recargar
-│   │   │   └── @modal/                 # alta, siempre como modal sobre el listado
-│   │   │       ├── default.tsx         # null: sin modal al cargar por URL una ruta que el slot no define
-│   │   │       ├── page.tsx            # null: cierra el modal al volver al listado con un Link
-│   │   │       ├── (.)nuevo/page.tsx   # navegando desde el listado (intercepción)
-│   │   │       ├── nuevo/page.tsx      # entrando por URL o al recargar
-│   │   │       └── [alumnoId]/page.tsx # null: sin modal del listado al ir al detalle
-│   │   ├── profesores/page.tsx
-│   │   ├── materias/page.tsx           # solo lectura (HU-12): listado y detalle, sin alta ni slot @modal
-│   │   ├── turnos/page.tsx              # registrar turno; compone el detalle del turno (renderDetalle)
-│   │   ├── agenda/page.tsx              # "Agenda" (HU-09, T-24); compone el detalle y el PDF
-│   │   ├── pagos/page.tsx               # "Por cobrar" (HU-16) y "Pagos realizados" (HU-36) en subpestañas (?vista=); compone
-│   │   │                                # RegistrarPagoDialog, DetalleTurno y DetallePago
-│   │   └── _componentes/                # composición de mesa: detalle-turno.tsx (el detalle con sus acciones), detalle-pago.tsx
-│   │                                    # (el detalle del pago con "Anular"), pagos-con-vistas.tsx (las subpestañas de Pagos) y
-│   │                                    # ficha-alumno.tsx (las 5 pestañas de la ficha). Ver "Acciones sobre una ocurrencia"
-│   ├── profesor/                       # rol PROFESOR → /profesor/...
-│   │   ├── layout.tsx                  # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
-│   │   ├── page.tsx                    # raíz del segmento: lleva a /profesor/agenda
-│   │   ├── agenda/page.tsx             # "Mi agenda" (HU-10, T-26): ?vista=dia|semana y ?fecha=
-│   │   ├── asistencia/page.tsx         # "Asistencia" (HU-22): compone AsistenciaPantalla con el detalle del turno
-│   │   ├── alumnos/page.tsx
-│   │   └── _componentes/               # detalle-turno.tsx (sin acciones) y ficha-alumno.tsx (Datos, Historial académico y Exámenes)
-│   ├── gerente/                        # rol GERENTE → /gerente/...
-│   │   ├── layout.tsx                  # <AppShell sidebar={<GerenteSidebar />} userMenu={<UserMenu />}>
-│   │   ├── page.tsx                    # raíz del segmento: lleva a /gerente/tablero
-│   │   ├── tablero/page.tsx            # tablero del gerente (HU-21, T-62): solo lectura; compone TableroPantalla
-│   │   ├── pagos/page.tsx              # "Pagos" (HU-36): PagosRealizados de solo lectura y el detalle del pago
-│   │   ├── _componentes/detalle-pago.tsx  # el detalle del pago, sin acciones
-│   │   └── materias/                   # catálogo con escritura (HU-12): `puedeEscribir` (ver Roles y URLs)
-│   │       ├── layout.tsx              # {children} + {modal}
-│   │       ├── page.tsx                # listado; detalle (?detalle=) y edición (?editar=) como modales
-│   │       ├── nueva/page.tsx          # alta entrando por URL: el listado de fondo
-│   │       └── @modal/                 # default.tsx, page.tsx, (.)nueva/page.tsx, nueva/page.tsx
-│   ├── portal/                         # rol ALUMNO → /portal/... (T-80), pensado para el celular
-│   │   ├── layout.tsx                  # SegmentoDeRol ALUMNO + AppShell (PortalSidebar) + avisos arriba de todo
-│   │   ├── page.tsx                    # redirige a /portal/calendario
-│   │   ├── calendario/page.tsx         # MiCalendario (agendas) + DetalleTurnoPortal (T-87; el detalle, T-85)
-│   │   ├── turnos/nuevo/page.tsx       # SacarTurno (turnos, T-94)
-│   │   ├── materias/page.tsx           # MisMaterias (historiales, T-111)
-│   │   ├── materias/[materiaId]/[profesorId]/page.tsx   # MiMateria (historiales) + MisExamenes (examenes) (T-111)
-│   │   ├── pagos/page.tsx              # MisPendientes (cuentas) + MisPagosRealizados (pagos) (T-103)
-│   │   ├── configuracion/page.tsx      # CambiarContrasena (usuarios, T-92)
-│   │   └── _componentes/detalle-turno.tsx   # DetalleTurnoPortal: el detalle de solo lectura del alumno (T-85)
-│   └── api/                            # BACKEND (adaptadores); no se toca desde el frontend
+│ ├── layout.tsx # layout raíz: solo <Providers> (sin Header ni Sidebar)
+│ ├── providers.tsx # QueryClientProvider (TanStack Query) + ToastProvider
+│ ├── page.tsx # "/": redirige al segmento del rol de la sesión
+│ ├── login/page.tsx # pública; usa features/auth
+│ ├── mesa/ # rol MESA_ENTRADAS → /mesa/...
+│ │ ├── layout.tsx # <AppShell sidebar={<MesaSidebar />} userMenu={<UserMenu />}>
+│ │ ├── page.tsx # raíz del segmento: lleva a /mesa/alumnos
+│ │ ├── alumnos/
+│ │ │ ├── layout.tsx # {children} + {modal}
+│ │ │ ├── page.tsx # listado (q y page en la URL)
+│ │ │ ├── nuevo/page.tsx # alta entrando por URL: el listado de fondo
+│ │ │ ├── [alumnoId]/
+│ │ │ │ ├── layout.tsx # {children} + {modal}: el slot de la edición
+│ │ │ │ ├── page.tsx # página de detalle (una sola sección hoy; ver "Modales con URL propia" → tabs)
+│ │ │ │ ├── editar/page.tsx # edición entrando por URL: el detalle de fondo
+│ │ │ │ └── @modal/ # edición, siempre como modal sobre el detalle
+│ │ │ │ ├── default.tsx, page.tsx # null (igual que en el slot del listado)
+│ │ │ │ ├── (.)editar/page.tsx # navegando desde el detalle (intercepción)
+│ │ │ │ └── editar/page.tsx # entrando por URL o al recargar
+│ │ │ └── @modal/ # alta, siempre como modal sobre el listado
+│ │ │ ├── default.tsx # null: sin modal al cargar por URL una ruta que el slot no define
+│ │ │ ├── page.tsx # null: cierra el modal al volver al listado con un Link
+│ │ │ ├── (.)nuevo/page.tsx # navegando desde el listado (intercepción)
+│ │ │ ├── nuevo/page.tsx # entrando por URL o al recargar
+│ │ │ └── [alumnoId]/page.tsx # null: sin modal del listado al ir al detalle
+│ │ ├── profesores/page.tsx
+│ │ ├── materias/page.tsx # solo lectura (HU-12): listado y detalle, sin alta ni slot @modal
+│ │ ├── turnos/page.tsx # registrar turno; compone el detalle del turno (renderDetalle)
+│ │ ├── agenda/page.tsx # "Agenda" (HU-09, T-24); compone el detalle y el PDF
+│ │ ├── pagos/page.tsx # "Por cobrar" (HU-16) y "Pagos realizados" (HU-36) en subpestañas (?vista=); compone
+│ │ │ # RegistrarPagoDialog, DetalleTurno y DetallePago
+│ │ └── _componentes/ # composición de mesa: detalle-turno.tsx (el detalle con sus acciones), detalle-pago.tsx
+│ │ # (el detalle del pago con "Anular"), pagos-con-vistas.tsx (las subpestañas de Pagos) y
+│ │ # ficha-alumno.tsx (las 5 pestañas de la ficha). Ver "Acciones sobre una ocurrencia"
+│ ├── profesor/ # rol PROFESOR → /profesor/...
+│ │ ├── layout.tsx # <AppShell sidebar={<ProfesorSidebar />} userMenu={<UserMenu />}>
+│ │ ├── page.tsx # raíz del segmento: lleva a /profesor/agenda
+│ │ ├── agenda/page.tsx # "Mi agenda" (HU-10, T-26): ?vista=dia|semana y ?fecha=
+│ │ ├── asistencia/page.tsx # "Asistencia" (HU-22): compone AsistenciaPantalla con el detalle del turno
+│ │ ├── alumnos/page.tsx
+│ │ └── _componentes/ # detalle-turno.tsx (sin acciones) y ficha-alumno.tsx (Datos, Historial académico y Exámenes)
+│ ├── gerente/ # rol GERENTE → /gerente/...
+│ │ ├── layout.tsx # <AppShell sidebar={<GerenteSidebar />} userMenu={<UserMenu />}>
+│ │ ├── page.tsx # raíz del segmento: lleva a /gerente/tablero
+│ │ ├── tablero/page.tsx # tablero del gerente (HU-21, T-62): solo lectura; compone TableroPantalla
+│ │ ├── pagos/page.tsx # "Pagos" (HU-36): PagosRealizados de solo lectura y el detalle del pago
+│ │ ├── _componentes/detalle-pago.tsx # el detalle del pago, sin acciones
+│ │ └── materias/ # catálogo con escritura (HU-12): `puedeEscribir` (ver Roles y URLs)
+│ │ ├── layout.tsx # {children} + {modal}
+│ │ ├── page.tsx # listado; detalle (?detalle=) y edición (?editar=) como modales
+│ │ ├── nueva/page.tsx # alta entrando por URL: el listado de fondo
+│ │ └── @modal/ # default.tsx, page.tsx, (.)nueva/page.tsx, nueva/page.tsx
+│ ├── portal/ # rol ALUMNO → /portal/... (T-80), pensado para el celular
+│ │ ├── layout.tsx # SegmentoDeRol ALUMNO + AppShell (PortalSidebar) + avisos arriba de todo
+│ │ ├── page.tsx # redirige a /portal/calendario
+│ │ ├── calendario/page.tsx # MiCalendario (agendas) + DetalleTurnoPortal (T-87; el detalle, T-85)
+│ │ ├── turnos/nuevo/page.tsx # SacarTurno (turnos, T-94)
+│ │ ├── materias/page.tsx # MisMaterias (historiales, T-111)
+│ │ ├── materias/[materiaId]/[profesorId]/page.tsx # MiMateria (historiales) + MisExamenes (examenes) (T-111)
+│ │ ├── pagos/page.tsx # MisPendientes (cuentas) + MisPagosRealizados (pagos) (T-103)
+│ │ ├── configuracion/page.tsx # CambiarContrasena (usuarios, T-92)
+│ │ └── _componentes/detalle-turno.tsx # DetalleTurnoPortal: el detalle de solo lectura del alumno (T-85)
+│ └── api/ # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
-│   ├── auth/
-│   │   ├── auth-client.ts              # createAuthClient() de better-auth/react
-│   │   ├── auth.schema.ts              # schema Zod del login: un campo "Email o usuario" (`esEmail` decide el camino)
-│   │   ├── roles.ts                    # rol → segmento de URL (único lugar con esa correspondencia)
-│   │   ├── codigos-error.ts            # codes del contrato que el frontend reconoce
-│   │   ├── interpretar-error-login.ts  # único lugar que decide el mensaje de un login fallido
-│   │   ├── sesion-expirada.ts          # los motivos en la URL de /login, compartidos con providers.tsx
-│   │   └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
-│   ├── aulas/                          # mínima, solo de lectura: aulas libres para un horario
-│   │   ├── aulas.types.ts, api/{aulas.api.ts, aulas.keys.ts}
-│   │   └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts}   # lo único que usan otras features
-│   ├── profesores/                     # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
-│   │                                   # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
-│   │                                   # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque;
-│   │                                   # el listado es una grilla de tarjetas con foto (ProfesoresGrid + ProfesorCard), no una tabla
-│   ├── turnos/                         # registrar turno (HU-07) y reprogramar un turno (HU-20, T-50)
-│   │   ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts
-│   │   ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, errores-reprogramaciones.ts, formato-reprogramaciones.ts
-│   │   ├── api/{turnos.api.ts, turnos.keys.ts, reprogramaciones.api.ts}
-│   │   ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-reprogramar-turno.ts}
-│   │   └── components/
-│   │       ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
-│   │       │   SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
-│   │       │   TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx); la confirmación abre el detalle del turno
-│   │       │   (`?detalle=&fecha=`) que le llega por `renderDetalle`
-│   │       └── AccionReprogramarTurno.tsx, ReprogramarTurnoDialog.tsx # reprogramar: reutiliza la búsqueda (FiltrosDisponibilidad con
-│   │           materiaFija, HorasDelBloque con unaSola); al reprogramar abre el detalle con el turnoId de la API y la fecha nueva
-│   ├── agendas/                        # las tres agendas: diaria (HU-09), propia (HU-10) y de la ficha del profesor (HU-02)
-│   │   ├── agendas.types.ts, agenda-propia.ts (rango, agrupado y params de la URL), filtros-agenda.ts, modo-agenda.ts,
-│   │   │   calendario.ts (clases, grilla de la semana, filtros y URL del calendario; con tests),
-│   │   │   calendario-alumno.ts (los turnos de un alumno en la grilla y sus filtros; con tests)
-│   │   ├── api/{agendas.api.ts, agendas.keys.ts, calendario.api.ts}  # /api/v1/agendas/{diaria,propia,profesor,centro}
-│   │   ├── hooks/{use-agenda.ts, use-agenda-propia.ts, use-agenda-profesor.ts, use-rango-agenda-en-url.ts,
-│   │   │   use-filtros-agenda.ts, use-modo-agenda.ts, use-invalidar-agendas.ts, use-calendario.ts, use-semana-en-url.ts}
-│   │   └── components/
-│   │       ├── AgendaConModo.tsx        # lo común a las tres: selector Calendario/Lista, detalle en la URL, slot de acciones
-│   │       ├── SelectorModoAgenda.tsx
-│   │       ├── CalendarioSemanal.tsx, CalendarioGrilla.tsx, BloqueClase.tsx # el calendario semanal (T-59)
-│   │       ├── GrillaSemanal.tsx        # la tabla de la semana (días y horas), genérica: la usan los dos calendarios
-│   │       ├── AgendaDelAlumno.tsx, CalendarioAlumno.tsx, BloqueTurnoAlumno.tsx # pestaña "Turnos" de la ficha del alumno: calendario
-│   │       │                            # por defecto y la lista (`TurnosDelAlumno`, que le llega por children) como segunda vista
-│   │       ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
-│   │       │   FiltroProfesorAgenda.tsx # agenda diaria; NavegacionFecha la comparten las dos agendas por rango
-│   │       ├── BarraFiltrosAgenda.tsx, FiltrosCanceladosPrioridad.tsx, FiltrosGrillaCalendario.tsx # los filtros de la lista
-│   │       │                            # (cancelados, prioridad y, en la diaria, profesor) y los campos de cada filtro
-│   │       ├── AgendaPorRango.tsx, AgendaPropiaTable.tsx, SelectorVistaAgenda.tsx # vista por día o por semana
-│   │       ├── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx # "Mi agenda"
-│   │       └── AgendaProfesorListado.tsx # tab "Agenda" de la ficha del profesor; lo compone app/
-│   ├── ocurrencias/                    # el detalle de un turno en una fecha y los turnos de un alumno (T-44)
-│   │   ├── detalle-url.ts, api/ocurrencias.keys.ts, hooks/{use-detalle-en-url.ts, use-invalidar-ocurrencias.ts}
-│   │   └── components/{OcurrenciaDetalle.tsx, TurnosDelAlumno.tsx}   # el detalle (con su sección de pago) y la pestaña "Turnos"
-│   ├── pagos/                          # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52)
-│   │   ├── pagos.types.ts, pagos.schema.ts   # schema del formulario, parsearMonto y armarRegistrarPago (el body)
-│   │   ├── a-cobrar.ts                 # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar
-│   │   ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts   # textos; errores del POST en lo que muestra el diálogo; URL del PDF del comprobante
-│   │   ├── detalle-pago-url.ts         # `?pago=<pagoId>`: el único archivo que conoce el parámetro (con test)
-│   │   ├── api/{pagos.api.ts, pagos.keys.ts}
-│   │   ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts}
-│   │   └── components/
-│   │       ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar → éxito o rechazo
-│   │       │                           #   (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
-│   │       ├── AccionRegistrarPago.tsx # slot del pie del detalle del turno
-│   │       ├── EnlaceComprobante.tsx   # "Ver comprobante" de un turno pagado (slot renderComprobante del detalle); enlaza al PDF
-│   │       ├── PagoDetalle.tsx         # ({ pagoId, onCerrar, renderAcciones? }): el detalle del pago, modal con `?pago=` (T-99)
-│   │       ├── EnlaceDetallePago.tsx   # ({ pagoId }): abre el detalle del pago desde el detalle de un turno pagado (T-99)
-│   │       └── PagosRealizados.tsx     # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
-│   ├── cuentas/                        # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
-│   │   ├── cuentas.types.ts, a-cobrar.ts   # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
-│   │   ├── filtros-cuenta.ts           # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
-│   │   ├── seleccion.ts                # la selección a cobrar (inmutable) y su resumen
-│   │   ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts   # textos (total, filtros activos, tope); errores de lectura y del período; ficha
-│   │   ├── api/{cuentas.api.ts, cuentas.keys.ts}
-│   │   ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts,
-│   │   │   use-filtros-cuenta.ts,      # los filtros de la URL con router.replace
-│   │   │   use-materias-de-cuenta.ts, use-nombres-de-filtros.ts,   # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
-│   │   │   use-todos-los-adeudados.ts, # todos los adeudados de un alumno, a pedido ("Seleccionar todos" de la vista global)
-│   │   │   use-dialogo-de-pago.ts,     # el diálogo de cobro de la selección: copia al abrir, ajuste de la selección y foco al cerrar
-│   │   │   use-detalle-de-cuenta.ts}   # "Ver detalle" de una fila: abre el detalle del turno en la URL; ajuste y foco al cerrar
-│   │   └── components/
-│   │       ├── PagosDelAlumno.tsx      # pestaña "Pagos" de la ficha (?tab=pagos&desde=…); la compone app/ con renderRegistrarPago
-│   │       ├── PagosGlobal.tsx         # /mesa/pagos: filtros y una página por tabla en la URL; la compone app/ (renderRegistrarPago, renderDetalle)
-│   │       ├── FiltrosCuenta.tsx       # período, materia y profesor, en las dos vistas; el 400 del período junto a "Hasta"
-│   │       ├── FiltroAlumno.tsx, FiltroProfesor.tsx   # los dos usos del selector con buscador (`ComboboxBuscador` de components/ui)
-│   │       ├── SeccionOcurrencias.tsx  # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
-│   │       ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx  # filas con casilla y "Ver detalle"; el importe destacado
-│   │       ├── BarraSeleccion.tsx      # resumen y acciones de la selección; envuelve las listas y flota abajo cuando deja de verse
-│   │       └── TotalDestacado.tsx      # el total con su etiqueta y los filtros activos
-│   ├── asistencias/                    # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
-│   │   ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
-│   │   └── components/AsistenciaPantalla.tsx   # ({ renderDetalle })
-│   ├── historiales/                    # HU-31 (andamiaje T-79; la completa T-109): pestaña "Historial académico" de la ficha del alumno
-│   │   ├── api/historiales.keys.ts, hooks/use-invalidar-historiales.ts
-│   │   └── components/HistorialAcademico.tsx   # ({ alumnoId, rol, renderDetalle })
-│   ├── anulaciones/                    # HU-42 (andamiaje T-79; la completa T-105): anular un pago
-│   │   ├── api/anulaciones.keys.ts, hooks/use-invalidar-anulaciones.ts
-│   │   └── components/AccionAnularPago.tsx     # ({ pago: PagoParaAcciones }): el pie del detalle del pago
-│   ├── cancelaciones/                  # HU-13 (T-46): cancelar uno o varios turnos
-│   │   ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
-│   │   ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts}  # al cancelar invalida ocurrencias, agendas y cuentas
-│   │   └── components/{AccionCancelarTurno, AccionCancelarVarios, CancelarTurnosDialog}.tsx
-│   ├── finalizaciones/                 # HU-14 (T-48): finalizar un turno recurrente desde una fecha
-│   │   ├── finalizaciones.{types,schema}.ts, errores-api.ts, formato-finalizaciones.ts, api/{finalizaciones.api,finalizaciones.keys}.ts
-│   │   ├── hooks/{use-previa-finalizacion.ts, use-finalizar-turno.ts, use-invalidar-finalizaciones.ts}  # al finalizar invalida agendas, cuentas y las previas
-│   │   └── components/{AccionFinalizarTurno, FinalizarTurnoDialog}.tsx  # la acción invalida las ocurrencias después de mover el detalle
-│   ├── examenes/                       # HU-17 (T-56): pestaña "Exámenes" de la ficha del alumno (mesa y profesor)
-│   │   ├── examenes.{types,schema}.ts, errores-api.ts, formato-examenes.ts, api/{examenes.api,examenes.keys}.ts
-│   │   ├── hooks/{use-examenes.ts, use-materias-examen.ts, use-crear-examen.ts, use-editar-examen.ts, use-eliminar-examen.ts,
-│   │   │   use-refrescar-por-examen.ts, use-invalidar-examenes.ts}  # una mutación invalida exámenes, ocurrencias y agendas (la prioridad)
-│   │   └── components/{ExamenesDelAlumno, ExamenDialog, ConfirmarEliminarExamen}.tsx  # alta y edición en un Dialog sin URL propia; editar y eliminar según `administrable` de la API
-│   ├── documentos/                     # los enlaces a los PDF de la API (ver Documentos PDF); sin datos propios: sin api/, keys ni hooks
-│   │   ├── rutas-documentos.ts         # hrefPdfTurno, hrefPdfTurnosAlumno y hrefPdfAgenda: las URLs, con su test
-│   │   └── components/{AccionPdfTurno, AccionPdfTurnosAlumno, BotonPdfAgenda}.tsx
-│   ├── tablero/                        # HU-21 (T-62): indicadores del centro de un período, solo lectura y sin enlaces
-│   │   ├── tablero.types.ts, periodo.ts, formato-tablero.ts, errores-tablero.ts, rutas-tablero.ts
-│   │   │                               # periodo.ts: opciones del selector y `?periodo=hoy|mes|rango&desde=&hasta=` (sin parámetros,
-│   │   │                               # "Esta semana", lunes a domingo); formato-tablero.ts: números, períodos y rótulos de cada tarjeta;
-│   │   │                               # errores-tablero.ts: el 400 del período junto a "Desde"/"Hasta", el 403 y el error general
-│   │   ├── api/{tablero.api.ts, tablero.keys.ts}                   # GET /api/v1/tablero?desde&hasta
-│   │   ├── hooks/{use-tablero.ts, use-periodo-en-url.ts}           # keepPreviousData; el período en la URL con router.replace
-│   │   └── components/{TableroPantalla, SelectorPeriodo, TarjetaIndicador, TarjetaRanking, GraficoDona, BotonPdfTablero}.tsx   # GraficoDona: torta/anillo en SVG, sin librería
-│   ├── centro/                         # vuelve en T-80 (la decisión T-127 lo había sacado con las hojas de impresión): ahora lo usa la UI, no los documentos; GET /centro (HU-11) para el teléfono del aviso del portal
-│   │   ├── centro.types.ts, api/{centro.api.ts, centro.keys.ts}, hooks/use-centro.ts   # staleTime: Infinity, sin reintentos
-│   │   └── components/AvisoMesaDeEntrada.tsx   # "Para cancelar o reprogramar un turno, comunicate con la mesa de entrada al …"
-│   ├── usuarios/                       # lo que vale para cualquier usuario: su cuenta y su contraseña (T-91, T-92)
-│   │   └── components/{AvisoContrasenaInicial, CambiarContrasena}.tsx   # placeholders de T-80 que completa T-92
-│   └── alumnos/                        # modelo de nombres y firmas para las demás entidades
-│       ├── alumnos.types.ts
-│       ├── alumnos.schema.ts            # schema Zod del formulario + funciones de conversión form↔API
-│       ├── volver-a.ts                  # ida y vuelta al alta desde otra pantalla (?volverA=, lista blanca)
-│       ├── edad.ts                      # "menor de edad" en el formulario: solo ayuda visual (ver Formularios)
-│       ├── errores-api.ts               # helper: mapea ApiError a errores del formulario
-│       ├── api/{alumnos.api.ts, alumnos.keys.ts}
-│       ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts}
-│       └── components/
-│           ├── AlumnosPantalla.tsx      # encabezado + listado: la página del listado y el fondo del alta
-│           ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
-│           ├── AlumnoDetalle.tsx        # ficha con pestañas en la URL (datos|turnos|historial|examenes|pagos); las cuatro últimas llegan por render props
-│           ├── DatosAlumno.tsx          # la pestaña "Datos"; monta AccesoPortalFicha
-│           ├── AccesoPortalAlta.tsx, AccesoPortalFicha.tsx   # "Acceso al portal" del alta ({ nombre, apellido, dni }) y de la ficha ({ alumno }) (T-90)
-│           ├── AlumnoNuevo.tsx, AlumnoEditar.tsx   # alta y edición en un <Panel> (modal)
-│           └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
+│ ├── auth/
+│ │ ├── auth-client.ts # createAuthClient() de better-auth/react
+│ │ ├── auth.schema.ts # schema Zod del login: un campo "Email o usuario" (`esEmail` decide el camino)
+│ │ ├── roles.ts # rol → segmento de URL (único lugar con esa correspondencia)
+│ │ ├── codigos-error.ts # codes del contrato que el frontend reconoce
+│ │ ├── interpretar-error-login.ts # único lugar que decide el mensaje de un login fallido
+│ │ ├── sesion-expirada.ts # los motivos en la URL de /login, compartidos con providers.tsx
+│ │ └── components/{LoginForm.tsx, UserMenu.tsx, AvisoSesionExpirada.tsx, SegmentoDeRol.tsx}
+│ ├── aulas/ # mínima, solo de lectura: aulas libres para un horario
+│ │ ├── aulas.types.ts, api/{aulas.api.ts, aulas.keys.ts}
+│ │ └── hooks/{use-aulas-disponibles.ts, use-invalidar-aulas.ts} # lo único que usan otras features
+│ ├── profesores/ # incluye la sección "Horario" (bloques): horario.ts, errores-bloques.ts,
+│ │ # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
+│ │ # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque;
+│ │ # el listado es una grilla de tarjetas con foto (ProfesoresGrid + ProfesorCard), no una tabla
+│ ├── turnos/ # registrar turno (HU-07) y reprogramar un turno (HU-20, T-50)
+│ │ ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts
+│ │ ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, errores-reprogramaciones.ts, formato-reprogramaciones.ts
+│ │ ├── api/{turnos.api.ts, turnos.keys.ts, reprogramaciones.api.ts}
+│ │ ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-reprogramar-turno.ts}
+│ │ └── components/
+│ │ ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
+│ │ │ SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
+│ │ │ TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx); la confirmación abre el detalle del turno
+│ │ │ (`?detalle=&fecha=`) que le llega por `renderDetalle`
+│ │ └── AccionReprogramarTurno.tsx, ReprogramarTurnoDialog.tsx # reprogramar: reutiliza la búsqueda (FiltrosDisponibilidad con
+│ │ materiaFija, HorasDelBloque con unaSola); al reprogramar abre el detalle con el turnoId de la API y la fecha nueva
+│ ├── agendas/ # las tres agendas: diaria (HU-09), propia (HU-10) y de la ficha del profesor (HU-02)
+│ │ ├── agendas.types.ts, agenda-propia.ts (rango, agrupado y params de la URL), filtros-agenda.ts, modo-agenda.ts,
+│ │ │ calendario.ts (clases, grilla de la semana, filtros y URL del calendario; con tests),
+│ │ │ calendario-alumno.ts (los turnos de un alumno en la grilla y sus filtros; con tests)
+│ │ ├── api/{agendas.api.ts, agendas.keys.ts, calendario.api.ts} # /api/v1/agendas/{diaria,propia,profesor,centro}
+│ │ ├── hooks/{use-agenda.ts, use-agenda-propia.ts, use-agenda-profesor.ts, use-rango-agenda-en-url.ts,
+│ │ │ use-filtros-agenda.ts, use-modo-agenda.ts, use-invalidar-agendas.ts, use-calendario.ts, use-semana-en-url.ts}
+│ │ └── components/
+│ │ ├── AgendaConModo.tsx # lo común a las tres: selector Calendario/Lista, detalle en la URL, slot de acciones
+│ │ ├── SelectorModoAgenda.tsx
+│ │ ├── CalendarioSemanal.tsx, CalendarioGrilla.tsx, BloqueClase.tsx # el calendario semanal (T-59)
+│ │ ├── GrillaSemanal.tsx # la tabla de la semana (días y horas), genérica: la usan los dos calendarios
+│ │ ├── AgendaDelAlumno.tsx, CalendarioAlumno.tsx, BloqueTurnoAlumno.tsx # pestaña "Turnos" de la ficha del alumno: calendario
+│ │ │ # por defecto y la lista (`TurnosDelAlumno`, que le llega por children) como segunda vista
+│ │ ├── AgendaDiariaPantalla.tsx, AgendaDiariaListado.tsx, AgendaTable.tsx, NavegacionFecha.tsx,
+│ │ │ FiltroProfesorAgenda.tsx # agenda diaria; NavegacionFecha la comparten las dos agendas por rango
+│ │ ├── BarraFiltrosAgenda.tsx, FiltrosCanceladosPrioridad.tsx, FiltrosGrillaCalendario.tsx # los filtros de la lista
+│ │ │ # (cancelados, prioridad y, en la diaria, profesor) y los campos de cada filtro
+│ │ ├── AgendaPorRango.tsx, AgendaPropiaTable.tsx, SelectorVistaAgenda.tsx # vista por día o por semana
+│ │ ├── AgendaPropiaPantalla.tsx, AgendaPropiaListado.tsx # "Mi agenda"
+│ │ └── AgendaProfesorListado.tsx # tab "Agenda" de la ficha del profesor; lo compone app/
+│ ├── ocurrencias/ # el detalle de un turno en una fecha y los turnos de un alumno (T-44)
+│ │ ├── detalle-url.ts, api/ocurrencias.keys.ts, hooks/{use-detalle-en-url.ts, use-invalidar-ocurrencias.ts}
+│ │ └── components/{OcurrenciaDetalle.tsx, TurnosDelAlumno.tsx} # el detalle (con su sección de pago) y la pestaña "Turnos"
+│ ├── pagos/ # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52)
+│ │ ├── pagos.types.ts, pagos.schema.ts # schema del formulario, parsearMonto y armarRegistrarPago (el body)
+│ │ ├── a-cobrar.ts # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar
+│ │ ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts # textos; errores del POST en lo que muestra el diálogo; URL del PDF del comprobante
+│ │ ├── detalle-pago-url.ts # `?pago=<pagoId>`: el único archivo que conoce el parámetro (con test)
+│ │ ├── api/{pagos.api.ts, pagos.keys.ts}
+│ │ ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts}
+│ │ └── components/
+│ │ ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar → éxito o rechazo
+│ │ │ # (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
+│ │ ├── AccionRegistrarPago.tsx # slot del pie del detalle del turno
+│ │ ├── EnlaceComprobante.tsx # "Ver comprobante" de un turno pagado (slot renderComprobante del detalle); enlaza al PDF
+│ │ ├── PagoDetalle.tsx # ({ pagoId, onCerrar, renderAcciones? }): el detalle del pago, modal con `?pago=` (T-99)
+│ │ ├── EnlaceDetallePago.tsx # ({ pagoId }): abre el detalle del pago desde el detalle de un turno pagado (T-99)
+│ │ └── PagosRealizados.tsx # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
+│ ├── cuentas/ # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
+│ │ ├── cuentas.types.ts, a-cobrar.ts # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
+│ │ ├── filtros-cuenta.ts # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
+│ │ ├── seleccion.ts # la selección a cobrar (inmutable) y su resumen
+│ │ ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts # textos (total, filtros activos, tope); errores de lectura y del período; ficha
+│ │ ├── api/{cuentas.api.ts, cuentas.keys.ts}
+│ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts,
+│ │ │ use-filtros-cuenta.ts, # los filtros de la URL con router.replace
+│ │ │ use-materias-de-cuenta.ts, use-nombres-de-filtros.ts, # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
+│ │ │ use-todos-los-adeudados.ts, # todos los adeudados de un alumno, a pedido ("Seleccionar todos" de la vista global)
+│ │ │ use-dialogo-de-pago.ts, # el diálogo de cobro de la selección: copia al abrir, ajuste de la selección y foco al cerrar
+│ │ │ use-detalle-de-cuenta.ts} # "Ver detalle" de una fila: abre el detalle del turno en la URL; ajuste y foco al cerrar
+│ │ └── components/
+│ │ ├── PagosDelAlumno.tsx # pestaña "Pagos" de la ficha (?tab=pagos&desde=…); la compone app/ con renderRegistrarPago
+│ │ ├── PagosGlobal.tsx # /mesa/pagos: filtros y una página por tabla en la URL; la compone app/ (renderRegistrarPago, renderDetalle)
+│ │ ├── FiltrosCuenta.tsx # período, materia y profesor, en las dos vistas; el 400 del período junto a "Hasta"
+│ │ ├── FiltroAlumno.tsx, FiltroProfesor.tsx # los dos usos del selector con buscador (`ComboboxBuscador` de components/ui)
+│ │ ├── SeccionOcurrencias.tsx # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
+│ │ ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx # filas con casilla y "Ver detalle"; el importe destacado
+│ │ ├── BarraSeleccion.tsx # resumen y acciones de la selección; envuelve las listas y flota abajo cuando deja de verse
+│ │ └── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
+│ ├── asistencias/ # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
+│ │ ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
+│ │ └── components/AsistenciaPantalla.tsx # ({ renderDetalle })
+│ ├── historiales/ # HU-31 (andamiaje T-79; la completa T-109): pestaña "Historial académico" de la ficha del alumno
+│ │ ├── api/historiales.keys.ts, hooks/use-invalidar-historiales.ts
+│ │ └── components/HistorialAcademico.tsx # ({ alumnoId, rol, renderDetalle })
+│ ├── anulaciones/ # HU-42 (andamiaje T-79; la completa T-105): anular un pago
+│ │ ├── api/anulaciones.keys.ts, hooks/use-invalidar-anulaciones.ts
+│ │ └── components/AccionAnularPago.tsx # ({ pago: PagoParaAcciones }): el pie del detalle del pago
+│ ├── cancelaciones/ # HU-13 (T-46): cancelar uno o varios turnos
+│ │ ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
+│ │ ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts} # al cancelar invalida ocurrencias, agendas y cuentas
+│ │ └── components/{AccionCancelarTurno, AccionCancelarVarios, CancelarTurnosDialog}.tsx
+│ ├── finalizaciones/ # HU-14 (T-48): finalizar un turno recurrente desde una fecha
+│ │ ├── finalizaciones.{types,schema}.ts, errores-api.ts, formato-finalizaciones.ts, api/{finalizaciones.api,finalizaciones.keys}.ts
+│ │ ├── hooks/{use-previa-finalizacion.ts, use-finalizar-turno.ts, use-invalidar-finalizaciones.ts} # al finalizar invalida agendas, cuentas y las previas
+│ │ └── components/{AccionFinalizarTurno, FinalizarTurnoDialog}.tsx # la acción invalida las ocurrencias después de mover el detalle
+│ ├── examenes/ # HU-17 (T-56): pestaña "Exámenes" de la ficha del alumno (mesa y profesor)
+│ │ ├── examenes.{types,schema}.ts, errores-api.ts, formato-examenes.ts, api/{examenes.api,examenes.keys}.ts
+│ │ ├── hooks/{use-examenes.ts, use-materias-examen.ts, use-crear-examen.ts, use-editar-examen.ts, use-eliminar-examen.ts,
+│ │ │ use-refrescar-por-examen.ts, use-invalidar-examenes.ts} # una mutación invalida exámenes, ocurrencias y agendas (la prioridad)
+│ │ └── components/{ExamenesDelAlumno, ExamenDialog, ConfirmarEliminarExamen}.tsx # alta y edición en un Dialog sin URL propia; editar y eliminar según `administrable` de la API
+│ ├── documentos/ # los enlaces a los PDF de la API (ver Documentos PDF); sin datos propios: sin api/, keys ni hooks
+│ │ ├── rutas-documentos.ts # hrefPdfTurno, hrefPdfTurnosAlumno y hrefPdfAgenda: las URLs, con su test
+│ │ └── components/{AccionPdfTurno, AccionPdfTurnosAlumno, BotonPdfAgenda}.tsx
+│ ├── tablero/ # HU-21 (T-62): indicadores del centro de un período, solo lectura y sin enlaces
+│ │ ├── tablero.types.ts, periodo.ts, formato-tablero.ts, errores-tablero.ts, rutas-tablero.ts
+│ │ │ # periodo.ts: opciones del selector y `?periodo=hoy|mes|rango&desde=&hasta=` (sin parámetros,
+│ │ │ # "Esta semana", lunes a domingo); formato-tablero.ts: números, períodos y rótulos de cada tarjeta;
+│ │ │ # errores-tablero.ts: el 400 del período junto a "Desde"/"Hasta", el 403 y el error general
+│ │ ├── api/{tablero.api.ts, tablero.keys.ts} # GET /api/v1/tablero?desde&hasta
+│ │ ├── hooks/{use-tablero.ts, use-periodo-en-url.ts} # keepPreviousData; el período en la URL con router.replace
+│ │ └── components/{TableroPantalla, SelectorPeriodo, TarjetaIndicador, TarjetaRanking, GraficoDona, BotonPdfTablero}.tsx # GraficoDona: torta/anillo en SVG, sin librería
+│ ├── centro/ # vuelve en T-80 (la decisión T-127 lo había sacado con las hojas de impresión): ahora lo usa la UI, no los documentos; GET /centro (HU-11) para el teléfono del aviso del portal
+│ │ ├── centro.types.ts, api/{centro.api.ts, centro.keys.ts}, hooks/use-centro.ts # staleTime: Infinity, sin reintentos
+│ │ └── components/AvisoMesaDeEntrada.tsx # "Para cancelar o reprogramar un turno, comunicate con la mesa de entrada al …"
+│ ├── usuarios/ # lo que vale para cualquier usuario: su cuenta y su contraseña (T-91, T-92)
+│ │ └── components/{AvisoContrasenaInicial, CambiarContrasena}.tsx # placeholders de T-80 que completa T-92
+│ └── alumnos/ # modelo de nombres y firmas para las demás entidades
+│ ├── alumnos.types.ts
+│ ├── alumnos.schema.ts # schema Zod del formulario + funciones de conversión form↔API
+│ ├── volver-a.ts # ida y vuelta al alta desde otra pantalla (?volverA=, lista blanca)
+│ ├── edad.ts # "menor de edad" en el formulario: solo ayuda visual (ver Formularios)
+│ ├── errores-api.ts # helper: mapea ApiError a errores del formulario
+│ ├── api/{alumnos.api.ts, alumnos.keys.ts}
+│ ├── hooks/{use-alumnos.ts, use-alumno.ts, use-crear-alumno.ts, use-editar-alumno.ts, use-buscador-alumnos.ts}
+│ └── components/
+│ ├── AlumnosPantalla.tsx # encabezado + listado: la página del listado y el fondo del alta
+│ ├── AlumnosListado.tsx, AlumnosTable.tsx, BuscadorAlumnos.tsx, SinResultados.tsx, TotalAlumnos.tsx
+│ ├── AlumnoDetalle.tsx # ficha con pestañas en la URL (datos|turnos|historial|examenes|pagos); las cuatro últimas llegan por render props
+│ ├── DatosAlumno.tsx # la pestaña "Datos"; monta AccesoPortalFicha
+│ ├── AccesoPortalAlta.tsx, AccesoPortalFicha.tsx # "Acceso al portal" del alta ({ nombre, apellido, dni }) y de la ficha ({ alumno }) (T-90)
+│ ├── AlumnoNuevo.tsx, AlumnoEditar.tsx # alta y edición en un <Panel> (modal)
+│ └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
 ├── components/
-│   ├── ui/                             # primitivos de UI hechos a mano (D-08/T-26)
-│   ├── turno/                          # estado, pago y prioridad de un turno (T-33; ver Componentes compartidos del turno)
-│   │   ├── indicadores-turno.ts        # tipos, mapeos estado → etiqueta/variante y texto del examen (con tests)
-│   │   └── estado-turno-badge.tsx, estado-pago-badge.tsx, prioridad-indicador.tsx
-│   └── layout/
-│       ├── app-shell.tsx               # columna del Sidebar (logo + nav + usuario) + contenido; en el celular, barra superior y panel
-│       ├── page-header.tsx             # título, descripción y acción principal de cada pantalla
-│       ├── sidebar-logo.tsx            # isotipo + wordmark, arriba de la columna (no es un link)
-│       ├── sidebar-nav.tsx             # nav genérico (label + links con ícono); lo usan los de abajo
-│       └── {mesa,profesor,gerente,portal}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
+│ ├── ui/ # primitivos de UI hechos a mano (D-08/T-26)
+│ ├── turno/ # estado, pago y prioridad de un turno (T-33; ver Componentes compartidos del turno)
+│ │ ├── indicadores-turno.ts # tipos, mapeos estado → etiqueta/variante y texto del examen (con tests)
+│ │ └── estado-turno-badge.tsx, estado-pago-badge.tsx, prioridad-indicador.tsx
+│ └── layout/
+│ ├── app-shell.tsx # columna del Sidebar (logo + nav + usuario) + contenido; en el celular, barra superior y panel
+│ ├── page-header.tsx # título, descripción y acción principal de cada pantalla
+│ ├── sidebar-logo.tsx # isotipo + wordmark, arriba de la columna (no es un link)
+│ ├── sidebar-nav.tsx # nav genérico (label + links con ícono); lo usan los de abajo
+│ └── {mesa,profesor,gerente,portal}-sidebar.tsx # uno por rol: <segmento>-sidebar.tsx, con sus propios links
 │
-├── hooks/{use-debounce.ts, use-toast.ts, use-vista-en-url.ts}   # use-toast: contexto y hook de los toasts; use-vista-en-url: las subpestañas (?vista=)
+├── hooks/{use-debounce.ts, use-toast.ts, use-vista-en-url.ts} # use-toast: contexto y hook de los toasts; use-vista-en-url: las subpestañas (?vista=)
 ├── types/
-│   ├── index.ts                        # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
-│   ├── ocurrencia.ts                   # OcurrenciaDetalle, OcurrenciaDeAlumno, acciones y renderDetalle: lo comparten varias features
-│   ├── pago.ts                         # OcurrenciaACobrar, SolicitudRegistrarPago y PagoParaAcciones: lo que pagos, cuentas y anulaciones comparten
-│   └── agenda.ts                       # FiltrosAgenda (profesor, incluir cancelados y prioridad)
+│ ├── index.ts # PaginatedResponse<T>, Role, Auditoria y UsuarioAuditoria (contrato)
+│ ├── ocurrencia.ts # OcurrenciaDetalle, OcurrenciaDeAlumno, acciones y renderDetalle: lo comparten varias features
+│ ├── pago.ts # OcurrenciaACobrar, SolicitudRegistrarPago y PagoParaAcciones: lo que pagos, cuentas y anulaciones comparten
+│ └── agenda.ts # FiltrosAgenda (profesor, incluir cancelados y prioridad)
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts,
-           moneda.ts, vista-en-url.ts}  # vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API,
-                                        # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas
+moneda.ts, vista-en-url.ts} # vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas
 
 ## Anatomía de una feature de UI
 
@@ -550,6 +550,7 @@ mutation.mutate(datos, {
 ### Componentes compartidos del turno
 
 El estado de un turno en una fecha, su estado de pago y su prioridad se muestran en las agendas, el calendario, el detalle del turno, la ficha del alumno y los pagos. Viven en `components/turno/` (T-33): reciben **props planas** con los valores que manda la API y no importan de `features/`. No calculan nada: el estado, el pago, la prioridad y los días hasta el examen los decide la API (HU-18). Los tipos (`EstadoTurno`, `PlazoAsistencia`, `EstadoPago`, `Prioridad`, `ExamenPrioridad`) y los mapeos están en `indicadores-turno.ts`, con sus tests.
+
 | Componente           | Props                                                                                                                                                             | Qué muestra                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `EstadoTurnoBadge`   | `estado: 'AGENDADO' \| 'CANCELADO' \| 'SIN_REGISTRAR' \| 'REALIZADO' \| 'AUSENTE'`, `plazo?: { vence, vencido } \| null`, `sinAsistencia?: boolean`, `className?` | Un `Badge` suave (fondo tenue, borde y texto del mismo color) con ícono de `lucide-react`: "Agendado" (azul, calendario), "Cancelado" (bordó, X), "Sin registrar" (beige, círculo punteado), "Realizado" (verde, tilde) y "Ausente" (ámbar, usuario con X). Etiqueta, variante e ícono salen solo de `ESTADO_TURNO`; si cambian, se cambian ahí. Con `sinAsistencia` y un turno pasado no cancelado, no monta nada (ver abajo). |
@@ -558,7 +559,6 @@ El estado de un turno en una fecha, su estado de pago y su prioridad se muestran
 | `PrioridadContador`  | `prioridad`, `cantidad`, `className?`                                                                                                                             | Punto de color y número (sin la palabra) para ir al lado de otro dato, por ejemplo cuántos turnos de una clase tienen prioridad alta o media. Con `cantidad` 0 no se monta. El texto completo queda en el tooltip y para el lector de pantalla.                                                                                                                                                                                 |
 
 Asistencia en `EstadoTurnoBadge` (HU-22):
-
 
 | Componente           | Props                                                                                                                                                             | Qué muestra                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | -------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -585,4 +585,4 @@ Accesibilidad: el color nunca es el único canal (siempre está la palabra, y el
 
 ## Tests
 
-El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `finalizaciones` (`finalizaciones.schema.ts`: fecha, motivo y detalle; `errores-api.ts`: los errores de la previa y del POST, incluido `TURNOS_PAGADOS`; `formato-finalizaciones.ts`: el resumen de la previa, los avisos de pagados y de tramos y el mensaje de éxito), las de `pagos` (`pagos.schema.ts`: el formulario, `parsearMonto` y el body del `POST`; `a-cobrar.ts`: la ocurrencia del detalle a cobrar y el resumen; `formato-pagos.ts`: los textos del diálogo y del comprobante, incluido quién registró el pago; `errores-pagos.ts`: los errores del `POST` en lo que muestra el diálogo), las de `cuentas` (`a-cobrar.ts`: la fila a cobrar y la clave de la ocurrencia; `filtros-cuenta.ts`: los filtros y las páginas en la URL; `seleccion.ts`: la selección, su poda, su orden y su resumen; `formato-cuentas.ts`: los textos del total, los filtros activos, el aviso del tope y los vacíos; `errores-cuentas.ts`: los errores de lectura y el 400 del período por campo), las de `examenes` (`examenes.schema.ts`: el formulario y los bodies del alta y de la edición parcial; `errores-api.ts`: los errores del alta y la edición, incluido `EXAMEN_PENDIENTE`; `formato-examenes.ts`: los días que faltan, la trazabilidad con el rol y el aviso de fecha pasada), las de `asistencias` (`fecha-asistencia.ts`: el día en la URL; `registro-asistencia.ts`: las filas por hora, el body de una fila (con las otras horas sin registrar tildadas) y de "Marcar todos presentes", los valores iniciales al corregir y la vista compacta; `formato-asistencias.ts`: las otras horas del alumno y el aviso de pendientes; `errores-asistencias.ts`; `asistencias.schema.ts`), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen), `features/documentos/rutas-documentos.ts` (las URLs de los PDF) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`, `moneda.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
+El alcance de los tests de frontend es la decisión abierta D-09. Hasta decidirlo, los tests automatizados cubren el backend, el matcher de `proxy.ts` y las funciones puras del frontend (`pnpm test:run`), como `features/auth/interpretar-error-login.ts`, `features/alumnos/edad.ts`, las del horario del profesor (`features/profesores/horario.ts`: agrupar las horas en bloques y las opciones de hora; `errores-bloques.ts`: los errores de la API de bloques en texto para la UI; `turnos-vigentes.ts`: el resumen y el texto de vigencia de los turnos que impiden la baja; y las conversiones del formulario de bloques de `profesores.schema.ts`) las de turnos (`features/turnos/turnos.schema.ts`: el body del alta; `errores-turnos.ts`: los errores del alta en lo que muestra la pantalla; `formato-turnos.ts`: horarios y rangos de fechas; `seleccion-turno.ts`: el bloque elegido y el agrupado del alta; `alumnos/volver-a.ts`: la lista blanca de `volverA`), las de `agendas` (`agenda-propia.ts`: el rango de la vista por día o por semana, el agrupado por fecha y los parámetros de la URL de las agendas por rango; `filtros-agenda.ts`: los filtros en la URL), `ocurrencias/detalle-url.ts` (los parámetros `?detalle=&fecha=`), las de `finalizaciones` (`finalizaciones.schema.ts`: fecha, motivo y detalle; `errores-api.ts`: los errores de la previa y del POST, incluido `TURNOS_PAGADOS`; `formato-finalizaciones.ts`: el resumen de la previa, los avisos de pagados y de tramos y el mensaje de éxito), las de `pagos` (`pagos.schema.ts`: el formulario, `parsearMonto` y el body del `POST`; `a-cobrar.ts`: la ocurrencia del detalle a cobrar y el resumen; `formato-pagos.ts`: los textos del diálogo y del comprobante, incluido quién registró el pago; `errores-pagos.ts`: los errores del `POST` en lo que muestra el diálogo), las de `cuentas` (`a-cobrar.ts`: la fila a cobrar y la clave de la ocurrencia; `filtros-cuenta.ts`: los filtros y las páginas en la URL; `seleccion.ts`: la selección, su poda, su orden y su resumen; `formato-cuentas.ts`: los textos del total, los filtros activos, el aviso del tope y los vacíos; `errores-cuentas.ts`: los errores de lectura y el 400 del período por campo), las de `examenes` (`examenes.schema.ts`: el formulario y los bodies del alta y de la edición parcial; `errores-api.ts`: los errores del alta y la edición, incluido `EXAMEN_PENDIENTE`; `formato-examenes.ts`: los días que faltan, la trazabilidad con el rol, el aviso de fecha pasada y, de la nota (HU-34), la nota en la lista, su trazabilidad y el aviso de rendidos sin nota; y el formulario y el body de la nota, con coma decimal, y sus errores; `pagina-pasados.ts`: la paginación en pantalla de los exámenes pasados, de a 10 como la API, con la página en la URL, `?pagePasados=`, y el pie "Mostrando 1–10 de 28 exámenes" de los otros listados, porque la API los manda todos), las de `asistencias` (`fecha-asistencia.ts`: el día en la URL; `registro-asistencia.ts`: las filas por hora, el body de una fila (con las otras horas sin registrar tildadas) y de "Marcar todos presentes", los valores iniciales al corregir y la vista compacta; `formato-asistencias.ts`: las otras horas del alumno y el aviso de pendientes; `errores-asistencias.ts`; `asistencias.schema.ts`), las de `components/turno/indicadores-turno.ts` (mapeos de estado, pago y prioridad y el texto del examen), `features/documentos/rutas-documentos.ts` (las URLs de los PDF) y las de `utils/` (`page-range.ts`, `initials.ts`, `caracteres.ts`, `dias-semana.ts`, `horas.ts`, `calendario.ts`, `formato-fechas.ts`, `auditoria.ts`, `moneda.ts`). `vitest.config.mts` recoge solo `src/**/*.test.ts`: un test de componente (`.tsx`, con Testing Library y jsdom) necesita además cambiar ese `include` y agregar esas dependencias, que es justamente lo que decide D-09.
