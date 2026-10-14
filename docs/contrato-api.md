@@ -448,12 +448,13 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 **Todo o nada.** Se cancela sólo si **todas** son cancelables; si alguna no, 409 `TURNOS_NO_CANCELABLES` (forma de `details` en Errores) con **todas** las que fallan y no se cancela ninguna. Cada una lleva un solo `motivo`, el primero que se cumple:
 
-| `motivo`       | Mensaje                                    | Cuándo                                                           |
-| -------------- | ------------------------------------------ | ---------------------------------------------------------------- |
-| `NO_EXISTE`    | El turno no existe en esa fecha            | El turno no genera esa fecha (o no existe)                       |
-| `YA_CANCELADO` | El turno ya está cancelado                 | Ya tiene su cancelación                                          |
-| `PAGADO`       | El turno está pagado: no se puede cancelar | Tiene un pago (en este sprint no se anulan pagos). Suma `pagoId` |
-| `PASADO`       | El turno ya pasó: no se puede cancelar     | Su fecha es anterior a hoy                                       |
+| `motivo`         | Mensaje                                                    | Cuándo                                                                                                                                  |
+| ---------------- | ---------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `NO_EXISTE`      | El turno no existe en esa fecha                            | El turno no genera esa fecha (o no existe)                                                                                              |
+| `YA_CANCELADO`   | El turno ya está cancelado                                 | Ya tiene su cancelación                                                                                                                 |
+| `CON_ASISTENCIA` | El turno tiene asistencia registrada: no se puede cancelar | Tiene asistencia ("Presente" o "Ausente"): ya ocurrió, aunque sea de hoy. Va antes que `PAGADO`: anular el pago no lo vuelve cancelable |
+| `PAGADO`         | El turno está pagado: no se puede cancelar                 | Tiene un pago vigente (uno anulado no cuenta: vuelve a ser cancelable). Suma `pagoId`                                                   |
+| `PASADO`         | El turno ya pasó: no se puede cancelar                     | Su fecha es anterior a hoy y no tiene asistencia ("Sin registrar")                                                                      |
 
 Una cancelación sólo afecta a esa fecha: el resto de la serie sigue agendado y la hora vuelve a tener lugar ese día.
 
@@ -461,10 +462,10 @@ Una cancelación sólo afecta a esa fecha: el resto de la serie sigue agendado y
 
 HU-14 (T-47). Finalizar un turno recurrente desde una fecha. **Actúa por hora** (decisión T-104): finaliza la hora del turno pedido en todos los tramos de su serie; las otras horas de la serie se informan y no se tocan. Reglas en `dominio.md` → Finalización.
 
-| Endpoint                            | Roles           | Qué hace                                                                                                           |
-| ----------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------ |
-| `GET /api/v1/finalizaciones/previa` | `MESA_ENTRADAS` | Qué se libera si se finaliza desde esa fecha, los turnos pagados que lo impiden y las otras horas de la serie. 200 |
-| `POST /api/v1/finalizaciones`       | `MESA_ENTRADAS` | Finaliza el turno desde esa fecha. 201 con `{ turnoId, cantidad, desde, hasta }`; 400; 404; 409 (`TURNOS_PAGADOS`) |
+| Endpoint                            | Roles           | Qué hace                                                                                                                                    |
+| ----------------------------------- | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/finalizaciones/previa` | `MESA_ENTRADAS` | Qué se libera si se finaliza desde esa fecha, los turnos pagados o con asistencia que lo impiden y las otras horas de la serie. 200         |
+| `POST /api/v1/finalizaciones`       | `MESA_ENTRADAS` | Finaliza el turno desde esa fecha. 201 con `{ turnoId, cantidad, desde, hasta }`; 400; 404; 409 (`TURNOS_PAGADOS`, `TURNOS_CON_ASISTENCIA`) |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
@@ -494,6 +495,8 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
   "hasta": "2026-11-30",
   "pagadas": [],
   "ultimaFechaPagada": null,
+  "conAsistencia": [],
+  "ultimaFechaConAsistencia": null,
   "fechaDesdeMinima": null,
   "otrasHoras": [
     { "turnoId": 42, "fecha": "2026-10-19", "horaInicio": "10:00", "horaFin": "11:00" }
@@ -505,28 +508,32 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 - `desde`: igual a `fechaDesde`. `hasta`: la última ocurrencia de la hora (no la `fechaFin` guardada, si no cae en una fecha de la serie); `null` si algún tramo no tiene fin. Con `hasta` el mensaje es "Se liberan 7 turnos, del 19/10 al 30/11"; con `null`, "Se liberan todos los turnos desde el 19/10".
 - `pagadas`: `[{ fecha, horaInicio, horaFin, importe }]`, los turnos pagados desde `fechaDesde` en cualquier tramo de la hora, por fecha (`importe` = lo cobrado). **Si hay alguno, no se puede finalizar desde esa fecha.**
 - `ultimaFechaPagada`: la fecha del último pagado; `null` si no hay pagados.
-- `fechaDesdeMinima`: la primera `fechaDesde` que se puede elegir (la ocurrencia siguiente a la última pagada). `null` si no hay pagados, o si los pagados llegan hasta el final de la serie: en ese caso (`ultimaFechaPagada` con valor y `fechaDesdeMinima` `null`) el turno no se puede finalizar.
+- `conAsistencia`: `[{ fecha, horaInicio, horaFin, estado }]`, los turnos con asistencia registrada desde `fechaDesde` (`estado`: `REALIZADO` o `AUSENTE`), por fecha. Sólo puede ser el de hoy: ya ocurrió, así que **si hay alguno, no se puede finalizar desde esa fecha** (T-83).
+- `ultimaFechaConAsistencia`: la fecha del último con asistencia; `null` si no hay.
+- `fechaDesdeMinima`: la primera `fechaDesde` que se puede elegir (la ocurrencia siguiente a la última que lo impide, pagada o con asistencia). `null` si no hay ninguna, o si llegan hasta el final de la serie: en ese caso (`ultimaFechaPagada` o `ultimaFechaConAsistencia` con valor y `fechaDesdeMinima` `null`) el turno no se puede finalizar.
 - `otrasHoras`: `[{ turnoId, fecha, horaInicio, horaFin }]`, las **otras horas de la misma serie** (las que se registraron en el mismo alta) que no están finalizadas y tienen alguna ocurrencia desde `fechaDesde`, por hora. No se finalizan con este pedido: cada una, desde su propio detalle. `turnoId` + `fecha` es la primera ocurrencia de esa hora desde `fechaDesde` (el identificador de su detalle: `GET /ocurrencias/{turnoId}/{fecha}`); si la hora tiene varios tramos, la del tramo que la tiene. Una hora que termina antes de `fechaDesde` no viene. Reemplaza a `otrosTramos`: los tramos de la hora ya se finalizan juntos.
 
 **Respuesta 201 del POST:** `{ "turnoId": 41, "cantidad": 7, "desde": "2026-10-19", "hasta": "2026-11-30" }`, con el mismo significado de `cantidad`, `desde` y `hasta` que en la previa; `turnoId` es el turno pedido. Se registra una `FinalizacionRecurrencia` con la misma `fechaDesde` en cada tramo de la hora que tiene fechas desde ahí.
 
-**Errores**, en orden (el primero que se cumple gana), evaluados sobre **los tramos de la hora** del turno pedido. La previa aplica los mismos, salvo el último: los pagados van en la respuesta y no son un error.
+**Errores**, en orden (el primero que se cumple gana), evaluados sobre **los tramos de la hora** del turno pedido. La previa aplica los mismos, salvo los dos últimos: los pagados y los que tienen asistencia van en la respuesta y no son un error.
 
-| Status | Código           | Mensaje                                                                                                 | Cuándo                                                                               |
-| ------ | ---------------- | ------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| 400    | `VALIDACION`     | (el de cada campo)                                                                                      | Formato del query o del body; `detalle` obligatorio con `OTRO`                       |
-| 404    | `NO_ENCONTRADO`  | "Turno no encontrado"                                                                                   | El turno no existe                                                                   |
-| 409    | `CONFLICTO`      | "Sólo se puede finalizar un turno recurrente"                                                           | Es una sesión única                                                                  |
-| 409    | `CONFLICTO`      | "El turno ya no está vigente: no se puede finalizar"                                                    | No está `ACTIVO`, o ningún tramo de la hora llega a hoy (`fechaFin` anterior a hoy)  |
-| 409    | `CONFLICTO`      | "El turno ya fue finalizado"                                                                            | Algún tramo de la hora ya tiene una finalización (o entró otra al mismo tiempo)      |
-| 400    | `VALIDACION`     | "La fecha no puede ser anterior a hoy"                                                                  | `fechaDesde` anterior a hoy. `details` en `["fechaDesde"]`, como los tres que siguen |
-| 400    | `VALIDACION`     | "La fecha debe caer en lunes" (el día de la serie)                                                      | `fechaDesde` en otro día de la semana                                                |
-| 400    | `VALIDACION`     | "Elegí una fecha posterior al inicio del turno (05/10). Para liberar sólo esa fecha, cancelá el turno." | `fechaDesde` no es posterior al primer inicio de la hora                             |
-| 400    | `VALIDACION`     | "La fecha es posterior al fin del turno (30/11)"                                                        | `fechaDesde` posterior al último fin de la hora                                      |
-| 409    | `TURNOS_PAGADOS` | "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (16/11)"          | Hay pagados desde `fechaDesde` y queda alguna fecha posterior (`fechaDesdeMinima`)   |
-| 409    | `TURNOS_PAGADOS` | "Los turnos pagados llegan hasta el final de la serie (30/11): no se puede finalizar"                   | Hay pagados hasta la última fecha de la serie (`fechaDesdeMinima: null`)             |
+| Status | Código                  | Mensaje                                                                                                 | Cuándo                                                                                                    |
+| ------ | ----------------------- | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| 400    | `VALIDACION`            | (el de cada campo)                                                                                      | Formato del query o del body; `detalle` obligatorio con `OTRO`                                            |
+| 404    | `NO_ENCONTRADO`         | "Turno no encontrado"                                                                                   | El turno no existe                                                                                        |
+| 409    | `CONFLICTO`             | "Sólo se puede finalizar un turno recurrente"                                                           | Es una sesión única                                                                                       |
+| 409    | `CONFLICTO`             | "El turno ya no está vigente: no se puede finalizar"                                                    | No está `ACTIVO`, o ningún tramo de la hora llega a hoy (`fechaFin` anterior a hoy)                       |
+| 409    | `CONFLICTO`             | "El turno ya fue finalizado"                                                                            | Algún tramo de la hora ya tiene una finalización (o entró otra al mismo tiempo)                           |
+| 400    | `VALIDACION`            | "La fecha no puede ser anterior a hoy"                                                                  | `fechaDesde` anterior a hoy. `details` en `["fechaDesde"]`, como los tres que siguen                      |
+| 400    | `VALIDACION`            | "La fecha debe caer en lunes" (el día de la serie)                                                      | `fechaDesde` en otro día de la semana                                                                     |
+| 400    | `VALIDACION`            | "Elegí una fecha posterior al inicio del turno (05/10). Para liberar sólo esa fecha, cancelá el turno." | `fechaDesde` no es posterior al primer inicio de la hora                                                  |
+| 400    | `VALIDACION`            | "La fecha es posterior al fin del turno (30/11)"                                                        | `fechaDesde` posterior al último fin de la hora                                                           |
+| 409    | `TURNOS_PAGADOS`        | "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (16/11)"          | Hay pagados desde `fechaDesde` y queda alguna fecha posterior (`fechaDesdeMinima`)                        |
+| 409    | `TURNOS_PAGADOS`        | "Los turnos pagados llegan hasta el final de la serie (30/11): no se puede finalizar"                   | Hay pagados hasta la última fecha de la serie (`fechaDesdeMinima: null`)                                  |
+| 409    | `TURNOS_CON_ASISTENCIA` | "El turno del 05/10 tiene asistencia registrada: elegí una fecha posterior"                             | El turno de hoy tiene asistencia y `fechaDesde` es hoy; queda alguna fecha posterior (`fechaDesdeMinima`) |
+| 409    | `TURNOS_CON_ASISTENCIA` | "El turno del 05/10 tiene asistencia registrada y es el último de la serie: no se puede finalizar"      | El turno con asistencia es la última fecha de la serie (`fechaDesdeMinima: null`)                         |
 
-La fecha entre paréntesis va en formato `DD/MM`. La forma de `details` de `TURNOS_PAGADOS` está en Errores.
+La fecha va en formato `DD/MM`. Si hay pagados y también asistencia, gana `TURNOS_PAGADOS`: la asistencia sólo puede ser de hoy, así que el último pagado es el que fija `fechaDesdeMinima`. La forma de `details` de `TURNOS_PAGADOS` y `TURNOS_CON_ASISTENCIA` está en Errores.
 
 Finalizar **no modifica** `fechaFin` de ningún turno: `GET /turnos/{id}` y el detalle de la ocurrencia la siguen mostrando, junto con la finalización. Desde `fechaDesde` esa hora deja de aparecer en las agendas, en los turnos del alumno y en la ocupación; las otras horas de la serie siguen como estaban.
 
@@ -568,11 +575,11 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 **Errores:**
 
-| Status | Cuándo                                                                                                                                                                                               |
-| ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | Formato inválido; `fechaDestino` anterior a hoy o que no cae en el día de la hora de destino (`details` en `["fechaDestino"]`); mismo lugar que el de origen (misma hora y misma fecha)              |
-| 404    | El turno no existe, el turno no tiene una ocurrencia en `fecha`, o la hora de destino no existe o está dada de baja                                                                                  |
-| 409    | La ocurrencia está cancelada o ya pasó; `PROFESOR_INACTIVO`, `MATERIA_INACTIVA` o `MATERIA_NO_ASIGNADA` en el destino; `BLOQUE_LLENO`; `ALUMNO_SUPERPUESTO` (mismos códigos y `details` que el alta) |
+| Status | Cuándo                                                                                                                                                                                                                                                                         |
+| ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 400    | Formato inválido; `fechaDestino` anterior a hoy o que no cae en el día de la hora de destino (`details` en `["fechaDestino"]`); mismo lugar que el de origen (misma hora y misma fecha)                                                                                        |
+| 404    | El turno no existe, el turno no tiene una ocurrencia en `fecha`, o la hora de destino no existe o está dada de baja                                                                                                                                                            |
+| 409    | La ocurrencia está cancelada; tiene asistencia registrada (`TURNO_CON_ASISTENCIA`, aunque sea de hoy); o ya pasó. `PROFESOR_INACTIVO`, `MATERIA_INACTIVA` o `MATERIA_NO_ASIGNADA` en el destino; `BLOQUE_LLENO`; `ALUMNO_SUPERPUESTO` (mismos códigos y `details` que el alta) |
 
 `BLOQUE_LLENO` y `ALUMNO_SUPERPUESTO` **no cuentan la ocurrencia que se mueve**: mover una fecha a otro profesor a la misma hora no choca con sí misma.
 
@@ -1193,6 +1200,8 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `TURNOS_NO_COBRABLES`    | Registrar un pago, si alguna ocurrencia no se puede cobrar (no se registra ninguna): "Algunos turnos no se pueden cobrar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `YA_PAGADO`); motivos: ver Pagos. Si otro pago la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue pagado" sin `details`                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_PAGADOS`         | Finalizar un turno recurrente, si hay turnos pagados desde `fechaDesde` (no se finaliza): "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (DD/MM)" o, si llegan hasta el final de la serie, "Los turnos pagados llegan hasta el final de la serie (DD/MM): no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaPagada", "fechaDesdeMinima", "pagadas": [{ "fecha", "horaInicio", "horaFin", "importe" }] }`; `fechaDesdeMinima` es la primera fecha que se puede elegir, o `null` si no queda ninguna; `pagadas` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                |
+| 409    | `TURNOS_CON_ASISTENCIA`  | Finalizar un turno recurrente desde hoy, si el turno de hoy tiene asistencia registrada (no se finaliza, T-83): "El turno del DD/MM tiene asistencia registrada: elegí una fecha posterior" o, si es la última fecha de la serie, "El turno del DD/MM tiene asistencia registrada y es el último de la serie: no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaConAsistencia", "fechaDesdeMinima", "conAsistencia": [{ "fecha", "horaInicio", "horaFin", "estado" }] }`, como `TURNOS_PAGADOS`; `conAsistencia` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                                                    |
+| 409    | `TURNO_CON_ASISTENCIA`   | "El turno tiene asistencia registrada: no se puede reprogramar", al reprogramar una ocurrencia con asistencia ("Presente" o "Ausente"), aunque sea de hoy (T-83). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
 Qué hace la UI con cada caso está en `arquitectura-frontend.md` → Manejo de errores en la UI.
 
