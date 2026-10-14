@@ -1,6 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { archivoSchema } from '@/server/shared/archivos'
-import type { UsuarioAuditoria } from '@/server/shared/auditoria'
+import { usuarioAuditoriaSchema, type UsuarioAuditoria } from '@/server/shared/auditoria'
 
 // Schemas Zod de entrada, salida y params del comprobante adjunto de un pago (HU-24, T-95). Son la
 // fuente del OpenAPI. Sin reglas de negocio.
@@ -52,6 +52,47 @@ export const adjuntoSubidoSchema = z
   .openapi('AdjuntoSubido')
 
 export type AdjuntoSubido = z.infer<typeof adjuntoSubidoSchema>
+
+/** `pagoId` del path. Uno no numérico, cero o negativo responde 400. */
+export const pagoIdParamsSchema = z.object({
+  pagoId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .openapi({ param: { name: 'pagoId', in: 'path' }, description: 'Id del pago', example: 30 }),
+})
+
+/** Body multipart del reemplazo: el mismo campo `archivo` que la subida. */
+export const reemplazarAdjuntoSchema = subirAdjuntoSchema.openapi('ReemplazarAdjunto')
+
+/**
+ * Respuesta de `GET /adjuntos/pagos/{pagoId}` (y del `PUT`): el último adjunto activo del pago, con
+ * una URL prefirmada que lo abre en otra pestaña y quién lo adjuntó y cuándo.
+ */
+export const adjuntoDePagoSchema = adjuntoSubidoSchema
+  .extend({
+    url: z.string().openapi({
+      description: 'URL prefirmada (15 min) que abre el archivo en otra pestaña',
+      example: 'https://minio.local/aula-click/adjuntos/3f1c….pdf?X-Amz-…',
+    }),
+    adjuntadoPor: usuarioAuditoriaSchema,
+    adjuntadoEl: z.iso.datetime().openapi({
+      description: 'Cuándo se adjuntó (ISO 8601 UTC)',
+      example: '2026-10-14T13:45:00.000Z',
+    }),
+  })
+  .openapi('AdjuntoDePago')
+
+export type AdjuntoDePago = z.infer<typeof adjuntoDePagoSchema>
+
+/**
+ * Lo que el service necesita del pago para decidir: su estado y el tipo de su forma de pago (`null`
+ * en una forma sin tipo, decisión T-134). `null` si el pago no existe. No viaja por HTTP.
+ */
+export type PagoDelAdjunto = {
+  estado: 'VIGENTE' | 'ANULADO'
+  tipoFormaPago: 'EFECTIVO' | 'TRANSFERENCIA' | 'DEBITO' | null
+}
 
 /**
  * El último adjunto **activo** de un pago (decisión T-136), como lo lee `ultimoAdjunto`. Lleva la

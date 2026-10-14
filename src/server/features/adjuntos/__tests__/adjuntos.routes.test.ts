@@ -6,11 +6,19 @@ import { adjuntosRoutes } from '../adjuntos.routes'
 // Contrato HTTP de adjuntos (T-95): validación del multipart (tipo, firma y tamaño con
 // `archivoSchema`), auth y OpenAPI. Sin base ni MinIO: el repository y Better Auth son mocks.
 
-const { repository, getSession } = vi.hoisted(() => ({
-  repository: { subir: vi.fn() },
+const { repository, getSession, getPresignedUrl } = vi.hoisted(() => ({
+  repository: {
+    subir: vi.fn(),
+    leerPago: vi.fn(),
+    ultimo: vi.fn(),
+    reemplazar: vi.fn(),
+    quitar: vi.fn(),
+  },
   getSession: vi.fn(),
+  getPresignedUrl: vi.fn(),
 }))
 vi.mock('../adjuntos.repository', () => ({ adjuntosRepository: repository }))
+vi.mock('@/lib/storage', () => ({ getPresignedUrl, putObject: vi.fn(), deleteObject: vi.fn() }))
 vi.mock('@/lib/auth', () => ({ auth: { api: { getSession } } }))
 
 const app = createRouter().basePath('/api/v1')
@@ -45,6 +53,26 @@ function subir(file?: File) {
   return app.request('/api/v1/adjuntos', { method: 'POST', body: form })
 }
 
+const ULTIMO = {
+  id: 21,
+  archivoKey: 'adjuntos/abc.pdf',
+  nombre: 'cupón.pdf',
+  tipo: 'application/pdf',
+  bytes: 2048,
+  adjuntadoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+  adjuntadoEl: '2026-10-14T13:45:00.000Z',
+}
+
+function pedir(path: string, metodo = 'GET', form?: FormData) {
+  return app.request(`/api/v1/adjuntos${path}`, { method: metodo, body: form })
+}
+
+function formCon(file: File) {
+  const form = new FormData()
+  form.append('archivo', file)
+  return form
+}
+
 async function errorDe(res: Response) {
   const body = await res.json()
   return { code: body.error.code, details: body.error.details }
@@ -53,6 +81,11 @@ async function errorDe(res: Response) {
 beforeEach(() => {
   vi.clearAllMocks()
   getSession.mockResolvedValue(sesion())
+  repository.leerPago.mockResolvedValue({ estado: 'VIGENTE', tipoFormaPago: 'DEBITO' })
+  repository.ultimo.mockResolvedValue(ULTIMO)
+  repository.reemplazar.mockResolvedValue(undefined)
+  repository.quitar.mockResolvedValue(1)
+  getPresignedUrl.mockResolvedValue('https://minio.local/firmada')
   repository.subir.mockImplementation(
     async (guardar: { nombre: string; tipo: string; bytes: Uint8Array }) => ({
       id: 18,
@@ -135,8 +168,128 @@ describe('POST /adjuntos', () => {
   })
 })
 
+describe('GET /adjuntos/pagos/{pagoId}', () => {
+  it.each(['MESA_ENTRADAS', 'GERENTE'])(
+    '%s → 200 con la URL inline (con el nombre) y sin la clave',
+    async (rol) => {
+      getSession.mockResolvedValue(sesion(rol))
+      const res = await pedir('/pagos/30')
+
+      expect(res.status).toBe(200)
+      const { archivoKey, ...visible } = ULTIMO
+      expect(await res.json()).toEqual({ ...visible, url: 'https://minio.local/firmada' })
+      expect(getPresignedUrl).toHaveBeenCalledWith(archivoKey, undefined, {
+        inline: { nombreArchivo: 'cupón.pdf' },
+      })
+    },
+  )
+
+  it('el alumno no lo ve → 403', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', { alumnoId: 5 }))
+    expect((await pedir('/pagos/30')).status).toBe(403)
+    expect(repository.ultimo).not.toHaveBeenCalled()
+  })
+
+  it('sin adjunto → 404', async () => {
+    repository.ultimo.mockResolvedValue(null)
+    expect((await pedir('/pagos/30')).status).toBe(404)
+  })
+
+  it.each(['/pagos/abc', '/pagos/0'])('%s → 400', async (path) => {
+    expect((await pedir(path)).status).toBe(400)
+  })
+})
+
+describe('PUT /adjuntos/pagos/{pagoId}', () => {
+  it('reemplaza → 200 con el adjunto que queda', async () => {
+    const res = await pedir(
+      '/pagos/31',
+      'PUT',
+      formCon(archivo('nuevo.pdf', 'application/pdf', FIRMA_PDF)),
+    )
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).id).toBe(21)
+    expect(repository.reemplazar).toHaveBeenCalledWith(
+      31,
+      expect.objectContaining({ nombre: 'nuevo.pdf', tipo: 'application/pdf' }),
+      expect.objectContaining({ userId: 'usr_mesa' }),
+    )
+  })
+
+  it('archivo inválido → 400, sin reemplazar', async () => {
+    const res = await pedir(
+      '/pagos/31',
+      'PUT',
+      formCon(archivo('x.pdf', 'application/pdf', FIRMA_PNG)),
+    )
+    expect(res.status).toBe(400)
+    expect(repository.reemplazar).not.toHaveBeenCalled()
+  })
+
+  it('pago anulado → 409 PAGO_ANULADO', async () => {
+    repository.leerPago.mockResolvedValue({ estado: 'ANULADO', tipoFormaPago: 'DEBITO' })
+    const res = await pedir(
+      '/pagos/31',
+      'PUT',
+      formCon(archivo('x.pdf', 'application/pdf', FIRMA_PDF)),
+    )
+    expect(res.status).toBe(409)
+    expect((await errorDe(res)).code).toBe('PAGO_ANULADO')
+  })
+
+  it('el gerente no reemplaza → 403', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE'))
+    const res = await pedir(
+      '/pagos/31',
+      'PUT',
+      formCon(archivo('x.pdf', 'application/pdf', FIRMA_PDF)),
+    )
+    expect(res.status).toBe(403)
+  })
+})
+
+describe('DELETE /adjuntos/pagos/{pagoId}', () => {
+  it('en débito → 204 sin cuerpo', async () => {
+    const res = await pedir('/pagos/31', 'DELETE')
+
+    expect(res.status).toBe(204)
+    expect(await res.text()).toBe('')
+    expect(repository.quitar).toHaveBeenCalledWith(
+      31,
+      expect.objectContaining({ userId: 'usr_mesa' }),
+    )
+  })
+
+  it('por transferencia → 409 ADJUNTO_OBLIGATORIO con el mensaje de HU-24', async () => {
+    repository.leerPago.mockResolvedValue({ estado: 'VIGENTE', tipoFormaPago: 'TRANSFERENCIA' })
+    const res = await pedir('/pagos/30', 'DELETE')
+
+    expect(res.status).toBe(409)
+    const body = await res.json()
+    expect(body.error).toEqual({
+      code: 'ADJUNTO_OBLIGATORIO',
+      message: 'Un pago por transferencia no puede quedar sin comprobante: reemplazalo',
+    })
+  })
+
+  it('el gerente no quita → 403', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE'))
+    expect((await pedir('/pagos/31', 'DELETE')).status).toBe(403)
+  })
+})
+
 describe('OpenAPI', () => {
   const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
+
+  const status = (metodo: 'get' | 'put' | 'delete') =>
+    Object.keys(doc.paths['/api/v1/adjuntos/pagos/{pagoId}']?.[metodo]?.responses ?? {}).sort()
+
+  it('declara GET, PUT y DELETE de un pago con todos sus status codes', () => {
+    expect(status('get')).toEqual(['200', '400', '401', '403', '404'])
+    expect(status('put')).toEqual(['200', '400', '401', '403', '404', '409'])
+    expect(status('delete')).toEqual(['204', '400', '401', '403', '404', '409'])
+  })
 
   it('declara POST /adjuntos con todos sus status codes y sus componentes', () => {
     expect(Object.keys(doc.paths['/api/v1/adjuntos']?.post?.responses ?? {}).sort()).toEqual([
@@ -146,7 +299,12 @@ describe('OpenAPI', () => {
       '403',
     ])
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
-      expect.arrayContaining(['AdjuntoSubido', 'SubirAdjunto']),
+      expect.arrayContaining([
+        'AdjuntoSubido',
+        'SubirAdjunto',
+        'AdjuntoDePago',
+        'ReemplazarAdjunto',
+      ]),
     )
   })
 })
