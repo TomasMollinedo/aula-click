@@ -257,7 +257,15 @@ A completar por T-88 (acceso al portal, HU-27) y T-91 (contraseña, HU-28). La c
 
 ## Comprobante adjunto
 
-A completar por T-95 (HU-24).
+HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la imagen o el PDF de la transferencia, o la foto del cupón de débito) y respalda el cobro. No es el comprobante de pago que emite el centro (HU-15): la UI los nombra siempre distinto.
+
+- **Qué pagos lo llevan:** los por **transferencia** (obligatorio) y con **tarjeta de débito** (opcional). Uno en efectivo no lleva.
+- **El archivo:** JPG, PNG o PDF de hasta 5 MB. La API verifica también el contenido, no sólo la extensión.
+- **Se sube antes de registrar el pago**, así el formulario lo muestra en vista previa y el pago se registra todo junto; queda vinculado al registrarlo. Sólo lo puede vincular quien lo subió, y a un solo pago. Uno que se subió y nunca se vinculó (el pago no se registró) queda guardado y no se muestra en ningún lado.
+- **Se ve el último:** el detalle del pago muestra el último comprobante adjunto activo, con quién lo adjuntó y cuándo, y se abre en otra pestaña. Lo ven mesa de entrada y el gerente; **el alumno no**.
+- **Reemplazar** adjunta uno nuevo y **conserva el anterior** (nada se borra); se muestra sólo el último. En un pago con débito sin comprobante (nunca tuvo, o se quitó), reemplazar lo adjunta.
+- **Quitar** sólo se puede en un pago **con débito**, donde es opcional: el comprobante deja de mostrarse, pero la fila y el archivo se conservan, con quién lo quitó y cuándo (baja lógica, decisión T-136). En uno por transferencia no se puede quitar: se reemplaza.
+- **Un pago anulado** (HU-42) conserva su comprobante como estaba: se sigue viendo y no se reemplaza ni se quita.
 
 ## Anulación de pagos
 
