@@ -108,6 +108,8 @@ describe('GET /finalizaciones/previa', () => {
       hasta: null,
       pagadas: [],
       ultimaFechaPagada: null,
+      conAsistencia: [],
+      ultimaFechaConAsistencia: null,
       fechaDesdeMinima: null,
       otrasHoras: [],
     })

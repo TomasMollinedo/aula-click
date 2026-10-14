@@ -7,7 +7,7 @@ import {
 } from '@/server/features/turnos/ocurrencias.condiciones'
 import { diaSemanaISO, sumarDias } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
-import type { OtraHora, PreviaFinalizacion } from './finalizaciones.validation'
+import type { OtraHora, PreviaFinalizacion, TurnoConAsistencia } from './finalizaciones.validation'
 
 // Reglas puras de la finalización (HU-14, T-47; por hora desde la decisión T-104): qué se puede
 // finalizar, desde qué fecha y qué se libera. Sin Prisma y sin `hoy()` adentro (lo recibe quien
@@ -20,6 +20,7 @@ import type { OtraHora, PreviaFinalizacion } from './finalizaciones.validation'
 // el turno pedido.
 
 export const CODIGO_TURNOS_PAGADOS = 'TURNOS_PAGADOS'
+export const CODIGO_TURNOS_CON_ASISTENCIA = 'TURNOS_CON_ASISTENCIA'
 
 export const MENSAJE_TURNO_NO_ENCONTRADO = 'Turno no encontrado'
 export const MENSAJE_NO_RECURRENTE = 'Sólo se puede finalizar un turno recurrente'
@@ -40,6 +41,10 @@ export const mensajeTurnosPagados = (ultimaFechaPagada: string) =>
   `Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (${diaMes(ultimaFechaPagada)})`
 export const mensajePagadosHastaElFinal = (ultimaFechaPagada: string) =>
   `Los turnos pagados llegan hasta el final de la serie (${diaMes(ultimaFechaPagada)}): no se puede finalizar`
+export const mensajeTurnosConAsistencia = (ultimaFechaConAsistencia: string) =>
+  `El turno del ${diaMes(ultimaFechaConAsistencia)} tiene asistencia registrada: elegí una fecha posterior`
+export const mensajeConAsistenciaHastaElFinal = (ultimaFechaConAsistencia: string) =>
+  `El turno del ${diaMes(ultimaFechaConAsistencia)} tiene asistencia registrada y es el último de la serie: no se puede finalizar`
 
 export type { FilaDeSerie }
 
@@ -172,9 +177,12 @@ function otrasHorasDe(snapshot: SnapshotFinalizacion, conjunto: ConjuntoAFinaliz
  * - `cantidad`: las ocurrencias no canceladas (las canceladas ya están libres) desde `fechaDesde`;
  *   `null` si algún tramo no tiene fin.
  * - `desde` = `fechaDesde`; `hasta` = la última ocurrencia del conjunto, o `null` si no tiene fin.
- * - `pagadas`: las pagadas desde `fechaDesde`, de cualquier tramo (definición D),
- *   `ultimaFechaPagada` y `fechaDesdeMinima` (la semana siguiente a la última pagada; `null` si no
- *   hay pagadas o si esa fecha ya pasa el último fin: no queda ninguna fecha para elegir).
+ * - `pagadas`: las pagadas desde `fechaDesde`, de cualquier tramo (definición D), y
+ *   `ultimaFechaPagada`.
+ * - `conAsistencia`: las que tienen asistencia registrada desde `fechaDesde` (`REALIZADO` o
+ *   `AUSENTE`; T-83: ya ocurrieron, sólo puede ser la de hoy), y `ultimaFechaConAsistencia`.
+ * - `fechaDesdeMinima`: la semana siguiente a la última que lo impide (pagada o con asistencia);
+ *   `null` si no hay ninguna o si esa fecha ya pasa el último fin (no queda fecha para elegir).
  * - `otrasHoras`: ver `otrasHorasDe`.
  */
 export function armarPrevia(
@@ -195,7 +203,26 @@ export function armarPrevia(
       importe: o.pago.importeAplicado ?? 0,
     }))
   const ultimaFechaPagada = pagadas.at(-1)?.fecha ?? null
-  const siguiente = ultimaFechaPagada && sumarDias(ultimaFechaPagada, 7)
+  const conAsistencia: TurnoConAsistencia[] = liberadas.flatMap((o) =>
+    o.estado === 'REALIZADO' || o.estado === 'AUSENTE'
+      ? [
+          {
+            fecha: o.fecha,
+            horaInicio: minutosAHora(o.horaInicio),
+            horaFin: minutosAHora(o.horaFin),
+            estado: o.estado,
+          },
+        ]
+      : [],
+  )
+  const ultimaFechaConAsistencia = conAsistencia.at(-1)?.fecha ?? null
+  // La última fecha que impide finalizar: la mayor entre la última pagada y la última con asistencia.
+  const ultimaQueImpide =
+    [ultimaFechaPagada, ultimaFechaConAsistencia]
+      .filter((fecha) => fecha !== null)
+      .sort()
+      .at(-1) ?? null
+  const siguiente = ultimaQueImpide && sumarDias(ultimaQueImpide, 7)
 
   return {
     cantidad: sinFin ? null : liberadas.filter((o) => o.estado !== 'CANCELADO').length,
@@ -203,6 +230,8 @@ export function armarPrevia(
     hasta: sinFin ? null : (liberadas.at(-1)?.fecha ?? fechaDesde),
     pagadas,
     ultimaFechaPagada,
+    conAsistencia,
+    ultimaFechaConAsistencia,
     fechaDesdeMinima:
       siguiente && (ultimoFin === null || siguiente <= ultimoFin) ? siguiente : null,
     otrasHoras: otrasHorasDe(snapshot, conjunto),
@@ -210,10 +239,16 @@ export function armarPrevia(
 }
 
 /**
- * Decide una finalización: `validarFinalizacion` y, si hay ocurrencias pagadas desde `fechaDesde`
- * en cualquier tramo del conjunto, 409 `TURNOS_PAGADOS` con `details`
- * `{ ultimaFechaPagada, fechaDesdeMinima, pagadas }` (no se anulan pagos: hay que elegir una fecha
- * posterior al último pagado). Si no lanza, devuelve la previa (lo que se libera) y los turnos que
+ * Decide una finalización: `validarFinalizacion` y, en este orden:
+ * - si hay ocurrencias pagadas desde `fechaDesde` en cualquier tramo del conjunto, 409
+ *   `TURNOS_PAGADOS` con `details` `{ ultimaFechaPagada, fechaDesdeMinima, pagadas }` (hay que
+ *   elegir una fecha posterior al último pagado). Va primero porque una pagada nunca es anterior a
+ *   una con asistencia (ésta sólo puede ser la de hoy, y las pagadas son desde `fechaDesde`, que es
+ *   hoy o después): la última pagada es la que fija `fechaDesdeMinima`.
+ * - si hay ocurrencias con asistencia desde `fechaDesde` (T-83), 409 `TURNOS_CON_ASISTENCIA` con
+ *   `details` `{ ultimaFechaConAsistencia, fechaDesdeMinima, conAsistencia }`: finalizar desde hoy
+ *   liberaría un turno que ya ocurrió.
+ * Si no lanza, devuelve la previa (lo que se libera) y los turnos que
  * llevan la finalización: las filas del conjunto con alguna fecha desde `fechaDesde` (`fechaFin`
  * nula o `>= fechaDesde`). Un tramo que termina antes no cambia.
  */
@@ -231,6 +266,18 @@ export function planificarFinalizacion(
         ? mensajePagadosHastaElFinal(ultimaFechaPagada)
         : mensajeTurnosPagados(ultimaFechaPagada),
       { code: CODIGO_TURNOS_PAGADOS, details: { ultimaFechaPagada, fechaDesdeMinima, pagadas } },
+    )
+  }
+  const { ultimaFechaConAsistencia, conAsistencia } = previa
+  if (ultimaFechaConAsistencia !== null) {
+    throw new ConflictError(
+      fechaDesdeMinima === null
+        ? mensajeConAsistenciaHastaElFinal(ultimaFechaConAsistencia)
+        : mensajeTurnosConAsistencia(ultimaFechaConAsistencia),
+      {
+        code: CODIGO_TURNOS_CON_ASISTENCIA,
+        details: { ultimaFechaConAsistencia, fechaDesdeMinima, conAsistencia },
+      },
     )
   }
   return {
