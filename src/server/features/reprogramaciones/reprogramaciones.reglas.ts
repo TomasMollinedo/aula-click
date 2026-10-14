@@ -25,6 +25,9 @@ import type { PlanReprogramacion, SnapshotReprogramacion } from './reprogramacio
 export const MENSAJE_OCURRENCIA_NO_ENCONTRADA = 'La ocurrencia no existe'
 export const MENSAJE_OCURRENCIA_CANCELADA = 'La ocurrencia está cancelada: no se puede reprogramar'
 export const MENSAJE_OCURRENCIA_PASADA = 'La ocurrencia ya pasó: no se puede reprogramar'
+export const CODIGO_TURNO_CON_ASISTENCIA = 'TURNO_CON_ASISTENCIA'
+export const MENSAJE_TURNO_CON_ASISTENCIA =
+  'El turno tiene asistencia registrada: no se puede reprogramar'
 export const MENSAJE_MISMO_LUGAR = 'El turno ya está en esa fecha y horario'
 export const MENSAJE_TURNO_CAMBIO = 'El turno cambió mientras se reprogramaba: probá de nuevo'
 export const MENSAJE_SIN_LUGAR_DESTINO = 'La hora de destino no tiene lugar en esa fecha'
@@ -46,7 +49,9 @@ function describir(fecha: string, horaInicio: number, horaFin: number, apellido:
 
 /**
  * Decide una reprogramación con lo leído bajo lock (`snapshot`). Orden:
- * 1. La ocurrencia no existe (404), está cancelada o ya pasó (409). Una pagada se puede mover.
+ * 1. La ocurrencia no existe (404), está cancelada (409), tiene asistencia (409
+ *    `TURNO_CON_ASISTENCIA`, T-83: ya ocurrió, aunque sea de hoy) o ya pasó (409). Una pagada se
+ *    puede mover.
  * 2. Destino inexistente o dado de baja (404); `fechaDestino` fuera del día de la hora (400) o
  *    igual a la de origen en la misma hora (400).
  * 3. Profesor inexistente (404) o inactivo (409 `PROFESOR_INACTIVO`); materia inactiva (409
@@ -67,6 +72,9 @@ export function planificarReprogramacion(
   // 1. La ocurrencia.
   if (!ocurrencia || !turno) throw new NotFoundError(MENSAJE_OCURRENCIA_NO_ENCONTRADA)
   if (ocurrencia.estado === 'CANCELADO') throw new ConflictError(MENSAJE_OCURRENCIA_CANCELADA)
+  if (ocurrencia.estado === 'REALIZADO' || ocurrencia.estado === 'AUSENTE') {
+    throw new ConflictError(MENSAJE_TURNO_CON_ASISTENCIA, { code: CODIGO_TURNO_CON_ASISTENCIA })
+  }
   if (ocurrencia.estado !== 'AGENDADO') throw new ConflictError(MENSAJE_OCURRENCIA_PASADA)
 
   // 2. El destino.
