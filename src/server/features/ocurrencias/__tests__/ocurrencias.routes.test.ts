@@ -17,6 +17,7 @@ const { repository, profesoresRepository, alumnosRepository, getSession } = vi.h
     buscarPago: vi.fn(),
     leerOcurrenciasDelAlumno: vi.fn(),
     resolverUsuarioAuditoria: vi.fn(),
+    resolverUsuariosAuditoria: vi.fn(),
     leerPrioridades: vi.fn(),
   },
   profesoresRepository: { buscarIdPorUsuario: vi.fn() },
@@ -47,6 +48,8 @@ const OCURRENCIA = {
   tipo: 'RECURRENTE',
   estado: 'AGENDADO',
   pago: { estado: 'PENDIENTE' },
+  asistencia: null,
+  plazoAsistencia: null,
   serie: { serieId: null, fechaInicio: '2099-01-05', fechaFin: null, finEfectivo: null },
   alumno: { id: 12, nombre: 'Lucía', apellido: 'González', busqueda: 'gonzalez lucia 40123456' },
   profesor: { id: 4, nombre: 'Ana', apellido: 'Pérez', busqueda: 'perez ana 30111222' },
@@ -61,7 +64,7 @@ const DATOS_ADICIONALES = {
   precioVigente: 8000,
   createdAt: '2026-08-01T13:00:00.000Z',
   updatedAt: '2026-08-01T13:00:00.000Z',
-  createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
+  createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez', rol: 'MESA_ENTRADAS' },
   updatedBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
 }
 
@@ -264,6 +267,7 @@ describe('GET /ocurrencias', () => {
         estadoPago: 'PENDIENTE',
         prioridad: null,
         cancelable: true,
+        plazoAsistencia: null,
       },
     ])
   })
@@ -471,6 +475,8 @@ describe('OpenAPI de ocurrencias', () => {
         'Finalizacion',
         'PagoDeOcurrenciaPendiente',
         'PagoDeOcurrenciaPagado',
+        'AsistenciaDeOcurrencia',
+        'UsuarioAuditoriaConRol',
       ]),
     )
   })

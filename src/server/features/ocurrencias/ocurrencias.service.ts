@@ -8,8 +8,10 @@ import type { TurnosDelAlumnoDocumento } from './ocurrencias.documentos'
 import type { Ocurrencia, OcurrenciasRepository, PrioridadDeTurno } from './ocurrencias.repository'
 import {
   ACCIONES_SIN_PERMISO,
+  asistenciaDelDetalle,
   calcularAcciones,
   filtrarParaDocumento,
+  usuariosDeLaAsistencia,
   validarRangoOcurrencias,
   ventanaOcurrencias,
 } from './ocurrencias.reglas'
@@ -23,12 +25,18 @@ import type {
 
 // Reglas de `ocurrencias`. No conoce HTTP ni Prisma: lanza AppError o sus subclases. La expansión,
 // el pago y la prioridad salen del motor de otras features (vía el repository); acá sólo se arma el
-// DTO y se calculan las acciones permitidas (`ocurrencias.reglas.ts`).
+// DTO y se calculan las acciones permitidas y la forma de la asistencia (`ocurrencias.reglas.ts`).
 
 const MENSAJE_NO_ENCONTRADA = 'No existe una ocurrencia con ese turno y esa fecha'
 const MENSAJE_SIN_PERMISO = 'El turno no es suyo'
 const MENSAJE_PAGO_INCONSISTENTE = 'La ocurrencia figura pagada, pero no se encontró su pago'
 const MENSAJE_ALUMNO_NO_ENCONTRADO = 'Alumno no encontrado'
+
+/** El plazo de asistencia del motor, copiado campo por campo para el DTO. */
+function plazoAsistencia(ocurrencia: Ocurrencia): OcurrenciaDetalle['plazoAsistencia'] {
+  const plazo = ocurrencia.plazoAsistencia
+  return plazo && { vence: plazo.vence, vencido: plazo.vencido }
+}
 
 /** Clave de `leerPrioridades`: la misma que arma `clavePrioridad` en `examenes.condiciones.ts`. */
 function clavePrioridad(item: { alumnoId: number; materiaId: number; fecha: string }): string {
@@ -151,6 +159,14 @@ export function crearOcurrenciasService({
         )
     const pago = esProfesor ? null : await armarPago(ocurrencia, datos.precioVigente)
 
+    // El motor sólo trae los ids de quién registró y modificó la asistencia: se resuelven los dos
+    // en una consulta, y sólo si hay una asistencia registrada que mostrar.
+    const idsAsistencia = usuariosDeLaAsistencia(ocurrencia)
+    const usuariosAsistencia =
+      idsAsistencia.length > 0
+        ? await repository.resolverUsuariosAuditoria(idsAsistencia)
+        : new Map<string, never>()
+
     return {
       turnoId: ocurrencia.turnoId,
       fecha: ocurrencia.fecha,
@@ -182,6 +198,8 @@ export function crearOcurrenciasService({
       pago,
       prioridad: prioridadPorClave?.prioridad ?? null,
       examen: prioridadPorClave?.examen ?? null,
+      plazoAsistencia: plazoAsistencia(ocurrencia),
+      asistencia: asistenciaDelDetalle(ocurrencia, usuariosAsistencia),
       acciones,
       createdAt: datos.createdAt,
       updatedAt: datos.updatedAt,
@@ -217,6 +235,7 @@ export function crearOcurrenciasService({
       prioridad,
       // Sin las filas de la hora: acá sólo se usa `cancelar`, que no las mira.
       cancelable: calcularAcciones(ocurrencia, [], fechaHoy).cancelar.habilitada,
+      plazoAsistencia: plazoAsistencia(ocurrencia),
     }
   }
 

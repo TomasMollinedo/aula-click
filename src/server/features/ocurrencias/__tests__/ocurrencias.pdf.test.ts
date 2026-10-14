@@ -33,6 +33,8 @@ function detalle(cambios: Partial<OcurrenciaDetalle> = {}): OcurrenciaDetalle {
     pago: null,
     prioridad: 'BAJA',
     examen: null,
+    plazoAsistencia: null,
+    asistencia: null,
     acciones: {
       cancelar: { visible: false, habilitada: false },
       finalizar: { visible: false },
@@ -41,7 +43,7 @@ function detalle(cambios: Partial<OcurrenciaDetalle> = {}): OcurrenciaDetalle {
     },
     createdAt: '2026-08-01T13:00:00.000Z',
     updatedAt: '2026-08-01T13:00:00.000Z',
-    createdBy: usuario,
+    createdBy: { ...usuario, rol: 'MESA_ENTRADAS' },
     updatedBy: usuario,
     ...cambios,
   }
@@ -64,6 +66,7 @@ function turnosDelAlumno(
     estadoPago: 'PENDIENTE',
     prioridad: i % 5 === 0 ? null : 'BAJA',
     cancelable: true,
+    plazoAsistencia: null,
   }))
   return {
     alumno: { nombre: 'Joaquín', apellido: 'Alderete', dni: '36090692' },

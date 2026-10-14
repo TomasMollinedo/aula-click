@@ -1,11 +1,16 @@
-import { ValidationError } from '@/server/errors'
+import { AppError, ValidationError } from '@/server/errors'
 import { MENSAJES_NO_CANCELABLE } from '@/server/features/cancelaciones/cancelaciones.condiciones'
 import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
-import type {
-  EstadoOcurrencia,
-  EstadoPagoOcurrencia,
-  TipoTurno,
+import {
+  OBSERVACION_CIERRE_SISTEMA,
+  tieneAsistencia,
+  type EstadoOcurrencia,
+  type EstadoPagoOcurrencia,
+  type Ocurrencia,
+  type TipoTurno,
 } from '@/server/features/turnos/ocurrencias.condiciones'
+import type { UsuarioAuditoria } from '@/server/shared/auditoria'
+import type { AsistenciaDeOcurrencia } from './ocurrencias.validation'
 
 // Reglas puras de `ocurrencias`: sin Prisma y sin `hoy()` (lo recibe quien llama). Las acciones
 // miran el pago de la ocurrencia, que ya trae el motor (`Ocurrencia.pago`). Lo que es de otra
@@ -165,4 +170,78 @@ export function calcularAcciones(
         ocurrencia.estado !== 'CANCELADO' && !pagada && ocurrencia.fecha <= limiteDeCobro(fechaHoy),
     },
   }
+}
+
+export const MENSAJE_USUARIO_ASISTENCIA_NO_ENCONTRADO =
+  'La asistencia figura registrada, pero no se encontró quién la registró o la modificó'
+
+/** Lo que `asistenciaDelDetalle` mira de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
+export type OcurrenciaParaAsistencia = Pick<Ocurrencia, 'estado' | 'asistencia' | 'plazoAsistencia'>
+
+/**
+ * La asistencia guardada que cuenta para la ocurrencia: la de una `REALIZADO` o `AUSENTE`. El
+ * estado manda (decisión T-137): una cancelada con una asistencia en la base no la muestra.
+ */
+function asistenciaRegistrada(ocurrencia: OcurrenciaParaAsistencia) {
+  return tieneAsistencia(ocurrencia.estado) ? ocurrencia.asistencia : null
+}
+
+/**
+ * Los usuarios que el service tiene que resolver para `asistenciaDelDetalle`: quién registró y
+ * quién modificó la asistencia, sin repetir. `[]` si no hay una asistencia registrada que mostrar.
+ */
+export function usuariosDeLaAsistencia(ocurrencia: OcurrenciaParaAsistencia): string[] {
+  const asistencia = asistenciaRegistrada(ocurrencia)
+  if (!asistencia) return []
+  return [...new Set([asistencia.createdById, asistencia.updatedById])]
+}
+
+/**
+ * La `asistencia` del detalle de una ocurrencia (T-84), de **esa hora**, según su estado:
+ * - `REALIZADO` o `AUSENTE` (`tieneAsistencia`): la registrada, con quién y cuándo la registró y la
+ *   modificó (los dos siempre, como la auditoría de cualquier entidad), de `usuarios`.
+ * - `SIN_REGISTRAR` con el plazo vencido: cerrada por el sistema (decisión T-138), con
+ *   `OBSERVACION_CIERRE_SISTEMA` y sin estado ni personas. La fecha del cierre es
+ *   `plazoAsistencia.vence`: no hay un instante.
+ * - Cualquier otro caso (agendada, sin registrar en plazo, cancelada): `null`.
+ *
+ * `usuarios` trae los de `usuariosDeLaAsistencia`; si falta alguno (la base no lo permite), 500.
+ */
+export function asistenciaDelDetalle(
+  ocurrencia: OcurrenciaParaAsistencia,
+  usuarios: ReadonlyMap<string, UsuarioAuditoria>,
+): AsistenciaDeOcurrencia | null {
+  const asistencia = asistenciaRegistrada(ocurrencia)
+  if (asistencia) {
+    const registradaPor = usuarios.get(asistencia.createdById)
+    const modificadaPor = usuarios.get(asistencia.updatedById)
+    if (!registradaPor || !modificadaPor) {
+      throw new AppError(MENSAJE_USUARIO_ASISTENCIA_NO_ENCONTRADO, 500)
+    }
+    return {
+      estado: asistencia.estado,
+      trabajado: asistencia.trabajado,
+      indicaciones: asistencia.indicaciones,
+      observacion: asistencia.observacion,
+      registradaPor,
+      registradaEl: asistencia.createdAt,
+      modificadaPor,
+      modificadaEl: asistencia.updatedAt,
+      cerradaPorSistema: false,
+    }
+  }
+  if (ocurrencia.estado === 'SIN_REGISTRAR' && ocurrencia.plazoAsistencia?.vencido) {
+    return {
+      estado: null,
+      trabajado: null,
+      indicaciones: null,
+      observacion: OBSERVACION_CIERRE_SISTEMA,
+      registradaPor: null,
+      registradaEl: null,
+      modificadaPor: null,
+      modificadaEl: null,
+      cerradaPorSistema: true,
+    }
+  }
+  return null
 }

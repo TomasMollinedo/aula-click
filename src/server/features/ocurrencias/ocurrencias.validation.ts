@@ -1,6 +1,7 @@
 import { z } from '@hono/zod-openapi'
 import { PRIORIDADES } from '@/server/features/examenes/examenes.condiciones'
 import { ESTADOS_OCURRENCIA, TIPOS_TURNO } from '@/server/features/turnos/ocurrencias.condiciones'
+import { ROLES } from '@/server/shared/actor'
 import { auditoriaSchema, usuarioAuditoriaSchema } from '@/server/shared/auditoria'
 import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 
@@ -10,6 +11,8 @@ import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 // T-74) es distinto del `Turno.estado` de `ESTADOS_TURNO`, que es ACTIVO/CANCELADO.
 /** Los de `Ocurrencia.pago.estado` (`EstadoPagoOcurrencia` del motor). */
 const ESTADOS_PAGO = ['PENDIENTE', 'PAGADO'] as const
+/** Los de `Ocurrencia.asistencia.estado` (`EstadoAsistencia` del motor). */
+const ESTADOS_ASISTENCIA = ['PRESENTE', 'AUSENTE'] as const
 const MOTIVOS_CANCELACION = [
   'CANCELACION_ALUMNO',
   'CANCELACION_PROFESOR',
@@ -133,6 +136,57 @@ const examenQueDeterminaSchema = z
   })
   .openapi('ExamenQueDetermina')
 
+/**
+ * Plazo para registrar la asistencia, tal como lo da el motor (`plazoDeAsistencia`). Sin nombre de
+ * componente: `PlazoAsistencia` ya es el de `asistencias`.
+ */
+const plazoAsistenciaSchema = z
+  .object({
+    vence: fechaISO.openapi({
+      description: 'Último día para registrar o corregir la asistencia (hasta las 23:59)',
+    }),
+    vencido: z.boolean().openapi({ description: 'Ya pasó `vence`' }),
+  })
+  .nullable()
+  .openapi({ description: '`null` en una ocurrencia cancelada o posterior a hoy' })
+
+const instanteAsistencia = z.iso.datetime().nullable().openapi({
+  description: 'Instante ISO 8601 en UTC. `null` en una cerrada por el sistema',
+  example: '2026-10-05T14:30:00.000Z',
+})
+
+/**
+ * La asistencia de **esa hora** (T-84): registrada (`REALIZADO` o `AUSENTE`), con su auditoría, o
+ * cerrada por el sistema (un "Sin registrar" con el plazo vencido, sin estado ni personas: la fecha
+ * del cierre es `plazoAsistencia.vence`, decisión T-138).
+ */
+const asistenciaSchema = z
+  .object({
+    estado: z
+      .enum(ESTADOS_ASISTENCIA)
+      .nullable()
+      .openapi({ description: '`null` en una cerrada por el sistema' }),
+    trabajado: z.string().nullable().openapi({ description: 'Qué se trabajó' }),
+    indicaciones: z
+      .string()
+      .nullable()
+      .openapi({ description: 'Indicaciones para la próxima sesión' }),
+    observacion: z.string().nullable().openapi({
+      description: 'La del ausente, o la del cierre del sistema en una cerrada por el sistema',
+    }),
+    registradaPor: usuarioAuditoriaSchema.nullable(),
+    registradaEl: instanteAsistencia,
+    modificadaPor: usuarioAuditoriaSchema.nullable(),
+    modificadaEl: instanteAsistencia,
+    cerradaPorSistema: z.boolean(),
+  })
+  .openapi('AsistenciaDeOcurrencia')
+
+/** Usuario de auditoría con su rol: dice si el turno lo registró el alumno desde el portal (HU-29). */
+const usuarioAuditoriaConRolSchema = usuarioAuditoriaSchema
+  .extend({ rol: z.enum(ROLES) })
+  .openapi('UsuarioAuditoriaConRol')
+
 /** Detalle de una ocurrencia: todo lo que necesita la pantalla de detalle de un turno (T-44). */
 export const ocurrenciaDetalleSchema = z
   .object({
@@ -165,10 +219,21 @@ export const ocurrenciaDetalleSchema = z
     examen: examenQueDeterminaSchema
       .nullable()
       .openapi({ description: 'El examen que determina la prioridad, si hay uno próximo' }),
+    plazoAsistencia: plazoAsistenciaSchema,
+    asistencia: asistenciaSchema.nullable().openapi({
+      description:
+        '`null` si está agendada, cancelada o sin registrar dentro del plazo (con su `plazoAsistencia`)',
+    }),
     acciones: accionesSchema,
     ...auditoriaSchema.shape,
+    createdBy: usuarioAuditoriaConRolSchema.nullable().openapi({
+      description:
+        'Usuario que registró el turno, con su rol (`ALUMNO` si lo sacó desde el portal)',
+    }),
   })
   .openapi('OcurrenciaDetalle')
+
+export type AsistenciaDeOcurrencia = z.infer<typeof asistenciaSchema>
 
 export type OcurrenciaDetalle = z.infer<typeof ocurrenciaDetalleSchema>
 
@@ -288,6 +353,7 @@ export const ocurrenciaDelAlumnoItemSchema = z
       .nullable()
       .openapi({ description: 'null en una ocurrencia cancelada' }),
     cancelable: z.boolean().openapi({ description: 'Mismas reglas que `acciones.cancelar`' }),
+    plazoAsistencia: plazoAsistenciaSchema,
   })
   .openapi('OcurrenciaDelAlumnoItem')
 

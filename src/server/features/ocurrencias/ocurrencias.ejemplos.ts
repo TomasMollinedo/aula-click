@@ -5,7 +5,7 @@ import type { OcurrenciaDelAlumnoItem, OcurrenciaDetalle } from './ocurrencias.v
 
 const auditoria = {
   createdAt: '2026-08-01T13:00:00.000Z',
-  createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
+  createdBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez', rol: 'MESA_ENTRADAS' as const },
   updatedAt: '2026-08-01T13:00:00.000Z',
   updatedBy: { id: 'usr_1', nombre: 'Ana', apellido: 'Pérez' },
 }
@@ -34,6 +34,8 @@ export const ejemploOcurrenciaDetalle = {
     materiaNombre: 'Matemática',
     dias: 7,
   },
+  plazoAsistencia: null,
+  asistencia: null,
   acciones: {
     cancelar: { visible: true, habilitada: true },
     finalizar: { visible: true },
@@ -57,6 +59,7 @@ export const ejemploOcurrenciasDelAlumno = [
     estadoPago: 'PENDIENTE',
     prioridad: 'ALTA',
     cancelable: true,
+    plazoAsistencia: null,
   },
   {
     turnoId: 44,
@@ -71,5 +74,6 @@ export const ejemploOcurrenciasDelAlumno = [
     estadoPago: 'PENDIENTE',
     prioridad: null,
     cancelable: false,
+    plazoAsistencia: null,
   },
 ] satisfies OcurrenciaDelAlumnoItem[]

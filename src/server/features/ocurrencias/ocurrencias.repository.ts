@@ -15,7 +15,13 @@ import {
   type FiltroOcurrencias,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
-import { armarAuditoria, SELECT_USUARIO_AUDITORIA, type Auditoria } from '@/server/shared/auditoria'
+import type { Role } from '@/server/shared/actor'
+import {
+  armarAuditoria,
+  SELECT_USUARIO_AUDITORIA,
+  type Auditoria,
+  type UsuarioAuditoria,
+} from '@/server/shared/auditoria'
 import { dateAFecha, type Reloj } from '@/server/shared/fechas'
 
 // Único lugar de la feature que usa Prisma. `ocurrencias` no tiene tabla propia: combina el motor
@@ -35,16 +41,20 @@ export type Finalizacion = {
   createdAt: string
 }
 
+/** Usuario de auditoría con su rol (`createdBy` del turno, HU-29). */
+export type UsuarioAuditoriaConRol = UsuarioAuditoria & { rol: Role }
+
 /**
  * Lo del turno que `leerOcurrencias` no trae: DNI del alumno, observaciones, temas, auditoría y el
  * precio por hora **vigente** de su materia (`null` si no tiene; un `number`, nunca un `Decimal`).
+ * `createdBy` trae además su rol, para que el detalle diga si lo registró el alumno desde el portal.
  */
 export type DatosAdicionalesTurno = {
   alumnoDni: string
   observaciones: string | null
   temas: string | null
   precioVigente: number | null
-} & Auditoria
+} & Omit<Auditoria, 'createdBy'> & { createdBy: UsuarioAuditoriaConRol | null }
 
 export const ocurrenciasRepository = {
   /**
@@ -79,17 +89,26 @@ export const ocurrenciasRepository = {
         materia: { select: { precioHora: true } },
         createdAt: true,
         updatedAt: true,
-        createdBy: { select: SELECT_USUARIO_AUDITORIA },
+        createdBy: { select: { ...SELECT_USUARIO_AUDITORIA, role: true } },
         updatedBy: { select: SELECT_USUARIO_AUDITORIA },
       },
     })
     if (!fila) return null
+    const { createdBy } = fila
     return {
       alumnoDni: fila.alumno.dni,
       observaciones: fila.observaciones,
       temas: fila.temas,
       precioVigente: fila.materia.precioHora ? fila.materia.precioHora.toNumber() : null,
       ...armarAuditoria(fila),
+      // `Usuario.role` es `string` en Prisma (FK a la tabla `Rol`, T-23): la base ya garantiza que
+      // sólo tiene valores del catálogo, que son los mismos que `ROLES` (`shared/actor.ts`).
+      createdBy: createdBy && {
+        id: createdBy.id,
+        nombre: createdBy.nombre,
+        apellido: createdBy.apellido,
+        rol: createdBy.role as Role,
+      },
     }
   },
 
@@ -144,6 +163,19 @@ export const ocurrenciasRepository = {
     id: string,
   ): Promise<{ id: string; nombre: string; apellido: string } | null> {
     return prisma.usuario.findUnique({ where: { id }, select: SELECT_USUARIO_AUDITORIA })
+  },
+
+  /**
+   * `{ id, nombre, apellido }` de varios usuarios, por id, en una sola consulta. Lo usa el detalle
+   * para resolver quién registró y quién modificó la asistencia (`Ocurrencia.asistencia` sólo trae
+   * los ids). Un id que no existe no está en el `Map`.
+   */
+  async resolverUsuariosAuditoria(ids: string[]): Promise<Map<string, UsuarioAuditoria>> {
+    const usuarios = await prisma.usuario.findMany({
+      where: { id: { in: ids } },
+      select: SELECT_USUARIO_AUDITORIA,
+    })
+    return new Map(usuarios.map((usuario) => [usuario.id, usuario]))
   },
 
   /** Los datos del pago de una ocurrencia pagada (`Ocurrencia.pago.pagoId`), en una consulta. */
