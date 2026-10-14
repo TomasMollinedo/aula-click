@@ -95,7 +95,7 @@ export const finalizarTurnoRoute = createRoute({
     403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
     404: respuestaError('El turno no existe (NO_ENCONTRADO)'),
     409: respuestaError(
-      `${ERROR_409_TURNO}, o hay turnos pagados desde \`fechaDesde\` (TURNOS_PAGADOS): \`details\` con \`ultimaFechaPagada\`, \`fechaDesdeMinima\` (\`null\` si los pagados llegan hasta el final de la serie) y \`pagadas\``,
+      `${ERROR_409_TURNO}, o hay turnos pagados desde \`fechaDesde\` (TURNOS_PAGADOS): \`details\` con \`ultimaFechaPagada\`, \`fechaDesdeMinima\` (\`null\` si los pagados llegan hasta el final de la serie) y \`pagadas\`; o el turno de hoy tiene asistencia registrada (TURNOS_CON_ASISTENCIA): \`details\` con \`ultimaFechaConAsistencia\`, \`fechaDesdeMinima\` y \`conAsistencia\``,
       { turnosPagados: ejemploErrorTurnosPagados, yaFinalizado: ejemploErrorYaFinalizado },
     ),
   },

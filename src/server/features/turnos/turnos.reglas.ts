@@ -87,6 +87,21 @@ export const ESTADOS_OCURRENCIA = [
 ] as const
 export type EstadoOcurrencia = (typeof ESTADOS_OCURRENCIA)[number]
 
+/**
+ * Estados de una ocurrencia con asistencia registrada y no cancelada (`estadoDeOcurrencia`): ya
+ * ocurrió. No se cancela, no se reprograma y no se libera al finalizar (T-83).
+ */
+export const ESTADOS_CON_ASISTENCIA = [
+  'REALIZADO',
+  'AUSENTE',
+] as const satisfies readonly EstadoOcurrencia[]
+export type EstadoConAsistencia = (typeof ESTADOS_CON_ASISTENCIA)[number]
+
+/** Si la ocurrencia tiene asistencia registrada (y no está cancelada), según su `estado`. */
+export function tieneAsistencia(estado: EstadoOcurrencia): estado is EstadoConAsistencia {
+  return (ESTADOS_CON_ASISTENCIA as readonly EstadoOcurrencia[]).includes(estado)
+}
+
 /** Estado de una asistencia registrada. */
 export type EstadoAsistencia = 'PRESENTE' | 'AUSENTE'
 

@@ -1,5 +1,5 @@
 import { createAuthClient } from 'better-auth/react'
-import { inferAdditionalFields } from 'better-auth/client/plugins'
+import { inferAdditionalFields, usernameClient } from 'better-auth/client/plugins'
 
 // Los campos extra de Usuario se redeclaran acá porque el frontend no puede importar la instancia
 // del servidor (@/lib/auth, ESLint): si cambian en src/lib/auth.ts, se cambian acá en el mismo PR.
@@ -16,5 +16,7 @@ export const authClient = createAuthClient({
         estado: { type: 'string' },
       },
     }),
+    // Ingreso del alumno con su usuario (HU-28, T-75): authClient.signIn.username.
+    usernameClient(),
   ],
 })

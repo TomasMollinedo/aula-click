@@ -512,6 +512,61 @@ describe('reprogramar: la ocurrencia de origen', () => {
     ).resolves.toMatchObject({ turnoId: 63 })
   })
 
+  it('la de hoy con asistencia → 409 TURNO_CON_ASISTENCIA, sin cambios', async () => {
+    turnos.push({
+      id: 64,
+      bloqueAgendaId: 10,
+      tipo: 'SESION_UNICA',
+      fechaInicio: '2026-10-05',
+      fechaFin: '2026-10-05',
+      asistencias: [{ fecha: '2026-10-05', estado: 'PRESENTE' }],
+    })
+    armar()
+
+    const error = await errorDe(
+      service.reprogramar(
+        pedido({ turnoId: 64, fecha: '2026-10-05', fechaDestino: '2026-10-08' }),
+        actor,
+      ),
+    )
+
+    expect(error.statusCode).toBe(409)
+    expect(error.code).toBe('TURNO_CON_ASISTENCIA')
+    expect(error.message).toBe('El turno tiene asistencia registrada: no se puede reprogramar')
+    expect(enTabla(64)?.fechaInicio).toBe('2026-10-05')
+  })
+
+  it('una pasada con asistencia (Ausente) dice que tiene asistencia, no que ya pasó', async () => {
+    turnos.push({
+      id: 65,
+      bloqueAgendaId: 10,
+      tipo: 'SESION_UNICA',
+      fechaInicio: '2026-09-28',
+      fechaFin: '2026-09-28',
+      asistencias: [{ fecha: '2026-09-28', estado: 'AUSENTE' }],
+    })
+    armar()
+
+    const error = await errorDe(
+      service.reprogramar(pedido({ turnoId: 65, fecha: '2026-09-28' }), actor),
+    )
+
+    expect(error.code).toBe('TURNO_CON_ASISTENCIA')
+  })
+
+  it('con el pago anulado (HU-42) se mueve como impaga: el pago anulado no viaja a la fecha nueva', async () => {
+    const original = enTabla(41)
+    if (original) {
+      original.pagos = [{ fecha: '2026-10-12', pagoId: 9, importe: 8000, vigente: false }]
+    }
+
+    await service.reprogramar(pedido(), actor)
+
+    expect(enTabla(41)?.pagos).toEqual([
+      { fecha: '2026-10-12', pagoId: 9, importe: 8000, vigente: false },
+    ])
+  })
+
   it('cancelada → 409', async () => {
     const original = enTabla(50)
     if (original) original.cancelaciones = [{ fecha: '2026-10-19' }]

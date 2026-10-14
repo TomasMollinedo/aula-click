@@ -5,11 +5,13 @@ import { profesoresRepository } from '@/server/features/profesores/profesores.re
 import type { AppEnv } from '@/server/router'
 import { examenesRepository } from './examenes.repository'
 import type {
+  cargarNotaRoute,
   crearExamenRoute,
   darDeBajaExamenRoute,
   editarExamenRoute,
   listarExamenesRoute,
   materiasExamenRoute,
+  misExamenesRoute,
 } from './examenes.routes'
 import { crearExamenesService } from './examenes.service'
 
@@ -45,3 +47,12 @@ export const editar: RouteHandler<typeof editarExamenRoute, AppEnv> = async (c) 
 
 export const darDeBaja: RouteHandler<typeof darDeBajaExamenRoute, AppEnv> = async (c) =>
   c.json(await examenesService.darDeBaja(c.req.valid('param').id, c.get('actor')), 200)
+
+export const cargarNota: RouteHandler<typeof cargarNotaRoute, AppEnv> = async (c) =>
+  c.json(
+    await examenesService.cargarNota(c.req.valid('param').id, c.req.valid('json'), c.get('actor')),
+    200,
+  )
+
+export const misExamenes: RouteHandler<typeof misExamenesRoute, AppEnv> = async (c) =>
+  c.json(await examenesService.misExamenes(c.req.valid('query').materiaId, c.get('actor')), 200)

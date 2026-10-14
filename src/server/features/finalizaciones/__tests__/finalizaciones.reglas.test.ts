@@ -255,6 +255,8 @@ describe('armarPrevia', () => {
       hasta: '2026-11-30',
       pagadas: [],
       ultimaFechaPagada: null,
+      conAsistencia: [],
+      ultimaFechaConAsistencia: null,
       fechaDesdeMinima: null,
       otrasHoras: [],
     })

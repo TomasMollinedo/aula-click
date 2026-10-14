@@ -102,10 +102,11 @@ HU-12 (T-39). Reemplaza a HU-04 en cuanto a quién administra el catálogo.
 
 HU-13 (T-45). Cancelar registra una `CancelacionTurno` por ocurrencia (`turnoId` + fecha de la ocurrencia), también para una sesión única; el modelo está en [Turnos](#turnos) más arriba.
 
-- **Qué se puede cancelar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), en estado `AGENDADO` (no cancelada y de **hoy en adelante**) y con pago `PENDIENTE`.
-- **Un turno pagado no se cancela** (definición D): en este sprint no se anulan pagos, así que no hay forma de deshacer el cobro. Una pasada tampoco: es historia.
+- **Qué se puede cancelar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), en estado `AGENDADO` (no cancelada, sin asistencia y de **hoy en adelante**) y con pago `PENDIENTE`.
+- **Un turno con asistencia no se cancela** (HU-22, T-83): "Presente" o "Ausente", ya ocurrió, aunque sea de hoy. Es el primer motivo después de "ya cancelado": anular su pago no lo vuelve cancelable.
+- **Un turno pagado no se cancela** (definición D): primero hay que anular el pago (HU-42); un pago anulado no cuenta, y la ocurrencia vuelve a poder cancelarse (lo resuelve el motor de ocurrencias, T-74). Una pasada tampoco: es historia.
 - **Una cancelación sólo afecta a esa fecha:** el resto de la serie sigue agendado y la hora vuelve a tener lugar ese día. No se deshace una cancelación.
-- **Varias a la vez:** de un mismo alumno (aunque sean de distintos turnos o profesores). **Todo o nada:** si alguna no se puede cancelar, no se cancela ninguna y la API informa cuáles y por qué (no existe, ya cancelada, pagada o pasada).
+- **Varias a la vez:** de un mismo alumno (aunque sean de distintos turnos o profesores). **Todo o nada:** si alguna no se puede cancelar, no se cancela ninguna y la API informa cuáles y por qué (no existe, ya cancelada, con asistencia, pagada o pasada).
 - **Motivo y detalle:** el motivo es obligatorio (`CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`); el detalle es libre, de hasta 500 caracteres, y **obligatorio con `OTRO`**. El mismo motivo y detalle valen para todas las ocurrencias del pedido.
 - **Concurrencia:** la cancelación y un pago simultáneos de la misma ocurrencia se serializan con `alumno` `FOR UPDATE` (`bloquearAlumno`, decisión T-59): si el pago entra primero, la cancelación ve el turno pagado y responde 409.
 
@@ -120,7 +121,8 @@ HU-14 (T-47; por hora desde la decisión T-104, acordada con las PO el 01/10). F
 - **Qué se registra:** una `FinalizacionRecurrencia` con la misma `fechaDesde`, motivo y detalle en cada tramo de esa hora que tiene fechas desde `fechaDesde`. Un tramo que termina antes no cambia.
 - **`fechaFin` no se modifica** (definición C, decisión T-48): el **fin efectivo** de cada tramo pasa a ser el día anterior a `fechaDesde` y lo aplica el motor de ocurrencias. Desde `fechaDesde` esa hora no aparece en las agendas ni en los turnos del alumno, su lugar queda libre y deja de contar como turno vigente (no bloquea la baja del profesor, de la materia ni del bloque). Cada turno conserva su rango original junto con el motivo del fin anticipado.
 - **Las ocurrencias anteriores a `fechaDesde` no cambian:** siguen con su estado, su pago y su cancelación.
-- **Turnos pagados** (definición D): en este sprint no se anulan pagos, así que si alguna ocurrencia desde `fechaDesde` está pagada, en cualquiera de los tramos de esa hora, **no se finaliza**. La API informa cuáles son (fecha, horario e importe), la última fecha pagada y la primera fecha que sí se puede elegir (la ocurrencia siguiente a la última pagada). Si los pagados llegan hasta la última fecha de la serie, no hay fecha posible y el turno no se puede finalizar.
+- **Turnos pagados** (definición D): si alguna ocurrencia desde `fechaDesde` está pagada, en cualquiera de los tramos de esa hora, **no se finaliza**. La API informa cuáles son (fecha, horario e importe), la última fecha pagada y la primera fecha que sí se puede elegir (la ocurrencia siguiente a la última pagada). Si los pagados llegan hasta la última fecha de la serie, no hay fecha posible y el turno no se puede finalizar. Un pago anulado (HU-42) no cuenta: esa fecha se vuelve a poder finalizar.
+- **Turnos con asistencia** (HU-22, T-83): con el mismo tratamiento que los pagados. Sólo puede ser el de hoy (la asistencia se registra el día del turno o después), así que pasa al finalizar **desde hoy**: ese turno ya ocurrió y no se libera. La API lo informa en la previa y la primera fecha posible es la siguiente; si era la última de la serie, no se puede finalizar. Si además hay pagados, se informa el de los pagados: el último pagado es el que fija la primera fecha posible.
 - **Una fecha reprogramada no se libera:** al reprogramar una fecha de la serie, esa fecha pasa a ser una `SESION_UNICA` aparte (definición A). Finalizar la serie no la toca; si hay que liberarla, se cancela.
 - **Reprogramación posterior** (T-49): si se reprograma una fecha de un turno ya finalizado y la serie se parte, la finalización pasa al tramo nuevo, que es el que tiene fechas desde `fechaDesde`. El tramo nuevo sigue en la misma serie, así que esa hora sigue contando como finalizada.
 - **Motivo y detalle:** las mismas reglas que la cancelación (HU-13): motivo obligatorio (`CANCELACION_ALUMNO`, `CANCELACION_PROFESOR`, `PROBLEMA_ADMINISTRATIVO` u `OTRO`) y detalle libre de hasta 500 caracteres, **obligatorio con `OTRO`**.
@@ -131,7 +133,7 @@ HU-14 (T-47; por hora desde la decisión T-104, acordada con las PO el 01/10). F
 
 HU-20 (T-49). Reprogramar **edita el turno**: no hay tabla de reprogramaciones (definición A, decisión T-47) ni se guarda desde qué fecha y hora se reprogramó. Quién lo modificó y cuándo sale de la auditoría del turno.
 
-- **Qué se puede reprogramar:** una ocurrencia `AGENDADO` (de hoy o posterior). Una cancelada o pasada, no. **Pagada se puede**: el pago acompaña a la ocurrencia y pasa a la fecha nueva.
+- **Qué se puede reprogramar:** una ocurrencia `AGENDADO` (de hoy o posterior, sin asistencia). Una cancelada o pasada, no. **Una con asistencia registrada tampoco**, aunque sea de hoy: ya ocurrió (T-83, `TURNO_CON_ASISTENCIA`). **Pagada se puede**: el pago vigente acompaña a la ocurrencia y pasa a la fecha nueva; si el pago se anuló, se mueve como impaga.
 - **Qué se valida en el destino** (las de HU-08, sobre la hora y la fecha nuevas): `fechaDestino` hoy o posterior y en el día de la hora; profesor activo; materia activa y asignada al profesor de destino (`MATERIA_NO_ASIGNADA`); lugar en la hora (`BLOQUE_LLENO`) y sin superposición del alumno (`ALUMNO_SUPERPUESTO`). En los dos últimos chequeos **la propia ocurrencia no cuenta**. Mover a la misma hora y la misma fecha es un error.
 - **Sesión única:** se actualizan la hora, `fechaInicio` y `fechaFin` (= `fechaDestino`) del mismo turno.
 - **Recurrente:** sólo se mueve esa fecha, así que la serie se parte en hasta tres turnos: el original termina en la ocurrencia anterior; un tramo `RECURRENTE` nuevo, en la misma hora, sigue desde la siguiente hasta el fin original (o sin fin); y la fecha movida es una `SESION_UNICA` nueva en el destino. Alumno, materia, observaciones y temas se copian.
@@ -272,7 +274,14 @@ A completar por T-104 (HU-42).
 
 ## Notas de exámenes
 
-A completar por T-106 (HU-34, HU-35).
+HU-34 y HU-35 (T-106).
+
+- **Quién:** mesa de entrada y el profesor, con las reglas de HU-17: el profesor sólo carga la nota de los exámenes de las materias que le dicta a ese alumno. El profesor ve todos los exámenes del alumno.
+- **Cuándo:** sólo de un examen **ya rendido**, con fecha de hoy o anterior. Un examen futuro no admite nota.
+- **Resultado:** "Con nota", con una nota de 1 a 10 con hasta dos decimales, o "Ausente", sin nota. Un ausente no cuenta para los promedios.
+- **Corrección:** cargar y corregir siguen las mismas reglas. La nota tiene su propia trazabilidad: quién la cargó y quién la modificó por última vez, con fecha, hora y rol. Cargar o corregir la nota no cambia la auditoría del examen.
+- **Rendidos sin nota:** la ficha avisa cuántos exámenes ya rendidos no tienen nota cargada.
+- **Portal (HU-35):** el alumno ve, por materia, su próximo examen con los días que faltan, los rendidos del más reciente al más antiguo (la nota, "Ausente" o "Sin nota") y el promedio de sus notas sin los ausentes. No ve las observaciones ni quién cargó cada dato.
 
 ## Tope de deuda
 
