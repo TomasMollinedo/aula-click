@@ -6,6 +6,7 @@ import { contarVigentesPorMateria } from '@/server/features/turnos/turnos.condic
 import type { Actor } from '@/server/shared/actor'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import type {
+  CargarNota,
   CrearExamen,
   EditarExamen,
   ExamenGuardado,
@@ -31,6 +32,8 @@ const INCLUDE_EXAMEN = {
   materia: { select: { nombre: true } },
   createdBy: { select: SELECT_USUARIO_AUDITORIA_CON_ROL },
   updatedBy: { select: SELECT_USUARIO_AUDITORIA_CON_ROL },
+  notaCreatedBy: { select: SELECT_USUARIO_AUDITORIA_CON_ROL },
+  notaUpdatedBy: { select: SELECT_USUARIO_AUDITORIA_CON_ROL },
 } satisfies Prisma.ExamenInclude
 
 type FilaExamen = Prisma.ExamenGetPayload<{ include: typeof INCLUDE_EXAMEN }>
@@ -63,6 +66,12 @@ function aGuardado(fila: FilaExamen): ExamenGuardado {
     updatedAt: fila.updatedAt.toISOString(),
     createdBy: usuarioConRol(fila.createdBy),
     updatedBy: usuarioConRol(fila.updatedBy),
+    resultado: fila.resultado,
+    nota: fila.nota === null ? null : fila.nota.toNumber(),
+    notaCreatedAt: fila.notaCreatedAt?.toISOString() ?? null,
+    notaUpdatedAt: fila.notaUpdatedAt?.toISOString() ?? null,
+    notaCreatedBy: usuarioConRol(fila.notaCreatedBy),
+    notaUpdatedBy: usuarioConRol(fila.notaUpdatedBy),
   }
 }
 
@@ -161,6 +170,39 @@ export const examenesRepository = {
       const fila = await prisma.examen.update({
         where: { id },
         data: { estado: 'INACTIVO', updatedById: actor.userId },
+        include: INCLUDE_EXAMEN,
+      })
+      return aGuardado(fila)
+    } catch (error) {
+      traducirNoEncontrado(error)
+      throw error
+    }
+  },
+
+  /**
+   * Carga o corrige la nota (HU-34) con su trazabilidad propia: la primera carga deja al actor como
+   * quien la cargó y la modificó; una corrección, sólo como quien la modificó. Un ausente guarda
+   * `nota` en `null`. No toca la auditoría del examen: `updatedAt` se pasa con su valor actual para
+   * que `@updatedAt` no lo mueva (la nota tiene la suya). Inexistente → `NotFoundError`.
+   */
+  async cargarNota(
+    actual: Pick<ExamenGuardado, 'id' | 'resultado' | 'updatedAt'>,
+    datos: CargarNota,
+    actor: Actor,
+  ): Promise<ExamenGuardado> {
+    const ahora = new Date()
+    const primeraCarga = actual.resultado === null
+    try {
+      const fila = await prisma.examen.update({
+        where: { id: actual.id },
+        data: {
+          resultado: datos.resultado,
+          nota: datos.resultado === 'CON_NOTA' ? (datos.nota ?? null) : null,
+          ...(primeraCarga ? { notaCreatedById: actor.userId, notaCreatedAt: ahora } : {}),
+          notaUpdatedById: actor.userId,
+          notaUpdatedAt: ahora,
+          updatedAt: new Date(actual.updatedAt),
+        },
         include: INCLUDE_EXAMEN,
       })
       return aGuardado(fila)

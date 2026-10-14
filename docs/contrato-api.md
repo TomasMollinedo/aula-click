@@ -831,7 +831,7 @@ Con un período sólo pasado (`?desde=2026-09-01&hasta=2026-09-30`), `"proximos"
 
 ## Exámenes
 
-Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de los turnos (HU-18, `examenes.condiciones.ts`, T-31). Roles: `MESA_ENTRADAS` y `PROFESOR` en los cinco endpoints. "Eliminar" un examen es darlo de baja (`PATCH /{id}/baja`): nada se borra.
+Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de los turnos (HU-18, `examenes.condiciones.ts`, T-31). Roles: `MESA_ENTRADAS` y `PROFESOR` en los cinco endpoints (y en la carga de la nota); `ALUMNO` en `mis-examenes`. "Eliminar" un examen es darlo de baja (`PATCH /{id}/baja`): nada se borra.
 
 **`GET /api/v1/examenes?alumnoId`**: exámenes `ACTIVO` del alumno, separados en `proximos` (fecha de hoy en adelante, orden ascendente, con `diasRestantes`) y `pasados` (sin `diasRestantes`). Cada uno trae su materia y la auditoría **con el rol** (`MESA_ENTRADAS` o `PROFESOR`) de quien lo cargó y de quien lo modificó por última vez, y `administrable`: si quien consulta puede editarlo y darlo de baja (mesa de entradas, siempre; el profesor, sólo los de las materias que le dicta a ese alumno). El front muestra editar y eliminar según ese campo.
 
@@ -881,6 +881,36 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
   - **Un examen pendiente por materia:** si el alumno ya tiene un examen `ACTIVO` con fecha `>= hoy` en la misma materia → 409 `EXAMEN_PENDIENTE`, con el existente (`{ id, tipo, fecha }`, sin arreglo) en `details`, para ofrecer editarlo. Un examen pasado no cuenta: después de la fecha, se puede cargar el siguiente.
   - **Profesor:** sólo puede cargar, editar o dar de baja un examen de una materia que le dicta a ese alumno; si no, 403 `SIN_PERMISO`.
 - Errores comunes a los cinco endpoints: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `MESA_ENTRADAS` o `PROFESOR`, o un usuario inhabilitado.
+
+### Nota del examen (HU-34, T-106)
+
+**`PATCH /api/v1/examenes/{id}/nota`** (`MESA_ENTRADAS`; `PROFESOR` con las reglas de HU-17): carga o corrige la nota, con las mismas reglas. Body `{ "resultado": "CON_NOTA", "nota": 7.5 }` o `{ "resultado": "AUSENTE" }`. Devuelve el detalle del examen (`200`).
+
+- `CON_NOTA`: `nota` obligatoria, de 1 a 10 con hasta dos decimales (400 en `nota`). `AUSENTE`: sin `nota` (400 en `nota` si viene) y no cuenta para los promedios.
+- Sólo un examen **ya rendido** (fecha hoy o anterior): uno futuro → 409 `EXAMEN_FUTURO` ("Un examen futuro no admite nota"). Inexistente → 404. El profesor sólo puede cargarla en una materia que le dicta a ese alumno (403).
+- La nota tiene **su propia trazabilidad**, con el rol, como la del examen: `notaCreatedBy` / `notaCreatedAt` (quién la cargó y cuándo) y `notaUpdatedBy` / `notaUpdatedAt` (quién la modificó por última vez). Cargarla o corregirla no cambia la auditoría del examen.
+- Las observaciones se siguen editando con `PATCH /examenes/{id}`.
+
+**En `GET /examenes?alumnoId`** (y en el detalle que devuelven los `PATCH`), cada examen suma `resultado` (`CON_NOTA`, `AUSENTE` o `null`), `nota` (número o `null`) y su trazabilidad (`notaCreatedBy`, `notaCreatedAt`, `notaUpdatedBy`, `notaUpdatedAt`, `null` si no se cargó). El ítem del listado suma además `cargarNota`: si quien consulta puede cargarla (ya rendido y `administrable`; un examen de hoy está en `proximos` y ya admite nota). La respuesta suma `rendidosSinNota`, para "2 exámenes rendidos sin nota". El profesor sigue viendo todos los exámenes del alumno y sólo carga la nota de los suyos (HU-31).
+
+**`GET /api/v1/examenes/mis-examenes?materiaId`** (`ALUMNO`, portal, HU-35): el alumno sale de la sesión. Sin observaciones ni auditoría.
+
+```json
+{
+  "proximo": { "fecha": "2026-10-22", "tipo": "PARCIAL", "diasRestantes": 8 },
+  "rendidos": [
+    { "fecha": "2026-10-01", "tipo": "PARCIAL", "resultado": "CON_NOTA", "nota": 7.5 },
+    { "fecha": "2026-09-20", "tipo": "TRABAJO_PRACTICO", "resultado": "AUSENTE", "nota": null },
+    { "fecha": "2026-09-05", "tipo": "PARCIAL", "resultado": "CON_NOTA", "nota": 9 }
+  ],
+  "promedio": 8.25
+}
+```
+
+- `proximo`: el próximo examen de la materia (a lo sumo uno), con los días que faltan, o `null`.
+- `rendidos`: del más reciente al más antiguo; un examen de hoy pasa a rendidos cuando tiene nota. `resultado` `null` es "Sin nota".
+- `promedio`: de las notas (`CON_NOTA`), sin los ausentes ni los sin nota, con dos decimales; `null` si no hay.
+- Una materia sin exámenes del alumno responde todo vacío. 403 `SIN_PERMISO` para cualquier rol que no sea `ALUMNO` o una cuenta sin alumno.
 
 ## Tablero
 
@@ -1072,16 +1102,16 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
-| Feature       | Endpoints del portal  | Tarea |
-| ------------- | --------------------- | ----- |
-| `ocurrencias` | A completar por T-84  | T-84  |
-| `alumnos`     | A completar por T-88  | T-88  |
-| `usuarios`    | A completar por T-91  | T-91  |
-| `turnos`      | A completar por T-93  | T-93  |
-| `pagos`       | A completar por T-98  | T-98  |
-| `cuentas`     | A completar por T-101 | T-101 |
-| `examenes`    | A completar por T-106 | T-106 |
-| `historiales` | A completar por T-108 | T-108 |
+| Feature       | Endpoints del portal                                                              | Tarea |
+| ------------- | --------------------------------------------------------------------------------- | ----- |
+| `ocurrencias` | A completar por T-84                                                              | T-84  |
+| `alumnos`     | A completar por T-88                                                              | T-88  |
+| `usuarios`    | A completar por T-91                                                              | T-91  |
+| `turnos`      | A completar por T-93                                                              | T-93  |
+| `pagos`       | A completar por T-98                                                              | T-98  |
+| `cuentas`     | A completar por T-101                                                             | T-101 |
+| `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106)) | T-106 |
+| `historiales` | A completar por T-108                                                             | T-108 |
 
 ## Documentos PDF
 
@@ -1186,6 +1216,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `PROFESOR_INACTIVO`      | El mensaje depende de la operación: "El profesor está inactivo: no se le pueden asignar materias" (materias), "… no se le puede cargar un bloque" (bloques) o "… no se le pueden asignar turnos" (turnos). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |
 | 409    | `TURNOS_VIGENTES`        | `details` según el recurso: al quitar materias de un profesor, una entrada por cada una con turnos vigentes (no cancelados), con `path` `["materiaIds", <posición>]`, `message` y `cantidad`; al dar de baja varias horas de un bloque (`DELETE /bloques`), lo mismo con `path` `["bloqueIds", <posición>]`; al editar o dar de baja una sola hora (un solo recurso, no una lista), `{ "cantidad" }` directo; al dar de baja un profesor, un arreglo con cada turno vigente: `{ "alumno": { "id", "nombre", "apellido" }, "materia": { "id", "nombre" }, "tipo", "fecha", "fechaFin", "horaInicio", "horaFin" }` (`fecha` es la de inicio; `fechaFin` es `null` en un recurrente sin fin)                                                                                                                                                       |
 | 409    | `MATERIA_INACTIVA`       | Al asignar materias a un profesor, `details`: una entrada por cada materia inactiva pedida, con `path` `["materiaIds", <posición>]`. Al registrar un turno, `[{ "path": ["materiaId"], "message" }]`. En la disponibilidad de turnos, sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| 409    | `EXAMEN_FUTURO`          | "Un examen futuro no admite nota", al cargar o corregir la nota de un examen con fecha posterior a hoy (`PATCH /examenes/{id}/nota`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | 409    | `MATERIA_SIN_TURNOS`     | "El alumno no tiene turnos próximos de esa materia", al cargar un examen o moverlo a otra materia. `details`: `[{ "path": ["materiaId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
 | 409    | `MATERIA_CON_PROFESORES` | "No se puede dar de baja una materia con profesores asignados". `details`: los profesores con una asignación activa, `[{ "id", "apellido", "nombre", "estado" }]`, para que la UI los liste y enlace a su ficha                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 409    | `MATERIA_SIN_PRECIO`     | "La materia no tiene precio: cárguelo antes de reactivarla", al reactivar una materia sin precio (`PATCH /materias/{id}/reactivacion`): primero hay que cargarle el precio con `PATCH /materias/{id}`. Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |

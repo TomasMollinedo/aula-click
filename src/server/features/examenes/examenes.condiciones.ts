@@ -1,8 +1,9 @@
 import type { Prisma, TipoExamen } from '@/generated/prisma/client'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 
-// Regla y lectura de la **prioridad del turno** (HU-18, docs/dominio.md → Prioridad), que usan
-// otras features (`ocurrencias` y `agendas`) desde sus repositories (decisión T-39). Es la única
+// Regla y lectura de la **prioridad del turno** (HU-18, docs/dominio.md → Prioridad) y lectura de
+// los exámenes de un período con su nota (HU-34), que usan otras features (`ocurrencias`, `agendas`
+// e `historiales`, T-110) desde sus repositories (decisión T-39). Es la única
 // implementación: nunca se reescribe en otra feature. No crea el cliente de Prisma (lo recibe): de
 // Prisma solo importa tipos.
 //
@@ -144,4 +145,55 @@ export async function leerPrioridades(
     })
   }
   return resultado
+}
+
+/** Un examen del período, con su resultado (lo usa el PDF del historial, T-110). */
+export interface ExamenDelPeriodo {
+  id: number
+  materiaId: number
+  materiaNombre: string
+  fecha: string
+  tipo: TipoExamen
+  resultado: 'CON_NOTA' | 'AUSENTE' | null
+  nota: number | null
+}
+
+/**
+ * Exámenes `ACTIVO` del alumno con fecha en `[desde, hasta]` (`YYYY-MM-DD`, extremos incluidos),
+ * opcionalmente de esas materias, con su resultado y su nota (HU-34). Una sola consulta, por fecha
+ * e id. Lanza `RangeError` si una fecha es inválida, antes de consultar.
+ */
+export async function leerExamenesDelPeriodo(
+  client: ClienteExamenes,
+  filtro: { alumnoId: number; desde: string; hasta: string; materiaIds?: number[] },
+): Promise<ExamenDelPeriodo[]> {
+  const desde = fechaADate(filtro.desde)
+  const hasta = fechaADate(filtro.hasta)
+  const examenes = await client.examen.findMany({
+    where: {
+      estado: 'ACTIVO',
+      alumnoId: filtro.alumnoId,
+      fecha: { gte: desde, lte: hasta },
+      ...(filtro.materiaIds === undefined ? {} : { materiaId: { in: filtro.materiaIds } }),
+    },
+    select: {
+      id: true,
+      materiaId: true,
+      fecha: true,
+      tipo: true,
+      resultado: true,
+      nota: true,
+      materia: { select: { nombre: true } },
+    },
+    orderBy: [{ fecha: 'asc' }, { id: 'asc' }],
+  })
+  return examenes.map((e) => ({
+    id: e.id,
+    materiaId: e.materiaId,
+    materiaNombre: e.materia.nombre,
+    fecha: dateAFecha(e.fecha),
+    tipo: e.tipo,
+    resultado: e.resultado,
+    nota: e.nota === null ? null : e.nota.toNumber(),
+  }))
 }

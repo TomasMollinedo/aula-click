@@ -19,6 +19,20 @@ export const TIPOS_EXAMEN = [
 
 export type TipoExamen = (typeof TIPOS_EXAMEN)[number]
 
+/** Mismos valores que el enum `ResultadoExamen` de Prisma (T-72). */
+export const RESULTADOS_EXAMEN = ['CON_NOTA', 'AUSENTE'] as const
+
+export type ResultadoExamen = (typeof RESULTADOS_EXAMEN)[number]
+
+/** Rango de la nota (HU-34): de 1 a 10, con hasta dos decimales. */
+export const NOTA_MINIMA = 1
+export const NOTA_MAXIMA = 10
+
+/** Tiene a lo sumo dos decimales (tolerando el error de punto flotante de 7.15 * 100). */
+function conHastaDosDecimales(nota: number): boolean {
+  return Math.abs(nota * 100 - Math.round(nota * 100)) < 1e-9
+}
+
 const idPositivo = (descripcion: string, ejemplo: number) =>
   z
     .number({ error: 'Debe ser un número' })
@@ -79,6 +93,57 @@ export const editarExamenSchema = crearExamenSchema
 export type EditarExamen = z.infer<typeof editarExamenSchema>
 
 /**
+ * Body de `PATCH /examenes/{id}/nota` (HU-34): `CON_NOTA` con una nota de 1 a 10 y hasta dos
+ * decimales, o `AUSENTE` sin nota. Cargar y corregir usan el mismo body.
+ */
+export const cargarNotaSchema = z
+  .object({
+    resultado: z
+      .enum(RESULTADOS_EXAMEN, { error: 'Resultado inválido: debe ser CON_NOTA o AUSENTE' })
+      .openapi({ example: 'CON_NOTA' }),
+    nota: z.number({ error: 'Debe ser un número' }).nullable().optional().openapi({
+      description: 'De 1 a 10, con hasta dos decimales. Solo con CON_NOTA',
+      example: 7.5,
+    }),
+  })
+  .superRefine((datos, ctx) => {
+    const nota = datos.nota ?? null
+    if (datos.resultado === 'AUSENTE') {
+      if (nota !== null) {
+        ctx.addIssue({ code: 'custom', path: ['nota'], message: 'Un ausente no lleva nota' })
+      }
+      return
+    }
+    if (nota === null) {
+      ctx.addIssue({ code: 'custom', path: ['nota'], message: 'La nota es obligatoria' })
+    } else if (nota < NOTA_MINIMA || nota > NOTA_MAXIMA || !conHastaDosDecimales(nota)) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['nota'],
+        message: 'La nota tiene que ser de 1 a 10, con hasta dos decimales',
+      })
+    }
+  })
+  .openapi('ExamenNotaCargar')
+
+export type CargarNota = z.infer<typeof cargarNotaSchema>
+
+/** Query de `GET /examenes/mis-examenes` (portal): siempre de una materia. */
+export const misExamenesQuerySchema = z.object({
+  materiaId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .openapi({
+      param: { name: 'materiaId', in: 'query' },
+      description: 'Id de la materia',
+      example: 3,
+    }),
+})
+
+export type MisExamenesQuery = z.infer<typeof misExamenesQuerySchema>
+
+/**
  * Usuario de auditoría de un examen, con su rol (HU-17): a diferencia de `UsuarioAuditoria`
  * (`shared/auditoria.ts`), acá importa **quién** lo cargó o modificó (mesa o profesor), no sólo su
  * nombre. Por eso no se reutiliza el schema compartido: es una necesidad propia de esta feature.
@@ -118,6 +183,37 @@ export type ExamenGuardado = {
   updatedAt: string
   createdBy: ExamenUsuarioAuditoria | null
   updatedBy: ExamenUsuarioAuditoria | null
+} & NotaDeExamen
+
+/** La nota de un examen (HU-34) con su trazabilidad propia; todo `null` si no se cargó. */
+export type NotaDeExamen = {
+  resultado: ResultadoExamen | null
+  nota: number | null
+  notaCreatedAt: string | null
+  notaUpdatedAt: string | null
+  notaCreatedBy: ExamenUsuarioAuditoria | null
+  notaUpdatedBy: ExamenUsuarioAuditoria | null
+}
+
+/** Campos de la nota en el ítem y el detalle (HU-34). */
+const camposNota = {
+  resultado: z.enum(RESULTADOS_EXAMEN).nullable().openapi({
+    description: 'CON_NOTA o AUSENTE; `null` si no se cargó',
+  }),
+  nota: z
+    .number()
+    .nullable()
+    .openapi({ description: 'De 1 a 10; `null` si es ausente o no se cargó' }),
+  notaCreatedAt: z.iso.datetime().nullable().openapi({ description: 'Cuándo se cargó la nota' }),
+  notaUpdatedAt: z.iso.datetime().nullable().openapi({
+    description: 'Cuándo se modificó la nota por última vez',
+  }),
+  notaCreatedBy: examenUsuarioAuditoriaSchema
+    .nullable()
+    .openapi({ description: 'Quién cargó la nota' }),
+  notaUpdatedBy: examenUsuarioAuditoriaSchema.nullable().openapi({
+    description: 'Quién modificó la nota por última vez',
+  }),
 }
 
 /** Ítem de `GET /examenes`: sin `alumnoId` (ya se pidió por query) y con `diasRestantes`. */
@@ -137,6 +233,11 @@ export const examenItemSchema = z
       description:
         'Quien consulta puede editarlo y darlo de baja: mesa de entradas, siempre; el profesor, si le dicta esa materia al alumno',
     }),
+    ...camposNota,
+    cargarNota: z.boolean().openapi({
+      description:
+        'Quien consulta puede cargar o corregir la nota: el examen ya se rindió (fecha hoy o anterior) y es administrable',
+    }),
     createdAt: instante,
     updatedAt: instante,
     createdBy: examenUsuarioAuditoriaSchema.nullable(),
@@ -151,6 +252,10 @@ export const examenesListadoSchema = z
   .object({
     proximos: z.array(examenItemSchema),
     pasados: z.array(examenItemSchema),
+    rendidosSinNota: z.number().int().openapi({
+      description: 'Exámenes ya rendidos (fecha hoy o anterior) sin nota cargada',
+      example: 2,
+    }),
   })
   .openapi('ExamenesListado')
 
@@ -168,6 +273,7 @@ export const examenDetalleSchema = z
     pasado: z.boolean().openapi({
       description: 'La fecha ya pasó: una fecha pasada se acepta, pero se avisa en el front',
     }),
+    ...camposNota,
     createdAt: instante,
     updatedAt: instante,
     createdBy: examenUsuarioAuditoriaSchema.nullable(),
@@ -191,3 +297,39 @@ export type MateriasExamenSelector = z.infer<typeof materiasExamenSelectorSchema
 
 /** El existente de un 409 `EXAMEN_PENDIENTE` (`details`), para ofrecer editarlo. */
 export type ExamenPendiente = { id: number; tipo: TipoExamen; fecha: string }
+
+/** Un examen rendido en el portal: sin observaciones ni auditoría (HU-35). */
+export const miExamenRendidoSchema = z
+  .object({
+    fecha: fechaISO,
+    tipo: z.enum(TIPOS_EXAMEN),
+    resultado: z.enum(RESULTADOS_EXAMEN).nullable().openapi({
+      description: 'CON_NOTA (con `nota`), AUSENTE, o `null` si todavía no tiene nota ("Sin nota")',
+    }),
+    nota: z.number().nullable(),
+  })
+  .openapi('MiExamenRendido')
+
+/** `GET /examenes/mis-examenes?materiaId` (HU-35): el próximo, los rendidos y el promedio. */
+export const misExamenesSchema = z
+  .object({
+    proximo: z
+      .object({
+        fecha: fechaISO,
+        tipo: z.enum(TIPOS_EXAMEN),
+        diasRestantes: z.number().int().openapi({ description: 'Días que faltan (0 = hoy)' }),
+      })
+      .nullable()
+      .openapi({ description: 'El próximo examen de la materia (a lo sumo uno), o null' }),
+    rendidos: z.array(miExamenRendidoSchema).openapi({
+      description: 'Del más reciente al más antiguo',
+    }),
+    promedio: z.number().nullable().openapi({
+      description:
+        'Promedio de las notas, sin los ausentes ni los sin nota (dos decimales), o null',
+      example: 7.25,
+    }),
+  })
+  .openapi('MisExamenes')
+
+export type MisExamenes = z.infer<typeof misExamenesSchema>
