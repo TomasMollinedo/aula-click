@@ -135,6 +135,74 @@ describe('cancelar', () => {
     expect(error.details).toEqual([expect.objectContaining({ motivo: 'PASADO', turnoId: 60 })])
   })
 
+  it('una de hoy con asistencia (REALIZADO) → 409 CON_ASISTENCIA, no PASADO, y no cancela ninguna', async () => {
+    base.push(ocurrencia({ turnoId: 60, fecha: '2026-10-05', estado: 'REALIZADO' }))
+
+    const error = await errorDe(
+      service.cancelar(
+        pedido({
+          ocurrencias: [
+            { turnoId: 41, fecha: '2026-10-12' },
+            { turnoId: 60, fecha: '2026-10-05' },
+          ],
+        }),
+        actor,
+      ),
+    )
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect(error.code).toBe('TURNOS_NO_CANCELABLES')
+    expect(error.details).toEqual([
+      {
+        path: ['ocurrencias', 1],
+        message: 'El turno tiene asistencia registrada: no se puede cancelar',
+        turnoId: 60,
+        fecha: '2026-10-05',
+        motivo: 'CON_ASISTENCIA',
+      },
+    ])
+    expect(memoria.canceladas.size).toBe(0)
+  })
+
+  it('una pasada con asistencia (AUSENTE) → CON_ASISTENCIA, no PASADO', async () => {
+    base.push(ocurrencia({ turnoId: 60, fecha: '2026-10-01', estado: 'AUSENTE' }))
+
+    const error = await errorDe(
+      service.cancelar(pedido({ ocurrencias: [{ turnoId: 60, fecha: '2026-10-01' }] }), actor),
+    )
+
+    expect(error.details).toEqual([expect.objectContaining({ motivo: 'CON_ASISTENCIA' })])
+  })
+
+  it('con asistencia y pagada → CON_ASISTENCIA (anular el pago no la vuelve cancelable)', async () => {
+    base.push(
+      ocurrencia({
+        turnoId: 60,
+        fecha: '2026-10-05',
+        estado: 'REALIZADO',
+        pago: { estado: 'PAGADO', pagoId: 31 },
+      }),
+    )
+
+    const error = await errorDe(
+      service.cancelar(pedido({ ocurrencias: [{ turnoId: 60, fecha: '2026-10-05' }] }), actor),
+    )
+
+    expect(error.details).toEqual([
+      expect.objectContaining({ motivo: 'CON_ASISTENCIA', turnoId: 60 }),
+    ])
+    expect(error.details).toEqual([expect.not.objectContaining({ pagoId: 31 })])
+  })
+
+  it('con el pago anulado (el motor la devuelve PENDIENTE, T-74) se vuelve a poder cancelar', async () => {
+    // Un pago anulado no es vigente: `leerOcurrencias` informa la ocurrencia como PENDIENTE y
+    // sin pagoId. La cancelación no mira la anulación: decide con lo que dice el motor.
+    base[0] = ocurrencia({ pago: { estado: 'PENDIENTE' } })
+
+    expect(await service.cancelar(pedido(), actor)).toEqual({ cantidad: 1 })
+    expect([...memoria.canceladas.keys()]).toEqual(['41|2026-10-12'])
+  })
+
   it('una ya cancelada → 409 YA_CANCELADO', async () => {
     base[0] = ocurrencia({ estado: 'CANCELADO' })
 
