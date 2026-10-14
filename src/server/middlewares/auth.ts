@@ -4,7 +4,7 @@ import { auth } from '@/lib/auth'
 import { MENSAJE_USUARIO_INHABILITADO, USUARIO_INHABILITADO } from '@/lib/auth-reglas'
 import { ForbiddenError, UnauthorizedError } from '@/server/errors'
 import type { AppEnv } from '@/server/router'
-import { esRole, type Role } from '@/server/shared/actor'
+import { type Actor, esRole, type Role } from '@/server/shared/actor'
 
 async function obtenerSesion(headers: Headers) {
   try {
@@ -18,10 +18,21 @@ async function obtenerSesion(headers: Headers) {
   }
 }
 
+// El alumno sale de la sesión (Usuario.alumnoId), sin consultar la base. Solo lo lleva el rol
+// ALUMNO: un ALUMNO sin alumno es una cuenta mal formada y no entra al portal.
+function crearActor(user: { id: string; role: Role; alumnoId?: number | null }): Actor {
+  if (user.role !== 'ALUMNO') return { userId: user.id, role: user.role }
+  if (typeof user.alumnoId !== 'number') {
+    throw new ForbiddenError('No tenés permiso para esta operación')
+  }
+  return { userId: user.id, role: user.role, alumnoId: user.alumnoId }
+}
+
 /**
  * Exige una sesión válida y deja `user`, `session` y `actor` en el contexto. Chequea, en orden:
  * sesión (401 NO_AUTENTICADO) → estado del usuario (403 USUARIO_INHABILITADO) → rol (403
- * SIN_PERMISO si no es uno de ROLES). Responde en JSON; nunca redirige (eso es del proxy).
+ * SIN_PERMISO si no es uno de ROLES) → alumno de una cuenta ALUMNO (403 SIN_PERMISO si no
+ * tiene). Responde en JSON; nunca redirige (eso es del proxy).
  */
 export const requireAuth = () =>
   createMiddleware<AppEnv>(async (c, next) => {
@@ -48,7 +59,7 @@ export const requireAuth = () =>
 
     c.set('user', user)
     c.set('session', session)
-    c.set('actor', { userId: user.id, role: user.role })
+    c.set('actor', crearActor(user))
     await next()
   })
 

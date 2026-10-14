@@ -160,11 +160,13 @@ user: {
   additionalFields: {
     role: { type: [...ROLES], required: true, input: false }, // Session['user']['role'] es Role
     // apellido, dni, busqueda, telefono y estado: { type: 'string', required: true, input: false }
+    alumnoId: { type: 'number', required: false, input: false }, // solo rol ALUMNO
   },
 },
+plugins: [openAPI(), username(OPCIONES_USUARIO), nextCookies()],
 ```
 
-Las constantes y reglas que no necesitan la instancia de Better Auth viven en **`src/lib/auth-reglas.ts`**, que no importa `env`, Prisma ni `auth.ts` (así se testean sin base ni variables de entorno): tiempos de sesión, largos de contraseña, el código y el mensaje de usuario inhabilitado, `crearGuardaSesion()` y `forzarRecordarSesion()`.
+Las constantes y reglas que no necesitan la instancia de Better Auth viven en **`src/lib/auth-reglas.ts`**, que no importa `env`, Prisma ni `auth.ts` (así se testean sin base ni variables de entorno): tiempos de sesión, largos de contraseña y de usuario, las opciones del plugin `username`, el código y el mensaje de usuario inhabilitado, `crearGuardaSesion()` y `forzarRecordarSesion()`. `src/lib/__tests__/ingreso-usuario.test.ts` prueba el ingreso con usuario contra Better Auth real con el adaptador en memoria y esas mismas reglas.
 
 - `Session`, `Account` y `Verification` conservan los nombres de modelo y de campo de Better Auth (son infraestructura); sus tablas y columnas se mapean a snake_case. `Usuario` no tiene contraseña: vive en `Account.password`, con `providerId: 'credential'` y `accountId` = id del usuario.
 - `input: false` impide que alguien se asigne un rol o un dato de dominio al registrarse; con `required: true`, un alta por la API pública responde 400 en lugar de fallar en la base. No hay `defaultValue` de rol: la cuenta se crea con su rol explícito.
@@ -174,16 +176,27 @@ Las constantes y reglas que no necesitan la instancia de Better Auth viven en **
 - **Contraseña:** `minPasswordLength` / `maxPasswordLength` se configuran explícitos con `LARGO_MINIMO_PASSWORD` (8) y `LARGO_MAXIMO_PASSWORD` (128), los defaults de Better Auth. Quien crea una cuenta desde el servidor valida con esas mismas constantes.
 - **Credenciales incorrectas:** Better Auth (`signInEmail`) responde siempre 401 `INVALID_EMAIL_OR_PASSWORD`, sea que el email no exista, que la cuenta no tenga contraseña o que la contraseña no coincida; cuando el usuario no existe igual hashea, para igualar tiempos. No se reimplementa. Un email con formato inválido da 400 `INVALID_EMAIL`, que no revela si la cuenta existe.
 
+### Ingreso del alumno con usuario
+
+El personal ingresa con su email (`POST /api/auth/sign-in/email`); el alumno, con su usuario (`POST /api/auth/sign-in/username`, plugin `username` de Better Auth, HU-28). Es el mismo `Usuario` con rol `ALUMNO`, `username` y `alumnoId` (decisiones T-131 y T-132).
+
+- **Opciones del plugin** (`OPCIONES_USUARIO` de `auth-reglas.ts`): largo entre `LARGO_MINIMO_USUARIO` (3) y `LARGO_MAXIMO_USUARIO` (50, porque el default de 30 no alcanza para un apellido compuesto con sufijo) y `esUsuarioValido()`: minúsculas, números, `.` y `-` (el validador del plugin rechaza el guion de "jperez456-2"). La normalización a minúsculas es la del plugin.
+- **Un usuario de formato inválido** responde 422 (`USERNAME_TOO_SHORT`, `USERNAME_TOO_LONG` o `INVALID_USERNAME`) **antes de mirar la contraseña**; uno inexistente o con contraseña incorrecta, 401 `INVALID_USERNAME_OR_PASSWORD` (también hashea si no existe). Ninguno revela si la cuenta existe y la UI muestra lo mismo para todos (`contrato-api.md` → Autenticación).
+- **Contraseña inicial:** el DNI del alumno, que puede tener 7 dígitos. El ingreso no mide el largo de la contraseña (en Better Auth 1.7.5 solo lo miden el alta, el cambio y el restablecimiento), y el alta de la cuenta la hashea con `hashPassword()`, sin pasar por esas rutas. `LARGO_MINIMO_PASSWORD` (8) sí rige para la contraseña nueva.
+- **El usuario no cambia** (HU-27). El plugin no declara `username` como `input: false`, así que `POST /api/auth/update-user` dejaría que un usuario con sesión se cambie el suyo. Con `immutableUsername: true` (en `OPCIONES_USUARIO`) responde 400 `USERNAME_IS_IMMUTABLE` a quien ya tiene usuario.
+- `rememberMe`, la guarda de usuario inhabilitado y la sesión por inactividad valen igual que con email (secciones siguientes).
+- **`actor.alumnoId`:** `requireAuth()` lo toma de `user.alumnoId` de la sesión, sin consultar la base, y solo para el rol `ALUMNO`. Una cuenta `ALUMNO` sin `alumnoId` está mal formada: 403 `SIN_PERMISO`. Los endpoints del portal (`mis-…` / `mi-…`) obtienen el alumno con **`alumnoDeLaSesion(actor)`** de `src/server/shared/actor.ts`, que devuelve el `alumnoId` o lanza 403 `SIN_PERMISO`; ninguno repite el chequeo ni recibe un `alumnoId` por parámetro.
+
 ### Sesión por inactividad
 
 - `session.expiresIn = SESION_INACTIVIDAD_SEGUNDOS` (60 min, decisión T-24) y `session.updateAge = SESION_RENOVACION_SEGUNDOS` (5 min). Cada pedido que valida la sesión (`getSession`) la renueva si pasaron más de `updateAge` desde la última renovación: `expiresAt = ahora + 60 min` en la base y la cookie se reemite con `Max-Age` nuevo. Sin uso, vence entre 55 y 60 minutos después del último pedido. Cada renovación es una escritura en `session`: `updateAge` equilibra ese costo contra la precisión del vencimiento.
 - **`requireAuth()` reenvía los `Set-Cookie`** que devuelve `getSession` (lo llama con `returnHeaders: true`), también cuando responde 401 o 403. Sin eso, la renovación extendería la sesión en la base pero la cookie del navegador vencería a los 60 min del login, y el vencimiento pasaría a ser absoluto.
-- **`rememberMe` se ignora.** Con `rememberMe: false`, Better Auth fija la sesión en 1 día y deja una cookie `dont_remember` que desactiva la renovación. Un `hooks.before` sobre `/sign-in/email` (`forzarRecordarSesion()`) lo cambia a `true` del lado del servidor.
+- **`rememberMe` se ignora.** Con `rememberMe: false`, Better Auth fija la sesión en 1 día y deja una cookie `dont_remember` que desactiva la renovación. Un `hooks.before` sobre `/sign-in/email` y `/sign-in/username` (`forzarRecordarSesion()`) lo cambia a `true` del lado del servidor.
 - Sin `cookieCache`: con caché, un usuario dado de baja seguiría pasando hasta que venciera.
 
 ### Usuario inactivo
 
-- **En el login:** `databaseHooks.session.create.before` corre `crearGuardaSesion()`, que lee `Usuario.estado` con Prisma y, si no es `ACTIVO` (o el usuario no existe), lanza 403 `USUARIO_INHABILITADO` ("Su usuario no está habilitado") y la sesión no se crea. Va ahí porque `signInEmail` crea la sesión **después** de verificar la contraseña: con una contraseña incorrecta, el usuario inactivo recibe el mismo 401 que cualquiera y no se filtra que el email existe.
+- **En el login:** `databaseHooks.session.create.before` corre `crearGuardaSesion()`, que lee `Usuario.estado` con Prisma y, si no es `ACTIVO` (o el usuario no existe), lanza 403 `USUARIO_INHABILITADO` ("Su usuario no está habilitado") y la sesión no se crea. Va ahí porque `signInEmail` y `signInUsername` crean la sesión **después** de verificar la contraseña: con una contraseña incorrecta, el usuario inactivo recibe el mismo 401 que cualquiera y no se filtra que el email o el usuario existe (lo prueba `ingreso-usuario.test.ts`).
 - **Con la sesión abierta:** `requireAuth()` vuelve a mirar `user.estado` en cada pedido a `/api/v1` (defensa en profundidad).
 - Vale para cualquier `Usuario` (la baja del profesor es la de su usuario, T-22).
 - Dar de baja a un usuario **debe revocar sus sesiones** (tabla `session`); lo hace la tarea que implementa la baja.
@@ -195,7 +208,7 @@ Hay dos chequeos separados:
 - **`src/proxy.ts`** solo redirige a `/login` si no hay cookie de sesión (`getSessionCookie`, que verifica presencia, no validez). Nunca decide roles ni agrega parámetros a la redirección. Es código que puede correr separado de la app: no importa módulos del proyecto.
   - Protege **todas** las rutas salvo `/login`, `/api/*`, los internos de Next (`/_next/static`, `/_next/image`) y los archivos estáticos (toda ruta con un punto, como `/favicon.ico`), con un `matcher` negativo, para que una sección nueva quede protegida sin tocar el proxy: `'/((?!login(?:/|$)|api(?:/|$)|_next/static|_next/image|.*\\..*).*)'`. `login` y `api` van delimitados para no excluir `/loginx`. Consecuencia del criterio de estáticos: una página con un punto en la URL no pasa por el proxy (la API igual exige sesión).
 - **`src/server/middlewares/auth.ts`**:
-  - `requireAuth()` llama a `getSession`, reenvía los `Set-Cookie` y chequea en orden: sin sesión → 401 `NO_AUTENTICADO`; `estado` distinto de `ACTIVO` → 403 `USUARIO_INHABILITADO`; rol que no pasa `esRole` (null, vacío o fuera de `ROLES`) → 403 `SIN_PERMISO`. Si todo pasa, deja `user`, `session` y `actor` (`{ userId, role }`) en el contexto.
+  - `requireAuth()` llama a `getSession`, reenvía los `Set-Cookie` y chequea en orden: sin sesión → 401 `NO_AUTENTICADO`; `estado` distinto de `ACTIVO` → 403 `USUARIO_INHABILITADO`; rol que no pasa `esRole` (null, vacío o fuera de `ROLES`) → 403 `SIN_PERMISO`; rol `ALUMNO` sin `alumnoId` → 403 `SIN_PERMISO`. Si todo pasa, deja `user`, `session` y `actor` (`{ userId, role }`, más `alumnoId` para el rol `ALUMNO`) en el contexto.
   - `requireRole(...roles: [Role, ...Role[]])` va después de `requireAuth()`: exige al menos un rol y solo valores de `ROLES` (un rol mal escrito no compila) y lanza 403 `SIN_PERMISO` si el rol del `Actor` no está en la lista. Usado sin `requireAuth()` antes es un error de programación: se registra en consola y responde 500 genérico.
   - Cada endpoint privado declara su rol.
 
@@ -266,17 +279,20 @@ sequenceDiagram
 
 `/api/auth/*` responde con el formato de Better Auth, `{ "code", "message" }` (el `authClient` lo expone como `error.code` / `error.message`, con `message` en inglés). `/api/v1/*` responde con `{ "error": { "code", "message" } }`. Los códigos son los de [`contrato-api.md`](./contrato-api.md#errores) → Errores y Autenticación.
 
-| Situación                                                 | Dónde se decide                                 | Status | `code`                            | Formato del cuerpo             | Qué hace la UI (T-04)                      |
-| --------------------------------------------------------- | ----------------------------------------------- | ------ | --------------------------------- | ------------------------------ | ------------------------------------------ |
-| Credenciales incorrectas (email inexistente o clave mala) | Better Auth, `signInEmail`                      | 401    | `INVALID_EMAIL_OR_PASSWORD`       | Better Auth                    | "Usuario o contraseña incorrectos"         |
-| Usuario inactivo en el login (clave correcta)             | `session.create.before` → `crearGuardaSesion()` | 403    | `USUARIO_INHABILITADO`            | Better Auth                    | "Su usuario no está habilitado"            |
-| Usuario inactivo con sesión abierta                       | `requireAuth()`                                 | 403    | `USUARIO_INHABILITADO`            | `{ error: { code, message } }` | Mensaje del 403 y cierre de sesión         |
-| Registro público                                          | Better Auth, `disableSignUp`                    | 400    | `EMAIL_PASSWORD_SIGN_UP_DISABLED` | Better Auth                    | No hay pantalla de registro                |
-| Sin cookie en una página                                  | `proxy.ts`                                      | 307    | —                                 | Redirección a `/login`         | Muestra el login                           |
-| Sesión vencida o inválida en `/api/v1`                    | `requireAuth()`                                 | 401    | `NO_AUTENTICADO`                  | `{ error: { code, message } }` | Redirige a `/login` con "Tu sesión expiró" |
-| Usuario sin rol o con rol inválido                        | `requireAuth()` (`esRole`)                      | 403    | `SIN_PERMISO`                     | `{ error: { code, message } }` | Mensaje de sin permiso                     |
-| Rol no permitido para el endpoint                         | `requireRole(...)`                              | 403    | `SIN_PERMISO`                     | `{ error: { code, message } }` | Mensaje de sin permiso                     |
-| `requireRole` usado sin `requireAuth` (error de código)   | `requireRole` → `errorHandler`                  | 500    | `ERROR_INTERNO`                   | `{ error: { code, message } }` | Error genérico                             |
+| Situación                                                 | Dónde se decide                                    | Status | `code`                                                        | Formato del cuerpo             | Qué hace la UI (T-04)                      |
+| --------------------------------------------------------- | -------------------------------------------------- | ------ | ------------------------------------------------------------- | ------------------------------ | ------------------------------------------ |
+| Credenciales incorrectas (email inexistente o clave mala) | Better Auth, `signInEmail`                         | 401    | `INVALID_EMAIL_OR_PASSWORD`                                   | Better Auth                    | "Usuario o contraseña incorrectos"         |
+| Usuario inexistente o clave mala (alumno)                 | Better Auth, `signInUsername`                      | 401    | `INVALID_USERNAME_OR_PASSWORD`                                | Better Auth                    | "Usuario o contraseña incorrectos"         |
+| Usuario de largo o formato inválido (alumno)              | Better Auth, `signInUsername` (`OPCIONES_USUARIO`) | 422    | `USERNAME_TOO_SHORT`, `USERNAME_TOO_LONG`, `INVALID_USERNAME` | Better Auth                    | "Usuario o contraseña incorrectos"         |
+| Usuario inactivo en el login (clave correcta)             | `session.create.before` → `crearGuardaSesion()`    | 403    | `USUARIO_INHABILITADO`                                        | Better Auth                    | "Su usuario no está habilitado"            |
+| Usuario inactivo con sesión abierta                       | `requireAuth()`                                    | 403    | `USUARIO_INHABILITADO`                                        | `{ error: { code, message } }` | Mensaje del 403 y cierre de sesión         |
+| Registro público                                          | Better Auth, `disableSignUp`                       | 400    | `EMAIL_PASSWORD_SIGN_UP_DISABLED`                             | Better Auth                    | No hay pantalla de registro                |
+| Sin cookie en una página                                  | `proxy.ts`                                         | 307    | —                                                             | Redirección a `/login`         | Muestra el login                           |
+| Sesión vencida o inválida en `/api/v1`                    | `requireAuth()`                                    | 401    | `NO_AUTENTICADO`                                              | `{ error: { code, message } }` | Redirige a `/login` con "Tu sesión expiró" |
+| Usuario sin rol o con rol inválido                        | `requireAuth()` (`esRole`)                         | 403    | `SIN_PERMISO`                                                 | `{ error: { code, message } }` | Mensaje de sin permiso                     |
+| Rol no permitido para el endpoint                         | `requireRole(...)`                                 | 403    | `SIN_PERMISO`                                                 | `{ error: { code, message } }` | Mensaje de sin permiso                     |
+| Cuenta `ALUMNO` sin alumno vinculado                      | `requireAuth()`                                    | 403    | `SIN_PERMISO`                                                 | `{ error: { code, message } }` | Mensaje de sin permiso                     |
+| `requireRole` usado sin `requireAuth` (error de código)   | `requireRole` → `errorHandler`                     | 500    | `ERROR_INTERNO`                                               | `{ error: { code, message } }` | Error genérico                             |
 
 ### Cambios frecuentes
 

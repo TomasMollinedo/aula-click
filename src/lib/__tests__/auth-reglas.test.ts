@@ -2,10 +2,14 @@ import { APIError } from 'better-auth/api'
 import { describe, expect, it, vi } from 'vitest'
 import {
   crearGuardaSesion,
+  esUsuarioValido,
   forzarRecordarSesion,
   LARGO_MAXIMO_PASSWORD,
+  LARGO_MAXIMO_USUARIO,
   LARGO_MINIMO_PASSWORD,
+  LARGO_MINIMO_USUARIO,
   MENSAJE_USUARIO_INHABILITADO,
+  OPCIONES_USUARIO,
   SESION_INACTIVIDAD_SEGUNDOS,
   SESION_RENOVACION_SEGUNDOS,
   USUARIO_INHABILITADO,
@@ -47,14 +51,54 @@ describe('forzarRecordarSesion', () => {
     expect(forzarRecordarSesion('/sign-in/email', body)).toEqual({ ...body, rememberMe: true })
   })
 
+  it('cambia rememberMe: false por true también en /sign-in/username (alumno)', () => {
+    const body = { username: 'jperez456', password: '45123456', rememberMe: false }
+    expect(forzarRecordarSesion('/sign-in/username', body)).toEqual({ ...body, rememberMe: true })
+  })
+
   it.each([
     ['otra ruta', '/sign-up/email', { rememberMe: false }],
+    ['ruta sin path', undefined, { rememberMe: false }],
+    ['usuario sin rememberMe', '/sign-in/username', { username: 'jperez456' }],
     ['sin rememberMe', '/sign-in/email', { email: 'a@b.com' }],
     ['rememberMe: true', '/sign-in/email', { rememberMe: true }],
     ['sin cuerpo', '/sign-in/email', undefined],
     ['cuerpo que no es objeto', '/sign-in/email', 'texto'],
   ])('no cambia nada con %s', (_caso, path, body) => {
     expect(forzarRecordarSesion(path, body)).toBeUndefined()
+  })
+})
+
+describe('esUsuarioValido', () => {
+  it.each([
+    ['el usuario de HU-27', 'jperez456'],
+    ['con sufijo de usuario repetido (guion)', 'jperez456-2'],
+    ['con punto', 'j.perez456'],
+    ['un apellido compuesto largo', 'jfernandezdelacolina456-2'],
+  ])('acepta %s', (_caso, usuario) => {
+    expect(esUsuarioValido(usuario)).toBe(true)
+  })
+
+  it.each([
+    ['con mayúsculas', 'JPerez456'],
+    ['con tilde', 'jpérez456'],
+    ['con ñ', 'jnuñez456'],
+    ['con espacio', 'j perez456'],
+    ['con guion bajo', 'j_perez456'],
+    ['con @ (un email)', 'jperez@x.com'],
+    ['vacío', ''],
+  ])('rechaza un usuario %s', (_caso, usuario) => {
+    expect(esUsuarioValido(usuario)).toBe(false)
+  })
+
+  it('el plugin usa estas reglas, un máximo de 50 y el usuario no se puede cambiar', () => {
+    expect(OPCIONES_USUARIO).toEqual({
+      minUsernameLength: LARGO_MINIMO_USUARIO,
+      maxUsernameLength: LARGO_MAXIMO_USUARIO,
+      usernameValidator: esUsuarioValido,
+      immutableUsername: true,
+    })
+    expect(LARGO_MAXIMO_USUARIO).toBe(50)
   })
 })
 
