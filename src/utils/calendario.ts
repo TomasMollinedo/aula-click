@@ -9,6 +9,8 @@ import { addDays, addMonths, format, getISODay, parseISO, startOfMonth } from 'd
 export type RestriccionFechas = {
   /** Primera fecha elegible (`YYYY-MM-DD`), o sin mínimo. */
   min?: string
+  /** Última fecha elegible (`YYYY-MM-DD`), o sin máximo. */
+  max?: string
   /** Solo ese día de la semana (ISO: 1 = lunes … 7 = domingo), o todos. */
   diaSemana?: number
 }
@@ -16,9 +18,13 @@ export type RestriccionFechas = {
 const FORMATO = 'yyyy-MM-dd'
 
 /** El día se puede elegir según la restricción. */
-export function esFechaHabilitada(fecha: string, { min, diaSemana }: RestriccionFechas): boolean {
+export function esFechaHabilitada(
+  fecha: string,
+  { min, max, diaSemana }: RestriccionFechas,
+): boolean {
   // `YYYY-MM-DD`: la comparación de textos es la de fechas.
   if (min !== undefined && fecha < min) return false
+  if (max !== undefined && fecha > max) return false
   return diaSemana === undefined || getISODay(parseISO(fecha)) === diaSemana
 }
 
