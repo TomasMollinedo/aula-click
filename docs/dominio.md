@@ -24,6 +24,8 @@ Reglas de negocio acordadas. No se modifican sin acuerdo del equipo; lo pendient
 - La fecha de nacimiento no puede ser posterior a hoy.
 - La regla de contacto vale también al editar, sobre el alumno resultante: no se puede borrar un dato obligatorio del tutor de un menor, ni el email o el teléfono propios de un mayor. Si una edición hace que un menor pase a ser mayor y no tiene email o teléfono cargados, se rechaza. Los datos del tutor de un mayor se conservan.
 - Los alumnos tienen baja lógica (estado activo / inactivo, `ACTIVO` por defecto), pero la baja no se implementa en este release.
+- **Foto del alumno** (HU-26, amplía HU-02): opcional, JPG o PNG de hasta 5 MB, con las mismas reglas que la del profesor (HU-03). Se puede reemplazar o quitar; sin foto, la UI muestra un avatar genérico. Al reemplazarla o quitarla se borra el archivo anterior, y el cambio queda en la auditoría del alumno. El alumno no puede cambiarla desde el portal en este incremento.
+- **Cada alumno tiene su acceso al portal** (HU-27): el alta lo crea junto con el alumno (ver Portal del alumno). Un alumno anterior a este incremento lo obtiene desde su ficha.
 
 ## Profesores y materias
 
@@ -253,7 +255,14 @@ A completar por T-108 (HU-31, HU-33).
 
 ## Portal del alumno
 
-A completar por T-88 (acceso al portal, HU-27) y T-91 (contraseña, HU-28). La convención de sus endpoints está en `contrato-api.md` → Portal del alumno.
+El alumno (o su familia) entra al portal con una cuenta propia. La convención de sus endpoints está en `contrato-api.md` → Portal del alumno; la contraseña y su cambio, en T-91 (HU-28).
+
+- **Cada alumno tiene una sola cuenta** y **cada persona, un solo usuario por DNI**: si el DNI ya tiene usuario (por ejemplo, el de un profesor que además toma clases), el alta del alumno se rechaza. _Pendiente de confirmación de las PO_ (punto 10 de "Puntos a confirmar" del Sprint 3).
+- **El usuario lo genera el sistema** y no se escribe a mano: inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n" (Juan Pérez, DNI 45.123.456 → `jperez456`). Si ya está tomado, se agrega un número al final (`jperez456-2`).
+- **El usuario no cambia nunca**, aunque después se corrija el nombre o el apellido: es el dato con el que el alumno ingresa. El nombre que muestra la sesión sí se sincroniza con el del alumno.
+- **La contraseña inicial es el DNI del alumno**, sin puntos, y queda marcada como inicial mientras siga siendo la que puso el sistema (el portal recomienda cambiarla, HU-28). No se muestra ni se devuelve nunca.
+- **Restablecer la contraseña** (mesa de entradas) la vuelve a dejar en el DNI y marcada como inicial. Es la forma de resolver un olvido: no hay recuperación por email. Queda registrado quién la restableció y cuándo, igual que quién creó el acceso.
+- **Fuera de alcance en este incremento:** recuperación por email, y baja o reactivación del acceso.
 
 ## Comprobante adjunto
 

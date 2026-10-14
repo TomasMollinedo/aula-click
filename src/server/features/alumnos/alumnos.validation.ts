@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
-import { auditoriaSchema } from '@/server/shared/auditoria'
+import { archivoSchema } from '@/server/shared/archivos'
+import { auditoriaSchema, usuarioAuditoriaSchema } from '@/server/shared/auditoria'
 import { ESTADOS } from '@/server/shared/estado'
 import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
@@ -76,10 +77,22 @@ export const listarMisAlumnosQuerySchema = paginacionQuerySchema.extend({
 export type ListarMisAlumnosQuery = z.infer<typeof listarMisAlumnosQuerySchema>
 
 export const alumnoListadoItemSchema = z
-  .object({ id: z.number().int(), apellido: z.string(), nombre: z.string(), dni: z.string() })
+  .object({
+    id: z.number().int(),
+    apellido: z.string(),
+    nombre: z.string(),
+    dni: z.string(),
+    fotoUrl: z
+      .string()
+      .nullable()
+      .openapi({ description: 'URL prefirmada de la foto, o null si no tiene (HU-26)' }),
+  })
   .openapi('AlumnoListadoItem')
 
 export type AlumnoListadoItem = z.infer<typeof alumnoListadoItemSchema>
+
+/** Fila del listado tal como la arma el repository: `avatarKey`, no `fotoUrl` (la arma el service). */
+export type AlumnoListadoFila = Omit<AlumnoListadoItem, 'fotoUrl'> & { avatarKey: string | null }
 
 export const alumnosListadoSchema = paginatedSchema(alumnoListadoItemSchema)
 
@@ -107,6 +120,11 @@ export const alumnoDeProfesorItemSchema = alumnoListadoItemSchema
   .openapi('AlumnoDeProfesorListadoItem')
 
 export type AlumnoDeProfesorItem = z.infer<typeof alumnoDeProfesorItemSchema>
+
+/** Fila de `mis-alumnos` como la arma el repository: con `avatarKey` en lugar de `fotoUrl`. */
+export type AlumnoDeProfesorFila = Omit<AlumnoDeProfesorItem, 'fotoUrl'> & {
+  avatarKey: string | null
+}
 
 export const alumnosDeProfesorListadoSchema = paginatedSchema(alumnoDeProfesorItemSchema)
 
@@ -181,6 +199,29 @@ export const editarAlumnoSchema = z
 
 export type EditarAlumno = z.infer<typeof editarAlumnoSchema>
 
+/**
+ * Acceso al portal del alumno. La contraseña nunca se devuelve: sólo con qué usuario ingresa,
+ * quién creó el acceso y quién restableció la contraseña por última vez (T-135).
+ */
+export const accesoAlumnoSchema = z
+  .object({
+    usuario: z.string().openapi({ description: 'Usuario de ingreso', example: 'jperez456' }),
+    creadoPor: usuarioAuditoriaSchema.nullable().openapi({
+      description: 'Quién creó el acceso (null si lo creó el seed)',
+    }),
+    creadoEl: z.iso.datetime().openapi({ description: 'Cuándo se creó el acceso' }),
+    restablecidaPor: usuarioAuditoriaSchema.nullable().openapi({
+      description: 'Quién restableció la contraseña por última vez, o null',
+    }),
+    restablecidaEl: z.iso
+      .datetime()
+      .nullable()
+      .openapi({ description: 'Cuándo se restableció por última vez, o null' }),
+  })
+  .openapi('AccesoAlumno')
+
+export type AccesoAlumno = z.infer<typeof accesoAlumnoSchema>
+
 const textoNullable = z.string().nullable()
 
 /** Detalle del alumno: todos sus datos, `menorDeEdad` (lo calcula la API) y la auditoría. */
@@ -208,11 +249,97 @@ export const alumnoDetalleSchema = z
     menorDeEdad: z.boolean().openapi({
       description: 'Si hoy (hora de Salta) el alumno tiene menos de 18 años. Lo calcula la API',
     }),
+    fotoUrl: z.string().nullable().openapi({
+      description: 'URL prefirmada de la foto (HU-26), o null si no tiene',
+    }),
+    acceso: accesoAlumnoSchema.nullable().openapi({
+      description: 'Acceso al portal (HU-27), o null si el alumno todavía no lo tiene',
+    }),
     ...auditoriaSchema.shape,
   })
   .openapi('AlumnoDetalle')
 
 export type AlumnoDetalle = z.infer<typeof alumnoDetalleSchema>
 
-/** Lo que devuelve el repository: el detalle sin lo que calcula el service. */
-export type AlumnoGuardado = Omit<AlumnoDetalle, 'menorDeEdad'>
+/**
+ * Lo que devuelve el repository: el detalle sin lo que calcula el service (`menorDeEdad`) y con
+ * `avatarKey` en lugar de `fotoUrl` (la URL prefirmada la arma el service).
+ */
+export type AlumnoGuardado = Omit<AlumnoDetalle, 'menorDeEdad' | 'fotoUrl'> & {
+  avatarKey: string | null
+}
+
+// ---------------------------------------------------------------------------------------------
+// Foto (HU-26)
+// ---------------------------------------------------------------------------------------------
+
+/** Tipos aceptados de la foto: MIME → extensión con la que se guarda. Como la del profesor. */
+export const FOTO_EXTENSIONES = { 'image/jpeg': 'jpg', 'image/png': 'png' } as const
+
+export type FotoMimeType = keyof typeof FOTO_EXTENSIONES
+
+export const FOTO_MAX_BYTES = 5 * 1024 * 1024
+
+/** Multipart con un único campo `foto`. Mismos mensajes que la del profesor (HU-26 amplía HU-03). */
+export const subirFotoAlumnoSchema = z.object({
+  foto: archivoSchema({
+    tipos: FOTO_EXTENSIONES,
+    maxBytes: FOTO_MAX_BYTES,
+    mensajes: {
+      tipo: 'La foto debe ser JPG o PNG',
+      tamano: `La foto no puede superar los ${FOTO_MAX_BYTES / (1024 * 1024)} MB`,
+    },
+  }).openapi({ description: 'Foto del alumno (JPG o PNG, hasta 5 MB)' }),
+})
+
+// ---------------------------------------------------------------------------------------------
+// Acceso al portal (HU-27) y perfil del alumno (HU-28)
+// ---------------------------------------------------------------------------------------------
+
+/** Query de `GET /alumnos/usuario-sugerido`: los tres datos con los que se arma el usuario. */
+export const usuarioSugeridoQuerySchema = z.object({
+  nombre: nombrePersona(100).openapi({
+    param: { name: 'nombre', in: 'query' },
+    description: 'Nombre del alumno',
+    example: 'Juan',
+  }),
+  apellido: nombrePersona(100).openapi({
+    param: { name: 'apellido', in: 'query' },
+    description: 'Apellido del alumno',
+    example: 'Pérez',
+  }),
+  dni: dni.openapi({
+    param: { name: 'dni', in: 'query' },
+    description: 'DNI del alumno (7 u 8 dígitos; se aceptan puntos)',
+    example: '45123456',
+  }),
+})
+
+export type UsuarioSugeridoQuery = z.infer<typeof usuarioSugeridoQuerySchema>
+
+export const usuarioSugeridoSchema = z
+  .object({
+    usuario: z.string().openapi({
+      description:
+        'Usuario que se le asignaría al alumno. Es una sugerencia: el definitivo se calcula al guardar',
+      example: 'jperez456',
+    }),
+  })
+  .openapi('UsuarioSugerido')
+
+export type UsuarioSugerido = z.infer<typeof usuarioSugeridoSchema>
+
+/** `GET /alumnos/mi-perfil` (rol ALUMNO): lo que el portal muestra en su menú (HU-28). */
+export const miPerfilSchema = z
+  .object({
+    nombre: z.string(),
+    apellido: z.string(),
+    usuario: z.string().nullable().openapi({ description: 'Usuario de ingreso, o null' }),
+    fotoUrl: z.string().nullable().openapi({ description: 'URL prefirmada de la foto, o null' }),
+  })
+  .openapi('MiPerfilAlumno')
+
+export type MiPerfil = z.infer<typeof miPerfilSchema>
+
+/** Lo que devuelve el repository para el perfil: con `avatarKey` en lugar de `fotoUrl`. */
+export type MiPerfilGuardado = Omit<MiPerfil, 'fotoUrl'> & { avatarKey: string | null }

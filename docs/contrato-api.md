@@ -76,6 +76,71 @@ Como un selector de catálogo (arreglo, sin paginar, salvo aclaración solo lo a
 
 Ejemplo: `GET /api/v1/aulas/disponibles?diaSemana=1&horaInicio=14:00&horaFin=16:00&excluirBloqueId=10` → `[{ "id": 1, "nombre": "Aula 1", "capacidad": 8 }, { "id": 3, "nombre": "Aula 3", "capacidad": 10 }]`.
 
+## Alumnos
+
+Rol `MESA_ENTRADAS`, salvo lo que diga cada fila. Reglas en `dominio.md` → Alumnos y Portal del alumno.
+
+| Ruta                                                        | Rol                         | Qué hace                                                                                                 |
+| ----------------------------------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/alumnos?page&pageSize&q`                       | `MESA_ENTRADAS`             | Listado paginado por apellido y nombre. Cada ítem: `id`, `apellido`, `nombre`, `dni` y `fotoUrl` (HU-26) |
+| `GET /api/v1/alumnos/mis-alumnos?page&pageSize&q&materiaId` | `PROFESOR`                  | Alumnos con turno vigente con el profesor de la sesión; lo mismo más `materias`                          |
+| `GET /api/v1/alumnos/usuario-sugerido?nombre&apellido&dni`  | `MESA_ENTRADAS`             | `{ "usuario" }`: el usuario del portal que se le asignaría (HU-27). Es una sugerencia                    |
+| `GET /api/v1/alumnos/mi-perfil`                             | `ALUMNO`                    | Perfil del alumno de la sesión para el menú del portal (HU-28)                                           |
+| `GET /api/v1/alumnos/{id}`                                  | `MESA_ENTRADAS`, `PROFESOR` | Detalle: todos sus datos, `menorDeEdad`, `fotoUrl`, `acceso` y la auditoría                              |
+| `POST /api/v1/alumnos`                                      | `MESA_ENTRADAS`             | Alta del alumno **y de su acceso al portal**, todo o nada (HU-27)                                        |
+| `PATCH /api/v1/alumnos/{id}`                                | `MESA_ENTRADAS`             | Edición parcial. El DNI no se puede modificar; el usuario del portal tampoco cambia                      |
+| `POST /api/v1/alumnos/{id}/foto`                            | `MESA_ENTRADAS`             | Sube o reemplaza la foto (multipart, campo `foto`, JPG o PNG hasta 5 MB)                                 |
+| `DELETE /api/v1/alumnos/{id}/foto`                          | `MESA_ENTRADAS`             | Quita la foto. Sin foto no es un error                                                                   |
+| `POST /api/v1/alumnos/{id}/acceso`                          | `MESA_ENTRADAS`             | Crea el acceso de un alumno anterior a este incremento. 409 si ya lo tiene                               |
+| `POST /api/v1/alumnos/{id}/acceso/restablecimiento`         | `MESA_ENTRADAS`             | La contraseña vuelve a ser el DNI. 409 si el alumno no tiene acceso                                      |
+
+### Foto (HU-26)
+
+- Se sube con **multipart**, en un único campo `foto`: JPG o PNG de hasta 5 MB, con las mismas reglas y mensajes que la del profesor. Además del tipo que declara el navegador se verifica la firma del archivo: un PNG renombrado a `.jpg` se rechaza con 400 `VALIDACION` y `details` sobre `foto` ("La foto debe ser JPG o PNG", "La foto no puede superar los 5 MB").
+- En la base se guarda la **clave** del objeto, no la URL. El listado, el detalle, `mis-alumnos` y `mi-perfil` devuelven `fotoUrl`: una URL prefirmada (15 min), o `null` si el alumno no tiene foto.
+- Subirla, reemplazarla o quitarla actualiza la auditoría del alumno (`updatedBy`, `updatedAt`). Al reemplazar o quitar, el archivo anterior se borra.
+- Las dos respuestas son el detalle del alumno, igual que el alta y la edición.
+
+### Acceso al portal (HU-27)
+
+El alumno ingresa al portal con un **usuario** (no con su email; ver [Autenticación](#autenticación)). El alta lo crea junto con el alumno, en la misma transacción.
+
+- **Cómo se arma el usuario:** inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n" (Juan Pérez, DNI 45.123.456 → `jperez456`). Si ya está tomado, se agrega `-2`, `-3`… El usuario **no cambia** aunque después se corrija el nombre o el apellido.
+- **Contraseña inicial:** el DNI del alumno, sin puntos. **Nunca se devuelve** en ninguna respuesta.
+- `GET /alumnos/usuario-sugerido` responde `{ "usuario": "jperez456" }` para mostrarlo en el formulario de alta en cuanto están nombre, apellido y DNI. Es sólo una **sugerencia**: el definitivo se calcula al guardar, porque entre la consulta y el alta otro alumno puede quedarse con él.
+- **El detalle trae `acceso`** (o `null` si el alumno todavía no lo tiene):
+
+  ```json
+  {
+    "acceso": {
+      "usuario": "jperez456",
+      "creadoPor": { "id": "usr_mesa_01", "nombre": "Ana", "apellido": "Pérez" },
+      "creadoEl": "2026-10-14T13:45:00.000Z",
+      "restablecidaPor": null,
+      "restablecidaEl": null
+    }
+  }
+  ```
+
+- `POST /alumnos/{id}/acceso` responde **201** con el detalle del alumno ya con su `acceso`; 409 `CONFLICTO` ("El alumno ya tiene acceso al portal") si lo tenía.
+- `POST /alumnos/{id}/acceso/restablecimiento` responde 200 con el detalle: la contraseña vuelve a ser el DNI, queda marcada como inicial (el portal recomienda cambiarla, HU-28) y `restablecidaPor` / `restablecidaEl` dicen quién y cuándo. 409 `CONFLICTO` ("El alumno no tiene acceso al portal") si no tiene.
+- **Un DNI que ya tiene usuario** (por ejemplo, el de un profesor que además toma clases) hace que el alta responda 409 `CONFLICTO` con "Ya existe un usuario con ese DNI" y `details` sobre `dni`: cada persona tiene un solo usuario por DNI. **Pendiente de confirmación de las PO** (punto 10 de "Puntos a confirmar" del Sprint 3).
+
+### Perfil del portal (HU-28)
+
+`GET /api/v1/alumnos/mi-perfil` (rol `ALUMNO`) devuelve sólo lo que el menú del portal necesita, del alumno **de la sesión**: no recibe ningún `alumnoId` ni devuelve ningún otro dato de la ficha.
+
+```json
+{
+  "nombre": "Lucía",
+  "apellido": "Álvarez",
+  "usuario": "lalvarez678",
+  "fotoUrl": "https://…"
+}
+```
+
+Un rol que no sea `ALUMNO`, o una cuenta `ALUMNO` sin alumno vinculado, reciben 403 `SIN_PERMISO`.
+
 ## Materias
 
 HU-12 (T-39). El catálogo lo administra el **gerente**; mesa de entradas conserva la lectura (la necesita para registrar turnos y exámenes). Asignar materias a un profesor sigue siendo de mesa de entradas (`/profesores/{id}/materias`).
@@ -1102,10 +1167,11 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
+
 | Feature       | Endpoints del portal                                                              | Tarea |
 | ------------- | --------------------------------------------------------------------------------- | ----- |
 | `ocurrencias` | A completar por T-84                                                              | T-84  |
-| `alumnos`     | A completar por T-88                                                              | T-88  |
+| `alumnos`     | `GET /alumnos/mi-perfil`                                                              | T-88  |
 | `usuarios`    | A completar por T-91                                                              | T-91  |
 | `turnos`      | A completar por T-93                                                              | T-93  |
 | `pagos`       | A completar por T-98                                                              | T-98  |
