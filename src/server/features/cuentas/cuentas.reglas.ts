@@ -3,39 +3,57 @@ import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condicione
 import { sumarDias } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake, type MetaPaginacion } from '@/server/shared/paginacion'
 
-// Reglas puras de la cuenta del alumno (HU-16, T-53): qué ocurrencia adeuda, cuál es próxima, qué
-// parte de un período le toca a cada sección, su importe, el total y la página. Sin Prisma y sin
-// `hoy()` adentro: "hoy" lo pasa quien llama. Las usan `cuentas.condiciones.ts` (la única lectura
-// de la deuda) y el service.
+// Reglas puras de la cuenta del alumno (HU-16, T-53; con asistencia y deuda vencida, T-76): qué
+// ocurrencia adeuda, cuál es próxima, cuál es deuda vencida, qué parte de un período le toca a cada
+// sección, su importe, el total y la página. Cuenta toda ocurrencia no cancelada e impaga, con
+// cualquier estado (`AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`): la fecha decide la
+// sección. Sin Prisma y sin `hoy()` adentro: "hoy" lo pasa quien llama. Las usan
+// `cuentas.condiciones.ts` (la única lectura de la deuda) y el service.
 
 /** Lo que las reglas miran de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
 export type OcurrenciaCuenta = Pick<Ocurrencia, 'fecha' | 'estado'> & {
   pago: Pick<Ocurrencia['pago'], 'estado'>
 }
 
+/** Días desde los que un adeudado es deuda vencida (HU-29): hace 30 días o más. */
+export const DIAS_DEUDA_VENCIDA = 30
+
 /**
- * Adeuda (definición F): fecha anterior a hoy, estado `SIN_REGISTRAR` (no cancelada) y pago
- * `PENDIENTE` (definición D: pagada = hay un `PagoTurno`). La de hoy no adeuda: es próxima.
+ * Adeuda (definición F, ampliada por T-76): fecha anterior a hoy, no cancelada y pago `PENDIENTE`.
+ * Con fecha pasada eso es `SIN_REGISTRAR` (también uno cerrado por el sistema), `REALIZADO` o
+ * `AUSENTE`: haya ido o no el alumno, su lugar estuvo reservado (HU-22). "Pendiente" es sin un
+ * pago **vigente**: un pago anulado no cuenta, y eso lo resuelve el motor (T-74). La de hoy no
+ * adeuda: es próxima.
  */
 export function esAdeudado(ocurrencia: OcurrenciaCuenta, hoy: string): boolean {
   return (
     ocurrencia.fecha < hoy &&
-    ocurrencia.estado === 'SIN_REGISTRAR' &&
+    ocurrencia.estado !== 'CANCELADO' &&
     ocurrencia.pago.estado === 'PENDIENTE'
   )
 }
 
 /**
- * Próxima: fecha entre hoy y `limiteDeCobro(hoy)` (hoy + 56, el mismo tope que `POST /pagos`),
- * estado `AGENDADO` y pago `PENDIENTE`. No suma a la deuda.
+ * Próxima: fecha entre hoy y `limiteDeCobro(hoy)` (hoy + 56, el mismo tope que `POST /pagos`), no
+ * cancelada y pago `PENDIENTE`. No suma a la deuda. Un turno de **hoy** con asistencia (`REALIZADO`
+ * o `AUSENTE`) sigue siendo próximo hasta mañana: la fecha separa las dos secciones, como en HU-16
+ * (propuesta del punto 6 de "Puntos a confirmar" del Sprint 3, pendiente de las PO).
  */
 export function esProximo(ocurrencia: OcurrenciaCuenta, hoy: string): boolean {
   return (
     ocurrencia.fecha >= hoy &&
     ocurrencia.fecha <= limiteDeCobro(hoy) &&
-    ocurrencia.estado === 'AGENDADO' &&
+    ocurrencia.estado !== 'CANCELADO' &&
     ocurrencia.pago.estado === 'PENDIENTE'
   )
+}
+
+/**
+ * Deuda vencida (HU-29): adeudada (`esAdeudado`) y con fecha de hace `DIAS_DEUDA_VENCIDA` días o
+ * más (`fecha <= hoy - 30`). Con hoy 05/10, la del 05/09 está vencida y la del 06/09 no.
+ */
+export function esDeudaVencida(ocurrencia: OcurrenciaCuenta, hoy: string): boolean {
+  return esAdeudado(ocurrencia, hoy) && ocurrencia.fecha <= sumarDias(hoy, -DIAS_DEUDA_VENCIDA)
 }
 
 /** Precio por hora vigente de la materia, o `null` si no tiene (o no está en el `Map`). */

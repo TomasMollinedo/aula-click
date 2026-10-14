@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DIAS_DEUDA_VENCIDA,
   esAdeudado,
+  esDeudaVencida,
   esProximo,
   importeVigente,
   paginarEnMemoria,
@@ -36,6 +38,18 @@ describe('esAdeudado', () => {
     expect(esAdeudado(ocurrencia('2026-10-04', 'CANCELADO'), HOY)).toBe(false)
     expect(esAdeudado(ocurrencia('2026-10-04', 'SIN_REGISTRAR', 'PAGADO'), HOY)).toBe(false)
   })
+
+  // T-76: con asistencia también adeuda (HU-22: el lugar del alumno estuvo reservado).
+  it.each([
+    ['SIN_REGISTRAR', 'PENDIENTE', '2026-09-28', true],
+    ['REALIZADO', 'PENDIENTE', '2026-09-28', true],
+    ['AUSENTE', 'PENDIENTE', '2026-09-28', true],
+    ['CANCELADO', 'PENDIENTE', '2026-09-28', false],
+    ['REALIZADO', 'PAGADO', '2026-09-28', false],
+    ['REALIZADO', 'PENDIENTE', HOY, false],
+  ] as const)('%s, pago %s, del %s → %s', (estado, pago, fecha, esperado) => {
+    expect(esAdeudado(ocurrencia(fecha, estado, pago), HOY)).toBe(esperado)
+  })
 })
 
 describe('esProximo', () => {
@@ -61,6 +75,35 @@ describe('esProximo', () => {
         expect(esAdeudado(o, HOY) && esProximo(o, HOY)).toBe(false)
       }
     }
+  })
+
+  // T-76: la fecha separa las secciones; un turno de hoy con asistencia sigue siendo próximo.
+  it.each([
+    ['REALIZADO', 'PENDIENTE', HOY, true],
+    ['AUSENTE', 'PENDIENTE', HOY, true],
+    ['CANCELADO', 'PENDIENTE', HOY, false],
+    ['AGENDADO', 'PENDIENTE', '2026-10-12', true],
+    ['AGENDADO', 'PAGADO', '2026-10-12', false],
+    ['AGENDADO', 'PENDIENTE', '2026-12-01', false], // después del tope (hoy + 57)
+  ] as const)('%s, pago %s, del %s → %s', (estado, pago, fecha, esperado) => {
+    expect(esProximo(ocurrencia(fecha, estado, pago), HOY)).toBe(esperado)
+  })
+})
+
+describe('esDeudaVencida', () => {
+  // Hoy - 30 = sábado 05/09; hoy - 29 = domingo 06/09; hoy - 40 = miércoles 26/08.
+  it('es de 30 días', () => {
+    expect(DIAS_DEUDA_VENCIDA).toBe(30)
+  })
+
+  it.each([
+    ['SIN_REGISTRAR', 'PENDIENTE', '2026-09-05', true], // hoy - 30
+    ['SIN_REGISTRAR', 'PENDIENTE', '2026-09-06', false], // hoy - 29
+    ['REALIZADO', 'PENDIENTE', '2026-08-26', true],
+    ['REALIZADO', 'PAGADO', '2026-08-26', false],
+    ['CANCELADO', 'PENDIENTE', '2026-08-26', false],
+  ] as const)('%s, pago %s, del %s → %s', (estado, pago, fecha, esperado) => {
+    expect(esDeudaVencida(ocurrencia(fecha, estado, pago), HOY)).toBe(esperado)
   })
 })
 
