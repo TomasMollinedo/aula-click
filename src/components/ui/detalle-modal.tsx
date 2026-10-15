@@ -34,6 +34,8 @@ type DetalleModalProps = {
   textoNoEncontrado?: string
   /** Quién creó el registro y quién lo modificó por última vez. */
   auditoria?: Auditoria
+  /** Reemplaza la línea "Creado por …" de la trazabilidad (`Trazabilidad`). */
+  textoCreacion?: string
   /**
    * Acciones además de "Cerrar" (por ejemplo, un link a la edición), cada una un
    * `DetalleModalAccion`. Cada acción aporta al pie **un solo elemento** (o ninguno): el pie
@@ -85,6 +87,7 @@ function DetalleModal({
   onReintentar,
   textoNoEncontrado = 'No se encontró el registro',
   auditoria,
+  textoCreacion,
   acciones,
   accionesEncabezado,
   soloCruz = false,
@@ -148,7 +151,7 @@ function DetalleModal({
               <History className="text-cobalto size-4" />
               Trazabilidad
             </h3>
-            <Trazabilidad auditoria={auditoria} />
+            <Trazabilidad auditoria={auditoria} textoCreacion={textoCreacion} />
           </section>
         )}
       </PanelBody>

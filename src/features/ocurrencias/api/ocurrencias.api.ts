@@ -1,6 +1,10 @@
 import { fetchJson } from '@/utils/fetch-json'
 
-import type { OcurrenciaDeAlumno, OcurrenciaDetalle } from '@/types/ocurrencia'
+import type {
+  OcurrenciaDeAlumno,
+  OcurrenciaDetalle,
+  OcurrenciaDetallePortal,
+} from '@/types/ocurrencia'
 import type { ObtenerOcurrenciaParams, OcurrenciasDelAlumnoParams } from '../ocurrencias.types'
 
 const BASE = '/api/v1/ocurrencias'
@@ -23,4 +27,12 @@ export function listarOcurrenciasDelAlumno(
   if (params.hasta) searchParams.set('hasta', params.hasta)
 
   return fetchJson<OcurrenciaDeAlumno[]>(`${BASE}?${searchParams.toString()}`)
+}
+
+/** Detalle de una ocurrencia del alumno de la sesión (portal, HU-30). */
+export function obtenerMiTurno({
+  turnoId,
+  fecha,
+}: ObtenerOcurrenciaParams): Promise<OcurrenciaDetallePortal> {
+  return fetchJson<OcurrenciaDetallePortal>(`${BASE}/mis-turnos/${turnoId}/${fecha}`)
 }
