@@ -1,9 +1,14 @@
-import { ConflictError, ValidationError } from '@/server/errors'
+import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import { detallesPorPosicion } from '@/server/shared/detalles'
 import { sumarDias } from '@/server/shared/fechas'
 import { IMPORTE_MAX } from '@/server/shared/zod'
-import type { MedioPago, OcurrenciaPedida, RegistrarPago } from './pagos.validation'
+import type {
+  CodigoFormaPago,
+  MedioPago,
+  OcurrenciaPedida,
+  RegistrarPago,
+} from './pagos.validation'
 
 // Reglas puras del cobro (HU-15, T-51): qué ocurrencias se pueden cobrar, cuánto cuesta cada una,
 // el total y el vuelto. Sin Prisma y sin `hoy()` adentro: "hoy" lo pasa el service con su reloj.
@@ -38,6 +43,18 @@ export const MENSAJE_TURNOS_NO_COBRABLES = 'Algunos turnos no se pueden cobrar'
 export const MENSAJE_YA_PAGADO_CONCURRENTE = 'Alguno de los turnos ya fue pagado'
 export const MENSAJE_DE_OTRO_ALUMNO = 'El turno no es del alumno'
 export const MENSAJE_FECHA_PAGO_FUTURA = 'La fecha de pago no puede ser posterior a hoy'
+
+/**
+ * Las formas de pago del catálogo no están como las carga el seed (decisión T-134): falta la de
+ * `codigo` activa, o hay una sin código. Es un error de configuración, no del pedido: 500. Lo usan
+ * el registro, el comprobante y el total por forma, con el mismo texto.
+ */
+export function errorFormasDePago(codigo?: CodigoFormaPago): AppError {
+  const problema = codigo
+    ? `Falta la forma de pago ${codigo} activa`
+    : 'Hay una forma de pago sin código'
+  return new AppError(`${problema}: corré \`pnpm db:seed\``, 500)
+}
 
 /** Lo que el cobro necesita de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
 export type OcurrenciaCobro = Pick<

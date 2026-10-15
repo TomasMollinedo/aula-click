@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { ConflictError, ValidationError } from '@/server/errors'
+import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import {
+  errorFormasDePago,
   calcularVuelto,
   formatearPesos,
   limiteDeCobro,
@@ -314,5 +315,20 @@ describe('planificarPago', () => {
     )
     expect(error).toBeInstanceOf(ValidationError)
     expect(error.details).toEqual([{ path: ['ocurrencias'], message: expect.any(String) }])
+  })
+})
+
+describe('errorFormasDePago', () => {
+  it('falta una forma activa: 500 que la nombra y pide correr el seed', () => {
+    const error = errorFormasDePago('TRANSFERENCIA')
+    expect(error).toBeInstanceOf(AppError)
+    expect(error.statusCode).toBe(500)
+    expect(error.message).toBe('Falta la forma de pago TRANSFERENCIA activa: corré `pnpm db:seed`')
+  })
+
+  it('una forma sin código: el mismo 500, con su texto', () => {
+    expect(errorFormasDePago().message).toBe(
+      'Hay una forma de pago sin código: corré `pnpm db:seed`',
+    )
   })
 })

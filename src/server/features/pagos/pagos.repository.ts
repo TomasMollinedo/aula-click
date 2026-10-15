@@ -1,6 +1,6 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
-import { AppError, ConflictError } from '@/server/errors'
+import { ConflictError } from '@/server/errors'
 import { vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
 import {
   bloquearAlumno,
@@ -13,12 +13,12 @@ import { dateAFecha, fechaADate, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import {
   CODIGO_TURNOS_NO_COBRABLES,
+  errorFormasDePago,
   MENSAJE_YA_PAGADO_CONCURRENTE,
   type PlanPago,
   type SnapshotPago,
 } from './pagos.reglas'
 import type {
-  CodigoFormaPago,
   ComprobanteGuardado,
   EntradaPago,
   MedioPago,
@@ -29,13 +29,6 @@ import type {
 // decide `planificarPago` (`pagos.reglas.ts`), que el service pasa como callback `verificar`. Las
 // ocurrencias salen del motor de `turnos` (`ocurrencias.condiciones.ts`), nunca de una expansión
 // propia. Los importes salen como `number` (`toNumber()`), nunca como `Prisma.Decimal`.
-
-/** Una forma de pago sin código (`tipoFormaPago`): falta correr el seed (decisión T-134). */
-const MENSAJE_FORMA_SIN_CODIGO = 'La forma de pago del pago no tiene código: corré `pnpm db:seed`'
-
-/** La forma de pago del catálogo (`FormaPago.tipoFormaPago`, del seed) no está activa: falta el seed. */
-const mensajeSinFormaPago = (codigo: CodigoFormaPago) =>
-  `Falta la forma de pago ${codigo} activa: corré \`pnpm db:seed\``
 
 /**
  * Las columnas del medio en `Pago` (HU-23): las del medio elegido con sus datos y las de los otros
@@ -229,7 +222,7 @@ export const pagosRepository = {
           where: { tipoFormaPago: medio.formaPago, estado: 'ACTIVO' },
           select: { id: true },
         })
-        if (!formaPago) throw new AppError(mensajeSinFormaPago(medio.formaPago), 500)
+        if (!formaPago) throw errorFormasDePago(medio.formaPago)
 
         const plan = verificar(snapshot)
 
@@ -278,7 +271,7 @@ export const pagosRepository = {
     const fila = await prisma.pago.findUnique({ where: { id }, select: SELECT_COMPROBANTE })
     if (!fila) return null
     const codigo = fila.formaPago.tipoFormaPago
-    if (codigo === null) throw new AppError(MENSAJE_FORMA_SIN_CODIGO, 500)
+    if (codigo === null) throw errorFormasDePago()
     const turnos = fila.turnos
       .map((pt) => ({
         turnoId: pt.turnoId,

@@ -1,8 +1,7 @@
-import { AppError } from '@/server/errors'
 import type { ClienteOcurrencias } from '@/server/features/turnos/ocurrencias.condiciones'
 import { SELECT_USUARIO_AUDITORIA, type UsuarioAuditoria } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
-import { sumarImportes } from './pagos.reglas'
+import { errorFormasDePago, sumarImportes } from './pagos.reglas'
 import type { CodigoFormaPago } from './pagos.validation'
 
 // Lo que otras features necesitan del cobro sin importar `pagos.reglas.ts` ni el repository (de otra
@@ -95,8 +94,6 @@ export async function totalCobradoEntre(
 /** Lo cobrado por cada forma de pago, en pesos (0 si no hubo ninguno de esa forma). */
 export type TotalesPorForma = Record<CodigoFormaPago, number>
 
-const MENSAJE_FORMA_SIN_CODIGO = 'Hay pagos con una forma de pago sin código: corré `pnpm db:seed`'
-
 /**
  * Total cobrado en `[desde, hasta]` por forma de pago (HU-36, HU-41): `{ EFECTIVO, TRANSFERENCIA,
  * DEBITO }`, con el mismo filtro que `totalCobradoEntre` (sólo pagos `VIGENTE`, por fecha de pago),
@@ -123,7 +120,7 @@ export async function totalCobradoPorForma(
   const codigoDe = new Map(formas.map((f) => [f.id, f.tipoFormaPago]))
   for (const grupo of grupos) {
     const codigo = codigoDe.get(grupo.formaPagoId)
-    if (!codigo) throw new AppError(MENSAJE_FORMA_SIN_CODIGO, 500)
+    if (!codigo) throw errorFormasDePago()
     const importe = grupo._sum.importeTotal ? grupo._sum.importeTotal.toNumber() : 0
     totales[codigo] = sumarImportes([totales[codigo], importe])
   }
