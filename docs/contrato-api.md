@@ -1963,7 +1963,124 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 ## Liquidaciones
 
-A completar por T-124 (HU-44). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+
+| Endpoint                                                  | Roles     | Qué hace                                                                         |
+| --------------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                               | `GERENTE` | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}` | `GERENTE` | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**El mes** (`AAAA-MM`, en el query del listado y en la ruta del detalle): formato inválido (`2026-13`, `2026-9`) → 400 `VALIDACION` en `["mes"]` "El mes debe tener el formato AAAA-MM". Un mes **posterior al de hoy** → 400 `VALIDACION` en `["mes"]` "El mes no puede ser futuro". El **mes en curso sí se puede pedir**: sus liquidaciones salen `EN_CURSO`.
+
+**Estados:** `EN_CURSO` (mes en curso), `PENDIENTE_DE_PAGO` (mes terminado con total > 0), `SALDO_A_DESCONTAR` (mes terminado con total de 0 o menos: pasa al mes siguiente como ajuste), `PAGADA` y `DESCONTADA` (su saldo lo absorbió la liquidación de `descontadaEnMes`). **Una liquidación cerrada (`PAGADA` o `DESCONTADA`) se muestra congelada**, con los importes guardados al pagarla, aunque después se anule un pago de sus turnos: eso genera un ajuste en otra liquidación (decisiones T-156 y T-163).
+
+**Importes** en pesos (número JSON), sumados en centavos: en cada fila y en los totales, `parteProfesor + totalAjustes = total` y `parteCentro + parteProfesor = totalCobrado`. Los ajustes son negativos.
+
+**`GET /liquidaciones?mes=2026-09&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy):
+
+```json
+{
+  "mes": "2026-09",
+  "totales": {
+    "cantidadTurnos": 19,
+    "totalCobrado": 152000,
+    "parteCentro": 22800,
+    "parteProfesor": 129200,
+    "totalAjustes": -6800,
+    "total": 122400
+  },
+  "data": [
+    {
+      "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+      "estado": "PAGADA",
+      "cantidadTurnos": 12,
+      "totalCobrado": 96000,
+      "parteCentro": 14400,
+      "parteProfesor": 81600,
+      "totalAjustes": 0,
+      "total": 81600,
+      "fechaTransferencia": "2026-10-05",
+      "descontadaEnMes": null
+    },
+    {
+      "profesor": { "id": 9, "nombre": "Carla", "apellido": "Ruiz" },
+      "estado": "SALDO_A_DESCONTAR",
+      "cantidadTurnos": 1,
+      "totalCobrado": 8000,
+      "parteCentro": 1200,
+      "parteProfesor": 6800,
+      "totalAjustes": -6800,
+      "total": 0,
+      "fechaTransferencia": null,
+      "descontadaEnMes": null
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 10, "total": 2, "totalPages": 1 }
+}
+```
+
+- `mes`: el pedido o el por defecto (el front arma el selector con él).
+- Una fila por profesor **con turnos o ajustes en el mes, aunque esté inactivo**, por apellido y nombre. Un profesor sin movimientos no aparece. Sin ninguno: `data: []` y los totales en 0 ("No hay liquidaciones en …").
+- `totales`: la suma de cada columna de **todo el listado**, no de la página.
+- `fechaTransferencia`: sólo en una `PAGADA`; `descontadaEnMes`: sólo en una `DESCONTADA` ("Descontada en la liquidación de …"). Si no, `null`.
+
+**`GET /liquidaciones/profesores/{profesorId}/{mes}`**: el detalle, con el mismo cálculo del listado.
+
+```json
+{
+  "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+  "mes": "2026-09",
+  "estado": "PAGADA",
+  "turnos": [
+    {
+      "fecha": "2026-09-08",
+      "horaInicio": "15:00",
+      "horaFin": "16:00",
+      "alumno": { "id": 12, "nombre": "Juan", "apellido": "Pérez" },
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "numeroComprobante": 123,
+      "importe": 8000,
+      "porcentaje": 15,
+      "parteProfesor": 6800
+    }
+  ],
+  "ajustes": [],
+  "cantidadTurnos": 1,
+  "totalCobrado": 8000,
+  "parteCentro": 1200,
+  "parteProfesor": 6800,
+  "totalAjustes": 0,
+  "total": 6800,
+  "cerrada": {
+    "liquidacionId": 31,
+    "fechaTransferencia": "2026-10-05",
+    "numeroOperacion": "0004829137",
+    "observaciones": null,
+    "descontadaEnMes": null,
+    "comprobanteAdjunto": {
+      "id": 44,
+      "nombre": "transferencia-gomez.pdf",
+      "tipo": "application/pdf",
+      "bytes": 248312,
+      "adjuntadoPor": { "id": "usr_gerente_01", "nombre": "Marta", "apellido": "Ríos" },
+      "adjuntadoEl": "2026-10-05T14:02:00.000Z"
+    },
+    "registradaPor": { "id": "usr_gerente_01", "nombre": "Marta", "apellido": "Ríos" },
+    "registradaEl": "2026-10-05T14:03:00.000Z"
+  },
+  "acciones": { "registrarPago": false }
+}
+```
+
+- `turnos`: cada turno liquidado (fecha, horario `HH:mm`, alumno, materia, número de comprobante del cobro, importe, porcentaje del centro de ese cobro y parte del profesor). La parte del centro por turno no viaja: está en los totales.
+- `ajustes`: `{ tipo, texto, importe }`, con `tipo` `ANULACION` ("Ajuste por anulación del comprobante N.º 123 (2 turnos)") o `SALDO_ANTERIOR` ("Saldo de la liquidación de agosto de 2026"). El texto lo arma la API.
+- `cerrada`: `null` si está abierta. En una cerrada, `liquidacionId`, la transferencia (`fechaTransferencia`, `numeroOperacion` y `observaciones`; `null` en una `DESCONTADA`), `descontadaEnMes`, el comprobante adjunto y quién registró el pago (`registradaPor`, `UsuarioAuditoria`) y cuándo (`registradaEl`, ISO 8601 UTC).
+- `comprobanteAdjunto`: el último activo de una `PAGADA` (opcional: puede ser `null`), **sin URL**. Para abrirlo ("Ver"), el front pide la URL a `GET /adjuntos/liquidaciones/{liquidacionId}` (ver [Adjuntos](#adjuntos)).
+- `acciones.registrarPago`: lo decide la API; `true` sólo en `PENDIENTE_DE_PAGO` (mes terminado y total > 0).
+- **Profesor sin movimientos en el mes** → 200 con la liquidación vacía: `estado: null`, `turnos: []`, `ajustes: []`, totales en 0, `cerrada: null` y `registrarPago: false`.
+- Errores, en orden: 400 `VALIDACION` si `profesorId` no es un entero positivo (`abc`, `0`) o el mes es inválido o futuro; 404 `NO_ENCONTRADO` "Profesor no encontrado" (un profesor inactivo sí se muestra).
 
 ## Caja
 

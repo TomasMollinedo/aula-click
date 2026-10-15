@@ -131,6 +131,7 @@ function cerrada({
     numeroOperacion: 'OP-1',
     observaciones: null,
     createdAt: new Date(`${mes}-28T15:00:00Z`),
+    createdBy: { id: 'usr_gerente', nombre: 'Marta', apellido: 'Ríos' },
     profesor,
     descontadaEn: null,
     turnos: [
