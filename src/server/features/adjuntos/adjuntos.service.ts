@@ -7,9 +7,11 @@ import type {
   ArchivoAGuardar,
   PagoDelAdjunto,
   TipoAdjunto,
+  UltimoAdjunto,
 } from './adjuntos.validation'
 
-// Reglas del comprobante adjunto de un pago (HU-24, T-95). No conoce HTTP ni Prisma: lanza AppError
+// Reglas del comprobante adjunto de un pago (HU-24, T-95) y de la transferencia a un profesor
+// (HU-44, T-123). No conoce HTTP ni Prisma: lanza AppError
 // o sus subclases. Tipo, firma y tamaño ya los validó la ruta (`archivoSchema`).
 
 /** Largo máximo del nombre que se guarda: alcanza para mostrarlo y no deja crecer la fila. */
@@ -28,6 +30,8 @@ export async function archivoAGuardar(archivo: File): Promise<ArchivoAGuardar> {
 
 export const MENSAJE_PAGO_NO_ENCONTRADO = 'Pago no encontrado'
 export const MENSAJE_SIN_ADJUNTO = 'El pago no tiene comprobante adjunto'
+export const MENSAJE_LIQUIDACION_NO_ENCONTRADA = 'Liquidación no encontrada'
+export const MENSAJE_LIQUIDACION_SIN_ADJUNTO = 'La liquidación no tiene comprobante adjunto'
 export const CODIGO_PAGO_ANULADO = 'PAGO_ANULADO'
 export const MENSAJE_PAGO_ANULADO =
   'El pago está anulado: su comprobante adjunto se conserva como estaba'
@@ -50,7 +54,16 @@ export function crearAdjuntosService({
   repository,
   firmarUrl,
 }: {
-  repository: Pick<AdjuntosRepository, 'subir' | 'leerPago' | 'ultimo' | 'reemplazar' | 'quitar'>
+  repository: Pick<
+    AdjuntosRepository,
+    | 'subir'
+    | 'leerPago'
+    | 'ultimo'
+    | 'reemplazar'
+    | 'quitar'
+    | 'existeLiquidacion'
+    | 'ultimoDeLiquidacion'
+  >
   firmarUrl: (archivoKey: string, nombreArchivo: string) => Promise<string>
 }) {
   /** El pago, si existe; si no, 404. */
@@ -67,12 +80,16 @@ export function crearAdjuntosService({
     }
   }
 
+  /** El adjunto como se muestra: sin la clave del objeto y con la URL que lo abre. */
+  async function conUrl({ archivoKey, ...datos }: UltimoAdjunto): Promise<AdjuntoDePago> {
+    return { ...datos, url: await firmarUrl(archivoKey, datos.nombre) }
+  }
+
   async function verUltimo(pagoId: number): Promise<AdjuntoDePago> {
     await pagoExistente(pagoId)
     const ultimo = await repository.ultimo(pagoId)
     if (!ultimo) throw new NotFoundError(MENSAJE_SIN_ADJUNTO)
-    const { archivoKey, ...datos } = ultimo
-    return { ...datos, url: await firmarUrl(archivoKey, ultimo.nombre) }
+    return conUrl(ultimo)
   }
 
   return {
@@ -89,6 +106,20 @@ export function crearAdjuntosService({
      * existe o no tiene adjunto (nunca tuvo, o se quitó). Un pago anulado lo sigue mostrando.
      */
     verUltimo,
+
+    /**
+     * El comprobante de la transferencia a un profesor (HU-44): el último adjunto activo de la
+     * liquidación, con su URL. 404 si la liquidación no existe o no tiene adjunto (es opcional; una
+     * `DESCONTADA` no tiene transferencia).
+     */
+    async verDeLiquidacion(liquidacionId: number): Promise<AdjuntoDePago> {
+      if (!(await repository.existeLiquidacion(liquidacionId))) {
+        throw new NotFoundError(MENSAJE_LIQUIDACION_NO_ENCONTRADA)
+      }
+      const ultimo = await repository.ultimoDeLiquidacion(liquidacionId)
+      if (!ultimo) throw new NotFoundError(MENSAJE_LIQUIDACION_SIN_ADJUNTO)
+      return conUrl(ultimo)
+    },
 
     /**
      * Reemplaza el comprobante: adjunta uno nuevo y conserva los anteriores (fila y archivo). En un

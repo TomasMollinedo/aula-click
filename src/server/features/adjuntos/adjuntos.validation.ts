@@ -2,8 +2,8 @@ import { z } from '@hono/zod-openapi'
 import { archivoSchema } from '@/server/shared/archivos'
 import { usuarioAuditoriaSchema, type UsuarioAuditoria } from '@/server/shared/auditoria'
 
-// Schemas Zod de entrada, salida y params del comprobante adjunto de un pago (HU-24, T-95). Son la
-// fuente del OpenAPI. Sin reglas de negocio.
+// Schemas Zod de entrada, salida y params del comprobante adjunto de un pago (HU-24, T-95) o de la
+// transferencia a un profesor (HU-44, T-123). Son la fuente del OpenAPI. Sin reglas de negocio.
 
 /** Tipos que se aceptan (MIME → extensión con la que se guarda) y tamaño máximo (HU-24). */
 export const TIPOS_ADJUNTO = {
@@ -33,11 +33,12 @@ export const subirAdjuntoSchema = z
   })
   .openapi('SubirAdjunto')
 
-/** Respuesta 201 de `POST /adjuntos`: el adjunto subido, todavía sin pago. */
+/** Respuesta 201 de `POST /adjuntos`: el adjunto subido, todavía sin pago ni liquidación. */
 export const adjuntoSubidoSchema = z
   .object({
     id: z.number().int().openapi({
-      description: 'Lo que se manda como `comprobanteAdjuntoId` al registrar el pago',
+      description:
+        'Lo que se manda como `comprobanteAdjuntoId` al registrar el pago o la transferencia a un profesor',
       example: 18,
     }),
     nombre: z
@@ -60,6 +61,19 @@ export const pagoIdParamsSchema = z.object({
     .int({ error: 'Debe ser un número entero' })
     .positive({ error: 'Debe ser mayor a 0' })
     .openapi({ param: { name: 'pagoId', in: 'path' }, description: 'Id del pago', example: 30 }),
+})
+
+/** `liquidacionId` del path. Uno no numérico, cero o negativo responde 400. */
+export const liquidacionIdParamsSchema = z.object({
+  liquidacionId: z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .openapi({
+      param: { name: 'liquidacionId', in: 'path' },
+      description: 'Id de la liquidación',
+      example: 7,
+    }),
 })
 
 /** Body multipart del reemplazo: el mismo campo `archivo` que la subida. */
@@ -86,6 +100,12 @@ export const adjuntoDePagoSchema = adjuntoSubidoSchema
 export type AdjuntoDePago = z.infer<typeof adjuntoDePagoSchema>
 
 /**
+ * Respuesta de `GET /adjuntos/liquidaciones/{liquidacionId}`: el comprobante de la transferencia a
+ * un profesor, con la misma forma que el de un pago.
+ */
+export const adjuntoDeLiquidacionSchema = adjuntoDePagoSchema.openapi('AdjuntoDeLiquidacion')
+
+/**
  * Lo que el service necesita del pago para decidir: su estado y el tipo de su forma de pago (`null`
  * en una forma sin tipo, decisión T-134). `null` si el pago no existe. No viaja por HTTP.
  */
@@ -95,8 +115,9 @@ export type PagoDelAdjunto = {
 }
 
 /**
- * El último adjunto **activo** de un pago (decisión T-136), como lo lee `ultimoAdjunto`. Lleva la
- * clave del objeto, no la URL: quien lo muestra genera la URL prefirmada. No viaja por HTTP así.
+ * El último adjunto **activo** de un pago o de una liquidación (decisión T-136), como lo leen
+ * `ultimoAdjunto` y `ultimoAdjuntoDeLiquidacion`. Lleva la clave del objeto, no la URL: quien lo
+ * muestra genera la URL prefirmada. No viaja por HTTP así.
  */
 export type UltimoAdjunto = {
   id: number
