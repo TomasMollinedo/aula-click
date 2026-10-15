@@ -18,6 +18,16 @@ export function textoTurnosSeleccionados(cantidad: number): string {
 }
 
 /**
+ * La aclaración de "Seleccionar todo": `'Se seleccionaron los 12 turnos del filtro'` (o, con uno
+ * solo, `'Se seleccionó el turno del filtro'`).
+ */
+export function textoSeleccionTodo(cantidad: number): string {
+  return cantidad === 1
+    ? 'Se seleccionó el turno del filtro'
+    : `Se seleccionaron los ${cantidad} turnos del filtro`
+}
+
+/**
  * El total a pagar de lo tildado: `'$ 32.000,00'`, o `'Sin calcular'` si alguno de los turnos no
  * tiene precio (la API no deja cobrarlo: el total real sale de la respuesta del pago).
  */

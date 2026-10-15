@@ -13,6 +13,7 @@ import {
   textoTurnosSeleccionados,
   textoSinFilas,
   textoMaterias,
+  textoSeleccionTodo,
 } from '../formato-cuentas'
 import { ADEUDADOS, CUENTA } from './fixtures'
 
@@ -169,6 +170,13 @@ describe('textoSinFilas', () => {
   it('sin filtros: los textos de siempre', () => {
     expect(textoSinFilas('adeudados', SIN_FILTROS)).toBe('Sin turnos adeudados')
     expect(textoSinFilas('proximos', SIN_FILTROS)).toBe('Sin próximos turnos para cobrar')
+  })
+})
+
+describe('textoSeleccionTodo', () => {
+  it('singular y plural', () => {
+    expect(textoSeleccionTodo(1)).toBe('Se seleccionó el turno del filtro')
+    expect(textoSeleccionTodo(12)).toBe('Se seleccionaron los 12 turnos del filtro')
   })
 })
 

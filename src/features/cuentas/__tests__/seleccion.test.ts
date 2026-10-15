@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import { aCobrar } from '../a-cobrar'
 import {
   SELECCION_VACIA,
+  estadoSeleccionarTodo,
   alternar,
   estaSeleccionada,
   ordenarComoSeMuestran,
@@ -63,6 +64,27 @@ describe('seleccionarTodos', () => {
   it('no destilda ni duplica los que ya estaban', () => {
     const conUno = alternar(SELECCION_VACIA, ADEUDADO_21)
     expect(seleccionarTodos(conUno, CUENTA.adeudados).size).toBe(2)
+  })
+})
+
+describe('estadoSeleccionarTodo', () => {
+  const dos = seleccionarTodos(SELECCION_VACIA, CUENTA.adeudados.slice(0, 2))
+
+  it('nada tildado: ninguno', () => {
+    expect(estadoSeleccionarTodo(SELECCION_VACIA, 3)).toBe('ninguno')
+    expect(estadoSeleccionarTodo(SELECCION_VACIA, 0)).toBe('ninguno')
+  })
+
+  it('una parte del filtro: algunos (la casilla queda intermedia)', () => {
+    expect(estadoSeleccionarTodo(dos, 3)).toBe('algunos')
+  })
+
+  it('todos los turnos del filtro: todos', () => {
+    expect(estadoSeleccionarTodo(dos, 2)).toBe('todos')
+  })
+
+  it('sin turnos en el filtro, lo tildado no cuenta como todo', () => {
+    expect(estadoSeleccionarTodo(dos, 0)).toBe('algunos')
   })
 })
 

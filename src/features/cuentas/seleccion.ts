@@ -72,6 +72,22 @@ export function quitar(sel: Seleccion, ocurrencias: readonly Ocurrencia[]): Sele
   return nueva
 }
 
+/**
+ * El estado de "Seleccionar todo" (HU-25): `'todos'` si está tildado cada turno del filtro,
+ * `'algunos'` si hay una parte (la casilla queda intermedia) y `'ninguno'` si no hay nada.
+ * `cantidadDelFiltro` es cuántos turnos deja el filtro: en la ficha, los de la cuenta que se ve; en
+ * la vista global, los de todas las páginas de las dos tablas (`meta.total`). La selección es
+ * siempre de ese filtro (en la ficha se poda y en la vista global se vacía al cambiarlo), así que
+ * alcanza con contar.
+ */
+export function estadoSeleccionarTodo(
+  sel: Seleccion,
+  cantidadDelFiltro: number,
+): 'ninguno' | 'algunos' | 'todos' {
+  if (sel.size === 0) return 'ninguno'
+  return cantidadDelFiltro > 0 && sel.size >= cantidadDelFiltro ? 'todos' : 'algunos'
+}
+
 /** "Quitar selección". */
 export function quitarTodos(): Seleccion {
   return SELECCION_VACIA
