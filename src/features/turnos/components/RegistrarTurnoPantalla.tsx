@@ -15,6 +15,8 @@ type RegistrarTurnoPantallaProps = {
   renderDetalle: RenderDetalleOcurrencia
   /** Compone `app/` el "Generar PDF" de cada tramo creado, en la confirmación del alta (T-69). */
   renderPdf?: (tramo: { turnoId: number; fecha: string }) => ReactNode
+  /** URL de "Cobrar" del rechazo por deuda vencida (`/mesa/alumnos/<id>?tab=pagos`). */
+  hrefCobrar?: (alumnoId: number) => string
 }
 
 // Encabezado + la pantalla, que lee la URL (`?alumnoId=`, `?detalle=`, `?fecha=`) con useSearchParams: por
@@ -24,6 +26,7 @@ export function RegistrarTurnoPantalla({
   hrefAltaAlumno,
   renderDetalle,
   renderPdf,
+  hrefCobrar,
 }: RegistrarTurnoPantallaProps) {
   return (
     <div className="space-y-8">
@@ -37,6 +40,7 @@ export function RegistrarTurnoPantalla({
           hrefAltaAlumno={hrefAltaAlumno}
           renderDetalle={renderDetalle}
           renderPdf={renderPdf}
+          hrefCobrar={hrefCobrar}
         />
       </Suspense>
     </div>

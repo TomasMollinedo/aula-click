@@ -13,6 +13,7 @@ export default function TurnosPage() {
       hrefAltaAlumno={hrefAltaConVuelta('/mesa/alumnos', 'turnos')}
       renderDetalle={(detalle) => <DetalleTurno {...detalle} />}
       renderPdf={(tramo) => <BotonPdfTurno {...tramo} />}
+      hrefCobrar={(alumnoId) => `/mesa/alumnos/${alumnoId}?tab=pagos`}
     />
   )
 }
