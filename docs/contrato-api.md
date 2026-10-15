@@ -1834,7 +1834,54 @@ Errores comunes: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` en el `PATCH` para cual
 
 ## Reparto
 
-A completar por T-120 (HU-43).
+HU-43 (T-120). El porcentaje que el centro retiene de cada turno cobrado. Reglas en `dominio.md` → Reparto.
+
+| Endpoint                         | Roles     | Qué hace                                                          |
+| -------------------------------- | --------- | ----------------------------------------------------------------- |
+| `GET /api/v1/reparto/porcentaje` | `GERENTE` | El vigente y el historial paginado (`page`, `pageSize`). 200; 400 |
+| `PUT /api/v1/reparto/porcentaje` | `GERENTE` | Registra un porcentaje nuevo. 200 con el nuevo vigente; 400       |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por fuera de las pantallas.
+
+**`GET /reparto/porcentaje?page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)):
+
+```json
+{
+  "vigente": {
+    "porcentaje": 18,
+    "desde": "2026-10-15T20:10:00.000Z",
+    "cambiadoPor": { "id": "usr_gerente_01", "nombre": "Marta", "apellido": "Ríos" }
+  },
+  "historial": {
+    "data": [
+      {
+        "id": 3,
+        "porcentaje": 18,
+        "desde": "2026-10-15T20:10:00.000Z",
+        "cambiadoPor": { "…": "…" }
+      },
+      {
+        "id": 2,
+        "porcentaje": 15,
+        "desde": "2026-09-01T03:00:00.000Z",
+        "cambiadoPor": { "…": "…" }
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 10, "total": 2, "totalPages": 1 }
+  }
+}
+```
+
+- `porcentaje`: número con hasta dos decimales (18 = 18 %). `desde`: desde cuándo rige, instante ISO 8601 en UTC. `cambiadoPor`: el usuario que lo registró (`UsuarioAuditoria`).
+- `historial` es un listado paginado anidado (`{ data, meta }`), del más reciente al más antiguo: el vigente es la primera fila de la página 1.
+
+**`PUT /reparto/porcentaje`**, body `{ "porcentaje": 18 }`. Responde **200** con el nuevo vigente (`{ porcentaje, desde, cambiadoPor }`, como `vigente`). Agrega una fila al historial y no modifica nada más: los cobros ya registrados conservan su porcentaje. La confirmación ("Desde ahora, el centro retendrá el 18 % de cada turno cobrado…") la muestra la UI.
+
+**Errores:**
+
+- 400 `VALIDACION` en `["porcentaje"]`, con un solo mensaje, si no es un número mayor o igual a 0 y menor que 100 con hasta dos decimales (también un string, `null` o si falta): "El porcentaje debe ser mayor o igual a 0 y menor que 100, con hasta dos decimales".
+- 400 `VALIDACION` en `["porcentaje"]` si es igual al vigente: "El porcentaje ya es 15 %". No se crea ninguna fila.
+- 500 `ERROR_INTERNO` (en los dos endpoints) si no hay ningún porcentaje configurado: es un error de configuración de la base, se registra en el log y nunca se reemplaza por un valor por defecto (decisión T-161).
 
 ## Liquidaciones
 
