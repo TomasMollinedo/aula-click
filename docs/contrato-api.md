@@ -1396,13 +1396,18 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
 
 ## Tablero
 
-HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
+HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicadores del centro para el gerente, en dos secciones: **General** (`GET /tablero`) y **Asistencia** (`GET /tablero/asistencia`), cada una con su PDF (`GET /tablero/pdf?seccion=`). **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
 
-**`GET /api/v1/tablero?desde&hasta`** — rol `GERENTE`.
+**Período común.** Los tres endpoints reciben el mismo período y lo validan igual:
 
 - `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos, **los dos obligatorios** (la UI traduce "Hoy", "Esta semana", "Este mes" o un rango a estas dos fechas).
 - 400 `VALIDACION` si falta alguno o no es una fecha real (`details` en su campo), y con `details` sobre `hasta` si `hasta` es anterior a `desde` ("La fecha hasta no puede ser anterior a la fecha desde") o si el período supera los **366 días**, extremos incluidos ("El período no puede superar los 366 días").
 - Errores: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `GERENTE`.
+- **Porcentajes:** número JSON de 0 a 100 redondeado a **un decimal** (1 de 3 → `33.3`), sin `%`; `0` si la base es 0. No se ajustan para que sumen 100 (tres tercios dan 99.9). Los importes van en pesos como número JSON, sin formato.
+
+### General
+
+**`GET /api/v1/tablero?desde&hasta`** — rol `GERENTE`.
 
 ```json
 {
@@ -1411,13 +1416,13 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
   "turnos": {
     "total": 48,
     "cancelados": { "cantidad": 6, "porcentaje": 12.5 },
-    "sinRegistrar": { "cantidad": 26, "porcentaje": 54.2 },
+    "sinRegistrar": { "cantidad": 6, "porcentaje": 12.5 },
     "agendados": { "cantidad": 16, "porcentaje": 33.3 },
-    "asistio": { "disponible": false },
-    "noAsistio": { "disponible": false }
+    "asistio": { "cantidad": 17, "porcentaje": 85 },
+    "noAsistio": { "cantidad": 3, "porcentaje": 15 }
   },
   "ocupacion": { "turnos": 42, "capacidad": 64, "porcentaje": 65.6 },
-  "alumnos": { "nuevos": 3, "atendidos": { "disponible": false } },
+  "alumnos": { "nuevos": 3, "atendidos": 14 },
   "materiasConMasDemanda": [
     { "materia": { "id": 2, "nombre": "Matemática" }, "cantidad": 15 },
     { "materia": { "id": 7, "nombre": "Física" }, "cantidad": 9 }
@@ -1426,26 +1431,96 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
     { "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" }, "cantidad": 14 },
     { "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" }, "cantidad": 11 }
   ],
-  "pagos": { "totalCobrado": 96000, "totalAdeudado": 296000.5 }
+  "pagos": {
+    "totalCobrado": 96000,
+    "cobradoPorForma": { "EFECTIVO": 40000, "TRANSFERENCIA": 38000, "DEBITO": 18000 },
+    "totalAdeudado": 296000.5
+  }
 }
 ```
 
 - `periodo`: el período pedido. `hoy`: la fecha de hoy en la zona del negocio con la que se calculó toda la respuesta; es la fecha de `pagos.totalAdeudado` y la que separa "sin registrar" de "agendados".
-- `turnos.total`: ocurrencias del período, **incluidas las canceladas**. `cancelados`, `sinRegistrar` y `agendados` traen `cantidad` y `porcentaje` sobre `total`. Los estados son sólo los de la definición F; van como claves, sin textos.
+- `turnos.total`: ocurrencias del período, **incluidas las canceladas**. `cancelados`, `sinRegistrar` y `agendados` traen `cantidad` y `porcentaje` sobre `total`. `sinRegistrar` son los pasados sin asistencia registrada (los que todavía están dentro del plazo y los que cerró el sistema); los que ya tienen asistencia no están en ninguno de los tres, sino en `asistio` y `noAsistio`.
 - **`turnos.agendados` es `null`** si el período no incluye fechas futuras (`hasta` anterior a `hoy`): la UI no muestra el indicador. Si `hasta` es hoy o posterior viene con su cantidad, que puede ser 0.
-- **Indicadores que dependen de la asistencia** (HU-22, próximo sprint; definición F): `turnos.asistio`, `turnos.noAsistio` y `alumnos.atendidos` son **exactamente `{ "disponible": false }`**, sin `valor` ni otra clave, y no se calculan con ningún sustituto.
+- **Asistencia** (HU-22, decisión T-162, reemplaza a T-116): `turnos.asistio` (asistencia "Presente", estado `REALIZADO`) y `turnos.noAsistio` (asistencia "Ausente", estado `AUSENTE`) traen `cantidad` y `porcentaje` **sobre los turnos con asistencia registrada** (`asistio` + `noAsistio`), **no sobre `turnos.total`**: los dos porcentajes suman 100 (salvo el redondeo) y, sin ninguna asistencia registrada, ambos son `{ cantidad: 0, porcentaje: 0 }`. `alumnos.atendidos` es un entero: los alumnos **distintos** con al menos un turno `REALIZADO` en el período.
 - `ocupacion`: `turnos` son las ocurrencias no canceladas del período y `capacidad` la suma de la capacidad efectiva de cada **clase** (una hora de un bloque en una fecha con al menos un turno no cancelado; las horas sin turnos no cuentan). `ocupacion.turnos` es lo mismo que `cupo.ocupados` de las agendas, sumado sobre todas las clases del período, y `capacidad` lo mismo que `cupo.capacidad`. El `porcentaje` **no se recorta a 100**: si a un profesor o a un aula le bajaron la capacidad, puede superarlo.
 - `alumnos.nuevos`: alumnos dados de alta en el período (en hora de Salta), aunque después se hayan dado de baja.
 - `profesoresConMasTurnos` (decisión T-121): hasta 5, por cantidad de turnos **no cancelados** del período en sus horas, es decir, por alumnos con turno con ese profesor; descendente y, en empate, por apellido, nombre y `id`. Trae `{ id, nombre, apellido }` del profesor y nunca datos de sus alumnos. `[]` si no hay ninguno.
 - `materiasConMasDemanda`: hasta 5, por cantidad de turnos **no cancelados** del período, descendente; en empate, por nombre y después por `id`. `[]` si no hay ninguno.
-- `pagos.totalCobrado`: suma de los pagos vigentes con **fecha de pago** dentro del período.
+- `pagos.totalCobrado`: suma de los pagos **vigentes** (los anulados no suman) con **fecha de pago** dentro del período.
+- **`pagos.cobradoPorForma`** (HU-23, HU-39): ese mismo total separado por forma de pago, con las tres claves siempre presentes (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`; la forma se decide por su código, nunca por el nombre) y `0` en la que no tuvo cobros. Es el mismo filtro que `totalCobrado` (sólo pagos vigentes, por fecha de pago): las tres suman `totalCobrado`.
 - **`pagos.totalAdeudado` es la deuda a la fecha (`hoy`), no la del período**: no cambia al cambiar `desde` y `hasta`, y coincide con el `totalAdeudado` de `GET /cuentas/adeudados` sin filtros (misma implementación, ver Cuentas).
-- **Porcentajes:** número JSON de 0 a 100 redondeado a **un decimal** (1 de 3 → `33.3`), sin `%`; `0` si la base es 0. No se ajustan para que sumen 100 (tres tercios dan 99.9). Los importes van en pesos como número JSON, sin formato.
 
-**`GET /api/v1/tablero/pdf?desde&hasta`** (rol `GERENTE`, decisión T-130): el tablero del período como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismo query, mismas reglas y mismos errores 400, 401 y 403 que `GET /tablero`, y los mismos indicadores (sale del mismo cálculo, no hay un segundo).
+### Asistencia
 
-- **Contenido:** una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), los alumnos nuevos y, al final, las materias y los profesores con más turnos en barras. No lleva los indicadores que dependen de la asistencia (`turnos.asistio`, `turnos.noAsistio` ni `alumnos.atendidos`), igual que la pantalla.
-- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` (`tablero-2026-09-28_2026-10-04.pdf`).
+**`GET /api/v1/tablero/asistencia?desde&hasta&paginaProfesores&paginaMaterias&orden&direccion&soloSinRegistrar`** — rol `GERENTE` (HU-39, T-112, decisión T-162). La pestaña "Asistencia": un resumen y dos tablas. **Sólo agregados por centro, profesor y materia: nunca un alumno con nombre.**
+
+- `desde`, `hasta`: el período común (arriba).
+- `paginaProfesores`, `paginaMaterias`: página de cada tabla (entero ≥ 1, por defecto `1`). Las dos tablas son **de a 10 filas** y no hay `pageSize`. Cada una tiene su página: cambiar la de profesores no mueve la de materias. Una página pasada del final devuelve `data: []` con su `meta`.
+- `orden`: columna por la que se ordena **la tabla de profesores**: `profesor` (apellido y nombre), `clasesRealizadas`, `ausencias`, `porcentajeAsistencia`, `cerradosSinRegistrar` (por defecto), `dentroDelPlazo` o `porcentajeSinRegistrar`. `direccion`: `asc` o `desc` (por defecto `desc`). En empate, siempre apellido, nombre e `id` ascendentes, así el orden es estable entre páginas. La tabla de materias no se reordena.
+- `soloSinRegistrar`: `true` o `false` (por defecto, `false`). Con `true`, la tabla de profesores trae sólo a los que tienen `noRegistraAsistencia`. **No cambia el resumen ni la tabla de materias**, que son siempre los del período entero.
+- 400 `VALIDACION` además por una página que no es un entero ≥ 1 y por un `orden`, una `direccion` o un `soloSinRegistrar` que no existen (`details` en su campo).
+
+```json
+{
+  "periodo": { "desde": "2026-09-28", "hasta": "2026-10-04" },
+  "hoy": "2026-10-02",
+  "resumen": {
+    "porcentajeAsistencia": 85,
+    "cerradosSinRegistrar": 5,
+    "profesoresSinRegistrar": 2,
+    "alumnosBajoElUmbral": 3
+  },
+  "profesores": {
+    "data": [
+      {
+        "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" },
+        "clasesRealizadas": 6,
+        "ausencias": 1,
+        "porcentajeAsistencia": 85.7,
+        "cerradosSinRegistrar": 3,
+        "dentroDelPlazo": 1,
+        "porcentajeSinRegistrar": 27.3,
+        "noRegistraAsistencia": true
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 10, "total": 1, "totalPages": 1 }
+  },
+  "materias": {
+    "data": [
+      {
+        "materia": { "id": 2, "nombre": "Matemática" },
+        "clasesRealizadas": 8,
+        "ausencias": 1,
+        "porcentajeAsistencia": 88.9,
+        "cerradosSinRegistrar": 3,
+        "dentroDelPlazo": 1,
+        "porcentajeSinRegistrar": 23.1
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 10, "total": 1, "totalPages": 1 }
+  }
+}
+```
+
+- `hoy`: la fecha con la que se calculó la respuesta; separa los turnos cerrados de los que están dentro del plazo (plazo de 7 días, ver Asistencias).
+- `resumen` (los números principales):
+  - `porcentajeAsistencia`: asistencia del centro, los turnos `REALIZADO` sobre los que tienen asistencia registrada (`REALIZADO` + `AUSENTE`).
+  - `cerradosSinRegistrar`: turnos del período que cerró el sistema como "Sin registrar" (pasaron los 7 días sin que el profesor los registrara).
+  - `profesoresSinRegistrar`: profesores con al menos un turno cerrado sin registrar en el período (lo mismo que cuenta `noRegistraAsistencia`).
+  - `alumnosBajoElUmbral`: alumnos con **menos de 75 %** de asistencia, entre los que tienen algún turno con asistencia registrada en el período. **Sólo la cantidad:** el umbral es estricto (75 % justo no cuenta) y los alumnos sin ningún registro no entran.
+- `profesores`: un profesor por fila, sólo los que tienen turnos **no cancelados** en el período. `clasesRealizadas` son los turnos con asistencia "Presente" (cada hora de un alumno cuenta como un turno), `ausencias` los de "Ausente", `porcentajeAsistencia` las clases sobre ambos, `cerradosSinRegistrar` los que cerró el sistema, `dentroDelPlazo` los "Sin registrar" que todavía se pueden registrar y `porcentajeSinRegistrar` los cerrados sobre los turnos **no cancelados** del profesor en el período (los agendados están en la base). `noRegistraAsistencia` es `true` con al menos un cerrado: la UI muestra el distintivo "No registra asistencia". Orden por defecto: `cerradosSinRegistrar` de mayor a menor.
+- `materias`: las mismas cifras agrupadas por materia (sin `noRegistraAsistencia`: no es una persona que registre). Orden fijo: `cerradosSinRegistrar` de mayor a menor y, en empate, nombre e `id`.
+- Los cancelados no cuentan en ninguna cifra. Con todo en 0 (por ejemplo, un período sin turnos), los porcentajes son `0` y las tablas, `[]`.
+
+### PDF
+
+**`GET /api/v1/tablero/pdf?desde&hasta&seccion`** (rol `GERENTE`, decisiones T-130 y T-162): una sección del tablero como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismo período, mismas reglas y mismos errores 400, 401 y 403 que los otros endpoints, y los mismos números que el JSON de la sección (sale del mismo cálculo, no hay un segundo).
+
+- `seccion`: `general` (por defecto, así el enlace anterior a las secciones sigue funcionando) o `asistencia`. 400 `VALIDACION` con `details` sobre `seccion` si es otra.
+- **`general`** (reemplaza al PDF de HU-21): una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período, con lo cobrado por forma de pago, y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), la asistencia (asistió y no asistió, con su porcentaje) con los alumnos atendidos y nuevos, y al final las materias y los profesores con más turnos en barras.
+- **`asistencia`**: el título es `Asistencia semanal`, `Asistencia diaria`, `Asistencia mensual` o `Asistencia del período` (según el período, igual que el de General) y debajo, de qué día a qué día son los datos. Trae los números principales del `resumen` y las **tablas completas** de profesores y de materias: **todas las filas** (sin las páginas de la pantalla y sin el filtro `soloSinRegistrar`), en el orden por defecto (cerrados sin registrar de mayor a menor), repitiendo el encabezado de la tabla en cada hoja, así que ocupa las hojas que hagan falta. Sin ningún dato de los alumnos. La tabla de profesores marca con "No registra" a los que tienen turnos cerrados sin registrar.
+- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` para General (`tablero-2026-09-28_2026-10-04.pdf`) y `tablero-asistencia-<desde>_<hasta>.pdf` para Asistencia.
 
 ## Centro
 
@@ -1942,7 +2017,7 @@ Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que de
 | Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf` | `MESA_ENTRADAS`, `PROFESOR`                         |
 | Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`        | `MESA_ENTRADAS`                                     |
 | Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`   | `MESA_ENTRADAS`                                     |
-| Tablero del gerente   | `GET /tablero/pdf?desde&hasta`           | `GERENTE`                                           |
+| Tablero del gerente   | `GET /tablero/pdf?desde&hasta&seccion`   | `GERENTE`                                           |
 
 Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Agendas y Tablero.
 

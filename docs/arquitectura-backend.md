@@ -71,7 +71,7 @@ Features de API del Sprint 2 (T-32 registra sus routers vacíos; cada una la com
 - `pagos`: registrar el pago de una o varias ocurrencias y su comprobante.
 - `cuentas`: turnos adeudados y próximos de un alumno, y las vistas globales de adeudados y de próximos.
 - `examenes`: exámenes de un alumno por materia (para calcular la prioridad de sus turnos).
-- `tablero`: indicadores agregados de un período para el gerente (T-61). Sólo lectura y sin tablas propias: las ocurrencias salen del motor de `turnos`, la deuda de `cuentas.condiciones` (`totalAdeudado`) y lo cobrado de `pagos.condiciones` (`totalCobradoEntre`); las cuentas son reglas puras de `tablero.reglas.ts`.
+- `tablero`: indicadores agregados de un período para el gerente (T-61), en dos secciones: General y Asistencia (HU-39, T-112). Sólo lectura y sin tablas propias: las ocurrencias salen del motor de `turnos`, la deuda de `cuentas.condiciones` (`totalAdeudado`) y lo cobrado de `pagos.condiciones` (`totalCobradoEntre` y `totalCobradoPorForma`); las cuentas, incluida la asistencia por profesor y por materia, son reglas puras de `tablero.reglas.ts` sobre **una sola lectura** de ocurrencias por consulta.
 - `centro`: nombre, dirección, teléfono y logo del centro, para el encabezado de los documentos oficiales (T-64). Sin tabla: son constantes de la feature (el logo, un archivo); surgió con las definiciones del 29/09, así que es la única que agregó su línea a `app.ts` después de T-32.
 
 Features de API del Sprint 3 (T-73 registra sus routers vacíos; cada una la completa su tarea dueña, sin tocar `app.ts` ni `eslint.config.mjs`):
@@ -349,7 +349,7 @@ El cliente se instancia una sola vez en `src/lib/prisma.ts`, con el patrón `glo
 
 ## Documentos PDF
 
-Los documentos oficiales los genera la API con `@react-pdf/renderer` (decisión T-122): cada uno es un endpoint `GET …/pdf` que devuelve el PDF ya armado. Hay cinco: el comprobante de pago (`pagos`), el detalle de un turno y los turnos de un alumno (`ocurrencias`), la agenda diaria de un profesor (`agendas`) y el tablero del gerente (`tablero`, decisión T-130). El contrato (URLs, parámetros, headers, nombres de archivo y errores) está en `contrato-api.md` → Documentos PDF.
+Los documentos oficiales los genera la API con `@react-pdf/renderer` (decisión T-122): cada uno es un endpoint `GET …/pdf` que devuelve el PDF ya armado. Hay cinco: el comprobante de pago (`pagos`), el detalle de un turno y los turnos de un alumno (`ocurrencias`), la agenda diaria de un profesor (`agendas`) y el tablero del gerente (`tablero`, decisión T-130), con una plantilla por sección: General y Asistencia, esta última con las tablas completas en varias hojas (decisión T-162). El contrato (URLs, parámetros, headers, nombres de archivo y errores) está en `contrato-api.md` → Documentos PDF.
 
 - **Primitivas comunes: `src/server/shared/pdf/`.** Presentación sin significado de negocio, como el resto de `shared/`:
   - `documento.tsx`: `DocumentoOficialPdf`, la hoja A4 con el encabezado (logo y datos del centro, "Emitido por", fecha de emisión) y el título con su referencia. Los metadatos salen de acá: `title` es el título con la referencia, y `author`, `creator` y `producer` son el nombre del centro (el nombre del sistema no aparece).

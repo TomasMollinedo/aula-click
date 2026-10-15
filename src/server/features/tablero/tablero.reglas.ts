@@ -172,6 +172,252 @@ export function profesoresConMasTurnos(
     .slice(0, MAX_PROFESORES_TABLERO)
 }
 
+// ---------------------------------------------------------------------------------------------
+// Asistencia (HU-39, T-112, decisión T-162)
+// ---------------------------------------------------------------------------------------------
+
+/** Debajo de este porcentaje de asistencia (estricto) un alumno cuenta en "alumnos con baja asistencia". */
+export const UMBRAL_ASISTENCIA_ALUMNO = 75
+
+/** Filas de cada tabla de la pestaña "Asistencia". */
+export const FILAS_POR_PAGINA_ASISTENCIA = 10
+
+/** Lo que las reglas de asistencia miran de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
+export type OcurrenciaAsistencia = OcurrenciaTablero &
+  Pick<Ocurrencia, 'alumnoId' | 'plazoAsistencia'>
+
+/**
+ * "Asistió" y "No asistió": los turnos con asistencia registrada (`REALIZADO` y `AUSENTE`), con su
+ * porcentaje **sobre esos turnos**, no sobre el total del período. Los cerrados y los pendientes de
+ * registro no entran en la base. Sin ningún registro, los dos en 0.
+ */
+export function conteosDeAsistencia(ocurrencias: readonly Pick<OcurrenciaTablero, 'estado'>[]): {
+  asistio: Conteo
+  noAsistio: Conteo
+} {
+  const asistio = ocurrencias.filter((o) => o.estado === 'REALIZADO').length
+  const noAsistio = ocurrencias.filter((o) => o.estado === 'AUSENTE').length
+  const registrados = asistio + noAsistio
+  return {
+    asistio: { cantidad: asistio, porcentaje: porcentaje(asistio, registrados) },
+    noAsistio: { cantidad: noAsistio, porcentaje: porcentaje(noAsistio, registrados) },
+  }
+}
+
+/** Alumnos distintos con al menos un turno `REALIZADO` ("Presente") en el período. */
+export function alumnosAtendidos(
+  ocurrencias: readonly Pick<OcurrenciaAsistencia, 'estado' | 'alumnoId'>[],
+): number {
+  return new Set(ocurrencias.filter((o) => o.estado === 'REALIZADO').map((o) => o.alumnoId)).size
+}
+
+/** Las cifras de asistencia de un grupo de turnos (un profesor o una materia). */
+export type CifrasDeAsistencia = {
+  /** Turnos `REALIZADO` (asistencia "Presente"): cada hora de un alumno cuenta como un turno. */
+  clasesRealizadas: number
+  /** Turnos `AUSENTE`. */
+  ausencias: number
+  /** `clasesRealizadas` sobre los turnos con asistencia registrada (`clasesRealizadas + ausencias`). */
+  porcentajeAsistencia: number
+  /** `SIN_REGISTRAR` con el plazo vencido: los que cerró el sistema. */
+  cerradosSinRegistrar: number
+  /** `SIN_REGISTRAR` que todavía están dentro del plazo de registro. */
+  dentroDelPlazo: number
+  /** `cerradosSinRegistrar` sobre los turnos **no cancelados** del grupo. */
+  porcentajeSinRegistrar: number
+}
+
+/**
+ * Las cifras de un grupo de turnos. Los cancelados no cuentan (no hay asistencia que registrar),
+ * tampoco en la base de `porcentajeSinRegistrar`; los agendados sí están en esa base. Todos los
+ * porcentajes salen en 0 si su base es 0.
+ */
+function cifrasDeAsistencia(ocurrencias: readonly OcurrenciaAsistencia[]): CifrasDeAsistencia {
+  let turnos = 0
+  let clasesRealizadas = 0
+  let ausencias = 0
+  let cerradosSinRegistrar = 0
+  let dentroDelPlazo = 0
+  for (const { estado, plazoAsistencia } of ocurrencias) {
+    if (estado === 'CANCELADO') continue
+    turnos += 1
+    if (estado === 'REALIZADO') clasesRealizadas += 1
+    else if (estado === 'AUSENTE') ausencias += 1
+    else if (estado === 'SIN_REGISTRAR') {
+      if (plazoAsistencia?.vencido === true) cerradosSinRegistrar += 1
+      else dentroDelPlazo += 1
+    }
+  }
+  return {
+    clasesRealizadas,
+    ausencias,
+    porcentajeAsistencia: porcentaje(clasesRealizadas, clasesRealizadas + ausencias),
+    cerradosSinRegistrar,
+    dentroDelPlazo,
+    porcentajeSinRegistrar: porcentaje(cerradosSinRegistrar, turnos),
+  }
+}
+
+export type FilaProfesorAsistencia = CifrasDeAsistencia & {
+  profesor: { id: number; nombre: string; apellido: string }
+  /** Tiene al menos un turno cerrado sin registrar en el período. */
+  noRegistraAsistencia: boolean
+}
+
+export type FilaMateriaAsistencia = CifrasDeAsistencia & {
+  materia: { id: number; nombre: string }
+}
+
+/** Agrupa las ocurrencias **no canceladas** por una clave (`id` de profesor o de materia). */
+function agruparPor(
+  ocurrencias: readonly OcurrenciaAsistencia[],
+  claveDe: (ocurrencia: OcurrenciaAsistencia) => number,
+): Map<number, OcurrenciaAsistencia[]> {
+  const grupos = new Map<number, OcurrenciaAsistencia[]>()
+  for (const ocurrencia of ocurrencias) {
+    if (ocurrencia.estado === 'CANCELADO') continue
+    const clave = claveDe(ocurrencia)
+    const grupo = grupos.get(clave)
+    if (grupo) grupo.push(ocurrencia)
+    else grupos.set(clave, [ocurrencia])
+  }
+  return grupos
+}
+
+/**
+ * Una fila por profesor con al menos un turno no cancelado en el período, **sin orden**:
+ * `ordenarProfesores` lo decide. Sólo agregados: nada de los alumnos.
+ */
+export function filasDeProfesores(
+  ocurrencias: readonly OcurrenciaAsistencia[],
+): FilaProfesorAsistencia[] {
+  return [...agruparPor(ocurrencias, (o) => o.profesor.id).values()].map((grupo) => {
+    const { profesor } = grupo[0] as OcurrenciaAsistencia
+    const cifras = cifrasDeAsistencia(grupo)
+    return {
+      profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
+      ...cifras,
+      noRegistraAsistencia: cifras.cerradosSinRegistrar > 0,
+    }
+  })
+}
+
+/**
+ * Una fila por materia con al menos un turno no cancelado en el período. Orden fijo: cerrados sin
+ * registrar de mayor a menor; en empate, nombre (`localeCompare` con `'es'`) e `id`.
+ */
+export function filasDeMaterias(
+  ocurrencias: readonly OcurrenciaAsistencia[],
+): FilaMateriaAsistencia[] {
+  return [...agruparPor(ocurrencias, (o) => o.materia.id).values()]
+    .map((grupo) => {
+      const { materia } = grupo[0] as OcurrenciaAsistencia
+      return {
+        materia: { id: materia.id, nombre: materia.nombre },
+        ...cifrasDeAsistencia(grupo),
+      }
+    })
+    .sort(
+      (a, b) =>
+        b.cerradosSinRegistrar - a.cerradosSinRegistrar ||
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') ||
+        a.materia.id - b.materia.id,
+    )
+}
+
+/** Columnas por las que se puede ordenar la tabla de profesores. */
+export const COLUMNAS_PROFESORES = [
+  'profesor',
+  'clasesRealizadas',
+  'ausencias',
+  'porcentajeAsistencia',
+  'cerradosSinRegistrar',
+  'dentroDelPlazo',
+  'porcentajeSinRegistrar',
+] as const
+export type ColumnaProfesores = (typeof COLUMNAS_PROFESORES)[number]
+
+export type Direccion = 'asc' | 'desc'
+
+/** Orden por defecto de la tabla de profesores: los que más turnos cerrados sin registrar tienen. */
+export const ORDEN_PROFESORES_POR_DEFECTO: { orden: ColumnaProfesores; direccion: Direccion } = {
+  orden: 'cerradosSinRegistrar',
+  direccion: 'desc',
+}
+
+function compararNombres(a: FilaProfesorAsistencia, b: FilaProfesorAsistencia): number {
+  return (
+    a.profesor.apellido.localeCompare(b.profesor.apellido, 'es') ||
+    a.profesor.nombre.localeCompare(b.profesor.nombre, 'es') ||
+    a.profesor.id - b.profesor.id
+  )
+}
+
+/**
+ * Las filas de profesores ordenadas por `orden` en `direccion` (copia, no toca la entrada). En
+ * empate, siempre apellido y nombre ascendentes y después `id`, así el orden es estable entre
+ * consultas y páginas. `profesor` ordena por apellido y nombre.
+ */
+export function ordenarProfesores(
+  filas: readonly FilaProfesorAsistencia[],
+  { orden, direccion }: { orden: ColumnaProfesores; direccion: Direccion },
+): FilaProfesorAsistencia[] {
+  const signo = direccion === 'asc' ? 1 : -1
+  return [...filas].sort((a, b) => {
+    const principal = orden === 'profesor' ? compararNombres(a, b) : a[orden] - b[orden]
+    return signo * principal || compararNombres(a, b)
+  })
+}
+
+/** El filtro "Sólo con turnos sin registrar": los profesores con `noRegistraAsistencia`. */
+export function soloQueNoRegistran(
+  filas: readonly FilaProfesorAsistencia[],
+): FilaProfesorAsistencia[] {
+  return filas.filter((fila) => fila.noRegistraAsistencia)
+}
+
+/** Los números principales de la pestaña "Asistencia". */
+export type ResumenDeAsistencia = {
+  /** `REALIZADO` sobre los turnos con asistencia registrada de todo el centro. */
+  porcentajeAsistencia: number
+  /** Turnos cerrados "Sin registrar" por el sistema en el período. */
+  cerradosSinRegistrar: number
+  /** Profesores con al menos un turno cerrado sin registrar. */
+  profesoresSinRegistrar: number
+  /** Alumnos con algún registro y menos de `UMBRAL_ASISTENCIA_ALUMNO` % de asistencia: sólo la cantidad. */
+  alumnosBajoElUmbral: number
+}
+
+/**
+ * El resumen del período. El porcentaje de asistencia de un alumno se compara **sin redondear**
+ * (`realizadas × 100 < umbral × registradas`): 74,96 % no pasa por 75. Los alumnos sin ningún turno
+ * con asistencia registrada no entran.
+ */
+export function resumenDeAsistencia(
+  ocurrencias: readonly OcurrenciaAsistencia[],
+): ResumenDeAsistencia {
+  const centro = cifrasDeAsistencia(ocurrencias)
+
+  const porAlumno = new Map<number, { realizadas: number; registradas: number }>()
+  for (const { alumnoId, estado } of ocurrencias) {
+    if (estado !== 'REALIZADO' && estado !== 'AUSENTE') continue
+    const cuenta = porAlumno.get(alumnoId) ?? { realizadas: 0, registradas: 0 }
+    cuenta.registradas += 1
+    if (estado === 'REALIZADO') cuenta.realizadas += 1
+    porAlumno.set(alumnoId, cuenta)
+  }
+  const alumnosBajoElUmbral = [...porAlumno.values()].filter(
+    ({ realizadas, registradas }) => realizadas * 100 < UMBRAL_ASISTENCIA_ALUMNO * registradas,
+  ).length
+
+  return {
+    porcentajeAsistencia: centro.porcentajeAsistencia,
+    cerradosSinRegistrar: centro.cerradosSinRegistrar,
+    profesoresSinRegistrar: soloQueNoRegistran(filasDeProfesores(ocurrencias)).length,
+    alumnosBajoElUmbral,
+  }
+}
+
 // Se crea una sola vez. Las partes numéricas no dependen del formato del locale.
 const formatoZona = new Intl.DateTimeFormat('en-US', {
   timeZone: ZONA_HORARIA,

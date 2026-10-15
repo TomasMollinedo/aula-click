@@ -1,5 +1,5 @@
 import type { ErrorResponse } from '@/server/errors'
-import type { Tablero } from './tablero.validation'
+import type { Tablero, TableroAsistencia } from './tablero.validation'
 
 // Ejemplos del OpenAPI del tablero (Swagger en /api/v1/docs), usados en tablero.routes. Solo datos:
 // sin lógica. `satisfies` los mantiene alineados con los schemas. Importes como número JSON. Hoy es
@@ -11,13 +11,13 @@ export const ejemploTablero = {
   turnos: {
     total: 48,
     cancelados: { cantidad: 6, porcentaje: 12.5 },
-    sinRegistrar: { cantidad: 26, porcentaje: 54.2 },
+    sinRegistrar: { cantidad: 6, porcentaje: 12.5 },
     agendados: { cantidad: 16, porcentaje: 33.3 },
-    asistio: { disponible: false },
-    noAsistio: { disponible: false },
+    asistio: { cantidad: 17, porcentaje: 85 },
+    noAsistio: { cantidad: 3, porcentaje: 15 },
   },
   ocupacion: { turnos: 42, capacidad: 64, porcentaje: 65.6 },
-  alumnos: { nuevos: 3, atendidos: { disponible: false } },
+  alumnos: { nuevos: 3, atendidos: 14 },
   materiasConMasDemanda: [
     { materia: { id: 2, nombre: 'Matemática' }, cantidad: 15 },
     { materia: { id: 7, nombre: 'Física' }, cantidad: 9 },
@@ -30,8 +30,81 @@ export const ejemploTablero = {
     { profesor: { id: 5, nombre: 'Luis', apellido: 'Pérez' }, cantidad: 11 },
     { profesor: { id: 8, nombre: 'Marta', apellido: 'Ruiz' }, cantidad: 9 },
   ],
-  pagos: { totalCobrado: 96000, totalAdeudado: 296000.5 },
+  pagos: {
+    totalCobrado: 96000,
+    cobradoPorForma: { EFECTIVO: 40000, TRANSFERENCIA: 38000, DEBITO: 18000 },
+    totalAdeudado: 296000.5,
+  },
 } satisfies Tablero
+
+export const ejemploTableroAsistencia = {
+  periodo: { desde: '2026-09-28', hasta: '2026-10-04' },
+  hoy: '2026-10-02',
+  resumen: {
+    porcentajeAsistencia: 85,
+    cerradosSinRegistrar: 5,
+    profesoresSinRegistrar: 2,
+    alumnosBajoElUmbral: 3,
+  },
+  profesores: {
+    data: [
+      {
+        profesor: { id: 5, nombre: 'Luis', apellido: 'Pérez' },
+        clasesRealizadas: 6,
+        ausencias: 1,
+        porcentajeAsistencia: 85.7,
+        cerradosSinRegistrar: 3,
+        dentroDelPlazo: 1,
+        porcentajeSinRegistrar: 27.3,
+        noRegistraAsistencia: true,
+      },
+      {
+        profesor: { id: 8, nombre: 'Marta', apellido: 'Ruiz' },
+        clasesRealizadas: 5,
+        ausencias: 1,
+        porcentajeAsistencia: 83.3,
+        cerradosSinRegistrar: 2,
+        dentroDelPlazo: 0,
+        porcentajeSinRegistrar: 22.2,
+        noRegistraAsistencia: true,
+      },
+      {
+        profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+        clasesRealizadas: 6,
+        ausencias: 1,
+        porcentajeAsistencia: 85.7,
+        cerradosSinRegistrar: 0,
+        dentroDelPlazo: 2,
+        porcentajeSinRegistrar: 0,
+        noRegistraAsistencia: false,
+      },
+    ],
+    meta: { page: 1, pageSize: 10, total: 3, totalPages: 1 },
+  },
+  materias: {
+    data: [
+      {
+        materia: { id: 2, nombre: 'Matemática' },
+        clasesRealizadas: 8,
+        ausencias: 1,
+        porcentajeAsistencia: 88.9,
+        cerradosSinRegistrar: 3,
+        dentroDelPlazo: 1,
+        porcentajeSinRegistrar: 23.1,
+      },
+      {
+        materia: { id: 7, nombre: 'Física' },
+        clasesRealizadas: 9,
+        ausencias: 2,
+        porcentajeAsistencia: 81.8,
+        cerradosSinRegistrar: 2,
+        dentroDelPlazo: 2,
+        porcentajeSinRegistrar: 13.3,
+      },
+    ],
+    meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
+  },
+} satisfies TableroAsistencia
 
 export const ejemploErrorPeriodo = {
   error: {
