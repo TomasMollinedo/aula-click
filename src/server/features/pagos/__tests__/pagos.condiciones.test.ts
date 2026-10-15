@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
-import { leerPagoDeOcurrencia, totalCobradoEntre } from '../pagos.condiciones'
+import { AppError } from '@/server/errors'
+import { leerPagoDeOcurrencia, totalCobradoEntre, totalCobradoPorForma } from '../pagos.condiciones'
 
 // `leerPagoDeOcurrencia`: lo que el detalle de una ocurrencia pagada muestra de su pago. Sin base:
 // el cliente es un falso con el `findUnique` de `pago`.
@@ -93,5 +94,95 @@ describe('totalCobradoEntre', () => {
   it('sin pagos en el período (`_sum.importeTotal` nulo) → 0', async () => {
     const { client } = clienteConSuma(null)
     await expect(totalCobradoEntre(client, PERIODO)).resolves.toBe(0)
+  })
+})
+
+describe('totalCobradoPorForma', () => {
+  const PERIODO = { desde: '2026-09-28', hasta: '2026-10-04' }
+  const decimal = (n: number) => ({ toNumber: () => n })
+
+  function clienteConGrupos(
+    grupos: { formaPagoId: number; importe: number | null }[],
+    formas: { id: number; tipoFormaPago: string | null }[],
+  ) {
+    const groupBy = vi.fn(async () =>
+      grupos.map((g) => ({
+        formaPagoId: g.formaPagoId,
+        _sum: { importeTotal: g.importe === null ? null : decimal(g.importe) },
+      })),
+    )
+    const findMany = vi.fn(async () => formas)
+    const client = { pago: { groupBy }, formaPago: { findMany } } as unknown as Cliente
+    return { client, groupBy, findMany }
+  }
+
+  const FORMAS = [
+    { id: 1, tipoFormaPago: 'EFECTIVO' },
+    { id: 2, tipoFormaPago: 'TRANSFERENCIA' },
+    { id: 3, tipoFormaPago: 'DEBITO' },
+  ]
+
+  it('cada forma con su total, por su código, en `number`', async () => {
+    const { client } = clienteConGrupos(
+      [
+        { formaPagoId: 1, importe: 30001.5 },
+        { formaPagoId: 2, importe: 15000 },
+        { formaPagoId: 3, importe: 7000 },
+      ],
+      FORMAS,
+    )
+
+    expect(await totalCobradoPorForma(client, PERIODO)).toEqual({
+      EFECTIVO: 30001.5,
+      TRANSFERENCIA: 15000,
+      DEBITO: 7000,
+    })
+  })
+
+  it('el mismo filtro que el total: sólo `VIGENTE`, por `fechaPago`, extremos incluidos', async () => {
+    const { client, groupBy } = clienteConGrupos([], FORMAS)
+    await totalCobradoPorForma(client, PERIODO)
+
+    expect(groupBy).toHaveBeenCalledWith({
+      by: ['formaPagoId'],
+      where: {
+        estado: 'VIGENTE',
+        fechaPago: {
+          gte: new Date('2026-09-28T00:00:00.000Z'),
+          lte: new Date('2026-10-04T00:00:00.000Z'),
+        },
+      },
+      _sum: { importeTotal: true },
+    })
+  })
+
+  it('una forma sin pagos queda en 0; sin pagos, todo en 0 y sin leer las formas', async () => {
+    const conEfectivo = clienteConGrupos([{ formaPagoId: 1, importe: 8000 }], FORMAS)
+    expect(await totalCobradoPorForma(conEfectivo.client, PERIODO)).toEqual({
+      EFECTIVO: 8000,
+      TRANSFERENCIA: 0,
+      DEBITO: 0,
+    })
+
+    const sinPagos = clienteConGrupos([], FORMAS)
+    expect(await totalCobradoPorForma(sinPagos.client, PERIODO)).toEqual({
+      EFECTIVO: 0,
+      TRANSFERENCIA: 0,
+      DEBITO: 0,
+    })
+    expect(sinPagos.findMany).not.toHaveBeenCalled()
+  })
+
+  it('una forma de pago con pagos y sin código → 500 que pide correr el seed', async () => {
+    const { client } = clienteConGrupos(
+      [{ formaPagoId: 9, importe: 100 }],
+      [{ id: 9, tipoFormaPago: null }],
+    )
+
+    const error = await totalCobradoPorForma(client, PERIODO).catch((e) => e)
+
+    expect(error).toBeInstanceOf(AppError)
+    expect(error.statusCode).toBe(500)
+    expect(error.message).toMatch(/pnpm db:seed/)
   })
 })
