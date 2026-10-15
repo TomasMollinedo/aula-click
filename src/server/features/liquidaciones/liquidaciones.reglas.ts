@@ -1,5 +1,6 @@
 import { repartoDeTurno, sumarReparto } from '@/server/features/reparto/reparto.condiciones'
 import type { EstadoAsistencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import type { UsuarioAuditoria } from '@/server/shared/auditoria'
 import { fechaADate, fechaEnZona } from '@/server/shared/fechas'
 import { mesDe, mesSiguiente, primerDiaDelMes } from '@/server/shared/zod'
 
@@ -91,6 +92,8 @@ export type Liquidacion = {
     numeroOperacion: string | null
     observaciones: string | null
     descontadaEnMes: string | null
+    /** Quien registró el pago (`createdBy`). */
+    registradaPor: UsuarioAuditoria
     /** `createdAt`, ISO UTC. */
     registradaEl: string
   }
