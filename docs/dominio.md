@@ -372,7 +372,12 @@ HU-43 a HU-47 (tarea T-118). Qué se guarda y para qué; los términos (reparto,
 
 ## Reparto
 
-A completar por T-120 (HU-43).
+HU-43 (tarea T-120). Los términos son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación).
+
+- **Porcentaje vigente:** el último `PorcentajeCentro` (por `createdAt`, con `id` como desempate). Uno solo para todo el centro. Sólo el gerente lo ve y lo cambia; cambiarlo agrega una fila y no toca los cobros anteriores, porque cada cobro guardó el suyo en `PagoTurno.porcentajeCentro`. Es un número mayor o igual a 0 y menor que 100, con hasta dos decimales, y no se puede "cambiar" por el mismo valor.
+- **Sin porcentaje configurado** es un error de configuración (500 con log), nunca un 15 % por defecto (decisión T-161).
+- **Reparto de un turno** (`repartoDeTurno(importe, porcentaje)`), en enteros: el importe en centavos y el porcentaje en centésimos (15 % = 1500). Parte del centro = `floor((centavos × centésimos + 5000) / 10000)`, es decir, redondeada a centavos **mitad hacia arriba** ($ 0,10 al 15 % → $ 0,02). Parte del profesor = importe − parte del centro, así **las dos suman siempre el importe** ($ 8.000 al 15 % → $ 1.200 y $ 6.800). Los totales se suman en centavos (`sumarReparto`).
+- **Una sola regla:** `repartoDeTurno` y `sumarReparto` se publican en `reparto.condiciones.ts` con `porcentajeVigente(client)`; liquidaciones, cobros, caja y tablero los usan de ahí y nadie calcula el reparto por su cuenta.
 
 ## Liquidaciones
 
