@@ -1,4 +1,9 @@
 import { vi } from 'vitest'
+import { ValidationError } from '@/server/errors'
+import {
+  CODIGO_ADJUNTO_INVALIDO,
+  MENSAJE_ADJUNTO_INVALIDO,
+} from '@/server/features/adjuntos/adjuntos.condiciones'
 import type { PagosRepository } from '../pagos.repository'
 import type { OcurrenciaCobro, PlanPago, SnapshotPago } from '../pagos.reglas'
 import type { ComprobanteGuardado, EntradaPago, OcurrenciaPedida } from '../pagos.validation'
@@ -7,7 +12,8 @@ import type { ComprobanteGuardado, EntradaPago, OcurrenciaPedida } from '../pago
 // memoria de `turnos.service.test.ts`: `registrar` ejecuta los pagos **de a uno** con una cola
 // (como el `FOR UPDATE` del alumno en Postgres, que es la garantía real), arma el snapshot con los
 // datos de ese momento y ejecuta el `verificar` real que le pasa el service. Si `verificar` lanza,
-// no se escribe nada.
+// no se escribe nada. El comprobante adjunto se vincula como `vincularAdjunto` (T-95): sólo uno
+// disponible (sin pago) que subió quien cobra; si no, el mismo 400 y no queda nada escrito.
 
 /** Una ocurrencia de la "base": lo que devuelve el motor, más los datos del comprobante. */
 export type OcurrenciaEnBase = OcurrenciaCobro & {
@@ -17,9 +23,13 @@ export type OcurrenciaEnBase = OcurrenciaCobro & {
 
 type PagoEnBase = { id: number; numeroComprobante: number; entrada: EntradaPago; plan: PlanPago }
 
+/** Un comprobante subido con `POST /adjuntos`: quién lo subió y a qué pago quedó vinculado. */
+export type AdjuntoEnBase = { subidoPor: string; pagoId: number | null }
+
 export function crearPagosEnMemoria(
   ocurrencias: OcurrenciaEnBase[],
   precios: Map<number, number | null>,
+  adjuntos: Map<number, AdjuntoEnBase> = new Map(),
 ) {
   const pagos: PagoEnBase[] = []
   /** Pagos por `(turnoId, fecha)`: el único de `pago_turno`. */
@@ -50,14 +60,26 @@ export function crearPagosEnMemoria(
   }
 
   let cola: Promise<unknown> = Promise.resolve()
-  const registrar = vi.fn<PagosRepository['registrar']>((entrada, verificar) => {
+  const registrar = vi.fn<PagosRepository['registrar']>((entrada, verificar, actor) => {
     const ejecucion = cola.then(async () => {
       const snapshot = leer(entrada.ocurrencias)
       // Cede el turno entre la lectura y la escritura: sin la cola, otro pago se colaría acá.
       await new Promise((resolver) => setTimeout(resolver, 0))
       const plan = verificar(snapshot)
+      const id = 31 + pagos.length
+      const { medio } = entrada
+      if (medio.formaPago !== 'EFECTIVO' && medio.comprobanteAdjuntoId !== null) {
+        const adjunto = adjuntos.get(medio.comprobanteAdjuntoId)
+        if (!adjunto || adjunto.pagoId !== null || adjunto.subidoPor !== actor.userId) {
+          throw new ValidationError(MENSAJE_ADJUNTO_INVALIDO, {
+            code: CODIGO_ADJUNTO_INVALIDO,
+            details: [{ path: ['comprobanteAdjuntoId'], message: MENSAJE_ADJUNTO_INVALIDO }],
+          })
+        }
+        adjunto.pagoId = id
+      }
       const pago: PagoEnBase = {
-        id: 31 + pagos.length,
+        id,
         numeroComprobante: 1024 + pagos.length,
         entrada,
         plan,
@@ -95,7 +117,8 @@ export function crearPagosEnMemoria(
         }
       }),
       total: pago.plan.total,
-      montoRecibido: pago.entrada.montoRecibido,
+      montoRecibido:
+        pago.entrada.medio.formaPago === 'EFECTIVO' ? pago.entrada.medio.montoRecibido : null,
       formaPago: { id: 1, nombre: 'Efectivo' },
       observaciones: pago.entrada.observaciones,
       registradoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },

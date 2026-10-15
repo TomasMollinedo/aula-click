@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppError, ConflictError } from '@/server/errors'
+import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { pagosRepository } from '../pagos.repository'
 import type { PlanPago } from '../pagos.reglas'
@@ -18,6 +18,7 @@ const {
   materiaFindMany,
   formaPagoFindFirst,
   pagoCreate,
+  adjuntoUpdateMany,
   ErrorConocido,
 } = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -26,6 +27,7 @@ const {
   materiaFindMany: vi.fn(),
   formaPagoFindFirst: vi.fn(),
   pagoCreate: vi.fn(),
+  adjuntoUpdateMany: vi.fn(),
   ErrorConocido: class extends Error {
     constructor(
       message: string,
@@ -53,14 +55,25 @@ const tx = {
   materia: { findMany: materiaFindMany },
   formaPago: { findFirst: formaPagoFindFirst },
   pago: { create: pagoCreate },
+  comprobanteAdjunto: { updateMany: adjuntoUpdateMany },
 }
 
 const entrada: EntradaPago = {
   alumnoId: 12,
   ocurrencias: [{ turnoId: 41, fecha: '2026-10-12' }],
   fechaPago: '2026-10-05',
-  montoRecibido: 10000,
+  medio: { formaPago: 'EFECTIVO', montoRecibido: 10000 },
   observaciones: null,
+}
+
+/** Las columnas de los otros medios, en `null`: un pago, un medio. */
+const SIN_MEDIOS = {
+  transferenciaOperacion: null,
+  transferenciaBanco: null,
+  transferenciaTitular: null,
+  debitoRed: null,
+  debitoCupon: null,
+  debitoUltimos4: null,
 }
 const plan: PlanPago = {
   lineas: [{ turnoId: 41, fecha: '2026-10-12', importe: 8000.5 }],
@@ -83,6 +96,7 @@ beforeEach(() => {
   materiaFindMany.mockResolvedValue([])
   formaPagoFindFirst.mockResolvedValue({ id: 1 })
   pagoCreate.mockResolvedValue({ id: 31, numeroComprobante: 1024 })
+  adjuntoUpdateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('registrar', () => {
@@ -103,7 +117,7 @@ describe('registrar', () => {
     expect(verificar).toHaveBeenCalledWith({ ocurrencias: [], precios: new Map() })
 
     expect(formaPagoFindFirst).toHaveBeenCalledWith({
-      where: { nombre: 'Efectivo', estado: 'ACTIVO' },
+      where: { tipoFormaPago: 'EFECTIVO', estado: 'ACTIVO' },
       select: { id: true },
     })
     expect(pagoCreate).toHaveBeenCalledWith({
@@ -113,6 +127,7 @@ describe('registrar', () => {
         importeTotal: '8000.50',
         fechaPago: new Date('2026-10-05T00:00:00.000Z'),
         montoRecibido: '10000.00',
+        ...SIN_MEDIOS,
         observaciones: null,
         createdById: 'usr_mesa',
         updatedById: 'usr_mesa',
@@ -128,6 +143,95 @@ describe('registrar', () => {
       },
       select: { id: true, numeroComprobante: true },
     })
+    // Efectivo: sin comprobante adjunto.
+    expect(adjuntoUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('transferencia: la forma por su código, sus datos sin monto recibido, y vincula el adjunto con el tx', async () => {
+    formaPagoFindFirst.mockResolvedValue({ id: 2 })
+
+    await pagosRepository.registrar(
+      {
+        ...entrada,
+        medio: {
+          formaPago: 'TRANSFERENCIA',
+          transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
+          comprobanteAdjuntoId: 18,
+        },
+      },
+      () => plan,
+      actor,
+    )
+
+    expect(formaPagoFindFirst.mock.calls[0]?.[0].where).toEqual({
+      tipoFormaPago: 'TRANSFERENCIA',
+      estado: 'ACTIVO',
+    })
+    expect(pagoCreate.mock.calls[0]?.[0].data).toMatchObject({
+      formaPagoId: 2,
+      montoRecibido: null,
+      transferenciaOperacion: '0004829137',
+      transferenciaBanco: 'Banco Macro',
+      transferenciaTitular: null,
+      debitoRed: null,
+      debitoCupon: null,
+      debitoUltimos4: null,
+    })
+    // `vincularAdjunto` (T-95), después de crear el pago y dentro de la misma transacción.
+    expect(adjuntoUpdateMany).toHaveBeenCalledWith({
+      where: { id: 18, pagoId: null, estado: 'ACTIVO', createdById: 'usr_mesa' },
+      data: { pagoId: 31, updatedById: 'usr_mesa' },
+    })
+    expect(pagoCreate.mock.invocationCallOrder[0]).toBeLessThan(
+      adjuntoUpdateMany.mock.invocationCallOrder[0] ?? 0,
+    )
+  })
+
+  it('débito: red, cupón y últimos 4; sin adjunto no vincula nada', async () => {
+    await pagosRepository.registrar(
+      {
+        ...entrada,
+        medio: {
+          formaPago: 'DEBITO',
+          debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+          comprobanteAdjuntoId: null,
+        },
+      },
+      () => plan,
+      actor,
+    )
+
+    expect(pagoCreate.mock.calls[0]?.[0].data).toMatchObject({
+      montoRecibido: null,
+      transferenciaOperacion: null,
+      debitoRed: 'VISA_DEBITO',
+      debitoCupon: '000123',
+      debitoUltimos4: '1234',
+    })
+    expect(adjuntoUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('un adjunto que no se puede vincular → 400 ADJUNTO_INVALIDO y la transacción se deshace', async () => {
+    adjuntoUpdateMany.mockResolvedValue({ count: 0 })
+
+    const error = await pagosRepository
+      .registrar(
+        {
+          ...entrada,
+          medio: {
+            formaPago: 'DEBITO',
+            debito: { red: 'MAESTRO', cupon: '9', ultimos4: null },
+            comprobanteAdjuntoId: 99,
+          },
+        },
+        () => plan,
+        actor,
+      )
+      .catch((e) => e)
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.code).toBe('ADJUNTO_INVALIDO')
+    expect(error.details).toEqual([{ path: ['comprobanteAdjuntoId'], message: expect.any(String) }])
   })
 
   it('relee las ocurrencias pedidas con el tx: turnoIds y el rango de sus fechas, sin alumnoId', async () => {
@@ -164,7 +268,7 @@ describe('registrar', () => {
     expect(pagoCreate).not.toHaveBeenCalled()
   })
 
-  it('sin la forma de pago "Efectivo" activa → 500 que pide correr el seed, sin escribir', async () => {
+  it('sin la forma de pago activa → 500 que pide correr el seed, sin escribir', async () => {
     formaPagoFindFirst.mockResolvedValue(null)
 
     const error = await pagosRepository.registrar(entrada, () => plan, actor).catch((e) => e)

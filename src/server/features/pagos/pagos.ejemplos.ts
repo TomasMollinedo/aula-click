@@ -13,8 +13,28 @@ export const ejemploRegistrar = {
     { turnoId: 57, fecha: '2026-10-14' },
   ],
   fechaPago: '2026-10-05',
+  formaPago: 'EFECTIVO',
   montoRecibido: 35000,
   observaciones: 'Paga el mes de octubre',
+} satisfies RegistrarPago
+
+/** El mismo cobro por transferencia: sus datos y el comprobante subido con `POST /adjuntos`. */
+export const ejemploRegistrarTransferencia = {
+  alumnoId: 12,
+  ocurrencias: ejemploRegistrar.ocurrencias,
+  fechaPago: '2026-10-05',
+  formaPago: 'TRANSFERENCIA',
+  transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: 'Marta López' },
+  comprobanteAdjuntoId: 18,
+} satisfies RegistrarPago
+
+/** El mismo cobro con débito: la red, el cupón y, si se quiere, los últimos 4 números. */
+export const ejemploRegistrarDebito = {
+  alumnoId: 12,
+  ocurrencias: ejemploRegistrar.ocurrencias,
+  fechaPago: '2026-10-05',
+  formaPago: 'DEBITO',
+  debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
 } satisfies RegistrarPago
 
 export const ejemploRegistrado = {
@@ -22,6 +42,7 @@ export const ejemploRegistrado = {
   numeroComprobante: 1024,
   cantidad: 4,
   total: 32000,
+  formaPago: 'EFECTIVO',
   montoRecibido: 35000,
   vuelto: 3000,
 } satisfies PagoRegistrado

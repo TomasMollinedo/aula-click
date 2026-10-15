@@ -3,7 +3,7 @@ import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condicione
 import { detallesPorPosicion } from '@/server/shared/detalles'
 import { sumarDias } from '@/server/shared/fechas'
 import { IMPORTE_MAX } from '@/server/shared/zod'
-import type { OcurrenciaPedida } from './pagos.validation'
+import type { MedioPago, OcurrenciaPedida, RegistrarPago } from './pagos.validation'
 
 // Reglas puras del cobro (HU-15, T-51): qué ocurrencias se pueden cobrar, cuánto cuesta cada una,
 // el total y el vuelto. Sin Prisma y sin `hoy()` adentro: "hoy" lo pasa el service con su reloj.
@@ -58,13 +58,17 @@ export type SnapshotPago = {
 export type PedidoPago = {
   alumnoId: number
   ocurrencias: readonly OcurrenciaPedida[]
-  montoRecibido: number
+  /** Sólo en efectivo (HU-23): con transferencia o débito, `null`, y no hay vuelto. */
+  montoRecibido: number | null
 }
 
 export type LineaPago = { turnoId: number; fecha: string; importe: number }
 
-/** Resultado del cobro. Los importes, en pesos con hasta dos decimales. */
-export type PlanPago = { lineas: LineaPago[]; total: number; vuelto: number }
+/**
+ * Resultado del cobro. Los importes, en pesos con hasta dos decimales. `vuelto` es `null` fuera del
+ * efectivo.
+ */
+export type PlanPago = { lineas: LineaPago[]; total: number; vuelto: number | null }
 
 const centavos = (importe: number) => Math.round(importe * 100)
 const clave = (turnoId: number, fecha: string) => `${turnoId}|${fecha}`
@@ -105,7 +109,39 @@ export function formatearPesos(importe: number): string {
   return `${signo}$ ${enteros},${resto}`
 }
 
-/** Motivo por el que no se puede cobrar (el primero, en el orden de la tabla), o `null`. */
+/**
+ * El medio del body ya validado (`registrarPagoSchema` garantiza que cada forma de pago trae sus
+ * datos y sólo los suyos): lo que el repository guarda.
+ */
+export function medioDelPedido(datos: RegistrarPago): MedioPago {
+  switch (datos.formaPago) {
+    case 'EFECTIVO':
+      return { formaPago: 'EFECTIVO', montoRecibido: datos.montoRecibido as number }
+    case 'TRANSFERENCIA':
+      return {
+        formaPago: 'TRANSFERENCIA',
+        transferencia: datos.transferencia as NonNullable<RegistrarPago['transferencia']>,
+        comprobanteAdjuntoId: datos.comprobanteAdjuntoId as number,
+      }
+    case 'DEBITO':
+      return {
+        formaPago: 'DEBITO',
+        debito: datos.debito as NonNullable<RegistrarPago['debito']>,
+        comprobanteAdjuntoId: datos.comprobanteAdjuntoId ?? null,
+      }
+  }
+}
+
+/** El monto recibido de un medio: el del efectivo, o `null` (no hay con transferencia ni débito). */
+export function montoRecibidoDe(medio: MedioPago): number | null {
+  return medio.formaPago === 'EFECTIVO' ? medio.montoRecibido : null
+}
+
+/**
+ * Motivo por el que no se puede cobrar (el primero, en el orden de la tabla), o `null`. El estado
+ * de asistencia no importa: un `REALIZADO` o un `AUSENTE` impago se cobra igual (HU-22), y una
+ * ocurrencia de un pago anulado vuelve a estar `PENDIENTE` (lo resuelve el motor, T-74).
+ */
 function motivoNoCobrable(
   ocurrencia: OcurrenciaCobro | undefined,
   precios: SnapshotPago['precios'],
@@ -125,13 +161,15 @@ function motivoNoCobrable(
  *    detalle por cada una, con su posición en el body).
  * 2. 409 `TURNOS_NO_COBRABLES` con un detalle por **cada** ocurrencia que no se puede cobrar, con
  *    un solo motivo por ocurrencia (el primero de `MOTIVOS_NO_COBRABLE`). Cobrable = existe (el
- *    motor la devuelve), estado `AGENDADO` o `SIN_REGISTRAR`, pago `PENDIENTE`, fecha <= hoy + 56
- *    días (las pasadas no tienen tope) y su materia tiene precio (esté activa o no).
+ *    motor la devuelve), no está cancelada (`AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`),
+ *    pago `PENDIENTE` (también la de un pago anulado), fecha <= hoy + 56 días (las pasadas no
+ *    tienen tope) y su materia tiene precio (esté activa o no).
  * 3. 400 `VALIDACION` en `ocurrencias` si el total no entra en `Decimal(10,2)` (decisión T-64).
- * 4. 400 `VALIDACION` en `montoRecibido` si es menor al total, con los dos importes en el mensaje.
+ * 4. Sólo en efectivo: 400 `VALIDACION` en `montoRecibido` si es menor al total, con los dos
+ *    importes en el mensaje. Con transferencia o débito no se compara ningún monto (HU-23).
  *
  * Si no lanza: una línea por ocurrencia, en el orden del pedido, con el precio vigente de su
- * materia; el total sumado en centavos; y el vuelto.
+ * materia; el total sumado en centavos; y el vuelto (`null` fuera del efectivo).
  */
 export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: string): PlanPago {
   const porClave = new Map(snapshot.ocurrencias.map((o) => [clave(o.turnoId, o.fecha), o]))
@@ -190,10 +228,11 @@ export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: 
     throw new ValidationError(mensaje, { details: [{ path: ['ocurrencias'], message: mensaje }] })
   }
 
-  if (centavos(pedido.montoRecibido) < centavos(total)) {
-    const mensaje = `El monto recibido (${formatearPesos(pedido.montoRecibido)}) es menor al total (${formatearPesos(total)})`
+  const { montoRecibido } = pedido
+  if (montoRecibido !== null && centavos(montoRecibido) < centavos(total)) {
+    const mensaje = `El monto recibido (${formatearPesos(montoRecibido)}) es menor al total (${formatearPesos(total)})`
     throw new ValidationError(mensaje, { details: [{ path: ['montoRecibido'], message: mensaje }] })
   }
 
-  return { lineas, total, vuelto: calcularVuelto(pedido.montoRecibido, total) }
+  return { lineas, total, vuelto: calcularVuelto(montoRecibido, total) }
 }

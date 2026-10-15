@@ -29,7 +29,26 @@ const body = {
   alumnoId: 12,
   ocurrencias: [{ turnoId: 41, fecha: HOY }],
   fechaPago: HOY,
+  formaPago: 'EFECTIVO',
   montoRecibido: 10000,
+}
+
+/** El mismo cobro por transferencia y con débito, con sus datos y sin los del efectivo. */
+const sinMonto = {
+  alumnoId: body.alumnoId,
+  ocurrencias: body.ocurrencias,
+  fechaPago: body.fechaPago,
+}
+const TRANSFERENCIA = {
+  ...sinMonto,
+  formaPago: 'TRANSFERENCIA',
+  transferencia: { operacion: '0004829137', banco: 'Banco Macro' },
+  comprobanteAdjuntoId: 18,
+}
+const DEBITO = {
+  ...sinMonto,
+  formaPago: 'DEBITO',
+  debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
 }
 
 const comprobante = {
@@ -123,8 +142,61 @@ describe('POST /pagos', () => {
       numeroComprobante: 1024,
       cantidad: 1,
       total: 8000,
+      formaPago: 'EFECTIVO',
       montoRecibido: 10000,
       vuelto: 2000,
+    })
+    expect(repository.registrar.mock.calls[0]?.[0].medio).toEqual({
+      formaPago: 'EFECTIVO',
+      montoRecibido: 10000,
+    })
+  })
+
+  it('201 por transferencia: sus datos y el adjunto llegan al repository; sin monto ni vuelto', async () => {
+    const res = await pedir('', 'POST', TRANSFERENCIA)
+
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({
+      total: 8000,
+      formaPago: 'TRANSFERENCIA',
+      montoRecibido: null,
+      vuelto: null,
+    })
+    expect(repository.registrar.mock.calls[0]?.[0].medio).toEqual({
+      formaPago: 'TRANSFERENCIA',
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: undefined },
+      comprobanteAdjuntoId: 18,
+    })
+  })
+
+  it('201 con débito, sin adjunto (es opcional): red, cupón y últimos 4', async () => {
+    const res = await pedir('', 'POST', DEBITO)
+
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({
+      formaPago: 'DEBITO',
+      montoRecibido: null,
+      vuelto: null,
+    })
+    expect(repository.registrar.mock.calls[0]?.[0].medio).toEqual({
+      formaPago: 'DEBITO',
+      debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+      comprobanteAdjuntoId: null,
+    })
+  })
+
+  it('con débito, el adjunto es opcional: si viene, se vincula', async () => {
+    expect((await pedir('', 'POST', { ...DEBITO, comprobanteAdjuntoId: 18 })).status).toBe(201)
+    expect(repository.registrar.mock.calls[0]?.[0].medio).toMatchObject({
+      comprobanteAdjuntoId: 18,
+    })
+  })
+
+  it('con débito, últimos 4 vacío es "sin últimos 4"', async () => {
+    const res = await pedir('', 'POST', { ...DEBITO, debito: { ...DEBITO.debito, ultimos4: '' } })
+    expect(res.status).toBe(201)
+    expect(repository.registrar.mock.calls[0]?.[0].medio).toMatchObject({
+      debito: { ultimos4: null },
     })
   })
 
@@ -149,6 +221,8 @@ describe('POST /pagos', () => {
       ['ocurrencias', 0, 'fecha'],
     ],
     ['sin fechaPago', { ...body, fechaPago: undefined }, ['fechaPago']],
+    ['sin formaPago (no hay valor por defecto)', { ...body, formaPago: undefined }, ['formaPago']],
+    ['formaPago desconocida', { ...body, formaPago: 'CHEQUE' }, ['formaPago']],
     ['sin montoRecibido', { ...body, montoRecibido: undefined }, ['montoRecibido']],
     ['montoRecibido null', { ...body, montoRecibido: null }, ['montoRecibido']],
     ['montoRecibido 0', { ...body, montoRecibido: 0 }, ['montoRecibido']],
@@ -170,7 +244,126 @@ describe('POST /pagos', () => {
     expect(repository.registrar).not.toHaveBeenCalled()
   })
 
-  it('la forma de pago no viene en el body: un campo de más no la cambia', async () => {
+  // Un pago, un medio (HU-23): cada forma pide sus datos y rechaza los de las otras.
+  it.each([
+    [
+      'efectivo con datos de transferencia',
+      { ...body, transferencia: TRANSFERENCIA.transferencia },
+      ['transferencia'],
+      'Los datos de la transferencia sólo van en un pago por transferencia',
+    ],
+    [
+      'efectivo con datos de débito',
+      { ...body, debito: DEBITO.debito },
+      ['debito'],
+      'Los datos del débito sólo van en un pago con débito',
+    ],
+    [
+      'efectivo con comprobante adjunto',
+      { ...body, comprobanteAdjuntoId: 18 },
+      ['comprobanteAdjuntoId'],
+      'Un pago en efectivo no lleva comprobante adjunto',
+    ],
+    [
+      'transferencia sin comprobante adjunto',
+      { ...TRANSFERENCIA, comprobanteAdjuntoId: undefined },
+      ['comprobanteAdjuntoId'],
+      'El comprobante es obligatorio con transferencia',
+    ],
+    [
+      'transferencia sin sus datos',
+      { ...TRANSFERENCIA, transferencia: undefined },
+      ['transferencia'],
+      'Faltan los datos de la transferencia',
+    ],
+    [
+      'transferencia con monto recibido',
+      { ...TRANSFERENCIA, montoRecibido: 10000 },
+      ['montoRecibido'],
+      'El monto recibido sólo va en un pago en efectivo',
+    ],
+    [
+      'transferencia con datos de débito',
+      { ...TRANSFERENCIA, debito: DEBITO.debito },
+      ['debito'],
+      'Los datos del débito sólo van en un pago con débito',
+    ],
+    [
+      'transferencia sin operación',
+      { ...TRANSFERENCIA, transferencia: { banco: 'Banco Macro' } },
+      ['transferencia', 'operacion'],
+      'Campo obligatorio',
+    ],
+    [
+      'transferencia con operación de más de 50',
+      { ...TRANSFERENCIA, transferencia: { operacion: '9'.repeat(51), banco: 'Macro' } },
+      ['transferencia', 'operacion'],
+      'No puede superar los 50 caracteres',
+    ],
+    [
+      'transferencia con titular de más de 100',
+      {
+        ...TRANSFERENCIA,
+        transferencia: { operacion: '1', banco: 'Macro', titular: 'x'.repeat(101) },
+      },
+      ['transferencia', 'titular'],
+      'No puede superar los 100 caracteres',
+    ],
+    [
+      'débito sin sus datos',
+      { ...DEBITO, debito: undefined },
+      ['debito'],
+      'Faltan los datos del débito',
+    ],
+    [
+      'débito con monto recibido',
+      { ...DEBITO, montoRecibido: 10000 },
+      ['montoRecibido'],
+      'El monto recibido sólo va en un pago en efectivo',
+    ],
+    [
+      'débito con una red fuera de la lista',
+      { ...DEBITO, debito: { ...DEBITO.debito, red: 'AMEX' } },
+      ['debito', 'red'],
+      'Elegí una red de la lista',
+    ],
+    [
+      'débito con un cupón con letras',
+      { ...DEBITO, debito: { ...DEBITO.debito, cupon: '12A' } },
+      ['debito', 'cupon'],
+      'El cupón sólo puede tener números',
+    ],
+    [
+      'débito con un cupón de más de 20',
+      { ...DEBITO, debito: { ...DEBITO.debito, cupon: '1'.repeat(21) } },
+      ['debito', 'cupon'],
+      'No puede superar los 20 caracteres',
+    ],
+    [
+      'débito con 3 últimos números',
+      { ...DEBITO, debito: { ...DEBITO.debito, ultimos4: '123' } },
+      ['debito', 'ultimos4'],
+      'Tienen que ser exactamente 4 números',
+    ],
+    [
+      'débito con el número completo de la tarjeta',
+      { ...DEBITO, debito: { ...DEBITO.debito, ultimos4: '4509123412341234' } },
+      ['debito', 'ultimos4'],
+      'Tienen que ser exactamente 4 números',
+    ],
+  ])('%s → 400 en el campo', async (_, datos, path, message) => {
+    const res = await pedir('', 'POST', datos)
+
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error.code).toBe('VALIDACION')
+    expect(json.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path, message })]),
+    )
+    expect(repository.registrar).not.toHaveBeenCalled()
+  })
+
+  it('un campo que no es del contrato (formaPagoId) se descarta', async () => {
     const res = await pedir('', 'POST', { ...body, formaPagoId: 99 })
     expect(res.status).toBe(201)
     expect(repository.registrar.mock.calls[0]?.[0]).not.toHaveProperty('formaPagoId')

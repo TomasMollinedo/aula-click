@@ -1,6 +1,7 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { AppError, ConflictError } from '@/server/errors'
+import { vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
 import {
   bloquearAlumno,
   leerOcurrencias,
@@ -16,17 +17,40 @@ import {
   type PlanPago,
   type SnapshotPago,
 } from './pagos.reglas'
-import type { ComprobanteGuardado, EntradaPago, OcurrenciaPedida } from './pagos.validation'
+import type {
+  CodigoFormaPago,
+  ComprobanteGuardado,
+  EntradaPago,
+  MedioPago,
+  OcurrenciaPedida,
+} from './pagos.validation'
 
 // Único lugar de la feature que usa Prisma. Sin reglas de negocio: qué se puede cobrar y cuánto lo
 // decide `planificarPago` (`pagos.reglas.ts`), que el service pasa como callback `verificar`. Las
 // ocurrencias salen del motor de `turnos` (`ocurrencias.condiciones.ts`), nunca de una expansión
 // propia. Los importes salen como `number` (`toNumber()`), nunca como `Prisma.Decimal`.
 
-/** Forma de pago de todos los cobros de este sprint (definición del catálogo en el seed). */
-export const FORMA_PAGO_EFECTIVO = 'Efectivo'
+/** La forma de pago del catálogo (`FormaPago.tipoFormaPago`, del seed) no está activa: falta el seed. */
+const mensajeSinFormaPago = (codigo: CodigoFormaPago) =>
+  `Falta la forma de pago ${codigo} activa: corré \`pnpm db:seed\``
 
-const MENSAJE_SIN_EFECTIVO = `Falta la forma de pago "${FORMA_PAGO_EFECTIVO}" activa: corré \`pnpm db:seed\``
+/**
+ * Las columnas del medio en `Pago` (HU-23): las del medio elegido con sus datos y las de los otros
+ * en `null` (un pago, un medio). Nunca el número completo de la tarjeta: a lo sumo los últimos 4.
+ */
+function columnasDelMedio(medio: MedioPago) {
+  const transferencia = medio.formaPago === 'TRANSFERENCIA' ? medio.transferencia : null
+  const debito = medio.formaPago === 'DEBITO' ? medio.debito : null
+  return {
+    montoRecibido: medio.formaPago === 'EFECTIVO' ? aDecimal(medio.montoRecibido) : null,
+    transferenciaOperacion: transferencia?.operacion ?? null,
+    transferenciaBanco: transferencia?.banco ?? null,
+    transferenciaTitular: transferencia?.titular ?? null,
+    debitoRed: debito?.red ?? null,
+    debitoCupon: debito?.cupon ?? null,
+    debitoUltimos4: debito?.ultimos4 ?? null,
+  }
+}
 
 // Nombre del índice único de `PagoTurno (turnoId, fechaOcurrencia, vigente)` (migración de T-70).
 const INDICE_PAGO_TURNO = 'pago_turno_turno_id_fecha_ocurrencia_vigente_key'
@@ -157,12 +181,15 @@ export const pagosRepository = {
    * 1. `bloquearAlumno` (`alumno` `FOR UPDATE`), **antes de cualquier lectura**: serializa con
    *    otro pago, la cancelación, la finalización y la reprogramación de ese alumno (decisión
    *    T-59).
-   * 2. Relee con el `tx` las ocurrencias pedidas, los precios vigentes y la forma de pago
-   *    "Efectivo" activa (si falta, 500: es un error de configuración, falta el seed).
+   * 2. Relee con el `tx` las ocurrencias pedidas, los precios vigentes y la forma de pago activa
+   *    por su código (`tipoFormaPago`; si falta, 500: es un error de configuración, falta el seed).
    * 3. `verificar(snapshot)`: si lanza, no se escribe nada.
-   * 4. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con un `PagoTurno` por línea
-   *    (`fechaOcurrencia` = la fecha de la ocurrencia, `importeAplicado` = el precio vigente).
-   * 5. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
+   * 4. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con los datos de su medio
+   *    (`columnasDelMedio`) y un `PagoTurno` por línea (`fechaOcurrencia` = la fecha de la
+   *    ocurrencia, `importeAplicado` = el precio vigente).
+   * 5. Con comprobante adjunto, lo vincula al pago (`vincularAdjunto`, de `adjuntos`): si no es
+   *    un adjunto disponible de quien cobra, 400 `ADJUNTO_INVALIDO` y la transacción se deshace.
+   * 6. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
    *    `TURNOS_NO_COBRABLES` sin detalle por ocurrencia (la transacción ya se abortó).
    *
    * Devuelve el id, el número de comprobante y el plan con el que se registró (el decidido bajo
@@ -179,11 +206,12 @@ export const pagosRepository = {
         await bloquearAlumno(tx, entrada.alumnoId)
 
         const snapshot = await leerSnapshot(tx, entrada.ocurrencias, reloj)
+        const { medio } = entrada
         const formaPago = await tx.formaPago.findFirst({
-          where: { nombre: FORMA_PAGO_EFECTIVO, estado: 'ACTIVO' },
+          where: { tipoFormaPago: medio.formaPago, estado: 'ACTIVO' },
           select: { id: true },
         })
-        if (!formaPago) throw new AppError(MENSAJE_SIN_EFECTIVO, 500)
+        if (!formaPago) throw new AppError(mensajeSinFormaPago(medio.formaPago), 500)
 
         const plan = verificar(snapshot)
 
@@ -193,7 +221,7 @@ export const pagosRepository = {
             formaPagoId: formaPago.id,
             importeTotal: aDecimal(plan.total),
             fechaPago: fechaADate(entrada.fechaPago),
-            montoRecibido: aDecimal(entrada.montoRecibido),
+            ...columnasDelMedio(medio),
             observaciones: entrada.observaciones,
             createdById: actor.userId,
             updatedById: actor.userId,
@@ -207,6 +235,13 @@ export const pagosRepository = {
           },
           select: { id: true, numeroComprobante: true },
         })
+        if (medio.formaPago !== 'EFECTIVO' && medio.comprobanteAdjuntoId !== null) {
+          await vincularAdjunto(tx, {
+            adjuntoId: medio.comprobanteAdjuntoId,
+            pagoId: pago.id,
+            actor,
+          })
+        }
         return { pagoId: pago.id, numeroComprobante: pago.numeroComprobante, plan }
       }, TRANSACCION_PAGO)
     } catch (error) {

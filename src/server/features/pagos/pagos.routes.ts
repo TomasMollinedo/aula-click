@@ -9,6 +9,8 @@ import {
   ejemploErrorNoCobrables,
   ejemploRegistrado,
   ejemploRegistrar,
+  ejemploRegistrarDebito,
+  ejemploRegistrarTransferencia,
 } from './pagos.ejemplos'
 import {
   comprobanteSchema,
@@ -42,12 +44,21 @@ export const registrarPagoRoute = createRoute({
   tags,
   summary: 'Registrar el pago de uno o varios turnos',
   description:
-    'Cobra en efectivo una o varias ocurrencias `(turnoId, fecha)` de un alumno, todo o nada. El importe de cada una es el precio por hora vigente de su materia; el total y el vuelto los calcula la API (el vuelto no se guarda). Cobrables: estado `AGENDADO` o `SIN_REGISTRAR`, pago `PENDIENTE`, fecha hasta hoy + 56 días y materia con precio.',
+    'Cobra una o varias ocurrencias `(turnoId, fecha)` de un alumno, todo o nada, en efectivo, por transferencia o con débito (`formaPago`, obligatoria, cada una con sus datos y sólo los suyos). El importe de cada una es el precio por hora vigente de su materia y no depende del medio; el total y, en efectivo, el vuelto los calcula la API (el vuelto no se guarda). Con transferencia el comprobante adjunto (`comprobanteAdjuntoId`, de `POST /adjuntos`) es obligatorio; con débito, opcional. Cobrables: no canceladas (`AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`), sin un pago vigente (una de un pago anulado se vuelve a cobrar), fecha hasta hoy + 56 días y materia con precio.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: {
     body: {
       required: true,
-      content: { 'application/json': { schema: registrarPagoSchema, example: ejemploRegistrar } },
+      content: {
+        'application/json': {
+          schema: registrarPagoSchema,
+          examples: {
+            efectivo: { summary: 'En efectivo', value: ejemploRegistrar },
+            transferencia: { summary: 'Por transferencia', value: ejemploRegistrarTransferencia },
+            debito: { summary: 'Con débito', value: ejemploRegistrarDebito },
+          },
+        },
+      },
     },
   },
   responses: {
@@ -56,7 +67,7 @@ export const registrarPagoRoute = createRoute({
       content: { 'application/json': { schema: pagoRegistradoSchema, example: ejemploRegistrado } },
     },
     400: respuestaError(
-      'Datos inválidos (VALIDACION): formato, ocurrencias repetidas, `montoRecibido` ausente, `fechaPago` posterior a hoy, ocurrencias de otro alumno, total mayor al máximo o `montoRecibido` menor al total',
+      'Datos inválidos (VALIDACION): formato, ocurrencias repetidas, `formaPago` ausente, datos que faltan o sobran para la forma de pago (un pago, un medio), `fechaPago` posterior a hoy, ocurrencias de otro alumno, total mayor al máximo o, en efectivo, `montoRecibido` menor al total. `ADJUNTO_INVALIDO` en `comprobanteAdjuntoId` si el comprobante no existe, ya se usó o lo subió otro usuario',
       ejemploErrorMonto,
     ),
     ...errores,
