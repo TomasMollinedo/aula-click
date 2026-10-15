@@ -587,3 +587,195 @@ Reutiliza los cálculos de HU-16 y el historial de HU-36, sólo con los datos de
 
 - Anulación parcial de un pago, “Anular y volver a cobrar” en un solo paso, plazo máximo o intervención del gerente, anulación conjunta de los pagos de una misma transferencia y registro de devolución de dinero.
   **Puntos de función:** 5
+
+**ID:** HU-43 | **Sprint:** 3
+**Título:** Porcentaje del centro sobre cada cobro
+**Como…** Gerente
+**Necesito…** Definir el porcentaje que el centro retiene de cada turno cobrado, y que cada cobro guarde el porcentaje con el que se registró.
+**Para…** Saber cuánto de lo cobrado es del centro y cuánto le corresponde a cada profesor.
+**Criterios de Aceptación:**
+Pedido de los clientes durante el Sprint 3. Es la base del reparto entre el centro y los profesores (HU-44 a HU-47). Amplía HU-15: el profesor cobra un porcentaje de lo que pagan sus alumnos, no un sueldo.
+
+▶ Configuración del porcentaje
+
+- El menú del gerente suma la opción "Configuración", que en este incremento sólo tiene "Porcentaje del centro".
+- El valor inicial es 15 %. Es un número mayor o igual a 0 y menor que 100, con hasta dos decimales. Si no cumple, el sistema lo indica y no lo guarda.
+- Es uno solo para todo el centro: vale igual para todos los profesores y todas las materias.
+- Al cambiarlo, el sistema pide confirmación: "Desde ahora, el centro retendrá el 18 % de cada turno cobrado. Los cobros ya registrados conservan su porcentaje".
+- La pantalla muestra el historial de cambios: porcentaje, desde qué fecha y hora rige y quién lo cambió.
+- Sólo el gerente ve y cambia el porcentaje. Los demás roles no acceden, y el sistema rechaza el cambio aunque se intente por fuera de las pantallas.
+
+▶ Reparto de cada turno cobrado
+
+- Al registrar un pago (HU-15, HU-23, HU-25), cada turno incluido guarda el porcentaje del centro vigente en ese momento, igual que hoy guarda su importe.
+- Parte del centro = importe del turno × porcentaje, redondeada a centavos. Parte del profesor = importe del turno − parte del centro, para que las dos sumen siempre el importe. Por ejemplo, un turno de $ 8.000 al 15 %: $ 1.200 para el centro y $ 6.800 para el profesor.
+- Cambiar el porcentaje no modifica los turnos ya cobrados: rige para los cobros que se registren desde ese momento.
+- Si un pago se anula (HU-42) y sus turnos se vuelven a cobrar, el nuevo cobro toma el porcentaje vigente en ese momento.
+- La parte del profesor es del profesor que da la clase: si el turno se reprogramó con otro profesor (HU-20), le corresponde al nuevo.
+
+▶ Dónde se ve el reparto
+
+- El gerente ve el reparto de cada turno (importe, porcentaje, parte del centro y parte del profesor) en el detalle del pago (HU-36), en las liquidaciones (HU-44), en la caja diaria (HU-46) y en el tablero (HU-47).
+- El profesor ve el reparto sólo de sus propios turnos (HU-45).
+- El personal de mesa de entrada y el alumno no ven el reparto: el comprobante de pago (HU-15) no cambia.
+
+▶ Fuera de alcance en este incremento
+
+- Porcentajes distintos por profesor o por materia y programar un cambio de porcentaje para una fecha futura.
+  **Puntos de función:** (a estimar)
+
+**ID:** HU-44 | **Sprint:** 3
+**Título:** Liquidación mensual y pago a los profesores
+**Como…** Gerente
+**Necesito…** Ver cuánto le corresponde a cada profesor por cada mes y registrar la transferencia con la que le pago.
+**Para…** Pagarle a cada profesor lo que generó con sus clases dadas y cobradas, y dejar el pago respaldado.
+**Criterios de Aceptación:**
+Depende de HU-22 (asistencia), HU-42 (anulación) y HU-43 (porcentaje del centro). Los profesores cobran en forma mensual, por transferencia.
+
+▶ Cuándo se le debe un turno al profesor
+
+- Un turno se le debe al profesor cuando cumple las dos condiciones: está pagado (con un pago no anulado) y tiene la asistencia registrada como "Realizado" o "Ausente" (HU-22). Le corresponde la parte del profesor que guardó el cobro (HU-43).
+- Un turno "Ausente" pagado también se le debe, porque el lugar estuvo reservado (igual que en la deuda, HU-16).
+- Si la clase se dio y el alumno todavía no pagó, el profesor espera: el turno se le debe cuando se registra el pago.
+- Si el alumno pagó por adelantado, el turno se le debe cuando se registra la asistencia.
+- La fecha en que el turno pasa a debérsele es la más tardía entre la del registro del pago y la del registro de la asistencia. Esa fecha define en qué liquidación entra.
+- Un turno pagado que el sistema cerró como "Sin registrar" (pasaron los 7 días sin asistencia, HU-22) no se le debe al profesor: su importe completo queda para el centro.
+- Un turno cancelado no se cobra, por lo que nunca se le debe.
+
+▶ Liquidación del mes
+
+- El menú del gerente suma la opción "Liquidaciones". Se elige el mes; por defecto, el último mes terminado.
+- La liquidación de un mes incluye, para cada profesor, todos los turnos que pasaron a debérsele hasta el último día de ese mes y que no entraron en una liquidación anterior. Por ejemplo, un turno dado en octubre y pagado en noviembre entra en la liquidación de noviembre.
+- El listado muestra una fila por profesor: cantidad de turnos, total cobrado de esos turnos, parte del centro, parte del profesor, ajustes, total a pagar y estado ("Pendiente de pago" o "Pagada"). Aparecen sólo los profesores con turnos o ajustes en ese mes, aunque estén inactivos.
+- El mes en curso se puede consultar como "En curso": muestra lo acumulado hasta hoy, pero no se puede pagar hasta que el mes termine.
+- Al abrir una liquidación se ve el detalle: cada turno con fecha, horario, alumno, materia, número de comprobante del cobro, importe cobrado, porcentaje del centro y parte del profesor; y los ajustes, con su motivo.
+- Mientras una liquidación no esté pagada, se calcula al consultarla: si se anula un pago que incluía alguno de sus turnos (HU-42), ese turno deja de figurar.
+
+▶ Ajustes por anulaciones
+
+- Si se anula un pago (HU-42) cuyos turnos ya estaban en una liquidación pagada, la parte del profesor de esos turnos se descuenta en su próxima liquidación, como ajuste negativo: "Ajuste por anulación del comprobante N.º 123 (2 turnos)".
+- Si el total de una liquidación queda negativo, no se paga: pasa como ajuste a la liquidación del mes siguiente, y el listado lo indica ("Saldo a descontar el mes próximo").
+
+▶ Registrar el pago al profesor
+
+- En una liquidación de un mes terminado, en estado "Pendiente de pago" y con total mayor a 0, el botón "Registrar pago".
+- Forma de pago: transferencia, única forma de pago a profesores en este incremento.
+- Datos: fecha de la transferencia (obligatoria, no puede ser futura ni anterior al último día del mes liquidado), número de operación (obligatorio, hasta 50 caracteres), comprobante de la transferencia (opcional, JPG, PNG o PDF de hasta 5 MB, con las mismas reglas de HU-24) y observaciones (opcional, hasta 500 caracteres).
+- El monto es el total de la liquidación: no se escribe a mano y no hay pagos parciales.
+- Confirmación: "¿Registrar el pago de $ 245.000 a Gómez, Ana por la liquidación de octubre de 2026?".
+- Al confirmar, la liquidación pasa a "Pagada" y queda cerrada: sus turnos ya no entran en otra liquidación y sus importes no cambian.
+- Mensaje de éxito: "Pago registrado. La liquidación de octubre de Gómez, Ana quedó pagada".
+- El detalle de una liquidación pagada muestra la fecha, el número de operación, el comprobante adjunto (si tiene), quién registró el pago y cuándo.
+
+▶ PDF
+
+- Cada liquidación tiene el botón "Generar PDF": encabezado oficial del centro (HU-11), profesor, mes, detalle de turnos, ajustes y totales; si está pagada, también la fecha y el número de operación de la transferencia.
+- Nombre del archivo: profesor y mes (por ejemplo, "liquidacion_gomez-ana_2026-10.pdf").
+
+▶ Reglas
+
+- Sólo el gerente accede a "Liquidaciones". Los importes y totales los calcula el sistema.
+
+▶ Fuera de alcance en este incremento
+
+- Pagos parciales o adelantos a cuenta, pagar antes de que termine el mes, pagar en efectivo, anular el pago de una liquidación y la facturación o las obligaciones impositivas del profesor.
+  **Puntos de función:** (a estimar)
+
+**ID:** HU-45 | **Sprint:** 3
+**Título:** Mis ingresos
+**Como…** Profesor
+**Necesito…** Ver cuánto llevo generado en el mes, qué clases todavía no se me pueden pagar y mis liquidaciones.
+**Para…** Saber cuánto voy a cobrar y por qué, sin tener que preguntarle al gerente.
+**Criterios de Aceptación:**
+Depende de HU-43 y HU-44. Es la vista del profesor de su propia liquidación.
+
+▶ Dónde
+
+- El menú del profesor suma la opción "Mis ingresos". Sólo muestra datos del propio profesor.
+
+▶ Qué muestra
+
+- "Este mes": los turnos que ya se le deben en el mes en curso (HU-44), con fecha, horario, alumno, materia, importe cobrado, porcentaje del centro y su parte, y el total acumulado. Aclaración: "Se te paga a mes vencido, por transferencia".
+- "Clases dadas sin cobrar": las clases con asistencia registrada ("Realizado" o "Ausente") que el alumno todavía no pagó, con fecha, horario, alumno y materia. Aclaración: "Se suman a tu liquidación cuando el alumno las pague".
+- "Clases cobradas sin asistencia": los turnos ya pagados cuya asistencia todavía no registró y siguen dentro del plazo de 7 días (HU-22), con la fecha límite y un acceso a "Asistencia". Aclaración: "Registrá la asistencia para que se sumen a tu liquidación. Si vence el plazo, no se te pagan".
+- "Mis liquidaciones": una fila por mes con el total, el estado ("Pendiente de pago" o "Pagada", con la fecha de la transferencia) y el botón "Generar PDF", con el mismo documento de HU-44. Al abrir una se ve su detalle de turnos y ajustes.
+
+▶ Reglas
+
+- Es de sólo lectura. Los importes los calcula el sistema con las mismas reglas de HU-44: lo que ve el profesor coincide con lo que ve el gerente.
+- El profesor no ve datos de otros profesores, ni los totales del centro, ni la forma de pago o los comprobantes de las familias.
+- Si no tiene nada en una sección, la sección lo indica (por ejemplo, "No tenés clases dadas sin cobrar").
+  **Puntos de función:** (a estimar)
+
+**ID:** HU-46 | **Sprint:** 3
+**Título:** Caja diaria
+**Como…** Gerente
+**Necesito…** Ver, para un día, todo el dinero que entró y salió del centro, separado por forma de pago, con la parte del centro y la de los profesores.
+**Para…** Controlar el movimiento de dinero de cada día.
+**Criterios de Aceptación:**
+Depende de HU-23 (medios de pago), HU-42 (anulación), HU-43 (porcentaje) y HU-44 (pagos a profesores). La caja se arma sola con lo que ya registra el sistema.
+
+▶ Dónde
+
+- El menú del gerente suma la opción "Caja diaria". Por defecto muestra el día de hoy; se puede elegir otra fecha o pasar al día anterior y al siguiente. No se pueden elegir fechas futuras.
+
+▶ Movimientos del día
+
+- Lista de movimientos ordenada por hora de registro:
+  - Cobros (+): figuran el día de su fecha de pago (HU-15), con hora de registro, número de comprobante, alumno, forma de pago e importe.
+  - Anulaciones (−): figuran el día en que se anula el pago, no el del cobro original, con el número de comprobante, el alumno, la forma de pago, el importe y el motivo (HU-42). Si un pago se cobra y se anula el mismo día, se ven los dos movimientos.
+  - Pagos a profesores (−): figuran el día de la fecha de la transferencia, con profesor, mes liquidado, número de operación e importe (HU-44).
+- Se puede filtrar por tipo de movimiento (cobros, anulaciones o pagos a profesores) y por forma de pago.
+- Desde cada cobro o anulación se abre el detalle del pago (HU-36); desde cada pago a profesor, su liquidación (HU-44).
+
+▶ Resumen del día
+
+- Ingresos por forma de pago (efectivo, transferencia y tarjeta de débito) y su total, ya descontadas las anulaciones del día.
+- De esos ingresos: la parte del centro y la parte de los profesores, según el porcentaje guardado en cada cobro (HU-43).
+- Egresos: total pagado a profesores en el día.
+- Saldo del día: ingresos menos egresos.
+- Si el día no tiene movimientos, la pantalla lo indica: "No hubo movimientos de caja el 15/10".
+
+▶ PDF
+
+- Botón "Generar PDF" con la caja del día: encabezado oficial del centro (HU-11), fecha, resumen y lista completa de movimientos. Nombre del archivo: "caja_2026-10-15.pdf".
+
+▶ Reglas
+
+- Sólo el gerente accede a "Caja diaria". Es de sólo lectura: los movimientos salen de los cobros, las anulaciones y los pagos a profesores ya registrados.
+- Los importes y totales los calcula el sistema al consultar.
+  **Puntos de función:** (a estimar)
+
+**ID:** HU-47 | **Sprint:** 3
+**Título:** Pestaña "Finanzas" del tablero
+**Como…** Gerente
+**Necesito…** Ver en el tablero cuánto se cobró, cuánto le queda al centro y cuánto se les pagó y se les debe a los profesores en un período.
+**Para…** Conocer el margen que deja el centro y lo que tiene comprometido con los profesores.
+**Criterios de Aceptación:**
+Amplía HU-39: el tablero suma la pestaña "Finanzas". Depende de HU-43 y HU-44.
+
+▶ Estructura
+
+- La pestaña "Finanzas" se agrega después de "Asistencia". Usa el selector de período común del tablero y la misma estructura de las pestañas nuevas de HU-39: hasta 4 números principales arriba y, debajo, como mucho dos tablas paginadas de a 10.
+
+▶ Números principales
+
+- Total cobrado: pagos no anulados con fecha de pago dentro del período (el mismo número de la pestaña "General").
+- Margen del centro: suma de la parte del centro de esos cobros, con su porcentaje sobre el total cobrado. Incluye el importe completo de los turnos cobrados que el sistema cerró "Sin registrar" (HU-44), y lo informa aparte: "Incluye $ 13.600 de turnos sin asistencia registrada".
+- Pagado a profesores: total de las liquidaciones pagadas con fecha de transferencia dentro del período.
+- Saldo a pagar a profesores: lo que se les debe a la fecha de hoy (turnos que ya se les deben y todavía no se pagaron). No depende del período, igual que el total adeudado de HU-21.
+
+▶ Tablas
+
+- Por profesor: turnos cobrados en el período, total cobrado de sus turnos, parte del centro, parte del profesor, pagado en el período y saldo pendiente a hoy. Se puede ordenar por cualquier columna; paginada.
+- Evolución mensual: los últimos 6 meses hasta el fin del período, con total cobrado, margen del centro y pagado a profesores de cada mes.
+
+▶ PDF
+
+- Botón "Generar PDF" de la pestaña, como las demás de HU-39: encabezado oficial (HU-11), período, números principales y las dos tablas completas.
+
+▶ Reglas
+
+- Sólo el gerente ve la pestaña. Los números se calculan al consultar y el tablero sigue siendo de sólo lectura.
+- Los pagos anulados (HU-42) no suman en ningún número.
+  **Puntos de función:** (a estimar)
