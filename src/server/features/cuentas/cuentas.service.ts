@@ -50,11 +50,6 @@ function aOcurrenciaDeCuenta({ ocurrencia, importe }: Adeudado): OcurrenciaDeCue
   }
 }
 
-/** El orden de las condiciones (fecha, hora de inicio y `turnoId`), para juntar varias lecturas. */
-function porFechaHoraYTurno({ ocurrencia: a }: Adeudado, { ocurrencia: b }: Adeudado): number {
-  return a.fecha.localeCompare(b.fecha) || a.horaInicio - b.horaInicio || a.turnoId - b.turnoId
-}
-
 /**
  * Las ocurrencias agrupadas por materia (por nombre y, si se repite, por id), cada una con su
  * subtotal. Dentro de cada grupo conservan el orden en que llegan.
@@ -115,43 +110,23 @@ export function crearCuentasService({
     if (!alumno) throw new NotFoundError(MENSAJE_ALUMNO_NO_ENCONTRADO)
   }
 
-  /** El filtro de las condiciones: el período va tal cual se pidió (lo recortan ellas). */
+  /**
+   * El filtro de las condiciones: el período va tal cual se pidió (lo recortan ellas) y las
+   * materias, todas las pedidas (HU-25, T-101: una lectura para todas, sin repetidos).
+   */
   function aFiltroDeuda(
     filtro: FiltroCuentaQuery,
     alumnoId: number | undefined,
-    materiaId: number | undefined,
     fechaHoy: string,
   ): FiltroDeuda {
     return {
       alumnoId,
-      materiaId,
+      materiaIds: filtro.materiaId,
       profesorId: filtro.profesorId,
       desde: filtro.desde,
       hasta: filtro.hasta,
       hoy: fechaHoy,
     }
-  }
-
-  /**
-   * Una sección (adeudados o próximos) de las materias pedidas (HU-25, T-101). Sin materias, una
-   * lectura de todas; con una, esa lectura tal cual; con varias, una lectura por materia (sin
-   * repetir ids), juntas en el orden de las condiciones. Cada materia se lee igual que sola: los
-   * próximos no pasan del tope de cobro y el total de los adeudados es la suma de todas.
-   */
-  async function leerSeccion(
-    leer: (filtro: FiltroDeuda) => Promise<Adeudado[]>,
-    filtro: FiltroCuentaQuery,
-    alumnoId: number | undefined,
-    fechaHoy: string,
-  ): Promise<Adeudado[]> {
-    const materiaIds = [...new Set(filtro.materiaId ?? [])]
-    if (materiaIds.length <= 1) {
-      return leer(aFiltroDeuda(filtro, alumnoId, materiaIds[0], fechaHoy))
-    }
-    const porMateria = await Promise.all(
-      materiaIds.map((materiaId) => leer(aFiltroDeuda(filtro, alumnoId, materiaId, fechaHoy))),
-    )
-    return porMateria.flat().sort(porFechaHoraYTurno)
   }
 
   /** La página de una vista global, con el DNI sólo de los alumnos de la página. */
@@ -171,13 +146,10 @@ export function crearCuentasService({
   async function leerCuenta(alumnoId: number, filtro: FiltroCuentaQuery): Promise<CuentaDelAlumno> {
     const fechaHoy = hoy(reloj)
     const rangos = rangosDelPeriodo(filtro, fechaHoy)
+    const filtroDeuda = aFiltroDeuda(filtro, alumnoId, fechaHoy)
     const [adeudados, proximos] = await Promise.all([
-      rangos.adeudados === null
-        ? null
-        : leerSeccion(repository.leerAdeudados, filtro, alumnoId, fechaHoy),
-      rangos.proximos === null
-        ? null
-        : leerSeccion(repository.leerProximos, filtro, alumnoId, fechaHoy),
+      rangos.adeudados === null ? null : repository.leerAdeudados(filtroDeuda),
+      rangos.proximos === null ? null : repository.leerProximos(filtroDeuda),
     ])
     return {
       totalAdeudado: totalDe(adeudados ?? []),
@@ -226,7 +198,7 @@ export function crearCuentasService({
       const fechaHoy = hoy(reloj)
       const aplica = rangosDelPeriodo(query, fechaHoy).adeudados !== null
       const adeudados = aplica
-        ? await leerSeccion(repository.leerAdeudados, query, query.alumnoId, fechaHoy)
+        ? await repository.leerAdeudados(aFiltroDeuda(query, query.alumnoId, fechaHoy))
         : []
       return {
         ...(await paginarConAlumno(adeudados, query)),
@@ -245,7 +217,7 @@ export function crearCuentasService({
       const fechaHoy = hoy(reloj)
       const aplica = rangosDelPeriodo(query, fechaHoy).proximos !== null
       const proximos = aplica
-        ? await leerSeccion(repository.leerProximos, query, query.alumnoId, fechaHoy)
+        ? await repository.leerProximos(aFiltroDeuda(query, query.alumnoId, fechaHoy))
         : []
       return {
         ...(await paginarConAlumno(proximos, query)),

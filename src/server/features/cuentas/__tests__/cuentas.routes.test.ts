@@ -156,7 +156,7 @@ describe('GET /cuentas/alumnos/{alumnoId}', () => {
     expect(res.status).toBe(200)
     const filtro = {
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
       desde: '2020-01-01',
       hasta: '2099-12-31',
@@ -218,7 +218,7 @@ describe('GET /cuentas/adeudados', () => {
   it('materia y profesor llegan como número', async () => {
     expect((await pedir('/adeudados?materiaId=2&profesorId=3')).status).toBe(200)
     expect(repository.leerAdeudados.mock.calls[0]?.[0]).toMatchObject({
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
     })
   })
@@ -291,7 +291,7 @@ describe('GET /cuentas/proximos', () => {
     expect((await pedir('/proximos?alumnoId=12&materiaId=2&profesorId=3')).status).toBe(200)
     expect(repository.leerProximos.mock.calls[0]?.[0]).toMatchObject({
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
     })
   })
@@ -335,32 +335,31 @@ describe('GET /cuentas/proximos', () => {
 })
 
 describe('varias materias (HU-25, T-101)', () => {
-  it.each(RUTAS)('%s con `materiaId` repetido: una lectura por materia', async (path) => {
-    expect((await pedir(`${path}?materiaId=2&materiaId=5`)).status).toBe(200)
+  it.each(RUTAS)(
+    '%s con `materiaId` repetido: una lectura con todas las materias',
+    async (path) => {
+      expect((await pedir(`${path}?materiaId=2&materiaId=5`)).status).toBe(200)
 
-    const leidas = [
-      ...repository.leerAdeudados.mock.calls,
-      ...repository.leerProximos.mock.calls,
-    ].map(([filtro]) => filtro.materiaId)
-    expect(new Set(leidas)).toEqual(new Set([2, 5]))
-  })
+      const lecturas = [
+        ...repository.leerAdeudados.mock.calls,
+        ...repository.leerProximos.mock.calls,
+      ]
+      expect(lecturas.length).toBeGreaterThan(0)
+      for (const [filtro] of lecturas) expect(filtro.materiaIds).toEqual([2, 5])
+    },
+  )
 
-  it.each(RUTAS)('%s con una sola materia: una lectura con ese id', async (path) => {
+  it.each(RUTAS)('%s con una sola materia: una lista de un id', async (path) => {
     expect((await pedir(`${path}?materiaId=2`)).status).toBe(200)
 
-    const leidas = [
-      ...repository.leerAdeudados.mock.calls,
-      ...repository.leerProximos.mock.calls,
-    ].map(([filtro]) => filtro.materiaId)
-    expect(leidas.every((id) => id === 2)).toBe(true)
+    const lecturas = [...repository.leerAdeudados.mock.calls, ...repository.leerProximos.mock.calls]
+    for (const [filtro] of lecturas) expect(filtro.materiaIds).toEqual([2])
   })
 
-  it('un id repetido no duplica: `?materiaId=2&materiaId=2` lee una vez', async () => {
-    const res = await pedir('/alumnos/12?materiaId=2&materiaId=2')
+  it('sin `materiaId`: sin filtro de materia', async () => {
+    expect((await pedir('/alumnos/12')).status).toBe(200)
 
-    expect(res.status).toBe(200)
-    expect(repository.leerAdeudados).toHaveBeenCalledTimes(1)
-    expect((await res.json()).adeudados).toHaveLength(1)
+    expect(repository.leerAdeudados.mock.calls[0]?.[0].materiaIds).toBeUndefined()
   })
 })
 

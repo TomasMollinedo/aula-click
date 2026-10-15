@@ -113,7 +113,7 @@ describe('obtenerCuenta', () => {
 
     const filtro = {
       alumnoId: 12,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,
@@ -215,7 +215,12 @@ describe('obtenerCuenta', () => {
   it('materia y profesor llegan al repository en las dos secciones', async () => {
     await service.obtenerCuenta(12, { materiaId: [2], profesorId: 3 })
 
-    const filtro = expect.objectContaining({ alumnoId: 12, materiaId: 2, profesorId: 3, hoy: HOY })
+    const filtro = expect.objectContaining({
+      alumnoId: 12,
+      materiaIds: [2],
+      profesorId: 3,
+      hoy: HOY,
+    })
     expect(repository.leerAdeudados).toHaveBeenCalledWith(filtro)
     expect(repository.leerProximos).toHaveBeenCalledWith(filtro)
   })
@@ -240,7 +245,7 @@ describe('listarAdeudados', () => {
 
     expect(repository.leerAdeudados).toHaveBeenCalledWith({
       alumnoId: undefined,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,
@@ -321,7 +326,7 @@ describe('listarAdeudados', () => {
 
     expect(repository.leerAdeudados).toHaveBeenCalledWith({
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
       ...PERIODO_QUE_CRUZA_HOY,
       hoy: HOY,
@@ -369,7 +374,7 @@ describe('listarProximos', () => {
 
     expect(repository.leerProximos).toHaveBeenCalledWith({
       alumnoId: undefined,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,
@@ -419,7 +424,7 @@ describe('listarProximos', () => {
     expect(alumnosRepository.buscarPorId).toHaveBeenCalledWith(12)
     expect(repository.leerProximos).toHaveBeenCalledWith({
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
       ...PERIODO_QUE_CRUZA_HOY,
       hoy: HOY,
@@ -487,86 +492,52 @@ describe('listarProximos', () => {
 })
 
 describe('varias materias (HU-25, T-101)', () => {
-  // Una cuenta con tres materias: el repository falso aplica el `materiaId` como las condiciones.
+  // Qué trae cada materia lo deciden las condiciones (`cuentas.condiciones`); acá, que las materias
+  // pedidas llegan juntas en una sola lectura por sección y que el total es el de esa lectura.
   const ADEUDADOS = [
-    adeudado({ turnoId: 41, fecha: '2026-09-21', materia: MATEMATICA }),
     adeudado({ turnoId: 52, fecha: '2026-09-21', materia: INGLES, horaInicio: 480, importe: 9000 }),
+    adeudado({ turnoId: 41, fecha: '2026-09-21', materia: MATEMATICA }),
     adeudado({ turnoId: 63, fecha: '2026-09-22', materia: FISICA, importe: 7000 }),
-    adeudado({ turnoId: 41, fecha: '2026-09-28', materia: MATEMATICA }),
-    adeudado({ turnoId: 52, fecha: '2026-09-28', materia: INGLES, horaInicio: 480, importe: 9000 }),
   ]
   const PROXIMOS = [
     proximo({ turnoId: 52, fecha: HOY, materia: INGLES, horaInicio: 480, importe: 9000 }),
     proximo({ turnoId: 63, fecha: '2026-10-06', materia: FISICA, importe: 7000 }),
-    proximo({ turnoId: 41, fecha: '2026-10-12', materia: MATEMATICA }),
   ]
-  const deLaMateria = (lista: Adeudado[]) => async (filtro: { materiaId?: number }) =>
-    lista.filter(
-      (a) => filtro.materiaId === undefined || a.ocurrencia.materiaId === filtro.materiaId,
-    )
-  const claves = (lista: { turnoId: number; fecha: string }[] | null) =>
-    (lista ?? []).map((o) => `${o.turnoId}|${o.fecha}`)
+  const deLasMaterias =
+    (lista: Adeudado[]) =>
+    async ({ materiaIds }: { materiaIds?: readonly number[] }) =>
+      lista.filter((a) => materiaIds === undefined || materiaIds.includes(a.ocurrencia.materiaId))
 
   beforeEach(() => {
-    repository.leerAdeudados.mockImplementation(deLaMateria(ADEUDADOS))
-    repository.leerProximos.mockImplementation(deLaMateria(PROXIMOS))
+    repository.leerAdeudados.mockImplementation(deLasMaterias(ADEUDADOS))
+    repository.leerProximos.mockImplementation(deLasMaterias(PROXIMOS))
   })
 
-  it('Matemática e Inglés: sus adeudados y próximos, ninguno de Física, en orden y con el total de las dos', async () => {
+  it('Matemática e Inglés: una lectura por sección con las dos, y el total de las dos', async () => {
     const cuenta = await service.obtenerCuenta(12, { materiaId: [2, 5] })
 
-    expect(claves(cuenta.adeudados)).toEqual([
-      '52|2026-09-21',
-      '41|2026-09-21',
-      '52|2026-09-28',
-      '41|2026-09-28',
-    ])
-    expect(claves(cuenta.proximos)).toEqual(['52|2026-10-05', '41|2026-10-12'])
-    expect(cuenta.totalAdeudado).toBe(34000)
-    expect(repository.leerAdeudados).toHaveBeenCalledTimes(2)
-    expect(repository.leerAdeudados).toHaveBeenCalledWith(expect.objectContaining({ materiaId: 2 }))
-    expect(repository.leerAdeudados).toHaveBeenCalledWith(expect.objectContaining({ materiaId: 5 }))
-  })
-
-  it('una sola materia: una lectura con ese `materiaId`, igual que antes', async () => {
-    const cuenta = await service.obtenerCuenta(12, { materiaId: [5] })
-
     expect(repository.leerAdeudados).toHaveBeenCalledTimes(1)
     expect(repository.leerAdeudados).toHaveBeenCalledWith(
-      expect.objectContaining({ alumnoId: 12, materiaId: 5, hoy: HOY }),
+      expect.objectContaining({ alumnoId: 12, materiaIds: [2, 5], hoy: HOY }),
     )
-    expect(claves(cuenta.adeudados)).toEqual(['52|2026-09-21', '52|2026-09-28'])
-    expect(cuenta.totalAdeudado).toBe(18000)
-  })
-
-  it('un id repetido no duplica: una lectura por materia y cada turno una vez', async () => {
-    const cuenta = await service.obtenerCuenta(12, { materiaId: [5, 2, 5] })
-
-    expect(repository.leerAdeudados).toHaveBeenCalledTimes(2)
-    expect(repository.leerProximos).toHaveBeenCalledTimes(2)
-    expect(cuenta.adeudados).toHaveLength(4)
-    expect(cuenta.proximos).toHaveLength(2)
-    expect(cuenta.totalAdeudado).toBe(34000)
-  })
-
-  it('sin `materiaId` (o vacío): una lectura de todas', async () => {
-    const cuenta = await service.obtenerCuenta(12, { materiaId: [] })
-
-    expect(repository.leerAdeudados).toHaveBeenCalledTimes(1)
-    expect(repository.leerAdeudados).toHaveBeenCalledWith(
-      expect.objectContaining({ materiaId: undefined }),
+    expect(repository.leerProximos).toHaveBeenCalledWith(
+      expect.objectContaining({ materiaIds: [2, 5] }),
     )
-    expect(cuenta.adeudados).toHaveLength(5)
+    expect(cuenta.adeudados?.map((o) => o.materia.nombre)).toEqual(['Inglés', 'Matemática'])
+    expect(cuenta.proximos?.map((o) => o.materia.nombre)).toEqual(['Inglés'])
+    expect(cuenta.totalAdeudado).toBe(17000)
   })
 
-  it('vista global: adeudados y próximos de las dos materias, paginados juntos y con el total de las dos', async () => {
-    const adeudados = await service.listarAdeudados({ page: 1, pageSize: 3, materiaId: [2, 5] })
+  it('vista global: las dos materias en una lectura, con el total de las dos', async () => {
+    const adeudados = await service.listarAdeudados({ page: 1, pageSize: 1, materiaId: [2, 5] })
     const proximos = await service.listarProximos({ page: 1, pageSize: 20, materiaId: [2, 5] })
 
-    expect(claves(adeudados.data)).toEqual(['52|2026-09-21', '41|2026-09-21', '52|2026-09-28'])
-    expect(adeudados.meta).toEqual({ page: 1, pageSize: 3, total: 4, totalPages: 2 })
-    expect(adeudados.totalAdeudado).toBe(34000)
-    expect(claves(proximos.data)).toEqual(['52|2026-10-05', '41|2026-10-12'])
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(
+      expect.objectContaining({ materiaIds: [2, 5] }),
+    )
+    expect(adeudados.meta).toEqual({ page: 1, pageSize: 1, total: 2, totalPages: 2 })
+    expect(adeudados.totalAdeudado).toBe(17000)
+    expect(proximos.data.map((o) => o.materia.nombre)).toEqual(['Inglés'])
   })
 })
 
@@ -592,7 +563,7 @@ describe('miCuenta (portal, HU-37, T-101)', () => {
 
     const filtro = {
       alumnoId: 12,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,

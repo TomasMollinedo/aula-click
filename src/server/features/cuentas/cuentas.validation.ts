@@ -25,7 +25,7 @@ export const MENSAJE_RANGO_INVERTIDO = 'La fecha hasta no puede ser anterior a l
 /**
  * `materiaId` de una o más materias (HU-25, T-101), con el parámetro repetido
  * (`?materiaId=2&materiaId=5`). Hono entrega texto si viene una vez y una lista si se repite:
- * siempre sale como lista. Los repetidos los descarta el service.
+ * siempre sale como lista. Los repetidos los descartan las condiciones.
  */
 const materiaIdsQuery = z
   .preprocess(

@@ -192,6 +192,8 @@ export type FiltroOcurrencias = {
   /** Filtra por el profesor del bloque. */
   profesorId?: number
   materiaId?: number
+  /** Varias materias (se suman a `materiaId` si vienen los dos). Una lista vacía no trae nada. */
+  materiaIds?: number[]
   /** Filtra por el aula del bloque. */
   aulaId?: number
   turnoIds?: number[]
