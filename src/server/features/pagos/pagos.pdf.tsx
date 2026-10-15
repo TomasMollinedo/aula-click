@@ -14,11 +14,22 @@ import {
 } from '@/server/shared/pdf/estilos'
 import { renderizarPdf } from '@/server/shared/pdf/renderizar'
 import { CeldaPdf, CierrePdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pdf/tabla'
-import { textoNumero, textoRegistradoPor } from './pagos.formato'
+import {
+  datosDelMedio,
+  textoAnuladoEl,
+  textoMotivoAnulacion,
+  textoNumero,
+  textoRegistradoPor,
+} from './pagos.formato'
+import { agruparPorMateria } from './pagos.reglas'
 import type { Comprobante } from './pagos.validation'
 
-// El comprobante de pago en PDF (HU-15, T-111). Solo presentación: recibe el comprobante que
-// devuelve el service y no suma ni recalcula nada (importes, total y vuelto son los de la API).
+// El comprobante de pago en PDF (HU-15, T-111; formas de pago, HU-23, T-96). Solo presentación:
+// recibe el comprobante que devuelve el service y no suma ni recalcula nada (importes, total y
+// vuelto son los de la API). Los textos salen de `pagos.formato.ts`. Un pago anulado (HU-42) lleva
+// arriba de todo "ANULADO", con el motivo y la fecha de anulación.
+
+type Turno = Comprobante['turnos'][number]
 
 export type DatosComprobantePdf = {
   comprobante: Comprobante
@@ -40,8 +51,29 @@ const COLUMNAS: ColumnaPdf[] = [
   { titulo: 'Importe', ancho: 68, numerica: true },
 ]
 
+/** `--color-cancelado` de la pantalla (el de `destructive`): lo anulado se lee como cancelado. */
+const COLOR_ANULADO = '#6f1f2a'
+/** El mismo color al 6 % sobre blanco: el fondo de la franja de anulado. */
+const FONDO_ANULADO = '#f6eff0'
+
 const estilos = StyleSheet.create({
   contenido: { gap: SEPARACION_BLOQUES },
+  anulado: {
+    paddingHorizontal: px(24),
+    paddingVertical: px(16),
+    borderWidth: 1.5,
+    borderColor: COLOR_ANULADO,
+    borderRadius: RADIO_TARJETA,
+    backgroundColor: FONDO_ANULADO,
+    gap: px(4),
+  },
+  anuladoTitulo: {
+    ...TEXTO.titulo,
+    fontWeight: 700,
+    color: COLOR_ANULADO,
+    letterSpacing: espaciado.muyAncho(TEXTO.titulo.fontSize),
+  },
+  anuladoDetalle: { ...TEXTO.normal, color: COLORES.texto80 },
   totales: {
     alignSelf: 'flex-end',
     width: px(288),
@@ -68,6 +100,7 @@ const estilos = StyleSheet.create({
     marginBottom: 2.4,
   },
   total: { ...TEXTO.titulo, fontWeight: 600 },
+  subtotal: { fontWeight: 700 },
   recibido: {
     marginTop: px(12),
     paddingTop: px(12),
@@ -91,6 +124,20 @@ export function ComprobantePdf({
   fechaEmision,
 }: DatosComprobantePdf) {
   const { alumno, turnos } = comprobante
+  const medio = datosDelMedio(comprobante)
+  // Con más de una materia, la tabla va agrupada por materia con el subtotal de cada una (HU-25).
+  const grupos = agruparPorMateria(turnos)
+  const filaDe = (turno: Turno) => (
+    <FilaPdf key={`${turno.turnoId}|${turno.fecha}`}>
+      <CeldaPdf>{fechaDocumento(turno.fecha)}</CeldaPdf>
+      <CeldaPdf>{rangoHoras(turno.horaInicio, turno.horaFin)}</CeldaPdf>
+      <CeldaPdf>{turno.materia.nombre}</CeldaPdf>
+      <CeldaPdf>
+        {turno.profesor.nombre} {turno.profesor.apellido}
+      </CeldaPdf>
+      <CeldaPdf>{formatearPesos(turno.importe)}</CeldaPdf>
+    </FilaPdf>
+  )
   return (
     <DocumentoOficialPdf
       titulo={TITULO}
@@ -101,6 +148,16 @@ export function ComprobantePdf({
       logo={logo}
     >
       <View style={estilos.contenido}>
+        {comprobante.anulacion ? (
+          <View style={estilos.anulado}>
+            <Text style={estilos.anuladoTitulo}>ANULADO</Text>
+            <Text style={estilos.anuladoDetalle}>
+              Motivo: {textoMotivoAnulacion(comprobante.anulacion)}
+            </Text>
+            <Text style={estilos.anuladoDetalle}>{textoAnuladoEl(comprobante.anulacion)}</Text>
+          </View>
+        ) : null}
+
         <SeccionPdf>
           <CamposPdf>
             <CampoPdf label="Alumno" valor={`${alumno.nombre} ${alumno.apellido}`} />
@@ -110,18 +167,35 @@ export function ComprobantePdf({
           </CamposPdf>
         </SeccionPdf>
 
+        {/* Los datos de la transferencia o del débito; el efectivo los muestra con el total. */}
+        {medio.length > 0 ? (
+          <SeccionPdf>
+            <CamposPdf>
+              {medio.map(({ label, valor }) => (
+                <CampoPdf key={label} label={label} valor={valor} />
+              ))}
+            </CamposPdf>
+          </SeccionPdf>
+        ) : null}
+
         <TablaPdf columnas={COLUMNAS} cierre={<Cierre comprobante={comprobante} />}>
-          {turnos.map((turno) => (
-            <FilaPdf key={`${turno.turnoId}|${turno.fecha}`}>
-              <CeldaPdf>{fechaDocumento(turno.fecha)}</CeldaPdf>
-              <CeldaPdf>{rangoHoras(turno.horaInicio, turno.horaFin)}</CeldaPdf>
-              <CeldaPdf>{turno.materia.nombre}</CeldaPdf>
-              <CeldaPdf>
-                {turno.profesor.nombre} {turno.profesor.apellido}
-              </CeldaPdf>
-              <CeldaPdf>{formatearPesos(turno.importe)}</CeldaPdf>
-            </FilaPdf>
-          ))}
+          {grupos.length > 1
+            ? grupos.flatMap((grupo) => [
+                ...grupo.turnos.map(filaDe),
+                <FilaPdf key={`subtotal-${grupo.materia.id}`}>
+                  <CeldaPdf>{''}</CeldaPdf>
+                  <CeldaPdf>{''}</CeldaPdf>
+                  <CeldaPdf>{''}</CeldaPdf>
+                  {/* En la columna más ancha, pegado al importe: el nombre no se parte. */}
+                  <CeldaPdf>
+                    <Text style={estilos.subtotal}>Subtotal {grupo.materia.nombre}</Text>
+                  </CeldaPdf>
+                  <CeldaPdf>
+                    <Text style={estilos.subtotal}>{formatearPesos(grupo.subtotal)}</Text>
+                  </CeldaPdf>
+                </FilaPdf>,
+              ])
+            : turnos.map(filaDe)}
         </TablaPdf>
       </View>
     </DocumentoOficialPdf>

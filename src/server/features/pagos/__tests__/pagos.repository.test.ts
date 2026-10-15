@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppError, ConflictError } from '@/server/errors'
+import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { pagosRepository } from '../pagos.repository'
 import type { PlanPago } from '../pagos.reglas'
@@ -18,6 +18,8 @@ const {
   materiaFindMany,
   formaPagoFindFirst,
   pagoCreate,
+  adjuntoUpdateMany,
+  pagoFindUnique,
   ErrorConocido,
 } = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -26,6 +28,8 @@ const {
   materiaFindMany: vi.fn(),
   formaPagoFindFirst: vi.fn(),
   pagoCreate: vi.fn(),
+  adjuntoUpdateMany: vi.fn(),
+  pagoFindUnique: vi.fn(),
   ErrorConocido: class extends Error {
     constructor(
       message: string,
@@ -41,7 +45,9 @@ const {
     }
   },
 }))
-vi.mock('@/lib/prisma', () => ({ prisma: { $transaction: transaction } }))
+vi.mock('@/lib/prisma', () => ({
+  prisma: { $transaction: transaction, pago: { findUnique: pagoFindUnique } },
+}))
 vi.mock('@/generated/prisma/client', () => ({
   Prisma: { PrismaClientKnownRequestError: ErrorConocido },
 }))
@@ -53,14 +59,25 @@ const tx = {
   materia: { findMany: materiaFindMany },
   formaPago: { findFirst: formaPagoFindFirst },
   pago: { create: pagoCreate },
+  comprobanteAdjunto: { updateMany: adjuntoUpdateMany },
 }
 
 const entrada: EntradaPago = {
   alumnoId: 12,
   ocurrencias: [{ turnoId: 41, fecha: '2026-10-12' }],
   fechaPago: '2026-10-05',
-  montoRecibido: 10000,
+  medio: { formaPago: 'EFECTIVO', montoRecibido: 10000 },
   observaciones: null,
+}
+
+/** Las columnas de los otros medios, en `null`: un pago, un medio. */
+const SIN_MEDIOS = {
+  transferenciaOperacion: null,
+  transferenciaBanco: null,
+  transferenciaTitular: null,
+  debitoRed: null,
+  debitoCupon: null,
+  debitoUltimos4: null,
 }
 const plan: PlanPago = {
   lineas: [{ turnoId: 41, fecha: '2026-10-12', importe: 8000.5 }],
@@ -83,6 +100,7 @@ beforeEach(() => {
   materiaFindMany.mockResolvedValue([])
   formaPagoFindFirst.mockResolvedValue({ id: 1 })
   pagoCreate.mockResolvedValue({ id: 31, numeroComprobante: 1024 })
+  adjuntoUpdateMany.mockResolvedValue({ count: 1 })
 })
 
 describe('registrar', () => {
@@ -103,7 +121,7 @@ describe('registrar', () => {
     expect(verificar).toHaveBeenCalledWith({ ocurrencias: [], precios: new Map() })
 
     expect(formaPagoFindFirst).toHaveBeenCalledWith({
-      where: { nombre: 'Efectivo', estado: 'ACTIVO' },
+      where: { tipoFormaPago: 'EFECTIVO', estado: 'ACTIVO' },
       select: { id: true },
     })
     expect(pagoCreate).toHaveBeenCalledWith({
@@ -113,6 +131,7 @@ describe('registrar', () => {
         importeTotal: '8000.50',
         fechaPago: new Date('2026-10-05T00:00:00.000Z'),
         montoRecibido: '10000.00',
+        ...SIN_MEDIOS,
         observaciones: null,
         createdById: 'usr_mesa',
         updatedById: 'usr_mesa',
@@ -128,6 +147,95 @@ describe('registrar', () => {
       },
       select: { id: true, numeroComprobante: true },
     })
+    // Efectivo: sin comprobante adjunto.
+    expect(adjuntoUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('transferencia: la forma por su código, sus datos sin monto recibido, y vincula el adjunto con el tx', async () => {
+    formaPagoFindFirst.mockResolvedValue({ id: 2 })
+
+    await pagosRepository.registrar(
+      {
+        ...entrada,
+        medio: {
+          formaPago: 'TRANSFERENCIA',
+          transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
+          comprobanteAdjuntoId: 18,
+        },
+      },
+      () => plan,
+      actor,
+    )
+
+    expect(formaPagoFindFirst.mock.calls[0]?.[0].where).toEqual({
+      tipoFormaPago: 'TRANSFERENCIA',
+      estado: 'ACTIVO',
+    })
+    expect(pagoCreate.mock.calls[0]?.[0].data).toMatchObject({
+      formaPagoId: 2,
+      montoRecibido: null,
+      transferenciaOperacion: '0004829137',
+      transferenciaBanco: 'Banco Macro',
+      transferenciaTitular: null,
+      debitoRed: null,
+      debitoCupon: null,
+      debitoUltimos4: null,
+    })
+    // `vincularAdjunto` (T-95), después de crear el pago y dentro de la misma transacción.
+    expect(adjuntoUpdateMany).toHaveBeenCalledWith({
+      where: { id: 18, pagoId: null, estado: 'ACTIVO', createdById: 'usr_mesa' },
+      data: { pagoId: 31, updatedById: 'usr_mesa' },
+    })
+    expect(pagoCreate.mock.invocationCallOrder[0]).toBeLessThan(
+      adjuntoUpdateMany.mock.invocationCallOrder[0] ?? 0,
+    )
+  })
+
+  it('débito: red, cupón y últimos 4; sin adjunto no vincula nada', async () => {
+    await pagosRepository.registrar(
+      {
+        ...entrada,
+        medio: {
+          formaPago: 'DEBITO',
+          debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+          comprobanteAdjuntoId: null,
+        },
+      },
+      () => plan,
+      actor,
+    )
+
+    expect(pagoCreate.mock.calls[0]?.[0].data).toMatchObject({
+      montoRecibido: null,
+      transferenciaOperacion: null,
+      debitoRed: 'VISA_DEBITO',
+      debitoCupon: '000123',
+      debitoUltimos4: '1234',
+    })
+    expect(adjuntoUpdateMany).not.toHaveBeenCalled()
+  })
+
+  it('un adjunto que no se puede vincular → 400 ADJUNTO_INVALIDO y la transacción se deshace', async () => {
+    adjuntoUpdateMany.mockResolvedValue({ count: 0 })
+
+    const error = await pagosRepository
+      .registrar(
+        {
+          ...entrada,
+          medio: {
+            formaPago: 'DEBITO',
+            debito: { red: 'MAESTRO', cupon: '9', ultimos4: null },
+            comprobanteAdjuntoId: 99,
+          },
+        },
+        () => plan,
+        actor,
+      )
+      .catch((e) => e)
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.code).toBe('ADJUNTO_INVALIDO')
+    expect(error.details).toEqual([{ path: ['comprobanteAdjuntoId'], message: expect.any(String) }])
   })
 
   it('relee las ocurrencias pedidas con el tx: turnoIds y el rango de sus fechas, sin alumnoId', async () => {
@@ -164,7 +272,7 @@ describe('registrar', () => {
     expect(pagoCreate).not.toHaveBeenCalled()
   })
 
-  it('sin la forma de pago "Efectivo" activa → 500 que pide correr el seed, sin escribir', async () => {
+  it('sin la forma de pago activa → 500 que pide correr el seed, sin escribir', async () => {
     formaPagoFindFirst.mockResolvedValue(null)
 
     const error = await pagosRepository.registrar(entrada, () => plan, actor).catch((e) => e)
@@ -198,5 +306,125 @@ describe('registrar', () => {
     pagoCreate.mockRejectedValue(original)
 
     await expect(pagosRepository.registrar(entrada, () => plan, actor)).rejects.toBe(original)
+  })
+})
+
+// HU-23 y HU-42 (T-96): el comprobante con la forma de pago por su código, los datos de su medio y
+// la anulación, leídos junto con el pago.
+describe('buscarComprobante', () => {
+  const decimal = (n: number) => ({ toNumber: () => n })
+  const LAURA = { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' }
+
+  function fila(cambios: Record<string, unknown> = {}) {
+    return {
+      id: 31,
+      numeroComprobante: 1024,
+      fechaPago: new Date('2026-10-05T00:00:00.000Z'),
+      importeTotal: decimal(8000),
+      montoRecibido: null,
+      observaciones: null,
+      createdAt: new Date('2026-10-05T14:30:00.000Z'),
+      alumno: { id: 12, nombre: 'Lucía', apellido: 'Álvarez', dni: '52345678' },
+      formaPago: { tipoFormaPago: 'EFECTIVO', nombre: 'Efectivo' },
+      transferenciaOperacion: null,
+      transferenciaBanco: null,
+      transferenciaTitular: null,
+      debitoRed: null,
+      debitoCupon: null,
+      debitoUltimos4: null,
+      estado: 'VIGENTE',
+      anulacion: null,
+      createdBy: LAURA,
+      turnos: [],
+      ...cambios,
+    }
+  }
+
+  it('efectivo: la forma por su código, sin datos de transferencia ni de débito, vigente', async () => {
+    pagoFindUnique.mockResolvedValue(fila({ montoRecibido: decimal(10000) }))
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      montoRecibido: 10000,
+      formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+      transferencia: null,
+      debito: null,
+      estado: 'VIGENTE',
+      anulacion: null,
+    })
+  })
+
+  it('transferencia: operación, banco y titular (null si no se cargó)', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        formaPago: { tipoFormaPago: 'TRANSFERENCIA', nombre: 'Transferencia' },
+        transferenciaOperacion: '0004829137',
+        transferenciaBanco: 'Banco Macro',
+      }),
+    )
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      montoRecibido: null,
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
+      debito: null,
+    })
+  })
+
+  it('débito: red, cupón y últimos 4', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        formaPago: { tipoFormaPago: 'DEBITO', nombre: 'Tarjeta de débito' },
+        debitoRed: 'VISA_DEBITO',
+        debitoCupon: '000123',
+        debitoUltimos4: '1234',
+      }),
+    )
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      transferencia: null,
+      debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+    })
+  })
+
+  it('anulado: el estado y la anulación con motivo, detalle, quién y cuándo', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        estado: 'ANULADO',
+        anulacion: {
+          motivo: 'ERROR_CARGA',
+          detalle: 'Se cargó dos veces',
+          createdAt: new Date('2026-10-06T12:00:00.000Z'),
+          createdBy: LAURA,
+        },
+      }),
+    )
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      estado: 'ANULADO',
+      anulacion: {
+        motivo: 'ERROR_CARGA',
+        detalle: 'Se cargó dos veces',
+        anuladoPor: LAURA,
+        anuladoEl: '2026-10-06T12:00:00.000Z',
+      },
+    })
+    // La anulación sale de la misma consulta que el pago.
+    expect(pagoFindUnique).toHaveBeenCalledTimes(1)
+    expect(pagoFindUnique.mock.calls[0]?.[0].select.anulacion).toBeDefined()
+  })
+
+  it('una forma de pago sin código → 500 que pide correr el seed', async () => {
+    pagoFindUnique.mockResolvedValue(fila({ formaPago: { tipoFormaPago: null, nombre: 'Vieja' } }))
+
+    const error = await pagosRepository.buscarComprobante(31).catch((e) => e)
+
+    expect(error).toBeInstanceOf(AppError)
+    expect(error.statusCode).toBe(500)
+    expect(error.message).toMatch(/pnpm db:seed/)
+  })
+
+  it('inexistente → null', async () => {
+    pagoFindUnique.mockResolvedValue(null)
+    expect(await pagosRepository.buscarComprobante(99)).toBeNull()
   })
 })
