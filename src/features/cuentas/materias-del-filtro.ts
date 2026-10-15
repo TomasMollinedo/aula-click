@@ -1,3 +1,5 @@
+import { coincideConBusqueda } from '@/utils/busqueda'
+
 import { normalizarIds } from './filtros-cuenta'
 import { textoMaterias } from './formato-cuentas'
 import type { MateriaDeCuenta } from './hooks/use-materias-de-cuenta'
@@ -24,25 +26,15 @@ export function opcionesDeMaterias(
   return [...fueraDeLista, ...lista]
 }
 
-/** Sin tildes ni mayúsculas, para que "ingles" encuentre "Inglés". */
-function normalizar(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-}
-
-/** Las opciones cuyo nombre tiene todas las palabras escritas, en cualquier orden. */
+/**
+ * Las opciones cuyo nombre tiene todas las palabras escritas, en cualquier orden y sin tildes
+ * (`coincideConBusqueda`, la regla de todos los buscadores de una lista).
+ */
 export function filtrarMaterias(
   opciones: readonly OpcionMateria[],
   texto: string,
 ): OpcionMateria[] {
-  const terminos = normalizar(texto).split(/\s+/).filter(Boolean)
-  if (terminos.length === 0) return [...opciones]
-  return opciones.filter((opcion) => {
-    const nombre = normalizar(opcion.nombre ?? '')
-    return terminos.every((termino) => nombre.includes(termino))
-  })
+  return opciones.filter((opcion) => coincideConBusqueda(opcion.nombre ?? '', texto))
 }
 
 /** Tilda la materia si no estaba, o la destilda; el resultado queda normalizado. */
