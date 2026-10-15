@@ -1,12 +1,11 @@
 'use client'
 
 import type { ReactNode } from 'react'
-import { Ban, Banknote, History, NotebookPen, type LucideIcon } from 'lucide-react'
+import { Ban, Banknote, History, NotebookPen } from 'lucide-react'
 
 import { EstadoPagoBadge } from '@/components/turno/estado-pago-badge'
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
 import { PrioridadIndicador } from '@/components/turno/prioridad-indicador'
-import { Card } from '@/components/ui/card'
 import { Dato, Datos } from '@/components/ui/datos'
 import { DetalleModal } from '@/components/ui/detalle-modal'
 import type {
@@ -18,8 +17,12 @@ import { fechaConDia, fechaCorta } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
+import { mostrarSeccionAsistencia, textoCreacionTurno } from '../asistencia-detalle'
+import { useDetalleEnUrl } from '../hooks/use-detalle-en-url'
 import { useOcurrencia } from '../hooks/use-ocurrencia'
 import { etiquetaMotivoCancelacion } from '../motivo-cancelacion'
+import { AsistenciaDelTurno } from './AsistenciaDelTurno'
+import { SeccionDetalle } from './SeccionDetalle'
 
 export type OcurrenciaDetalleProps = {
   turnoId: number
@@ -40,32 +43,16 @@ export type OcurrenciaDetalleProps = {
    * `features/pagos` y solo de mesa de entradas); sin esta prop, la sección de pago no lo muestra.
    */
   renderComprobante?: (pago: PagoRegistrado) => ReactNode
+  /**
+   * Registrar o corregir la asistencia, dentro de la sección "Asistencia". Lo compone `app/profesor`
+   * (`RegistrarAsistenciaTurno`, de `features/asistencias`), que decide si se muestra con
+   * `ocurrencia.acciones.registrarAsistencia`; sin esta prop, la sección es de solo lectura.
+   */
+  renderRegistrarAsistencia?: (ocurrencia: OcurrenciaDetalleDatos) => ReactNode
 }
 
 /** El pago de una ocurrencia ya pagada. */
 type PagoRegistrado = Extract<PagoDeOcurrencia, { estado: 'PAGADO' }>
-
-function Seccion({
-  icon: Icon,
-  titulo,
-  className,
-  children,
-}: {
-  icon: LucideIcon
-  titulo: string
-  className?: string
-  children: ReactNode
-}) {
-  return (
-    <Card className={className}>
-      <h3 className="flex items-center gap-2 text-sm font-semibold">
-        <Icon className="text-cobalto size-4" />
-        {titulo}
-      </h3>
-      {children}
-    </Card>
-  )
-}
 
 /**
  * El pago de la ocurrencia (HU-15), tal como lo manda la API: pendiente con lo que costaría cobrarla
@@ -81,7 +68,7 @@ function SeccionPago({
 }) {
   if (pago.estado === 'PENDIENTE') {
     return (
-      <Seccion icon={Banknote} titulo="Pago">
+      <SeccionDetalle icon={Banknote} titulo="Pago">
         <Datos>
           <Dato label="Estado" valor={<EstadoPagoBadge estado={pago.estado} />} />
           <Dato
@@ -91,12 +78,12 @@ function SeccionPago({
             }
           />
         </Datos>
-      </Seccion>
+      </SeccionDetalle>
     )
   }
 
   return (
-    <Seccion icon={Banknote} titulo="Pago">
+    <SeccionDetalle icon={Banknote} titulo="Pago">
       <Datos>
         <Dato label="Estado" valor={<EstadoPagoBadge estado={pago.estado} />} />
         <Dato label="Importe" valor={formatearPesos(pago.importe)} />
@@ -111,14 +98,16 @@ function SeccionPago({
         </p>
         {renderComprobante?.(pago)}
       </div>
-    </Seccion>
+    </SeccionDetalle>
   )
 }
 
 /**
- * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20): datos del turno (con el período de
- * la serie si es recurrente), prioridad, pago, cancelación y las acciones del pie. Se cierra solo
- * con la cruz del encabezado (no hay "Cerrar" en el pie). La sección de pago no se muestra en una
+ * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20, HU-22): datos del turno (con el
+ * período de la serie si es recurrente), prioridad, la asistencia de esa hora con sus horas seguidas
+ * (`AsistenciaDelTurno`), pago, cancelación y las acciones del pie. Si el turno lo sacó el alumno
+ * desde el portal, la trazabilidad lo dice (HU-29). El profesor del turno registra la asistencia
+ * desde la sección (`renderRegistrarAsistencia`). Se cierra solo con la cruz del encabezado (no hay "Cerrar" en el pie). La sección de pago no se muestra en una
  * cancelada (nunca se cobró: la API manda "Pendiente" y confundiría) ni cuando la API no manda
  * `pago` (el profesor).
  */
@@ -129,8 +118,10 @@ export function OcurrenciaDetalle({
   renderAcciones,
   renderAccionesEncabezado,
   renderComprobante,
+  renderRegistrarAsistencia,
 }: OcurrenciaDetalleProps) {
   const { data: ocurrencia, isLoading, error, refetch } = useOcurrencia({ turnoId, fecha })
+  const { hrefDetalle } = useDetalleEnUrl()
 
   return (
     <DetalleModal
@@ -139,7 +130,7 @@ export function OcurrenciaDetalle({
         ocurrencia && (
           <span className="flex flex-wrap items-center gap-2">
             {ocurrencia.materia.nombre}
-            <EstadoTurnoBadge estado={ocurrencia.estado} />
+            <EstadoTurnoBadge estado={ocurrencia.estado} plazo={ocurrencia.plazoAsistencia} />
           </span>
         )
       }
@@ -149,6 +140,7 @@ export function OcurrenciaDetalle({
       onReintentar={() => refetch()}
       textoNoEncontrado="Turno no encontrado"
       auditoria={ocurrencia}
+      textoCreacion={ocurrencia && textoCreacionTurno(ocurrencia.createdBy, ocurrencia.createdAt)}
       acciones={ocurrencia && renderAcciones(ocurrencia)}
       accionesEncabezado={ocurrencia && renderAccionesEncabezado?.(ocurrencia)}
       soloCruz
@@ -201,13 +193,24 @@ export function OcurrenciaDetalle({
             />
           )}
 
+          {mostrarSeccionAsistencia(ocurrencia) && (
+            <AsistenciaDelTurno
+              estado={ocurrencia.estado}
+              plazo={ocurrencia.plazoAsistencia}
+              asistencia={ocurrencia.asistencia}
+              horasSeguidas={ocurrencia.horasSeguidas}
+              hrefHora={hrefDetalle}
+              registro={renderRegistrarAsistencia?.(ocurrencia)}
+            />
+          )}
+
           {(ocurrencia.observaciones || ocurrencia.temas) && (
-            <Seccion icon={NotebookPen} titulo="Observaciones y temas">
+            <SeccionDetalle icon={NotebookPen} titulo="Observaciones y temas">
               <Datos>
                 <Dato label="Observaciones" valor={ocurrencia.observaciones} />
                 <Dato label="Temas a trabajar" valor={ocurrencia.temas} />
               </Datos>
-            </Seccion>
+            </SeccionDetalle>
           )}
 
           {ocurrencia.pago && ocurrencia.estado !== 'CANCELADO' && (
@@ -215,7 +218,7 @@ export function OcurrenciaDetalle({
           )}
 
           {ocurrencia.cancelacion && (
-            <Seccion icon={Ban} titulo="Cancelación">
+            <SeccionDetalle icon={Ban} titulo="Cancelación">
               <p className="text-sm">{etiquetaMotivoCancelacion(ocurrencia.cancelacion.motivo)}</p>
               {ocurrencia.cancelacion.detalle && (
                 <p className="text-muted-foreground mt-1 text-sm">
@@ -227,7 +230,7 @@ export function OcurrenciaDetalle({
                 {nombreUsuarioAuditoria(ocurrencia.cancelacion.createdBy)},{' '}
                 {formatoInstante(ocurrencia.cancelacion.createdAt)}
               </p>
-            </Seccion>
+            </SeccionDetalle>
           )}
         </div>
       )}

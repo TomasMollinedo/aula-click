@@ -294,7 +294,7 @@ export function TurnosDelAlumno({
                       {turno.profesor.nombre} {turno.profesor.apellido}
                     </TableCell>
                     <TableCell>
-                      <EstadoTurnoBadge estado={turno.estado} />
+                      <EstadoTurnoBadge estado={turno.estado} sinAsistencia />
                     </TableCell>
                     <TableCell>
                       {/* Una cancelada nunca se cobró (la API manda PENDIENTE): "Pendiente" confundiría. */}
