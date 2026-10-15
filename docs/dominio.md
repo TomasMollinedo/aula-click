@@ -331,7 +331,7 @@ El alumno (o su familia) entra al portal con una cuenta propia. La convención d
 
 ## Comprobante adjunto
 
-HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la imagen o el PDF de la transferencia, o la foto del cupón de débito) y respalda el cobro. No es el comprobante de pago que emite el centro (HU-15): la UI los nombra siempre distinto.
+HU-24 (T-95) y HU-44 (T-123). El **comprobante adjunto** es el archivo que trae la familia (la imagen o el PDF de la transferencia, o la foto del cupón de débito) y respalda el cobro. No es el comprobante de pago que emite el centro (HU-15): la UI los nombra siempre distinto.
 
 - **Qué pagos lo llevan:** los por **transferencia** (obligatorio) y con **tarjeta de débito** (opcional). Uno en efectivo no lleva.
 - **El archivo:** JPG, PNG o PDF de hasta 5 MB. La API verifica también el contenido, no sólo la extensión.
@@ -340,6 +340,8 @@ HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la i
 - **Reemplazar** adjunta uno nuevo y **conserva el anterior** (nada se borra); se muestra sólo el último. En un pago con débito sin comprobante (nunca tuvo, o se quitó), reemplazar lo adjunta.
 - **Quitar** sólo se puede en un pago **con débito**, donde es opcional: el comprobante deja de mostrarse, pero la fila y el archivo se conservan, con quién lo quitó y cuándo (baja lógica, decisión T-136). En uno por transferencia no se puede quitar: se reemplaza.
 - **Un pago anulado** (HU-42) conserva su comprobante como estaba: se sigue viendo y no se reemplaza ni se quita.
+- **Comprobante de la transferencia a un profesor** (HU-44, T-123): al pagar una liquidación el gerente puede adjuntar el comprobante de la transferencia, **opcional**, con las mismas reglas del archivo y de "se sube antes y se vincula al registrar". Su detalle muestra el último activo, igual que un pago; lo ve sólo el gerente (**el profesor no**, HU-45). No se reemplaza ni se quita.
+- **De un pago o de una liquidación, nunca de los dos:** un adjunto se vincula a uno solo, y sólo lo vincula quien lo subió. Como sólo la mesa de entradas registra pagos y sólo el gerente registra transferencias, un adjunto subido para un pago nunca termina en una liquidación ni al revés (decisiones T-158 y T-165).
 
 ## Anulación de pagos
 

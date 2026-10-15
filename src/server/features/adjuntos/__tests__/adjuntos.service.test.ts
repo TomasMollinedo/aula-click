@@ -22,6 +22,8 @@ const DEBITO: PagoDelAdjunto = { estado: 'VIGENTE', tipoFormaPago: 'DEBITO' }
 const EFECTIVO: PagoDelAdjunto = { estado: 'VIGENTE', tipoFormaPago: 'EFECTIVO' }
 
 let pagos: Map<number, PagoDelAdjunto>
+// Liquidaciones que existen: la 7 con comprobante de la transferencia, la 8 sin.
+const liquidaciones = new Set([7, 8])
 let adjuntos: AdjuntoEnMemoria[]
 let siguienteId: number
 
@@ -57,6 +59,22 @@ function crearRepository() {
       activos.forEach((a) => (a.activo = false))
       return activos.length
     }),
+    existeLiquidacion: vi.fn<AdjuntosRepository['existeLiquidacion']>(async (id) =>
+      liquidaciones.has(id),
+    ),
+    ultimoDeLiquidacion: vi.fn<AdjuntosRepository['ultimoDeLiquidacion']>(async (id) =>
+      id === 7
+        ? {
+            id: 40,
+            archivoKey: 'adjuntos/40.pdf',
+            nombre: 'transferencia-profesor.pdf',
+            tipo: 'application/pdf',
+            bytes: 10,
+            adjuntadoPor: { id: 'usr_gerente', nombre: 'Marcelo', apellido: 'Ríos' },
+            adjuntadoEl: '2026-11-03T15:00:00.000Z',
+          }
+        : null,
+    ),
   }
 }
 
@@ -153,6 +171,34 @@ describe('verUltimo', () => {
     const error = await errorDe(service.verUltimo(34))
     expect(error).toBeInstanceOf(NotFoundError)
     expect(error.message).toBe('El pago no tiene comprobante adjunto')
+  })
+})
+
+describe('verDeLiquidacion', () => {
+  it('el último activo de la liquidación, con la URL y quién lo adjuntó', async () => {
+    expect(await service.verDeLiquidacion(7)).toEqual({
+      id: 40,
+      nombre: 'transferencia-profesor.pdf',
+      tipo: 'application/pdf',
+      bytes: 10,
+      url: 'https://minio.local/adjuntos/40.pdf?n=transferencia-profesor.pdf',
+      adjuntadoPor: { id: 'usr_gerente', nombre: 'Marcelo', apellido: 'Ríos' },
+      adjuntadoEl: '2026-11-03T15:00:00.000Z',
+    })
+    expect(firmarUrl).toHaveBeenCalledWith('adjuntos/40.pdf', 'transferencia-profesor.pdf')
+  })
+
+  it('liquidación inexistente → 404 "Liquidación no encontrada"', async () => {
+    const error = await errorDe(service.verDeLiquidacion(99))
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error.message).toBe('Liquidación no encontrada')
+    expect(repository.ultimoDeLiquidacion).not.toHaveBeenCalled()
+  })
+
+  it('liquidación sin adjunto → 404 "La liquidación no tiene comprobante adjunto"', async () => {
+    const error = await errorDe(service.verDeLiquidacion(8))
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error.message).toBe('La liquidación no tiene comprobante adjunto')
   })
 })
 

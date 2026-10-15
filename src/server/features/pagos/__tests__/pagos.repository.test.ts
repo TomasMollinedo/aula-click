@@ -206,7 +206,13 @@ describe('registrar', () => {
     })
     // `vincularAdjunto` (T-95), después de crear el pago y dentro de la misma transacción.
     expect(adjuntoUpdateMany).toHaveBeenCalledWith({
-      where: { id: 18, pagoId: null, estado: 'ACTIVO', createdById: 'usr_mesa' },
+      where: {
+        id: 18,
+        pagoId: null,
+        liquidacionId: null,
+        estado: 'ACTIVO',
+        createdById: 'usr_mesa',
+      },
       data: { pagoId: 31, updatedById: 'usr_mesa' },
     })
     expect(pagoCreate.mock.invocationCallOrder[0]).toBeLessThan(

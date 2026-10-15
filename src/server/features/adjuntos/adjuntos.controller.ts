@@ -5,6 +5,7 @@ import type {
   quitarAdjuntoRoute,
   reemplazarAdjuntoRoute,
   subirAdjuntoRoute,
+  verAdjuntoDeLiquidacionRoute,
   verAdjuntoRoute,
 } from './adjuntos.routes'
 import { adjuntosRepository } from './adjuntos.repository'
@@ -27,6 +28,10 @@ export const subir: RouteHandler<typeof subirAdjuntoRoute, AppEnv> = async (c) =
 
 export const ver: RouteHandler<typeof verAdjuntoRoute, AppEnv> = async (c) =>
   c.json(await adjuntosService.verUltimo(c.req.valid('param').pagoId), 200)
+
+export const verDeLiquidacion: RouteHandler<typeof verAdjuntoDeLiquidacionRoute, AppEnv> = async (
+  c,
+) => c.json(await adjuntosService.verDeLiquidacion(c.req.valid('param').liquidacionId), 200)
 
 export const reemplazar: RouteHandler<typeof reemplazarAdjuntoRoute, AppEnv> = async (c) =>
   c.json(

@@ -2,7 +2,7 @@ import { prisma } from '@/lib/prisma'
 import { putObject } from '@/lib/storage'
 import type { Actor } from '@/server/shared/actor'
 import { claveDeArchivo } from '@/server/shared/archivos'
-import { ultimoAdjunto } from './adjuntos.condiciones'
+import { ultimoAdjunto, ultimoAdjuntoDeLiquidacion } from './adjuntos.condiciones'
 import {
   TIPOS_ADJUNTO,
   type AdjuntoSubido,
@@ -49,7 +49,10 @@ async function guardar(
 }
 
 export const adjuntosRepository = {
-  /** Sube un adjunto todavía sin pago: se vincula al registrar el pago (`vincularAdjunto`). */
+  /**
+   * Sube un adjunto todavía sin pago ni liquidación: se vincula al registrar el pago
+   * (`vincularAdjunto`) o la transferencia a un profesor (`vincularAdjuntoALiquidacion`).
+   */
   async subir(archivo: ArchivoAGuardar, actor: Actor): Promise<AdjuntoSubido> {
     return guardar(archivo, actor, null)
   },
@@ -66,6 +69,20 @@ export const adjuntosRepository = {
   /** El último adjunto activo del pago (`ultimoAdjunto`, una sola implementación), o `null`. */
   async ultimo(pagoId: number): Promise<UltimoAdjunto | null> {
     return ultimoAdjunto(prisma, pagoId)
+  },
+
+  /** Si la liquidación existe (sólo tiene fila una cerrada, decisión T-156). */
+  async existeLiquidacion(liquidacionId: number): Promise<boolean> {
+    const liquidacion = await prisma.liquidacion.findUnique({
+      where: { id: liquidacionId },
+      select: { id: true },
+    })
+    return liquidacion !== null
+  },
+
+  /** El último adjunto activo de la liquidación (`ultimoAdjuntoDeLiquidacion`), o `null`. */
+  async ultimoDeLiquidacion(liquidacionId: number): Promise<UltimoAdjunto | null> {
+    return ultimoAdjuntoDeLiquidacion(prisma, liquidacionId)
   },
 
   /**
