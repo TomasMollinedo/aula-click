@@ -396,7 +396,15 @@ HU-43 (tarea T-120). Los términos son los del [Vocabulario de la ampliación](s
 
 ## Liquidaciones
 
-A completar por T-121 (HU-44).
+HU-44 (tarea T-121). Los términos y los textos son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación); acá, las reglas que aplica el motor.
+
+- **Devengo:** un turno se le debe al profesor cuando su cobro está vigente y tiene asistencia `PRESENTE` o `AUSENTE`. Su fecha de devengo es la más tardía entre el **registro** del pago y el de la asistencia, como fecha de Salta, nunca la fecha de pago (decisión T-162). El profesor es el del bloque al leer. Un turno sin asistencia, dentro del plazo o cerrado sin registrar, no se devenga.
+- **Turnos de una liquidación:** los devengados del mes de su fecha de devengo que no están en una liquidación cerrada. Si se anula el pago de uno mientras la liquidación está abierta, deja de figurar.
+- **Ajuste por anulación:** un turno de una liquidación cerrada cuyo pago se anuló descuenta su parte del profesor congelada en la primera liquidación sin cerrar posterior con turnos, o en la del mes en curso si no hay ninguna; una línea por comprobante (decisión T-163). La cerrada no cambia.
+- **Saldo anterior:** una liquidación de un mes terminado con total de 0 o menos queda "Saldo a descontar" y entra entera como ajuste en el siguiente mes sin cerrar, aunque no tenga turnos; puede encadenarse. El mes en curso no arrastra nada (decisión T-164).
+- **Total** = parte del profesor de los turnos + ajustes, en centavos.
+- **Estados:** `EN_CURSO` (el mes de hoy, aunque dé negativo), `PENDIENTE_DE_PAGO` (mes terminado, total > 0), `SALDO_A_DESCONTAR` (mes terminado, total ≤ 0), `PAGADA` y `DESCONTADA` (cerrada porque su saldo lo absorbió la que se pagó). Sólo se paga una `PENDIENTE_DE_PAGO`; al pagarla se cierran con ella, como `DESCONTADA`, las de la cadena que absorbió.
+- **Saldo del profesor:** lo que se le debe hoy, la suma de sus liquidaciones `PENDIENTE_DE_PAGO` y `EN_CURSO`. Las `SALDO_A_DESCONTAR` no se suman: ya están dentro de la del mes siguiente. Puede ser negativo.
 
 ## Caja diaria
 
