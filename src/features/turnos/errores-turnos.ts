@@ -25,6 +25,11 @@ export type ErrorAltaTurno =
       camposMarcados: { campo: CampoErrorTurno; mensaje: string }[]
       mensaje: string | null
     }
+  /**
+   * El alumno tiene deuda vencida (HU-29): `mensaje` es el de la API, ya redactado para cada rol
+   * (mesa o alumno), y no se rearma. `cantidad` y `total` salen de `details`, que es un objeto.
+   */
+  | { tipo: 'deudaVencida'; mensaje: string; cantidad: number; total: number }
   /** Profesor, materia u horas que cambiaron desde la búsqueda: hay que volver a buscar. */
   | { tipo: 'volverABuscar'; mensaje: string }
   | { tipo: 'general'; mensaje: string }
@@ -46,6 +51,16 @@ function esRegistro(valor: unknown): valor is Registro {
 
 function esPersona(valor: unknown): valor is { nombre: string; apellido: string } {
   return esRegistro(valor) && typeof valor.nombre === 'string' && typeof valor.apellido === 'string'
+}
+
+/** `details` de `DEUDA_VENCIDA`: un objeto `{ cantidad, total }`, no un arreglo (decisión T-143). */
+function esDetalleDeuda(d: unknown): d is { cantidad: number; total: number } {
+  return (
+    esRegistro(d) &&
+    !Array.isArray(d) &&
+    typeof d.cantidad === 'number' &&
+    typeof d.total === 'number'
+  )
 }
 
 function esDetalleBloqueLleno(d: unknown): d is DetalleBloqueLleno {
@@ -151,6 +166,16 @@ export function interpretarErrorAlta(
   }
 
   const details = error.details
+  if (error.code === 'DEUDA_VENCIDA') {
+    if (!esDetalleDeuda(details)) return { tipo: 'general', mensaje: error.message }
+    return {
+      tipo: 'deudaVencida',
+      mensaje: error.message,
+      cantidad: details.cantidad,
+      total: details.total,
+    }
+  }
+
   if (error.code === 'BLOQUE_LLENO') {
     if (!Array.isArray(details) || details.length === 0 || !details.every(esDetalleBloqueLleno)) {
       return { tipo: 'general', mensaje: error.message }

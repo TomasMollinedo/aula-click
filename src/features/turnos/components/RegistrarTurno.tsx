@@ -50,6 +50,8 @@ type RegistrarTurnoProps = {
   hrefAltaAlumno: string
   /** Compone `app/` el "Generar PDF" de cada tramo creado, en la confirmación del alta (T-69). */
   renderPdf?: (tramo: { turnoId: number; fecha: string }) => ReactNode
+  /** URL de "Cobrar" del rechazo por deuda vencida (la pestaña "Pagos" de la ficha del alumno). */
+  hrefCobrar?: (alumnoId: number) => string
 }
 
 /** Id de la URL (`?alumnoId=`) como número, o `null` si no es un entero positivo. */
@@ -93,6 +95,7 @@ export function RegistrarTurno({
   hrefAltaAlumno,
   renderDetalle,
   renderPdf,
+  hrefCobrar,
 }: RegistrarTurnoProps) {
   const router = useRouter()
   const searchParams = useSearchParams()
@@ -295,6 +298,7 @@ export function RegistrarTurno({
       case 'fechasLlenas':
       case 'sinLugar':
       case 'alumnoSuperpuesto':
+      case 'deudaVencida':
       case 'general':
         setRechazo(resultadoError)
         return
@@ -455,7 +459,11 @@ export function RegistrarTurno({
               rechazo.tipo !== 'fechasLlenas' &&
               rechazo.tipo !== 'campos' &&
               rechazo.tipo !== 'volverABuscar' && (
-                <AlertaRechazo rechazo={rechazo} onBuscarOtros={() => volverALaBusqueda()} />
+                <AlertaRechazo
+                  rechazo={rechazo}
+                  onBuscarOtros={() => volverALaBusqueda()}
+                  hrefCobrar={alumno && hrefCobrar ? hrefCobrar(alumno.id) : undefined}
+                />
               )
             }
           />

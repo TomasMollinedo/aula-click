@@ -1,6 +1,7 @@
 'use client'
 
-import { AlertCircle, CalendarSearch } from 'lucide-react'
+import Link from 'next/link'
+import { AlertCircle, CalendarSearch, Wallet } from 'lucide-react'
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -28,20 +29,38 @@ function Lineas({ lineas }: { lineas: string[] }) {
 
 type AlertaRechazoProps = {
   /** Los rechazos que se muestran en el formulario (no el diálogo ni los campos). */
-  rechazo: Extract<ErrorAltaTurno, { tipo: 'sinLugar' | 'alumnoSuperpuesto' | 'general' }>
+  rechazo: Extract<
+    ErrorAltaTurno,
+    { tipo: 'sinLugar' | 'alumnoSuperpuesto' | 'deudaVencida' | 'general' }
+  >
   /** "Buscar otros turnos disponibles" (solo `sinLugar`). */
   onBuscarOtros?: () => void
+  /** "Cobrar" (solo `deudaVencida`): la pestaña "Pagos" de la ficha del alumno, que arma `app/`. */
+  hrefCobrar?: string
 }
 
 /**
  * Alerta arriba del botón "Registrar turno". `sinLugar` ofrece buscar otros turnos;
- * `alumnoSuperpuesto` lista los turnos que chocan y no ofrece forzar (es un rechazo total).
+ * `alumnoSuperpuesto` lista los turnos que chocan y no ofrece forzar (es un rechazo total);
+ * `deudaVencida` muestra el mensaje de la API (con la cantidad y el total) y ofrece "Cobrar".
  */
-export function AlertaRechazo({ rechazo, onBuscarOtros }: AlertaRechazoProps) {
+export function AlertaRechazo({ rechazo, onBuscarOtros, hrefCobrar }: AlertaRechazoProps) {
   return (
     <Alert variant="destructive">
       <AlertCircle className="size-4" />
-      {rechazo.tipo === 'general' ? (
+      {rechazo.tipo === 'deudaVencida' ? (
+        <AlertDescription className="text-destructive space-y-3">
+          <p>{rechazo.mensaje}</p>
+          {hrefCobrar && (
+            <Button asChild variant="outline" size="sm">
+              <Link href={hrefCobrar}>
+                <Wallet />
+                Cobrar
+              </Link>
+            </Button>
+          )}
+        </AlertDescription>
+      ) : rechazo.tipo === 'general' ? (
         <AlertDescription className="text-destructive">{rechazo.mensaje}</AlertDescription>
       ) : (
         <>
