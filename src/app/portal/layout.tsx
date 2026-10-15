@@ -12,7 +12,7 @@ export default function PortalLayout({ children }: LayoutProps<'/portal'>) {
       <AppShell sidebar={<PortalSidebar />} userMenu={<UserMenu />}>
         <div className="space-y-6">
           <div className="space-y-3">
-            <AvisoContrasenaInicial />
+            <AvisoContrasenaInicial hrefConfiguracion="/portal/configuracion" />
             <AvisoMesaDeEntrada />
           </div>
           {children}
