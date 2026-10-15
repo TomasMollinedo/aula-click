@@ -243,18 +243,33 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 
 ## Tablero
 
-HU-21 (T-61). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días). Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
+HU-21 (T-61) y HU-39 (T-112). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días), en dos secciones con el mismo período: **General** y **Asistencia**. Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
 
-- **Turnos por estado:** los turnos del período (cada turno en cada fecha), incluidos los cancelados, con su cantidad y su porcentaje sobre el total: cancelados, sin registrar (pasados y no cancelados) y agendados (no cancelados, de hoy en adelante). Los agendados sólo se informan si el período incluye hoy o fechas futuras.
-- **Asistencia:** "Asistió", "No asistió" y "alumnos atendidos" dependen de la asistencia (HU-22, próximo sprint). Se informan como **no disponibles**, sin número, y no se reemplazan por otra cuenta (por ejemplo, los turnos pasados no cancelados).
+### General
+
+- **Turnos por estado:** los turnos del período (cada turno en cada fecha), incluidos los cancelados, con su cantidad y su porcentaje sobre el total: cancelados, sin registrar (pasados, no cancelados y sin asistencia registrada) y agendados (no cancelados, de hoy en adelante). Los agendados sólo se informan si el período incluye hoy o fechas futuras.
+- **Asistencia (HU-22):** "Asistió" son los turnos con asistencia "Presente" y "No asistió" los de "Ausente", cada uno con su cantidad y su porcentaje **sobre los turnos con asistencia registrada** (no sobre el total del período: un turno "Sin registrar" no está en la base). **Alumnos atendidos** son los alumnos distintos con al menos un turno "Realizado" (presente) en el período. Sin ninguna asistencia registrada, todo en 0.
 - **Profesores con más turnos:** los 5 con más turnos **no cancelados** en el período, con su cantidad: cada turno es un alumno que cursa en una hora del profesor, así que es el profesor con más alumnos. No depende de la asistencia. En empate, por apellido y nombre.
 - **Clase:** una hora de un profesor en una fecha con al menos un turno no cancelado (la clase de HU-19). Una hora del horario sin turnos, o con todos cancelados, no es una clase.
 - **Ocupación:** turnos no cancelados del período sobre la capacidad total de sus clases. La capacidad de cada clase es la capacidad efectiva de esa hora (la menor entre la del profesor y la del aula, HU-06) **al momento de consultar**, y cuenta una vez por clase, tenga uno o varios alumnos. No se recorta a 100 %: si a un profesor o a un aula le bajaron la capacidad después, el porcentaje real puede superarlo.
 - **Alumnos nuevos:** los dados de alta dentro del período, en hora de Salta (de las 00:00 del primer día a las 24:00 del último). Cuentan aunque después se hayan dado de baja.
 - **Materias con más demanda:** las 5 con más turnos **no cancelados** en el período, con su cantidad. En empate, por nombre.
-- **Total cobrado:** la suma de los pagos vigentes con **fecha de pago** dentro del período (no la fecha en que se cargaron).
+- **Total cobrado:** la suma de los pagos vigentes con **fecha de pago** dentro del período (no la fecha en que se cargaron). Los pagos anulados no suman. Se ve separado por forma de pago (efectivo, transferencia y tarjeta de débito) y las tres formas suman el total cobrado.
 - **Total adeudado:** la deuda **a la fecha** (hoy), de todos los alumnos: no depende del período elegido. Es la misma de [Deuda](#deuda) y coincide con el total de la vista global "Pagos" sin filtros.
 - **Porcentajes:** de 0 a 100 con un decimal; si no hay sobre qué calcular, 0.
+
+### Asistencia
+
+HU-39 (T-112, decisión T-162). La pestaña para ver **qué profesores no registran la asistencia** (HU-22) y cómo asisten los alumnos. Sólo agregados por centro, por profesor y por materia: nunca se lista un alumno con nombre. Las cifras salen de los estados de las ocurrencias del período (los calcula el motor de ocurrencias).
+
+- **Turno con asistencia registrada:** "Realizado" (presente) o "Ausente". Cada hora de un alumno cuenta como un turno. Los cancelados no cuentan en ninguna cifra de esta pestaña.
+- **Turno cerrado sin registrar:** un turno pasado "Sin registrar" cuyo plazo de 7 días venció: lo cerró el sistema (HU-22). **Turno dentro del plazo:** "Sin registrar" que el profesor todavía puede registrar. Un turno dentro del plazo no es una falta del profesor.
+- **Porcentaje de asistencia** (del centro, de un profesor, de una materia o de un alumno): turnos "Realizados" sobre los turnos con asistencia registrada. Los cerrados sin registrar, los pendientes y los agendados no entran en la base.
+- **Porcentaje sin registrar** (de un profesor o una materia): turnos cerrados sin registrar sobre sus turnos **no cancelados** del período (los agendados están en la base).
+- **Profesor que no registra asistencia:** el que tiene al menos un turno cerrado sin registrar en el período. Es un dato del período consultado: no se arrastra de un período a otro.
+- **Alumnos con baja asistencia:** los alumnos con **menos de 75 %** de asistencia en el período, entre los que tienen algún turno con asistencia registrada (75 % justo no cuenta). Se informa sólo la cantidad.
+- **Tabla de profesores:** un profesor por fila, con sus turnos realizados, ausencias, porcentaje de asistencia de sus alumnos, turnos cerrados sin registrar, turnos dentro del plazo y porcentaje sin registrar. Por defecto, primero los que más turnos cerrados sin registrar tienen; se puede reordenar por cualquier columna y filtrar para ver sólo a los que no registran. **Tabla de materias:** las mismas cifras por materia, siempre ordenadas por turnos cerrados sin registrar.
+- Cada tabla se ve de a 10 filas, pero el **PDF** de la sección trae las tablas completas.
 
 ## Exámenes
 

@@ -92,7 +92,34 @@ export function nombreProfesor({ apellido, nombre }: { apellido: string; nombre:
   return `${apellido}, ${nombre}`
 }
 
-/** `tablero-2026-09-28_2026-10-04` (sin extensión): el guion bajo separa las dos fechas. */
-export function nombreArchivoTablero({ desde, hasta }: { desde: string; hasta: string }): string {
-  return `tablero-${desde}_${hasta}`
+/** El título del documento de asistencia según el período: "Asistencia semanal"… */
+export function tituloTableroAsistencia(desde: string, hasta: string): string {
+  switch (tipoDePeriodo(desde, hasta)) {
+    case 'diario':
+      return 'Asistencia diaria'
+    case 'semanal':
+      return 'Asistencia semanal'
+    case 'mensual':
+      return 'Asistencia mensual'
+    case 'otro':
+      return 'Asistencia del período'
+  }
+}
+
+/** Cómo se escribe cada forma de pago en el documento. */
+export const NOMBRE_FORMA_DE_PAGO = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+  DEBITO: 'Tarjeta de débito',
+} as const
+
+/**
+ * El nombre del archivo (sin extensión): `tablero-2026-09-28_2026-10-04` para "General" y
+ * `tablero-asistencia-2026-09-28_2026-10-04` para "Asistencia". El guion bajo separa las dos fechas.
+ */
+export function nombreArchivoTablero(
+  { desde, hasta }: { desde: string; hasta: string },
+  seccion: 'general' | 'asistencia' = 'general',
+): string {
+  return `${seccion === 'asistencia' ? 'tablero-asistencia' : 'tablero'}-${desde}_${hasta}`
 }
