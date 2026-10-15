@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
 import { pagosRepository } from '../pagos.repository'
+import { crearPagosService } from '../pagos.service'
 import type { PlanPago } from '../pagos.reglas'
 import type { EntradaPago } from '../pagos.validation'
 
@@ -643,6 +644,221 @@ describe('pagos realizados', () => {
     it('sin adjunto activo → null', async () => {
       adjuntoFindFirst.mockResolvedValue(null)
       expect(await pagosRepository.buscarAdjunto(31)).toBeNull()
+    })
+  })
+})
+
+// Criterios de aceptación de T-98 (HU-36), con el repository y el service reales: Prisma es un falso
+// que aplica el `where` que recibe sobre pagos en memoria (sólo los campos que usa el filtro), así
+// el listado y los totales salen de los mismos datos. Octubre de 2026.
+describe('criterios de aceptación: lo cobrado y los anulados', () => {
+  type PagoEnBase = {
+    id: number
+    fechaPago: string
+    alumnoId: number
+    estado: 'VIGENTE' | 'ANULADO'
+    formaPagoId: number
+    total: number
+    /** Materia y profesor de cada turno del pago. */
+    turnos: { materiaId: number; profesorId: number }[]
+  }
+  type Where = {
+    estado?: string
+    fechaPago?: { gte: Date; lte: Date }
+    alumnoId?: number
+    turnos?: { some: { turno: { materiaId?: number; bloqueAgenda?: { profesorId: number } } } }
+    formaPago?: { tipoFormaPago: string }
+  }
+
+  const FORMAS = [
+    { id: 1, tipoFormaPago: 'EFECTIVO', nombre: 'Efectivo' },
+    { id: 2, tipoFormaPago: 'TRANSFERENCIA', nombre: 'Transferencia' },
+    { id: 3, tipoFormaPago: 'DEBITO', nombre: 'Tarjeta de débito' },
+  ]
+  const MATERIAS: Record<number, string> = { 2: 'Matemática', 7: 'Física' }
+
+  const BASE: PagoEnBase[] = [
+    // Matemática con Ana (3).
+    {
+      id: 1,
+      fechaPago: '2026-10-02',
+      alumnoId: 12,
+      estado: 'VIGENTE',
+      formaPagoId: 1,
+      total: 8000,
+      turnos: [{ materiaId: 2, profesorId: 3 }],
+    },
+    // Matemática con Juan (5) y Física con Ana (3): materia 2 y profesor 3, pero en turnos distintos.
+    {
+      id: 2,
+      fechaPago: '2026-10-05',
+      alumnoId: 12,
+      estado: 'VIGENTE',
+      formaPagoId: 2,
+      total: 17000.5,
+      turnos: [
+        { materiaId: 2, profesorId: 5 },
+        { materiaId: 7, profesorId: 3 },
+      ],
+    },
+    // Anulado: se lista, no suma.
+    {
+      id: 3,
+      fechaPago: '2026-10-06',
+      alumnoId: 14,
+      estado: 'ANULADO',
+      formaPagoId: 3,
+      total: 9000,
+      turnos: [{ materiaId: 2, profesorId: 3 }],
+    },
+    // Fuera del período.
+    {
+      id: 4,
+      fechaPago: '2026-09-30',
+      alumnoId: 12,
+      estado: 'VIGENTE',
+      formaPagoId: 1,
+      total: 5000,
+      turnos: [{ materiaId: 2, profesorId: 3 }],
+    },
+    {
+      id: 5,
+      fechaPago: '2026-10-10',
+      alumnoId: 14,
+      estado: 'VIGENTE',
+      formaPagoId: 3,
+      total: 6000,
+      turnos: [{ materiaId: 7, profesorId: 3 }],
+    },
+  ]
+
+  const fecha = (texto: string) => new Date(`${texto}T00:00:00.000Z`)
+  const decimal = (n: number) => ({ toNumber: () => n })
+
+  function cumple(pago: PagoEnBase, where: Where): boolean {
+    if (where.estado !== undefined && pago.estado !== where.estado) return false
+    if (where.fechaPago) {
+      const f = fecha(pago.fechaPago)
+      if (f < where.fechaPago.gte || f > where.fechaPago.lte) return false
+    }
+    if (where.alumnoId !== undefined && pago.alumnoId !== where.alumnoId) return false
+    const turno = where.turnos?.some.turno
+    if (
+      turno &&
+      !pago.turnos.some(
+        (t) =>
+          (turno.materiaId === undefined || t.materiaId === turno.materiaId) &&
+          (turno.bloqueAgenda === undefined || t.profesorId === turno.bloqueAgenda.profesorId),
+      )
+    ) {
+      return false
+    }
+    const codigo = FORMAS.find((f) => f.id === pago.formaPagoId)?.tipoFormaPago
+    if (where.formaPago && codigo !== where.formaPago.tipoFormaPago) return false
+    return true
+  }
+
+  const filtrar = (where: Where) => BASE.filter((p) => cumple(p, where))
+
+  function aFila(pago: PagoEnBase) {
+    const forma = FORMAS.find((f) => f.id === pago.formaPagoId)
+    return {
+      id: pago.id,
+      numeroComprobante: 1000 + pago.id,
+      fechaPago: fecha(pago.fechaPago),
+      importeTotal: decimal(pago.total),
+      estado: pago.estado,
+      formaPago: { tipoFormaPago: forma?.tipoFormaPago, nombre: forma?.nombre },
+      turnos: pago.turnos.map((t) => ({
+        turno: { materia: { id: t.materiaId, nombre: MATERIAS[t.materiaId] } },
+      })),
+      alumno: { id: pago.alumnoId, nombre: 'Nombre', apellido: 'Apellido' },
+      createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      anulacion: pago.estado === 'ANULADO' ? { motivo: 'ERROR_CARGA', detalle: null } : null,
+    }
+  }
+
+  const service = crearPagosService({
+    repository: pagosRepository,
+    alumnosRepository: { buscarPorId: vi.fn() },
+  })
+  const OCTUBRE = { desde: '2026-10-01', hasta: '2026-10-31', page: 1, pageSize: 10 }
+
+  beforeEach(() => {
+    transaction.mockImplementation((consultas: Promise<unknown>[]) => Promise.all(consultas))
+    pagoFindMany.mockImplementation(
+      async ({ where, skip, take }: { where: Where; skip: number; take: number }) =>
+        filtrar(where)
+          .sort((a, b) => b.fechaPago.localeCompare(a.fechaPago) || b.id - a.id)
+          .slice(skip, skip + take)
+          .map(aFila),
+    )
+    pagoCount.mockImplementation(async ({ where }: { where: Where }) => filtrar(where).length)
+    pagoGroupBy.mockImplementation(async ({ where }: { where: Where }) => {
+      const suma = new Map<number, number>()
+      for (const p of filtrar(where))
+        suma.set(p.formaPagoId, (suma.get(p.formaPagoId) ?? 0) + p.total)
+      return [...suma].map(([formaPagoId, total]) => ({
+        formaPagoId,
+        _sum: { importeTotal: decimal(total) },
+      }))
+    })
+    formaPagoFindMany.mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) =>
+      FORMAS.filter((f) => where.id.in.includes(f.id)),
+    )
+  })
+
+  /** La suma de los totales de los pagos vigentes de la lista, en centavos. */
+  const sumaVigentes = (data: { estado: string; total: number }[]) =>
+    data.filter((p) => p.estado === 'VIGENTE').reduce((s, p) => s + Math.round(p.total * 100), 0) /
+    100
+
+  it('el total cobrado es la suma de los pagos vigentes del filtro, separado por forma de pago', async () => {
+    const { data, meta, totales } = await service.listar(OCTUBRE)
+
+    expect(data.map((p) => p.id)).toEqual([5, 3, 2, 1])
+    expect(meta.total).toBe(4)
+    expect(totales).toEqual({
+      cobrado: 31000.5,
+      porForma: { EFECTIVO: 8000, TRANSFERENCIA: 17000.5, DEBITO: 6000 },
+    })
+    expect(totales.cobrado).toBe(sumaVigentes(data))
+  })
+
+  it('un pago anulado se lista marcado y no suma', async () => {
+    const { data, totales } = await service.listar(OCTUBRE)
+
+    expect(data.find((p) => p.id === 3)).toMatchObject({
+      estado: 'ANULADO',
+      anulacion: { motivo: 'ERROR_CARGA', detalle: null },
+    })
+    // El débito anulado (9000) no está en lo cobrado con débito: sólo el vigente (6000).
+    expect(totales.porForma.DEBITO).toBe(6000)
+
+    const soloDebito = await service.listar({ ...OCTUBRE, formaPago: 'DEBITO' })
+    expect(soloDebito.data.map((p) => [p.id, p.estado])).toEqual([
+      [5, 'VIGENTE'],
+      [3, 'ANULADO'],
+    ])
+    expect(soloDebito.totales).toEqual({
+      cobrado: 6000,
+      porForma: { EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 6000 },
+    })
+  })
+
+  it('con materia, cada pago listado suma su total completo; con materia y profesor, sobre el mismo turno', async () => {
+    const matematica = await service.listar({ ...OCTUBRE, materiaId: 2 })
+    expect(matematica.data.map((p) => p.id)).toEqual([3, 2, 1])
+    // El pago 2 suma sus 17000,50 completos, no sólo su turno de Matemática.
+    expect(matematica.totales.cobrado).toBe(25000.5)
+    expect(matematica.totales.cobrado).toBe(sumaVigentes(matematica.data))
+
+    const conAna = await service.listar({ ...OCTUBRE, materiaId: 2, profesorId: 3 })
+    // El pago 2 tiene Matemática y a Ana, pero en turnos distintos: no aparece.
+    expect(conAna.data.map((p) => p.id)).toEqual([3, 1])
+    expect(conAna.totales).toEqual({
+      cobrado: 8000,
+      porForma: { EFECTIVO: 8000, TRANSFERENCIA: 0, DEBITO: 0 },
     })
   })
 })
