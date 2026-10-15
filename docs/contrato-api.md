@@ -1456,7 +1456,70 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante ad
 
 ## Anulaciones
 
-A completar por T-104 (HU-42).
+HU-42 (T-104). Anular un pago completo, nunca un turno suelto. Reglas en `dominio.md` → Anulación de pagos.
+
+| Endpoint                         | Roles           | Qué hace                                                                              |
+| -------------------------------- | --------------- | ------------------------------------------------------------------------------------- |
+| `GET /api/v1/anulaciones/previa` | `MESA_ENTRADAS` | El resumen para confirmar y sus avisos. No escribe. 200; 400; 404; 409 `PAGO_ANULADO` |
+| `POST /api/v1/anulaciones`       | `MESA_ENTRADAS` | Anula el pago. 201 con `{ pagoId, cantidad }`; 400; 404; 409 `PAGO_ANULADO`           |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**`GET /anulaciones/previa?pagoId=31`** (`pagoId`: entero positivo; si no, 400 `VALIDACION` en `["pagoId"]`):
+
+```json
+{
+  "pago": {
+    "id": 31,
+    "numeroComprobante": 123,
+    "alumno": { "id": 12, "nombre": "Juan", "apellido": "Pérez" },
+    "total": 32000,
+    "cantidad": 4
+  },
+  "avisos": {
+    "deuda": { "cantidad": 5, "total": 40000, "turnosDelPago": 4 },
+    "precios": [
+      { "materia": { "id": 2, "nombre": "Matemática" }, "cobrado": 8000, "vigente": 9000 }
+    ],
+    "transferenciaCompartida": {
+      "operacion": "0004829137",
+      "banco": "Banco Macro",
+      "pagos": [
+        {
+          "pagoId": 32,
+          "numeroComprobante": 124,
+          "alumno": { "id": 14, "nombre": "Lucía", "apellido": "Álvarez" }
+        }
+      ]
+    }
+  }
+}
+```
+
+- `pago`: lo que muestra la confirmación ("¿Anular el comprobante N.º 123 de Juan Pérez por $ 32.000 (4 turnos)?"). `total` en pesos; `cantidad`, los turnos del pago. El texto lo arma el cliente con estos datos.
+- Los avisos **informan, no bloquean**: anular se puede igual. Sin nada que avisar, `deuda` y `transferenciaCompartida` van `null` y `precios` va `[]`.
+- `avisos.deuda`: el alumno quedaría con **deuda vencida** (HU-29). `cantidad` y `total` son su deuda vencida de hoy más los turnos del pago con fecha de 30 días o más (`fecha <= hoy - 30`), que al anular dejan de estar pagos, a precio **vigente** (un turno de una materia sin precio cuenta en `cantidad` pero no suma al `total`). `turnosDelPago` es cuántos de esos turnos son de este pago (puede ser 0 si el alumno ya tenía deuda vencida). `null` si no quedaría con ninguna.
+- `avisos.precios`: una entrada por materia (y precio cobrado) cuyo precio por hora **vigente** es distinto del que se cobró en el pago, por nombre de materia: "Los turnos se volverán a cobrar a $ 9.000 por hora; en este pago se cobraron a $ 8.000". `vigente` es `null` si la materia ya no tiene precio.
+- `avisos.transferenciaCompartida`: sólo si el pago es una transferencia. Los **otros pagos vigentes** con la misma operación y banco (una transferencia puede cubrir a varios alumnos), por número de comprobante. **No se anulan con éste.** `null` si no hay otros.
+- Errores, en orden: 400 (`pagoId`); 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` si ya está anulado (no hay nada que confirmar).
+
+**Body de `POST /anulaciones`:**
+
+```json
+{ "pagoId": 31, "motivo": "ERROR_CARGA", "detalle": "Se cargó el alumno equivocado" }
+```
+
+- `pagoId`: entero positivo.
+- `motivo`: `ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`.
+- `detalle`: opcional, hasta 500 caracteres; `""`, espacios o `null` = sin detalle. **Obligatorio si `motivo = OTRO`**: 400 `VALIDACION` en `["detalle"]`.
+
+**Respuesta 201:** `{ "pagoId": 31, "cantidad": 4 }`: los turnos que volvieron a quedar pendientes de pago ("Pago anulado. Sus turnos volvieron a quedar pendientes de pago").
+
+**Errores, en orden:** 400 `VALIDACION`; 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` "Un pago anulado no se puede volver a activar" (sin `details`; también si dos anulaciones del mismo pago llegan a la vez: gana una).
+
+**Qué hace, en una transacción con el lock del alumno** (el mismo que pagar, cancelar y reprogramar, así que se serializan): `Pago.estado = ANULADO` (con `updatedById`/`updatedAt`), una `AnulacionPago` (motivo, detalle y quién la creó) y `vigente = null` en todos los `PagoTurno` del pago. **No se borra nada**: el pago conserva todos sus datos, su forma de pago y su comprobante adjunto, y su número no se reutiliza. Las ocurrencias vuelven a `PENDIENTE` en la siguiente lectura del motor (`Ocurrencia.pago`, `cuentas`, deuda) y se pueden cobrar de nuevo con `POST /pagos` **al precio vigente**. Si un pago nuevo de esas ocurrencias llega a la vez, el lock lo ordena: o entra después de la anulación, o recibe 409 `TURNOS_NO_COBRABLES` (`YA_PAGADO`).
+
+El pago anulado se sigue consultando con `GET /pagos/{id}` (`estado: "ANULADO"` y su `anulacion`) y su comprobante en PDF lleva la leyenda "ANULADO" (ver Pagos).
 
 ## Usuarios
 
@@ -1633,7 +1696,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_PAGADOS`         | Finalizar un turno recurrente, si hay turnos pagados desde `fechaDesde` (no se finaliza): "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (DD/MM)" o, si llegan hasta el final de la serie, "Los turnos pagados llegan hasta el final de la serie (DD/MM): no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaPagada", "fechaDesdeMinima", "pagadas": [{ "fecha", "horaInicio", "horaFin", "importe" }] }`; `fechaDesdeMinima` es la primera fecha que se puede elegir, o `null` si no queda ninguna; `pagadas` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                |
 | 409    | `TURNOS_CON_ASISTENCIA`  | Finalizar un turno recurrente desde hoy, si el turno de hoy tiene asistencia registrada (no se finaliza, T-83): "El turno del DD/MM tiene asistencia registrada: elegí una fecha posterior" o, si es la última fecha de la serie, "El turno del DD/MM tiene asistencia registrada y es el último de la serie: no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaConAsistencia", "fechaDesdeMinima", "conAsistencia": [{ "fecha", "horaInicio", "horaFin", "estado" }] }`, como `TURNOS_PAGADOS`; `conAsistencia` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                                                    |
-| 409    | `PAGO_ANULADO`           | "El pago está anulado: su comprobante adjunto se conserva como estaba", al reemplazar o quitar el comprobante adjunto de un pago anulado (`PUT`/`DELETE /adjuntos/pagos/{pagoId}`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 409    | `PAGO_ANULADO`           | "El pago está anulado: su comprobante adjunto se conserva como estaba", al reemplazar o quitar el comprobante adjunto de un pago anulado (`PUT`/`DELETE /adjuntos/pagos/{pagoId}`); y "Un pago anulado no se puede volver a activar", al anular (o pedir la confirmación de anular) un pago que ya está anulado (`POST /anulaciones`, `GET /anulaciones/previa`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 409    | `ADJUNTO_OBLIGATORIO`    | "Un pago por transferencia no puede quedar sin comprobante: reemplazalo", al quitar el comprobante adjunto de un pago por transferencia (`DELETE /adjuntos/pagos/{pagoId}`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNO_CON_ASISTENCIA`   | "El turno tiene asistencia registrada: no se puede reprogramar", al reprogramar una ocurrencia con asistencia ("Presente" o "Ausente"), aunque sea de hoy (T-83). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 

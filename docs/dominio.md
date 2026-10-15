@@ -303,7 +303,16 @@ HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la i
 
 ## Anulación de pagos
 
-A completar por T-104 (HU-42).
+HU-42 (T-104). Es la anulación que HU-13, HU-14 y HU-15 dejaron fuera de alcance.
+
+- **Quién:** mesa de entrada, de forma directa, sin aprobación del gerente ni plazo máximo.
+- **Qué se anula:** el pago **completo**, nunca un turno suelto ni una parte. No se deshace: un pago anulado no se puede volver a activar (409 `PAGO_ANULADO`); si hay que cobrar de nuevo, se registra un pago nuevo.
+- **Motivo:** `ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`. El detalle (hasta 500 caracteres) es obligatorio con `OTRO`.
+- **Efecto:** el pago pasa a `ANULADO` y se registra su anulación (motivo, detalle, quién y cuándo); sus ocurrencias dejan de tener un pago vigente (`PagoTurno.vigente = null`), así que **vuelven a estar pendientes de pago** y se pueden cobrar de nuevo al precio vigente. Los turnos pasados vuelven a ser deuda (con 30 días o más, deuda vencida: HU-29); los futuros vuelven a ser próximos.
+- **Nada se borra:** el pago conserva todos sus datos, su forma de pago y su comprobante adjunto (que ya no se reemplaza ni se quita). Su comprobante de pago en PDF se sigue consultando con la leyenda "ANULADO", el motivo y la fecha. El número de comprobante no se reutiliza.
+- **Avisos al confirmar** (informan, no bloquean): el alumno quedaría con deuda vencida; el precio vigente de una materia es distinto del cobrado (los turnos se volverán a cobrar al vigente); otros pagos vigentes comparten la misma transferencia (misma operación y banco), que **no** se anulan con éste.
+- **Concurrencia:** anular toma el mismo lock del alumno que pagar, cancelar, finalizar y reprogramar, así que dos anulaciones del mismo pago, o una anulación y un cobro de las mismas ocurrencias, se ordenan; el único de `PagoTurno` sigue siendo la red contra el pago doble.
+- **Fuera de alcance:** anulación parcial, "Anular y volver a cobrar" en un solo paso, anulación conjunta de los pagos de una misma transferencia y registro de devolución de dinero.
 
 ## Notas de exámenes
 
