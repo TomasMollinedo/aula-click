@@ -83,13 +83,21 @@ export function BarraFiltrosHistorial({
   const materiaElegida = opciones.materias.find((m) => m.id === filtros.materiaId) ?? null
   const profesorElegido = opciones.profesores.find((p) => p.id === filtros.profesorId) ?? null
 
+  // Un campo más con el rango ("Desde" y "Hasta" en lugar del mes): la grilla declara **una columna
+  // por campo** más la del botón, así nada se pasa de renglón y "Limpiar filtros" queda en la fila,
+  // a la altura de los controles. Con cuatro columnas fijas, el quinto campo caía abajo y el botón
+  // con él, desfasado.
+  const columnas = porMes
+    ? 'sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]'
+    : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]'
+
   return (
     <div className="space-y-3">
       <BarraFiltros
         hayFiltros={puedeLimpiar}
         onLimpiar={onLimpiar}
         limpiarEnFila="xl"
-        className="sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]"
+        className={columnas}
       >
         <Field label="Período" htmlFor={ids.opcion}>
           <Select value={periodo.opcion} onValueChange={(v) => onElegirOpcion(v as OpcionPeriodo)}>
@@ -140,6 +148,10 @@ export function BarraFiltrosHistorial({
                 compacto
                 value={periodo.hasta}
                 onChange={(fecha) => fecha && onCambiarRango({ hasta: fecha })}
+                // El historial son las clases de hoy o anteriores: una fecha posterior no agrega
+                // nada (la API recorta `hasta` a hoy), así que el calendario no la ofrece. Es una
+                // ayuda de la UI: el período lo valida igual la API.
+                max={hoy}
                 aria-invalid={errores.hasta ? true : undefined}
                 aria-describedby={errores.hasta ? fieldErrorId(ids.hasta) : undefined}
               />
