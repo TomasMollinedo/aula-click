@@ -47,11 +47,12 @@ export function fechaDelPrimerTurno(
  * Ubica los turnos de una semana en la grilla. Los días salen de los propios turnos, no de la semana
  * pedida (igual que `armarSemana`): mientras llega otra semana la grilla sigue mostrando la anterior
  * completa. Dentro de una celda quedan en el orden en que llegan (la API ordena por fecha y hora).
+ * Vale para los turnos de la ficha y para los de "Mi calendario" del portal (`OcurrenciaDelPortal`).
  */
-export function armarSemanaDelAlumno(
-  turnos: readonly OcurrenciaDeAlumno[],
+export function armarSemanaDelAlumno<T extends Pick<OcurrenciaDeAlumno, 'fecha' | 'horaInicio'>>(
+  turnos: readonly T[],
   hoy: string,
-): GrillaSemanal<TurnoEnGrilla> & { totalTurnos: number } {
+): GrillaSemanal<T & { hora: number }> & { totalTurnos: number } {
   const enGrilla = turnos.map((turno) => ({ ...turno, hora: horaDe(turno.horaInicio) }))
   return { ...armarGrilla(enGrilla, hoy), totalTurnos: turnos.length }
 }

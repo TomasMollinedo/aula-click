@@ -84,7 +84,7 @@ export function FilaOcurrencia({ turno, columnas }: FilaOcurrenciaProps) {
       <TableCell className="text-muted-foreground">{turno.materia.nombre}</TableCell>
       <TableCell className="text-muted-foreground">{turno.aula.nombre}</TableCell>
       <TableCell>
-        <EstadoTurnoBadge estado={turno.estado} />
+        <EstadoTurnoBadge estado={turno.estado} sinAsistencia />
       </TableCell>
       {columnas.pago && (
         <TableCell>

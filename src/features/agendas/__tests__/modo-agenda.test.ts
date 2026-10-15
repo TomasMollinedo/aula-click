@@ -27,3 +27,19 @@ describe('paramsConModo', () => {
     expect(params.toString()).toBe('fecha=2026-09-29')
   })
 })
+
+describe('con otro modo por defecto (la lista)', () => {
+  it('sin modo en la URL vale la lista', () => {
+    expect(parsearModo(null, 'lista')).toBe('lista')
+    expect(parsearModo('calendario', 'lista')).toBe('calendario')
+  })
+
+  it('escribe el calendario y no escribe la lista', () => {
+    expect(paramsConModo(new URLSearchParams(), 'calendario', 'lista').toString()).toBe(
+      'modo=calendario',
+    )
+    expect(paramsConModo(new URLSearchParams('modo=calendario'), 'lista', 'lista').toString()).toBe(
+      '',
+    )
+  })
+})

@@ -10,6 +10,7 @@ import { cn } from '@/utils/cn'
 import { DetalleAgendaProvider } from '../hooks/use-detalle-agenda'
 import { useFiltrosAgenda } from '../hooks/use-filtros-agenda'
 import { useModoAgenda } from '../hooks/use-modo-agenda'
+import type { ModoAgenda } from '../modo-agenda'
 import { SelectorModoAgenda } from './SelectorModoAgenda'
 
 type AgendaConModoProps = {
@@ -32,6 +33,8 @@ type AgendaConModoProps = {
    * que ser `relative` y el encabezado, su primer elemento.
    */
   enEncabezado?: 'titulo' | 'pestanas'
+  /** El modo sin `?modo=` en la URL: el calendario, salvo en "Mi calendario" desde el celular. */
+  modoPorDefecto?: ModoAgenda
 }
 
 /**
@@ -49,8 +52,9 @@ export function AgendaConModo({
   renderDetalle,
   acciones,
   enEncabezado,
+  modoPorDefecto,
 }: AgendaConModoProps) {
-  const { modo, cambiarModo } = useModoAgenda()
+  const { modo, cambiarModo } = useModoAgenda(modoPorDefecto)
   const { filtros } = useFiltrosAgenda()
   // En una agenda `?fecha=` es también el día o la semana que se está viendo: al cerrar el detalle
   // se conserva.
