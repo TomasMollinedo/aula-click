@@ -1,6 +1,6 @@
 import { fechaHoraDocumento } from '@/server/shared/formato'
 import { sumarImportes } from './pagos.reglas'
-import type { Comprobante, RedDebito } from './pagos.validation'
+import type { Comprobante, MotivoAnulacion, RedDebito } from './pagos.validation'
 
 // Textos del comprobante de pago en PDF (HU-15). Devuelven lo mismo que los del frontend
 // (`src/features/pagos/formato-pagos.ts`), que el backend no puede importar.
@@ -65,6 +65,42 @@ export function datosDelMedio(
     ]
   }
   return []
+}
+
+/** El motivo de la anulación de un pago para mostrar (HU-42). */
+const NOMBRE_MOTIVO: Record<MotivoAnulacion, string> = {
+  ERROR_CARGA: 'Error de carga',
+  FORMA_PAGO_EQUIVOCADA: 'Forma de pago equivocada',
+  OTRO: 'Otro motivo',
+}
+
+/**
+ * El motivo de la anulación, con el detalle si lo hay: `'Error de carga: se cargó dos veces'` o
+ * `'Forma de pago equivocada'`.
+ */
+export function textoMotivoAnulacion({
+  motivo,
+  detalle,
+}: {
+  motivo: MotivoAnulacion
+  detalle: string | null
+}): string {
+  return detalle ? `${NOMBRE_MOTIVO[motivo]}: ${detalle}` : NOMBRE_MOTIVO[motivo]
+}
+
+/**
+ * Cuándo y quién anuló el pago: `'Anulado el 06/10/2026 09:00 por Laura Gómez'`. El instante es
+ * ISO 8601 (UTC) y se muestra en la hora del negocio.
+ */
+export function textoAnuladoEl({
+  anuladoPor,
+  anuladoEl,
+}: {
+  anuladoPor: { nombre: string; apellido: string }
+  anuladoEl: string
+}): string {
+  const cuando = fechaHoraDocumento(new Date(anuladoEl))
+  return `Anulado el ${cuando} por ${anuladoPor.nombre} ${anuladoPor.apellido}`
 }
 
 /** Los turnos de una materia del comprobante, con su subtotal (HU-25). */

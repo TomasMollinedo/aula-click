@@ -14,12 +14,20 @@ import {
 } from '@/server/shared/pdf/estilos'
 import { renderizarPdf } from '@/server/shared/pdf/renderizar'
 import { CeldaPdf, CierrePdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pdf/tabla'
-import { datosDelMedio, textoNumero, textoRegistradoPor, turnosPorMateria } from './pagos.formato'
+import {
+  datosDelMedio,
+  textoAnuladoEl,
+  textoMotivoAnulacion,
+  textoNumero,
+  textoRegistradoPor,
+  turnosPorMateria,
+} from './pagos.formato'
 import type { Comprobante } from './pagos.validation'
 
 // El comprobante de pago en PDF (HU-15, T-111; formas de pago, HU-23, T-96). Solo presentación:
 // recibe el comprobante que devuelve el service y no suma ni recalcula nada (importes, total y
-// vuelto son los de la API). Los textos salen de `pagos.formato.ts`.
+// vuelto son los de la API). Los textos salen de `pagos.formato.ts`. Un pago anulado (HU-42) lleva
+// arriba de todo "ANULADO", con el motivo y la fecha de anulación.
 
 type Turno = Comprobante['turnos'][number]
 
@@ -43,8 +51,29 @@ const COLUMNAS: ColumnaPdf[] = [
   { titulo: 'Importe', ancho: 68, numerica: true },
 ]
 
+/** `--color-cancelado` de la pantalla (el de `destructive`): lo anulado se lee como cancelado. */
+const COLOR_ANULADO = '#6f1f2a'
+/** El mismo color al 6 % sobre blanco: el fondo de la franja de anulado. */
+const FONDO_ANULADO = '#f6eff0'
+
 const estilos = StyleSheet.create({
   contenido: { gap: SEPARACION_BLOQUES },
+  anulado: {
+    paddingHorizontal: px(24),
+    paddingVertical: px(16),
+    borderWidth: 1.5,
+    borderColor: COLOR_ANULADO,
+    borderRadius: RADIO_TARJETA,
+    backgroundColor: FONDO_ANULADO,
+    gap: px(4),
+  },
+  anuladoTitulo: {
+    ...TEXTO.titulo,
+    fontWeight: 700,
+    color: COLOR_ANULADO,
+    letterSpacing: espaciado.muyAncho(TEXTO.titulo.fontSize),
+  },
+  anuladoDetalle: { ...TEXTO.normal, color: COLORES.texto80 },
   totales: {
     alignSelf: 'flex-end',
     width: px(288),
@@ -119,6 +148,16 @@ export function ComprobantePdf({
       logo={logo}
     >
       <View style={estilos.contenido}>
+        {comprobante.anulacion ? (
+          <View style={estilos.anulado}>
+            <Text style={estilos.anuladoTitulo}>ANULADO</Text>
+            <Text style={estilos.anuladoDetalle}>
+              Motivo: {textoMotivoAnulacion(comprobante.anulacion)}
+            </Text>
+            <Text style={estilos.anuladoDetalle}>{textoAnuladoEl(comprobante.anulacion)}</Text>
+          </View>
+        ) : null}
+
         <SeccionPdf>
           <CamposPdf>
             <CampoPdf label="Alumno" valor={`${alumno.nombre} ${alumno.apellido}`} />

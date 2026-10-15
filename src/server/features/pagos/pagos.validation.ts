@@ -30,6 +30,7 @@ export type RedDebito = (typeof REDES_DEBITO)[number]
 
 /** Motivos de la anulación de un pago (`MotivoAnulacion` del modelo, HU-42). */
 export const MOTIVOS_ANULACION = ['ERROR_CARGA', 'FORMA_PAGO_EQUIVOCADA', 'OTRO'] as const
+export type MotivoAnulacion = (typeof MOTIVOS_ANULACION)[number]
 
 /** Los mensajes de los datos de cada medio (un 400 en el campo que sobra o falta). */
 export const MENSAJES_FORMA_PAGO = {

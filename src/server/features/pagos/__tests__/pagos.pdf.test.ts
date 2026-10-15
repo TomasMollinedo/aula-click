@@ -111,6 +111,21 @@ describe('renderizarComprobantePdf', { timeout: 60_000 }, () => {
     expect(contarPaginas(pdf)).toBeGreaterThan(1)
   })
 
+  it('anulado: con la franja ANULADO, el motivo y la fecha, en una hoja', async () => {
+    const pdf = await renderizar(
+      comprobante(2, {
+        estado: 'ANULADO',
+        anulacion: {
+          motivo: 'FORMA_PAGO_EQUIVOCADA',
+          detalle: 'Se cargó en efectivo y fue por transferencia',
+          anuladoPor: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+          anuladoEl: '2026-10-06T12:00:00.000Z',
+        },
+      }),
+    )
+    expect(contarPaginas(pdf)).toBe(1)
+  })
+
   it('con observaciones de varias líneas y sin monto recibido (pago anterior a T-112)', async () => {
     const pdf = await renderizar(
       comprobante(1, {

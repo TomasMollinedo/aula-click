@@ -2,6 +2,8 @@ import { describe, expect, it } from 'vitest'
 import {
   datosDelMedio,
   nombreArchivoComprobante,
+  textoAnuladoEl,
+  textoMotivoAnulacion,
   textoNumero,
   textoRedDebito,
   textoRegistradoPor,
@@ -136,5 +138,28 @@ describe('turnosPorMateria', () => {
 
   it('sin turnos: sin grupos', () => {
     expect(turnosPorMateria([])).toEqual([])
+  })
+})
+
+describe('textoMotivoAnulacion y textoAnuladoEl', () => {
+  it('el motivo con su detalle, o solo el motivo', () => {
+    expect(textoMotivoAnulacion({ motivo: 'ERROR_CARGA', detalle: 'se cargó dos veces' })).toBe(
+      'Error de carga: se cargó dos veces',
+    )
+    expect(textoMotivoAnulacion({ motivo: 'FORMA_PAGO_EQUIVOCADA', detalle: null })).toBe(
+      'Forma de pago equivocada',
+    )
+    expect(textoMotivoAnulacion({ motivo: 'OTRO', detalle: 'Pedido del alumno' })).toBe(
+      'Otro motivo: Pedido del alumno',
+    )
+  })
+
+  it('cuándo y quién, en la hora del negocio', () => {
+    expect(
+      textoAnuladoEl({
+        anuladoPor: { nombre: 'Laura', apellido: 'Gómez' },
+        anuladoEl: '2026-10-06T12:00:00.000Z',
+      }),
+    ).toBe('Anulado el 06/10/2026 09:00 por Laura Gómez')
   })
 })
