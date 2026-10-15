@@ -1,17 +1,23 @@
 import { describe, expect, it } from 'vitest'
 
 import {
-  MESES_OFRECIDOS,
+  ANIOS_OFRECIDOS,
+  MESES_DEL_ANIO,
   type PeriodoHistorial,
   aParams,
-  etiquetaMes,
+  anioDe,
+  aniosOfrecidos,
+  esMesFuturo,
+  etiquetaNumeroMes,
   hayFiltros,
   leerFiltros,
   mesDe,
-  mesesOfrecidos,
+  mesDeAnioYNumero,
+  numeroDeMes,
   paramsConFiltros,
   paramsSinFiltros,
   periodoConMes,
+  periodoConMesYAnio,
   periodoConRango,
   periodoDeOpcion,
   periodoPorDefecto,
@@ -258,28 +264,88 @@ describe('periodoConRango', () => {
   })
 })
 
-describe('mesesOfrecidos y etiquetaMes', () => {
-  it('el mes de hoy y los anteriores, del más reciente al más antiguo', () => {
-    const meses = mesesOfrecidos(HOY)
-    expect(meses).toHaveLength(MESES_OFRECIDOS)
-    expect(meses[0]).toBe('2026-10')
-    expect(meses[1]).toBe('2026-09')
-    expect(meses.at(-1)).toBe('2024-11')
+describe('los dos selectores del mes', () => {
+  it('el mes y el año de un `YYYY-MM`, y el `YYYY-MM` que forman', () => {
+    expect(numeroDeMes('2026-09')).toBe(9)
+    expect(anioDe('2026-09')).toBe(2026)
+    expect(mesDeAnioYNumero(2026, 9)).toBe('2026-09')
+    expect(mesDeAnioYNumero(2026, 12)).toBe('2026-12')
   })
 
-  it('un mes elegido que quedó fuera de la lista se agrega adelante', () => {
-    const meses = mesesOfrecidos(HOY, '2020-03')
-    expect(meses[0]).toBe('2020-03')
-    expect(meses).toHaveLength(MESES_OFRECIDOS + 1)
+  it('los doce meses del año, en orden', () => {
+    expect(MESES_DEL_ANIO).toHaveLength(12)
+    expect(MESES_DEL_ANIO[0]).toBe(1)
+    expect(MESES_DEL_ANIO.at(-1)).toBe(12)
   })
 
-  it('un mes elegido que ya está en la lista no se repite', () => {
-    expect(mesesOfrecidos(HOY, '2026-09')).toHaveLength(MESES_OFRECIDOS)
+  it('el nombre del mes en español, sin el año', () => {
+    expect(etiquetaNumeroMes(1)).toBe('enero')
+    expect(etiquetaNumeroMes(10)).toBe('octubre')
+    expect(etiquetaNumeroMes(12)).toBe('diciembre')
   })
 
-  it('el nombre del mes en español', () => {
-    expect(etiquetaMes('2026-10')).toBe('octubre 2026')
-    expect(etiquetaMes('2026-01')).toBe('enero 2026')
+  it('el año de hoy y los anteriores, del más reciente al más antiguo', () => {
+    const anios = aniosOfrecidos(HOY)
+    expect(anios).toHaveLength(ANIOS_OFRECIDOS)
+    expect(anios[0]).toBe(2026)
+    expect(anios.at(-1)).toBe(2024)
+  })
+
+  it('un año elegido que quedó fuera de la lista se agrega, en orden', () => {
+    expect(aniosOfrecidos(HOY, '2020-03')).toEqual([2026, 2025, 2024, 2020])
+  })
+
+  it('un año elegido que ya está en la lista no se repite', () => {
+    expect(aniosOfrecidos(HOY, '2025-09')).toHaveLength(ANIOS_OFRECIDOS)
+  })
+
+  it('un mes posterior al de hoy es futuro; el de hoy y los anteriores, no', () => {
+    expect(esMesFuturo('2026-11', HOY)).toBe(true)
+    expect(esMesFuturo('2027-01', HOY)).toBe(true)
+    expect(esMesFuturo('2026-10', HOY)).toBe(false)
+    expect(esMesFuturo('2026-09', HOY)).toBe(false)
+  })
+})
+
+describe('periodoConMesYAnio', () => {
+  const SEPTIEMBRE = periodoConMes('2026-09')
+
+  it('cambiar el mes conserva el año', () => {
+    expect(periodoConMesYAnio(SEPTIEMBRE, { numero: 3 }, HOY)).toEqual({
+      opcion: 'mes',
+      mes: '2026-03',
+      desde: '2026-03-01',
+      hasta: '2026-03-31',
+    })
+  })
+
+  it('cambiar el año conserva el mes', () => {
+    expect(periodoConMesYAnio(SEPTIEMBRE, { anio: 2024 }, HOY)).toEqual({
+      opcion: 'mes',
+      mes: '2024-09',
+      desde: '2024-09-01',
+      hasta: '2024-09-30',
+    })
+  })
+
+  it('una combinación posterior al mes en curso se recorta al mes en curso', () => {
+    expect(periodoConMesYAnio(periodoConMes('2025-12'), { anio: 2026 }, HOY).mes).toBe('2026-10')
+    expect(periodoConMesYAnio(SEPTIEMBRE, { numero: 12 }, HOY).mes).toBe('2026-10')
+  })
+
+  it('vuelve a la opción "mes" si se venía de un rango', () => {
+    const rango: PeriodoHistorial = {
+      opcion: 'rango',
+      mes: '2026-08',
+      desde: '2026-08-10',
+      hasta: '2026-09-20',
+    }
+    expect(periodoConMesYAnio(rango, { numero: 8 }, HOY)).toEqual({
+      opcion: 'mes',
+      mes: '2026-08',
+      desde: '2026-08-01',
+      hasta: '2026-08-31',
+    })
   })
 })
 

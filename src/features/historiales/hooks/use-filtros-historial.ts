@@ -11,14 +11,14 @@ import {
   leerFiltros,
   paramsConFiltros,
   paramsSinFiltros,
-  periodoConMes,
+  periodoConMesYAnio,
   periodoConRango,
   periodoDeOpcion,
 } from '../filtros-historial'
 
 // "Hoy" sale del navegador (docs/arquitectura-frontend.md → Fechas y horas): sólo propone el mes
-// inicial y decide qué mes no hace falta escribir en la URL. Todo lo demás (qué clases caen en el
-// período, el estado de cada una, los porcentajes) lo decide la API.
+// inicial, recorta un mes futuro y decide qué mes no hace falta escribir en la URL. Todo lo demás
+// (qué clases caen en el período, el estado de cada una, los porcentajes) lo decide la API.
 function fechaDeHoy(): string {
   return format(new Date(), 'yyyy-MM-dd')
 }
@@ -59,9 +59,15 @@ export function useFiltrosHistorial() {
     [cambiarPeriodo, filtros.periodo],
   )
 
+  // El mes se elige con dos selectores (mes del año y año) y cada uno conserva el otro.
   const elegirMes = useCallback(
-    (mes: string) => cambiarPeriodo(periodoConMes(mes)),
-    [cambiarPeriodo],
+    (numero: number) => cambiarPeriodo(periodoConMesYAnio(filtros.periodo, { numero }, hoy)),
+    [cambiarPeriodo, filtros.periodo, hoy],
+  )
+
+  const elegirAnio = useCallback(
+    (anio: number) => cambiarPeriodo(periodoConMesYAnio(filtros.periodo, { anio }, hoy)),
+    [cambiarPeriodo, filtros.periodo, hoy],
   )
 
   const cambiarRango = useCallback(
@@ -75,5 +81,5 @@ export function useFiltrosHistorial() {
     router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false })
   }, [pathname, router, texto])
 
-  return { filtros, hoy, cambiar, elegirOpcion, elegirMes, cambiarRango, limpiar }
+  return { filtros, hoy, cambiar, elegirOpcion, elegirMes, elegirAnio, cambiarRango, limpiar }
 }

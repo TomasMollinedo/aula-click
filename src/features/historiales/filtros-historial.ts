@@ -1,4 +1,4 @@
-import { addMonths, endOfMonth, format, isValid, parseISO, startOfMonth } from 'date-fns'
+import { endOfMonth, format, isValid, parseISO, startOfMonth } from 'date-fns'
 import { es } from 'date-fns/locale/es'
 
 import type { HistorialParams } from './historiales.types'
@@ -9,7 +9,9 @@ import type { HistorialParams } from './historiales.types'
 // "hoy" se recibe (docs/arquitectura-frontend.md → Fechas y horas).
 //
 // URL, junto al `?tab=historial` de la ficha: sin parámetros, el **mes en curso**. `?mes=2026-09`
-// para otro mes y `?desde=&hasta=` para un rango propio, más `?materiaId=` y `?profesorId=`.
+// para otro mes y `?desde=&hasta=` para un rango propio, más `?materiaId=` y `?profesorId=`. El mes
+// se elige con **dos** selectores (mes del año y año), pero en la URL y en el estado sigue siendo
+// un solo `YYYY-MM`.
 //
 // El período no se revalida acá: un `hasta` anterior al `desde`, o un rango de más de 366 días, los
 // rechaza la API con un 400 sobre `hasta` (decisión T-147).
@@ -22,8 +24,11 @@ export const ETIQUETA_OPCION: Record<OpcionPeriodo, string> = {
   rango: 'Rango de fechas',
 }
 
-/** Cuántos meses ofrece el selector, contando el actual. Más atrás se llega con un rango. */
-export const MESES_OFRECIDOS = 24
+/** Cuántos años ofrece el selector del año, contando el actual. Más atrás se llega con un rango. */
+export const ANIOS_OFRECIDOS = 3
+
+/** Los doce meses del año, por número (1 = enero), para el selector del mes. */
+export const MESES_DEL_ANIO = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12] as const
 
 const FORMATO_FECHA = 'yyyy-MM-dd'
 const FORMATO_MES = 'yyyy-MM'
@@ -60,23 +65,47 @@ export function rangoDelMes(mes: string): { desde: string; hasta: string } {
   }
 }
 
-/** `'2026-10'` → `'octubre 2026'`. */
-export function etiquetaMes(mes: string): string {
-  return format(parseISO(`${mes}-01`), 'LLLL yyyy', { locale: es })
+/** El año de un mes `YYYY-MM` (o de una fecha `YYYY-MM-DD`). */
+export function anioDe(mes: string): number {
+  return Number(mes.slice(0, 4))
+}
+
+/** El número de mes (1 = enero) de un mes `YYYY-MM` (o de una fecha `YYYY-MM-DD`). */
+export function numeroDeMes(mes: string): number {
+  return Number(mes.slice(5, 7))
+}
+
+/** El mes `YYYY-MM` que forman un año y un número de mes. */
+export function mesDeAnioYNumero(anio: number, numero: number): string {
+  return `${String(anio).padStart(4, '0')}-${String(numero).padStart(2, '0')}`
+}
+
+/** `1` → `'enero'`. El año no entra: lo muestra el otro selector. */
+export function etiquetaNumeroMes(numero: number): string {
+  return format(parseISO(`2000-${String(numero).padStart(2, '0')}-01`), 'LLLL', { locale: es })
 }
 
 /**
- * Los meses que ofrece el selector: el de `hoy` y los `MESES_OFRECIDOS - 1` anteriores, del más
- * reciente al más antiguo. Un mes que viene en la URL y no está en la lista se agrega adelante, así
- * un enlace a un mes viejo se sigue viendo elegido.
+ * Los años que ofrece el selector: el de `hoy` y los `ANIOS_OFRECIDOS - 1` anteriores, del más
+ * reciente al más antiguo. Un año que viene en la URL y no está en la lista se agrega, así un
+ * enlace a un mes viejo se sigue viendo elegido; para ir más atrás está el rango.
  */
-export function mesesOfrecidos(hoy: string, mesElegido?: string): string[] {
-  const actual = parseISO(`${mesDe(hoy)}-01`)
-  const meses = Array.from({ length: MESES_OFRECIDOS }, (_, i) =>
-    format(addMonths(actual, -i), FORMATO_MES),
-  )
-  if (mesElegido !== undefined && !meses.includes(mesElegido)) return [mesElegido, ...meses]
-  return meses
+export function aniosOfrecidos(hoy: string, mesElegido?: string): number[] {
+  const actual = anioDe(hoy)
+  const anios = Array.from({ length: ANIOS_OFRECIDOS }, (_, i) => actual - i)
+  if (mesElegido === undefined) return anios
+  const elegido = anioDe(mesElegido)
+  if (anios.includes(elegido)) return anios
+  return [...anios, elegido].sort((a, b) => b - a)
+}
+
+/**
+ * Si el mes `YYYY-MM` es posterior al de `hoy`. El historial llega hasta hoy, así que el selector
+ * no ofrece los meses que vienen (la misma ayuda que el `max` del calendario de "Hasta"); el
+ * período lo valida igual la API.
+ */
+export function esMesFuturo(mes: string, hoy: string): boolean {
+  return mes > mesDe(hoy)
 }
 
 /** Una fecha real `YYYY-MM-DD` (`2026-02-30` y `30/09/2026` no lo son), o `null`. */
@@ -119,6 +148,22 @@ export function periodoDeOpcion(opcion: OpcionPeriodo, actual: PeriodoHistorial)
 /** El período con otro mes elegido (su rango se recalcula). */
 export function periodoConMes(mes: string): PeriodoHistorial {
   return { opcion: 'mes', mes, ...rangoDelMes(mes) }
+}
+
+/**
+ * El período con otro mes del año o otro año elegido (el que no se cambia se conserva). Si la
+ * combinación cae después del mes en curso —cambiar al año actual estando en diciembre, por
+ * ejemplo—, se recorta al mes en curso: el historial llega hasta hoy.
+ */
+export function periodoConMesYAnio(
+  actual: PeriodoHistorial,
+  cambios: { numero?: number; anio?: number },
+  hoy: string,
+): PeriodoHistorial {
+  const anio = cambios.anio ?? anioDe(actual.mes)
+  const numero = cambios.numero ?? numeroDeMes(actual.mes)
+  const mes = mesDeAnioYNumero(anio, numero)
+  return periodoConMes(esMesFuturo(mes, hoy) ? mesDe(hoy) : mes)
 }
 
 /** El período con otro extremo del rango; el mes acompaña al `desde`. */

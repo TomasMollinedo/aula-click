@@ -60,7 +60,8 @@ function HistorialCargando() {
 /**
  * Pestaña "Historial académico" de la ficha del alumno (HU-31): las clases del período agrupadas
  * por materia y profesor, cada grupo con su resumen y sus bloques de **horas seguidas**. Los
- * filtros (un mes, por defecto el actual, o un rango, más materia y profesor) viven en la URL junto
+ * filtros (un mes —mes y año—, por defecto el actual, o un rango, más materia y profesor) viven en
+ * la URL junto
  * al `?tab=` de la ficha.
  *
  * **La pantalla sólo pinta lo que manda la API** (T-108): el estado de cada hora, su plazo o su
@@ -73,7 +74,7 @@ function HistorialCargando() {
  */
 export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademicoProps) {
   const id = useId()
-  const { filtros, hoy, cambiar, elegirOpcion, elegirMes, cambiarRango, limpiar } =
+  const { filtros, hoy, cambiar, elegirOpcion, elegirMes, elegirAnio, cambiarRango, limpiar } =
     useFiltrosHistorial()
   const query = useHistorialDelAlumno(alumnoId, aParams(filtros))
   const historial = query.data
@@ -96,6 +97,7 @@ export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademi
           opciones={historial?.opciones ?? SIN_OPCIONES}
           onElegirOpcion={elegirOpcion}
           onElegirMes={elegirMes}
+          onElegirAnio={elegirAnio}
           onCambiarRango={cambiarRango}
           onCambiar={cambiar}
           onLimpiar={limpiar}

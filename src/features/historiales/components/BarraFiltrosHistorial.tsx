@@ -20,22 +20,28 @@ import type { CampoFiltro } from '../errores-historiales'
 import {
   ETIQUETA_OPCION,
   type FiltrosHistorial,
+  MESES_DEL_ANIO,
   type OpcionPeriodo,
   OPCIONES_PERIODO,
-  etiquetaMes,
-  mesesOfrecidos,
+  aniosOfrecidos,
+  anioDe,
+  esMesFuturo,
+  etiquetaNumeroMes,
+  mesDeAnioYNumero,
+  numeroDeMes,
 } from '../filtros-historial'
 import { nombreProfesor } from '../formato-historiales'
 import type { OpcionesDelHistorial } from '../historiales.types'
 
 type BarraFiltrosHistorialProps = {
   filtros: FiltrosHistorial
-  /** Hoy, para los meses que ofrece el selector. Lo pasa el hook de los filtros. */
+  /** Hoy, para los meses y años que ofrecen los selectores. Lo pasa el hook de los filtros. */
   hoy: string
   /** Materias y profesores del historial completo del alumno, tal como los manda la API. */
   opciones: OpcionesDelHistorial
   onElegirOpcion: (opcion: OpcionPeriodo) => void
-  onElegirMes: (mes: string) => void
+  onElegirMes: (numero: number) => void
+  onElegirAnio: (anio: number) => void
   onCambiarRango: (cambios: { desde?: string; hasta?: string }) => void
   onCambiar: (cambios: Partial<FiltrosHistorial>) => void
   onLimpiar: () => void
@@ -47,8 +53,8 @@ type BarraFiltrosHistorialProps = {
 }
 
 /**
- * Los filtros del historial académico (HU-31): el período (un mes, por defecto el actual, o un
- * rango de fechas) más materia y profesor, con las `opciones` que manda la API. No guarda estado:
+ * Los filtros del historial académico (HU-31): el período (un mes, con un selector para el mes y
+ * otro para el año y por defecto el mes en curso, o un rango de fechas) más materia y profesor, con las `opciones` que manda la API. No guarda estado:
  * muestra los de la URL y avisa cada cambio, que se aplica enseguida. **No valida el período**: un
  * "Hasta" anterior al "Desde" se manda igual y el error de la API sale junto al campo.
  *
@@ -61,6 +67,7 @@ export function BarraFiltrosHistorial({
   opciones,
   onElegirOpcion,
   onElegirMes,
+  onElegirAnio,
   onCambiarRango,
   onCambiar,
   onLimpiar,
@@ -72,6 +79,7 @@ export function BarraFiltrosHistorial({
   const ids = {
     opcion: `${id}-periodo`,
     mes: `${id}-mes`,
+    anio: `${id}-anio`,
     desde: `${id}-desde`,
     hasta: `${id}-hasta`,
     materia: `${id}-materia`,
@@ -80,16 +88,15 @@ export function BarraFiltrosHistorial({
 
   const { periodo } = filtros
   const porMes = periodo.opcion === 'mes'
+  const anioElegido = anioDe(periodo.mes)
   const materiaElegida = opciones.materias.find((m) => m.id === filtros.materiaId) ?? null
   const profesorElegido = opciones.profesores.find((p) => p.id === filtros.profesorId) ?? null
 
-  // Un campo más con el rango ("Desde" y "Hasta" en lugar del mes): la grilla declara **una columna
-  // por campo** más la del botón, así nada se pasa de renglón y "Limpiar filtros" queda en la fila,
-  // a la altura de los controles. Con cuatro columnas fijas, el quinto campo caía abajo y el botón
-  // con él, desfasado.
-  const columnas = porMes
-    ? 'sm:grid-cols-2 lg:grid-cols-4 xl:grid-cols-[repeat(4,minmax(0,1fr))_auto]'
-    : 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]'
+  // Cinco campos en las dos opciones ("Mes" y "Año", o "Desde" y "Hasta"): la grilla declara **una
+  // columna por campo** más la del botón, así nada se pasa de renglón y "Limpiar filtros" queda en
+  // la fila, a la altura de los controles. Con cuatro columnas fijas, el quinto campo caía abajo y
+  // el botón con él, desfasado.
+  const columnas = 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]'
 
   return (
     <div className="space-y-3">
@@ -115,20 +122,47 @@ export function BarraFiltrosHistorial({
         </Field>
 
         {porMes ? (
-          <Field label="Mes" htmlFor={ids.mes}>
-            <Select value={periodo.mes} onValueChange={onElegirMes}>
-              <SelectTrigger id={ids.mes} className={claseControlFiltro(false)}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {mesesOfrecidos(hoy, periodo.mes).map((mes) => (
-                  <SelectItem key={mes} value={mes} className="capitalize">
-                    {etiquetaMes(mes)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </Field>
+          <>
+            <Field label="Mes" htmlFor={ids.mes}>
+              <Select
+                value={String(numeroDeMes(periodo.mes))}
+                onValueChange={(v) => onElegirMes(Number(v))}
+              >
+                <SelectTrigger id={ids.mes} className={claseControlFiltro(false)}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {MESES_DEL_ANIO.map((numero) => (
+                    <SelectItem
+                      key={numero}
+                      value={String(numero)}
+                      className="capitalize"
+                      // Los doce meses están siempre, pero en el año en curso los que todavía no
+                      // empezaron no se pueden elegir: el historial llega hasta hoy.
+                      disabled={esMesFuturo(mesDeAnioYNumero(anioElegido, numero), hoy)}
+                    >
+                      {etiquetaNumeroMes(numero)}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+
+            <Field label="Año" htmlFor={ids.anio}>
+              <Select value={String(anioElegido)} onValueChange={(v) => onElegirAnio(Number(v))}>
+                <SelectTrigger id={ids.anio} className={claseControlFiltro(false)}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {aniosOfrecidos(hoy, periodo.mes).map((anio) => (
+                    <SelectItem key={anio} value={String(anio)}>
+                      {anio}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </Field>
+          </>
         ) : (
           <>
             <Field label="Desde" htmlFor={ids.desde} error={errores.desde}>
@@ -137,6 +171,9 @@ export function BarraFiltrosHistorial({
                 compacto
                 value={periodo.desde}
                 onChange={(fecha) => fecha && onCambiarRango({ desde: fecha })}
+                // Ninguno de los dos extremos ofrece fechas posteriores a hoy: el historial son
+                // las clases de hoy o anteriores.
+                max={hoy}
                 aria-invalid={errores.desde ? true : undefined}
                 aria-describedby={errores.desde ? fieldErrorId(ids.desde) : undefined}
               />
@@ -148,9 +185,9 @@ export function BarraFiltrosHistorial({
                 compacto
                 value={periodo.hasta}
                 onChange={(fecha) => fecha && onCambiarRango({ hasta: fecha })}
-                // El historial son las clases de hoy o anteriores: una fecha posterior no agrega
-                // nada (la API recorta `hasta` a hoy), así que el calendario no la ofrece. Es una
-                // ayuda de la UI: el período lo valida igual la API.
+                // Una fecha posterior no agrega nada (la API recorta `hasta` a hoy), así que el
+                // calendario no la ofrece. Es una ayuda de la UI: el período lo valida igual la
+                // API (un "Hasta" anterior al "Desde" sale como 400 en este campo).
                 max={hoy}
                 aria-invalid={errores.hasta ? true : undefined}
                 aria-describedby={errores.hasta ? fieldErrorId(ids.hasta) : undefined}
