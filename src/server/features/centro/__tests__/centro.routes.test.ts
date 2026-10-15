@@ -19,9 +19,11 @@ function pedir(path: string) {
 }
 
 function sesion(role: string) {
+  // La cuenta de un alumno trae su alumno (T-75): sin él, requireAuth() responde 403.
+  const alumno = role === 'ALUMNO' ? { alumnoId: 7 } : {}
   return {
     headers: new Headers(),
-    response: { user: { id: 'usr_1', role, estado: 'ACTIVO' }, session: { id: 's-1' } },
+    response: { user: { id: 'usr_1', role, estado: 'ACTIVO', ...alumno }, session: { id: 's-1' } },
   }
 }
 
@@ -31,20 +33,24 @@ beforeEach(() => {
 })
 
 describe('GET /centro', () => {
-  it.each(['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'])('responde 200 para %s', async (role) => {
-    getSession.mockResolvedValue(sesion(role))
-    const res = await pedir('')
-    expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(DATOS_CENTRO)
-  })
+  // El alumno también: el teléfono del aviso del portal (HU-28, T-91).
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'GERENTE', 'ALUMNO'])(
+    'responde 200 para %s',
+    async (role) => {
+      getSession.mockResolvedValue(sesion(role))
+      const res = await pedir('')
+      expect(res.status).toBe(200)
+      expect(await res.json()).toEqual(DATOS_CENTRO)
+    },
+  )
 
   it('sin sesión → 401', async () => {
     getSession.mockResolvedValue({ headers: new Headers(), response: null })
     expect((await pedir('')).status).toBe(401)
   })
 
-  it('con un rol que no es ninguno de los tres → 403', async () => {
-    getSession.mockResolvedValue(sesion('ALUMNO'))
+  it('con un rol que no es ninguno de los cuatro → 403', async () => {
+    getSession.mockResolvedValue(sesion('ADMIN'))
     expect((await pedir('')).status).toBe(403)
   })
 })

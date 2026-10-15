@@ -1265,7 +1265,7 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
 
 Los datos del centro (HU-11, HU-15, T-64): son los que el backend pone en el encabezado de los documentos PDF (ver [Documentos PDF](#documentos-pdf)). El frontend no los pide para eso, pero los endpoints son parte del contrato. Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
 
-**`GET /api/v1/centro`**: `{ "nombre", "direccion", "telefono" }`, los tres `string`. `nombre` es el de la organización que emite los documentos (Nexo Académico), no el del sistema (Aula Click).
+**`GET /api/v1/centro`** (`MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y, desde T-91, `ALUMNO`: el teléfono del aviso del portal): `{ "nombre", "direccion", "telefono" }`, los tres `string`. `nombre` es el de la organización que emite los documentos (Nexo Académico), no el del sistema (Aula Click).
 
 ```json
 {
@@ -1419,7 +1419,34 @@ A completar por T-104 (HU-42).
 
 ## Usuarios
 
-A completar por T-91 (HU-28): lo que vale para cualquier usuario sin importar su rol (su usuario y el cambio de su contraseña).
+Lo que vale para cualquier usuario sin importar su rol (HU-28, T-91).
+
+**`GET /api/v1/usuarios/mi-usuario`** (todos los roles): el usuario de la sesión.
+
+```json
+{
+  "id": "usr_alumno_01",
+  "nombre": "Juan",
+  "apellido": "Pérez",
+  "role": "ALUMNO",
+  "usuario": "jperez456",
+  "contrasenaInicial": true
+}
+```
+
+- `usuario` es el de ingreso del alumno; `null` en los demás roles, que ingresan con su email.
+- `contrasenaInicial` sale de la cuenta `credential` (decisión T-135): `true` mientras siga siendo la que puso el sistema (el DNI). El portal la usa para el aviso "Por seguridad, te recomendamos cambiar tu contraseña". Sin cuenta, `false`.
+
+**`PATCH /api/v1/usuarios/mi-usuario/contrasena`** (`ALUMNO` en este incremento): body `{ "actual", "nueva", "repeticion" }`. Responde `200` con mi usuario, ya con `contrasenaInicial: false`; **la sesión sigue abierta**. Errores 400 `VALIDACION`, en este orden (el primero que falla gana), con `details` en el campo:
+
+| Campo        | Cuándo                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| el que falte | Alguno de los tres está vacío ("Es obligatoria")                                                            |
+| `repeticion` | `nueva` y `repeticion` no coinciden ("Las contraseñas no coinciden")                                        |
+| `nueva`      | Tiene menos de 8 caracteres, es igual a la actual o es el DNI del alumno (con o sin puntos)                 |
+| `actual`     | No es la contraseña actual ("La contraseña actual no es correcta"): no cambia nada. La verifica Better Auth |
+
+Errores comunes: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` en el `PATCH` para cualquier rol que no sea `ALUMNO`.
 
 ## Portal del alumno
 
@@ -1433,16 +1460,16 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
-| Feature       | Endpoints del portal                                                              | Tarea |
-| ------------- | --------------------------------------------------------------------------------- | ----- |
-| `ocurrencias` | `GET /ocurrencias/mis-turnos?desde&hasta` y `/mis-turnos/{turnoId}/{fecha}`       | T-84  |
-| `alumnos`     | `GET /alumnos/mi-perfil`                                                          | T-88  |
-| `usuarios`    | A completar por T-91                                                              | T-91  |
-| `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`   | T-93  |
-| `pagos`       | A completar por T-98                                                              | T-98  |
-| `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                    | T-101 |
-| `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106)) | T-106 |
-| `historiales` | A completar por T-108                                                             | T-108 |
+| Feature       | Endpoints del portal                                                                        | Tarea |
+| ------------- | ------------------------------------------------------------------------------------------- | ----- |
+| `ocurrencias` | `GET /ocurrencias/mis-turnos?desde&hasta` y `/mis-turnos/{turnoId}/{fecha}`                 | T-84  |
+| `alumnos`     | `GET /alumnos/mi-perfil`                                                                    | T-88  |
+| `usuarios`    | `GET /usuarios/mi-usuario`, `PATCH /usuarios/mi-usuario/contrasena` ([Usuarios](#usuarios)) | T-91  |
+| `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`             | T-93  |
+| `pagos`       | A completar por T-98                                                                        | T-98  |
+| `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                              | T-101 |
+| `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106))           | T-106 |
+| `historiales` | A completar por T-108                                                                       | T-108 |
 
 ## Documentos PDF
 

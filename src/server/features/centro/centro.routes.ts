@@ -13,6 +13,8 @@ import { centroSchema } from './centro.validation'
 
 const tags = ['Centro']
 const ROLES = ['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'] as const
+/** Los datos del centro también los ve el alumno: el teléfono del aviso del portal (HU-28, T-91). */
+const ROLES_DATOS = [...ROLES, 'ALUMNO'] as const
 
 function respuestaError(description: string) {
   return {
@@ -34,14 +36,17 @@ export const obtenerCentroRoute = createRoute({
   tags,
   summary: 'Datos del centro',
   description:
-    'Nombre, dirección y teléfono del centro: los mismos datos que el backend pone en el encabezado de los documentos PDF. Constantes del backend: no hay pantalla para editarlos ni tabla donde guardarlos (definición G).',
-  middleware: [requireAuth(), requireRole(...ROLES)] as const,
+    'Nombre, dirección y teléfono del centro: los mismos datos que el backend pone en el encabezado de los documentos PDF. Constantes del backend: no hay pantalla para editarlos ni tabla donde guardarlos (definición G). También el alumno: el teléfono del aviso del portal.',
+  middleware: [requireAuth(), requireRole(...ROLES_DATOS)] as const,
   responses: {
     200: {
       description: 'Datos del centro',
       content: { 'application/json': { schema: centroSchema, example: ejemploCentro } },
     },
-    ...errores,
+    401: errores[401],
+    403: respuestaError(
+      'El rol no es mesa de entradas, profesor, gerente o alumno, o el usuario está inhabilitado',
+    ),
   },
 })
 

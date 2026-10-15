@@ -271,12 +271,13 @@ A completar por T-108 (HU-31, HU-33).
 
 ## Portal del alumno
 
-El alumno (o su familia) entra al portal con una cuenta propia. La convención de sus endpoints está en `contrato-api.md` → Portal del alumno; la contraseña y su cambio, en T-91 (HU-28).
+El alumno (o su familia) entra al portal con una cuenta propia. La convención de sus endpoints está en `contrato-api.md` → Portal del alumno; la contraseña y su cambio, abajo (HU-28).
 
 - **Cada alumno tiene una sola cuenta** y **cada persona, un solo usuario por DNI**: si el DNI ya tiene usuario (por ejemplo, el de un profesor que además toma clases), el alta del alumno se rechaza. _Pendiente de confirmación de las PO_ (punto 10 de "Puntos a confirmar" del Sprint 3).
 - **El usuario lo genera el sistema** y no se escribe a mano: inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n" (Juan Pérez, DNI 45.123.456 → `jperez456`). Si ya está tomado, se agrega un número al final (`jperez456-2`).
 - **El usuario no cambia nunca**, aunque después se corrija el nombre o el apellido: es el dato con el que el alumno ingresa. El nombre que muestra la sesión sí se sincroniza con el del alumno.
 - **La contraseña inicial es el DNI del alumno**, sin puntos, y queda marcada como inicial mientras siga siendo la que puso el sistema (el portal recomienda cambiarla, HU-28). No se muestra ni se devuelve nunca.
+- **Cambiar la contraseña** (el alumno, desde "Configuración" en el portal, HU-28): pide la actual, la nueva y repetirla. La nueva tiene al menos 8 caracteres y no puede ser la actual ni su DNI. Si la actual no es correcta, no cambia nada. Al cambiarla deja de estar marcada como inicial (el portal deja de recomendar cambiarla) y la sesión sigue abierta.
 - **Restablecer la contraseña** (mesa de entradas) la vuelve a dejar en el DNI y marcada como inicial. Es la forma de resolver un olvido: no hay recuperación por email. Queda registrado quién la restableció y cuándo, igual que quién creó el acceso.
 - **Fuera de alcance en este incremento:** recuperación por email, y baja o reactivación del acceso.
 
