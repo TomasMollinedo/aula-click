@@ -41,7 +41,8 @@ export function OcurrenciaDetallePortal({
         turno && (
           <span className="flex flex-wrap items-center gap-2">
             {turno.materia.nombre}
-            <EstadoTurnoBadge estado={turno.estado} plazo={turno.plazoAsistencia} />
+            {/* Solo "Cancelado": si el turno está, está agendado; la asistencia va en su sección. */}
+            {turno.estado === 'CANCELADO' && <EstadoTurnoBadge estado={turno.estado} />}
           </span>
         )
       }
@@ -68,6 +69,13 @@ export function OcurrenciaDetallePortal({
             {turno.estado !== 'CANCELADO' && (
               <Dato label="Pago" valor={<EstadoPagoBadge estado={turno.estadoPago} />} />
             )}
+            {/* Como el pago: un dato con su estado. Una agendada a futuro o una cancelada no lo tienen. */}
+            {mostrarSeccionAsistencia(turno) && turno.estado !== 'AGENDADO' && (
+              <Dato
+                label="Asistencia"
+                valor={<EstadoTurnoBadge estado={turno.estado} plazo={turno.plazoAsistencia} />}
+              />
+            )}
             <Dato label="Temas a trabajar" valor={turno.temas} className="sm:col-span-2" />
           </Datos>
 
@@ -78,6 +86,7 @@ export function OcurrenciaDetallePortal({
               asistencia={turno.asistencia}
               horasSeguidas={turno.horasSeguidas}
               hrefHora={hrefDetalle}
+              sinEstado
             />
           )}
         </div>

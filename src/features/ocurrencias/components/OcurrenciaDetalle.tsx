@@ -130,7 +130,8 @@ export function OcurrenciaDetalle({
         ocurrencia && (
           <span className="flex flex-wrap items-center gap-2">
             {ocurrencia.materia.nombre}
-            <EstadoTurnoBadge estado={ocurrencia.estado} plazo={ocurrencia.plazoAsistencia} />
+            {/* Solo "Cancelado": si el turno está, está agendado; la asistencia va en su sección. */}
+            {ocurrencia.estado === 'CANCELADO' && <EstadoTurnoBadge estado={ocurrencia.estado} />}
           </span>
         )
       }

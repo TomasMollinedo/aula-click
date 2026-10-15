@@ -204,7 +204,7 @@ function TurnoDeClase({
         </Link>
         {cancelado && (
           <span className="shrink-0">
-            <EstadoTurnoBadge estado={turno.estado} />
+            <EstadoTurnoBadge estado={turno.estado} sinAsistencia />
           </span>
         )}
       </span>
