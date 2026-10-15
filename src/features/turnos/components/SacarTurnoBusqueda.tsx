@@ -84,7 +84,7 @@ function ErrorConsulta({
 }
 
 // ---------------------------------------------------------------------------------------------
-// Paso 1: materia, profesor y día
+// Paso 1: materia, día y profesor
 // ---------------------------------------------------------------------------------------------
 
 export type MisFiltros = {
@@ -110,7 +110,7 @@ type FiltrosMiBusquedaProps = {
   onCambio: (filtros: MisFiltros) => void
 }
 
-/** Materia (obligatoria), profesor y día (opcionales y combinables), como en el alta de la mesa. */
+/** Materia (obligatoria), día y profesor (opcionales y combinables), como en el alta de la mesa. */
 export function FiltrosMiBusqueda({
   materias,
   horariosMateria,
@@ -173,6 +173,28 @@ export function FiltrosMiBusqueda({
           )}
         </Field>
 
+        <Field label="Día" htmlFor="mi-filtro-dia" optional>
+          <Select
+            value={filtros.diaSemana === null ? TODOS : String(filtros.diaSemana)}
+            onValueChange={(v) =>
+              onCambio({ ...filtros, diaSemana: v === TODOS ? null : Number(v) })
+            }
+            disabled={sinMateria || cargandoHorarios}
+          >
+            <SelectTrigger id="mi-filtro-dia" className="h-11 w-full">
+              <SelectValue placeholder={sinMateria ? 'Elegí primero la materia' : 'Cargando…'} />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Cualquier día</SelectItem>
+              {dias.map((dia) => (
+                <SelectItem key={dia} value={String(dia)}>
+                  {nombreDiaSemana(dia)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
         <Field label="Profesor" htmlFor="mi-filtro-profesor" optional>
           <Select
             value={filtros.profesorId === null ? TODOS : String(filtros.profesorId)}
@@ -203,28 +225,6 @@ export function FiltrosMiBusqueda({
               {profesores.map((profesor) => (
                 <SelectItem key={profesor.id} value={String(profesor.id)}>
                   {profesor.nombre} {profesor.apellido}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </Field>
-
-        <Field label="Día" htmlFor="mi-filtro-dia" optional>
-          <Select
-            value={filtros.diaSemana === null ? TODOS : String(filtros.diaSemana)}
-            onValueChange={(v) =>
-              onCambio({ ...filtros, diaSemana: v === TODOS ? null : Number(v) })
-            }
-            disabled={sinMateria || cargandoHorarios}
-          >
-            <SelectTrigger id="mi-filtro-dia" className="h-11 w-full">
-              <SelectValue placeholder={sinMateria ? 'Elegí primero la materia' : 'Cargando…'} />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TODOS}>Cualquier día</SelectItem>
-              {dias.map((dia) => (
-                <SelectItem key={dia} value={String(dia)}>
-                  {nombreDiaSemana(dia)}
                 </SelectItem>
               ))}
             </SelectContent>
