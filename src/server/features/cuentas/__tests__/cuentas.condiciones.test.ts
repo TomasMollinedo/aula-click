@@ -35,7 +35,7 @@ type WhereAggregate = {
   estado: string
   fechaInicio: { lte: Date }
   alumnoId?: number
-  materiaId?: number
+  materiaId?: { in: number[] }
   bloqueAgenda?: { profesorId: number }
 }
 
@@ -57,7 +57,7 @@ function cliente(): ClienteOcurrencias {
           (t.estado ?? 'ACTIVO') === where.estado &&
           d(t.fechaInicio) <= where.fechaInicio.lte &&
           (where.alumnoId === undefined || (t.alumnoId ?? 12) === where.alumnoId) &&
-          (where.materiaId === undefined || (t.materiaId ?? 3) === where.materiaId) &&
+          (where.materiaId === undefined || where.materiaId.in.includes(t.materiaId ?? 3)) &&
           (where.bloqueAgenda === undefined || profesorDe(t) === where.bloqueAgenda.profesorId),
       )
       .map((t) => d(t.fechaInicio).getTime())
@@ -179,15 +179,15 @@ describe('leerAdeudados', () => {
     expect(claves(adeudados)).toEqual([[1, '2026-09-28']])
   })
 
-  it('con materiaId: lo filtran el aggregate y el motor', async () => {
+  it('con una materia: la filtran el aggregate y el motor', async () => {
     turnos = [
       { id: 1, bloqueAgendaId: 10, materiaId: 3, fechaInicio: '2026-08-03', fechaFin: null },
       { id: 2, bloqueAgendaId: 40, materiaId: 5, fechaInicio: '2026-09-22', fechaFin: null },
     ]
 
-    const adeudados = await leerAdeudados(cliente(), { materiaId: 5, hoy: HOY })
+    const adeudados = await leerAdeudados(cliente(), { materiaIds: [5], hoy: HOY })
 
-    expect(aggregate.mock.calls[0]?.[0].where.materiaId).toBe(5)
+    expect(aggregate.mock.calls[0]?.[0].where.materiaId).toEqual({ in: [5] })
     expect(base.findMany.mock.calls[0]?.[0].where.materiaId).toEqual({ in: [5] })
     // El rango empieza en el primer turno de esa materia, no en el más antiguo de todos.
     expect(rangoLeido()).toEqual({ gte: d('2026-09-22'), lte: d('2026-10-04') })
@@ -471,12 +471,74 @@ describe('leerProximos', () => {
       },
     ]
 
-    const proximos = await leerProximos(cliente(), { materiaId: 5, profesorId: 7, hoy: HOY })
+    const proximos = await leerProximos(cliente(), { materiaIds: [5], profesorId: 7, hoy: HOY })
 
     const where = base.findMany.mock.calls[0]?.[0].where
     expect(where.materiaId).toEqual({ in: [5] })
     expect(where.bloqueAgenda?.profesorId).toBe(7)
     expect(claves(proximos)).toEqual([[2, '2026-10-06']])
+  })
+})
+
+// T-101: varias materias (HU-25) en una sola lectura del motor.
+describe('varias materias', () => {
+  // Matemática (3) los lunes, Inglés (5) los martes y Física (7) los sábados, desde el 07/09.
+  beforeEach(() => {
+    precios.set(7, 7000)
+    turnos = [
+      { id: 1, bloqueAgendaId: 10, materiaId: 3, fechaInicio: '2026-09-21', fechaFin: null },
+      { id: 2, bloqueAgendaId: 40, materiaId: 5, fechaInicio: '2026-09-22', fechaFin: null },
+      { id: 3, bloqueAgendaId: 60, materiaId: 7, fechaInicio: '2026-09-07', fechaFin: null },
+    ]
+  })
+
+  it('Matemática e Inglés: sus adeudados y próximos, ninguno de Física, en una lectura', async () => {
+    const filtro = { materiaIds: [3, 5], hoy: HOY }
+
+    const adeudados = await leerAdeudados(cliente(), filtro)
+    expect(base.findMany).toHaveBeenCalledTimes(1)
+    expect(base.findMany.mock.calls[0]?.[0].where.materiaId).toEqual({ in: [3, 5] })
+    // El rango empieza en el primer turno de esas materias, no en el de Física.
+    expect(rangoLeido()).toEqual({ gte: d('2026-09-21'), lte: d('2026-10-04') })
+    expect(claves(adeudados)).toEqual([
+      [1, '2026-09-21'],
+      [2, '2026-09-22'],
+      [1, '2026-09-28'],
+      [2, '2026-09-29'],
+    ])
+    expect(await totalAdeudado(cliente(), filtro)).toBe(34000)
+
+    const proximos = await leerProximos(cliente(), { ...filtro, hasta: '2026-10-13' })
+    expect(claves(proximos)).toEqual([
+      [1, '2026-10-05'],
+      [2, '2026-10-06'],
+      [1, '2026-10-12'],
+      [2, '2026-10-13'],
+    ])
+  })
+
+  it('una sola materia trae lo mismo que antes: sólo la suya', async () => {
+    expect(claves(await leerAdeudados(cliente(), { materiaIds: [5], hoy: HOY }))).toEqual([
+      [2, '2026-09-22'],
+      [2, '2026-09-29'],
+    ])
+  })
+
+  it('un id repetido no duplica: cada materia una vez en el filtro y cada turno una vez', async () => {
+    const adeudados = await leerAdeudados(cliente(), { materiaIds: [5, 3, 5], hoy: HOY })
+
+    expect(aggregate.mock.calls[0]?.[0].where.materiaId).toEqual({ in: [5, 3] })
+    expect(base.findMany.mock.calls[0]?.[0].where.materiaId).toEqual({ in: [5, 3] })
+    expect(adeudados).toHaveLength(4)
+  })
+
+  it('sin materias o con la lista vacía: todas, sin filtro de materia', async () => {
+    const vacia = await leerAdeudados(cliente(), { materiaIds: [], hoy: HOY })
+
+    expect(aggregate.mock.calls[0]?.[0].where.materiaId).toBeUndefined()
+    expect(base.findMany.mock.calls[0]?.[0].where.materiaId).toBeUndefined()
+    expect(vacia).toHaveLength((await leerAdeudados(cliente(), { hoy: HOY })).length)
+    expect(vacia.some((a) => a.ocurrencia.materiaId === 7)).toBe(true)
   })
 })
 

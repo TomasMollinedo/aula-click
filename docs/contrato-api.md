@@ -948,20 +948,23 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 ## Cuentas
 
-HU-16 (T-53, con los ajustes de la PO del 01/10: decisiones T-91 a T-96). Turnos adeudados y próximos turnos de un alumno, y las dos vistas globales con la misma estructura. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
+HU-16 (T-53, con los ajustes de la PO del 01/10: decisiones T-91 a T-96), varias materias (HU-25) y la cuenta del portal (HU-37), de la tarea T-101 (decisión T-146). Turnos adeudados y próximos turnos de un alumno, y las dos vistas globales con la misma estructura. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
 
 | Endpoint                                 | Roles           | Qué hace                                                                         |
 | ---------------------------------------- | --------------- | -------------------------------------------------------------------------------- |
 | `GET /api/v1/cuentas/alumnos/{alumnoId}` | `MESA_ENTRADAS` | Adeudados y próximos del alumno, con el total adeudado. 404 si no existe         |
 | `GET /api/v1/cuentas/adeudados`          | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado      |
 | `GET /api/v1/cuentas/proximos`           | `MESA_ENTRADAS` | Próximos turnos de todos los alumnos (o de uno), paginados, con el tope de cobro |
+| `GET /api/v1/cuentas/mi-cuenta`          | `ALUMNO`        | La cuenta del alumno de la sesión, agrupada por materia (portal)                 |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: uno dado de baja puede deber.
 
 **Filtros comunes a los tres (query, todos opcionales):**
 
 - `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos. Cada extremo es opcional y **no hay tope de días**. Si vienen los dos y `hasta` es anterior a `desde`: 400 `VALIDACION` con `details` sobre `hasta`.
-- `materiaId`, `profesorId` (el profesor del bloque): enteros positivos (400 si no). Si la materia o el profesor no existen, la respuesta va vacía: **no hay 404**.
+- `materiaId`: **una o más materias**, repitiendo el parámetro (`?materiaId=2&materiaId=5`; HU-25). Con una sola, como siempre; sin `materiaId`, todas. Con varias, la respuesta trae los adeudados y los próximos de todas ellas (los próximos, hasta `limiteCobro`) en el orden de siempre, y `totalAdeudado` es su suma. Un id repetido cuenta una vez. Cada id es un entero positivo: si no, 400 `VALIDACION` con `path` `["materiaId", <posición>]`.
+- `profesorId` (el profesor del bloque): entero positivo (400 si no).
+- Si una materia o el profesor no existen, esa parte de la respuesta va vacía: **no hay 404**.
 
 **El período y las secciones.** Las dos secciones nunca se mezclan: "hoy" las separa. Las fechas de corte las calcula la API; el cliente no las repite.
 
@@ -1082,6 +1085,45 @@ Con un período sólo pasado (`?desde=2026-09-01&hasta=2026-09-30`), `"proximos"
 
 - Los mismos próximos que la cuenta del alumno, de todos los alumnos (o del filtrado), por fecha, hora de inicio y `turnoId`. La misma fila que los adeudados (`OcurrenciaDeCuentaGlobal`).
 - `aplica: false` (período sólo pasado): `data: []`, `meta.total: 0` y `meta.totalPages: 0`. `limiteCobro` viene igual.
+
+**Seleccionar todo (HU-25).** Para cobrar una o varias materias completas, se eligen en el filtro de materia y se seleccionan los adeudados y los próximos que trae la cuenta del alumno (`GET /cuentas/alumnos/{alumnoId}`, sin paginar). En la vista global se usa la misma cuenta, con los mismos filtros (decisión T-102). No hay filtro por meses ni por tipo de turno. Si la selección supera el máximo de un pago, `POST /pagos` responde 400 `VALIDACION` en `ocurrencias`: "No se pueden cobrar más de 200 turnos en un pago" (ver Pagos).
+
+**`GET /cuentas/mi-cuenta`** (`ALUMNO`, portal, HU-37): la cuenta del alumno de la sesión, sin filtros ni query. Es la misma lectura que `GET /cuentas/alumnos/{alumnoId}` sin filtros: **los mismos importes y el mismo `totalAdeudado`** que ve mesa de entradas. `adeudados` y `proximos` van **agrupados por materia**, con su subtotal:
+
+```json
+{
+  "totalAdeudado": 25000.5,
+  "adeudados": [
+    {
+      "materia": { "id": 7, "nombre": "Física" },
+      "subtotal": 9000.5,
+      "ocurrencias": [{ "turnoId": 57, "fecha": "2026-09-23", "...": "...", "importe": 9000.5 }]
+    },
+    {
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "subtotal": 16000,
+      "ocurrencias": [
+        { "turnoId": 41, "fecha": "2026-09-21", "...": "...", "importe": 8000 },
+        { "turnoId": 41, "fecha": "2026-09-28", "...": "...", "importe": 8000 }
+      ]
+    }
+  ],
+  "proximos": [
+    {
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "subtotal": 8000,
+      "ocurrencias": [{ "turnoId": 41, "fecha": "2026-10-05", "...": "...", "estado": "AGENDADO" }]
+    }
+  ],
+  "limiteCobro": "2026-11-26"
+}
+```
+
+- Cada ocurrencia es una `OcurrenciaDeCuenta` (fecha, horario, materia, profesor, estado e importe).
+- **Los grupos** van por nombre de materia y, dentro de cada uno, las ocurrencias por fecha, hora de inicio y `turnoId`. `subtotal` es la suma de los importes del grupo (los `null` no suman).
+- **`totalAdeudado`** es la suma de los subtotales de `adeudados`. Los próximos nunca suman.
+- **Sin nada pendiente:** `totalAdeudado: 0`, `adeudados: []` y `proximos: []`. Las dos secciones siempre aplican, porque no hay período.
+- **Errores:** 401 sin sesión; 403 `SIN_PERMISO` si el rol no es `ALUMNO` o la cuenta no tiene alumno. El alumno recibe 403 en los otros tres endpoints de Cuentas.
 
 ## Exámenes
 
@@ -1398,7 +1440,7 @@ Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuan
 | `usuarios`    | A completar por T-91                                                              | T-91  |
 | `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`   | T-93  |
 | `pagos`       | A completar por T-98                                                              | T-98  |
-| `cuentas`     | A completar por T-101                                                             | T-101 |
+| `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                    | T-101 |
 | `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106)) | T-106 |
 | `historiales` | A completar por T-108                                                             | T-108 |
 
@@ -1439,7 +1481,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `q`                                  | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras. En la agenda (decisión T-36) busca por nombre de alumno **o** de profesor, nunca mezclando palabras entre los dos; si además se manda `profesorId`, busca sólo por alumno (T-42)                                       |
 | `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `materiaId`                          | Filtra por materia                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `materiaId`                          | Filtra por materia. En Cuentas (T-101), una o más, repitiendo el parámetro: `?materiaId=2&materiaId=5`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | `profesorId`                         | Filtra por profesor. En la agenda (decisión T-42) es la vista personal de su agenda ese día                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
 | `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                                                           |

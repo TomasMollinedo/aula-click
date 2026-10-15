@@ -4,6 +4,7 @@ import type { AppEnv } from '@/server/router'
 import type {
   listarAdeudadosRoute,
   listarProximosRoute,
+  miCuentaRoute,
   obtenerCuentaRoute,
 } from './cuentas.routes'
 import { cuentasRepository } from './cuentas.repository'
@@ -21,6 +22,9 @@ export const obtenerCuenta: RouteHandler<typeof obtenerCuentaRoute, AppEnv> = as
     await cuentasService.obtenerCuenta(c.req.valid('param').alumnoId, c.req.valid('query')),
     200,
   )
+
+export const miCuenta: RouteHandler<typeof miCuentaRoute, AppEnv> = async (c) =>
+  c.json(await cuentasService.miCuenta(c.get('actor')), 200)
 
 export const listarAdeudados: RouteHandler<typeof listarAdeudadosRoute, AppEnv> = async (c) =>
   c.json(await cuentasService.listarAdeudados(c.req.valid('query')), 200)
