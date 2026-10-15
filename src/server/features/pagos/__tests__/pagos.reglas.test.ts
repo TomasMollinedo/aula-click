@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import {
+  accionesDelPago,
   agruparPorMateria,
   errorFormasDePago,
   calcularVuelto,
@@ -379,5 +380,63 @@ describe('agruparPorMateria', () => {
 
   it('sin turnos: sin grupos', () => {
     expect(agruparPorMateria([])).toEqual([])
+  })
+})
+
+// T-98 (HU-36): las acciones del detalle de un pago. Tienen que coincidir con lo que aceptan
+// `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (T-95): anulado o efectivo → 409;
+// quitar en transferencia → 409.
+describe('accionesDelPago', () => {
+  const ninguna = { anular: false, reemplazarAdjunto: false, quitarAdjunto: false }
+
+  // Mesa de entradas, pago vigente: [forma, tiene adjunto, anular, reemplazar, quitar].
+  it.each([
+    ['EFECTIVO', false, true, false, false],
+    ['TRANSFERENCIA', true, true, true, false],
+    ['TRANSFERENCIA', false, true, true, false],
+    ['DEBITO', true, true, true, true],
+    // En un débito sin adjunto, "reemplazar" es adjuntar uno; no hay nada que quitar.
+    ['DEBITO', false, true, true, false],
+  ] as const)(
+    'mesa de entradas, vigente, %s con adjunto=%s → anular %s, reemplazar %s, quitar %s',
+    (formaPago, tieneAdjunto, anular, reemplazarAdjunto, quitarAdjunto) => {
+      expect(
+        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'VIGENTE', formaPago, tieneAdjunto }),
+      ).toEqual({ anular, reemplazarAdjunto, quitarAdjunto })
+    },
+  )
+
+  const FORMAS = ['EFECTIVO', 'TRANSFERENCIA', 'DEBITO'] as const
+  const combinaciones = FORMAS.flatMap((formaPago) =>
+    [true, false].map((tieneAdjunto) => [formaPago, tieneAdjunto] as const),
+  )
+
+  it.each(combinaciones)(
+    'un pago anulado (%s, adjunto=%s): todas en false, también para la mesa',
+    (formaPago, tieneAdjunto) => {
+      expect(
+        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'ANULADO', formaPago, tieneAdjunto }),
+      ).toEqual(ninguna)
+    },
+  )
+
+  it.each(['GERENTE', 'PROFESOR', 'ALUMNO'] as const)(
+    '%s: todas en false en cualquier pago (sólo lectura)',
+    (rol) => {
+      for (const [formaPago, tieneAdjunto] of combinaciones) {
+        for (const estado of ['VIGENTE', 'ANULADO'] as const) {
+          expect(accionesDelPago({ rol, estado, formaPago, tieneAdjunto })).toEqual(ninguna)
+        }
+      }
+    },
+  )
+
+  it('quitarAdjunto sólo con débito y adjunto', () => {
+    const conQuitar = combinaciones.filter(
+      ([formaPago, tieneAdjunto]) =>
+        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'VIGENTE', formaPago, tieneAdjunto })
+          .quitarAdjunto,
+    )
+    expect(conQuitar).toEqual([['DEBITO', true]])
   })
 })

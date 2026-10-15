@@ -4,23 +4,31 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as pagosController from './pagos.controller'
 import {
-  ejemploComprobante,
+  ejemploDetalle,
   ejemploErrorMonto,
   ejemploErrorNoCobrables,
+  ejemploErrorRango,
+  ejemploListado,
+  ejemploMisPagos,
   ejemploRegistrado,
   ejemploRegistrar,
   ejemploRegistrarDebito,
   ejemploRegistrarTransferencia,
 } from './pagos.ejemplos'
 import {
-  comprobanteSchema,
+  detallePagoSchema,
+  listadoPagosSchema,
+  listarPagosQuerySchema,
+  misPagosQuerySchema,
+  misPagosSchema,
   pagoIdParamsSchema,
   pagoRegistradoSchema,
   registrarPagoSchema,
 } from './pagos.validation'
 
-// Contrato HTTP de pagos (HU-15, T-51): cada endpoint se declara con createRoute() y se registra
-// acá. El router lo creó T-32 y ya está registrado en `app.ts`.
+// Contrato HTTP de pagos (HU-15, T-51; pagos realizados y "Mis pagos", HU-36 y HU-37, T-98): cada
+// endpoint se declara con createRoute() y se registra acá. El router lo creó T-32 y ya está
+// registrado en `app.ts`.
 
 const tags = ['Pagos']
 
@@ -79,22 +87,68 @@ export const registrarPagoRoute = createRoute({
   },
 })
 
+export const listarPagosRoute = createRoute({
+  method: 'get',
+  path: '/',
+  tags,
+  summary: 'Pagos realizados, con lo cobrado por forma de pago',
+  description:
+    'Pagos con **fecha de pago** en `[desde, hasta]` (obligatorios, sin tope de días), del más reciente al más antiguo (`fechaPago` y `id`, descendentes) y paginados. Vigentes y anulados: un anulado se lista con su `estado` y su motivo, pero no suma. Con `materiaId` y/o `profesorId`, los pagos con algún turno de esa materia y/o ese profesor (los dos sobre el mismo turno). `formaPago` filtra por código. Un alumno, una materia o un profesor que no existen dan una lista vacía y los totales en 0. `totales` es de **todo** el filtro, no de la página, sólo con pagos vigentes: `cobrado` es la suma de `porForma` (con materia o profesor, cada pago suma su total completo).',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: listarPagosQuerySchema },
+  responses: {
+    200: {
+      description: 'Página de pagos realizados y totales del filtro',
+      content: { 'application/json': { schema: listadoPagosSchema, example: ejemploListado } },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): falta `desde` o `hasta`, fecha inválida, `hasta` anterior a `desde` (en `hasta`), id que no es un entero positivo, `formaPago` desconocida o paginación fuera de rango',
+      ejemploErrorRango,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
+// Endpoint del portal (`mis-…`): el alumno sale de la sesión. Se registra antes de `/{id}`: si no,
+// `/mis-pagos` caería en ese path param (el mismo cuidado que `/mis-alumnos` en `alumnos.routes.ts`).
+export const misPagosRoute = createRoute({
+  method: 'get',
+  path: '/mis-pagos',
+  tags,
+  summary: 'Mis pagos (portal del alumno)',
+  description:
+    'Los pagos del alumno de la sesión, vigentes y anulados, del más reciente al más antiguo y paginados: número, fecha, materias, cantidad de turnos, total, forma de pago y estado. Sin quién lo registró, el comprobante adjunto, las observaciones ni el motivo de la anulación. No recibe un `alumnoId`.',
+  middleware: [requireAuth(), requireRole('ALUMNO')] as const,
+  request: { query: misPagosQuerySchema },
+  responses: {
+    200: {
+      description: 'Página de pagos del alumno',
+      content: { 'application/json': { schema: misPagosSchema, example: ejemploMisPagos } },
+    },
+    400: respuestaError('Paginación inválida (VALIDACION)'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es alumno o la cuenta no tiene un alumno vinculado'),
+  },
+})
+
 export const obtenerComprobanteRoute = createRoute({
   method: 'get',
   path: '/{id}',
   tags,
-  summary: 'Comprobante de un pago',
+  summary: 'Detalle de un pago',
   description:
-    'Datos del comprobante: número, fecha, alumno, cada turno con los datos actuales de su turno y el importe cobrado, total, monto recibido y vuelto (recalculado), forma de pago, observaciones y quién lo registró.',
-  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+    'Datos del comprobante: número, fecha, alumno, cada turno con los datos actuales de su turno y el importe cobrado, total, monto recibido y vuelto (recalculado), forma de pago, observaciones y quién lo registró. Además, `cantidad` de turnos, el último comprobante adjunto activo (`adjunto`, sin URL: la da `GET /adjuntos/pagos/{pagoId}`; `null` si no tiene) y `acciones` según el rol, el estado y la forma de pago. El gerente lo ve en sólo lectura: todas sus acciones en `false`.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
   request: { params: pagoIdParamsSchema },
   responses: {
     200: {
-      description: 'Comprobante',
-      content: { 'application/json': { schema: comprobanteSchema, example: ejemploComprobante } },
+      description: 'Detalle del pago',
+      content: { 'application/json': { schema: detallePagoSchema, example: ejemploDetalle } },
     },
     400: respuestaError('Id inválido (VALIDACION)'),
-    ...errores,
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
     404: respuestaError('El pago no existe (NO_ENCONTRADO)'),
   },
 })
@@ -105,8 +159,8 @@ export const obtenerComprobantePdfRoute = createRoute({
   tags,
   summary: 'Comprobante de un pago, en PDF',
   description:
-    'El comprobante como documento oficial en PDF (A4), con los mismos datos que `GET /pagos/{id}`. Se abre en el visor del navegador (`Content-Disposition: inline`, archivo `comprobante-<número>.pdf`) y no se guarda en caché (`Cache-Control: no-store`). "Emitido por" es el usuario de la sesión y la fecha de emisión, la del servidor en la hora del negocio. Los errores responden JSON, como el resto de la API.',
-  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+    'El comprobante como documento oficial en PDF (A4), con los mismos datos que `GET /pagos/{id}` (sin el adjunto ni las acciones): el mismo documento para todos los roles. El alumno sólo pide los suyos. Se abre en el visor del navegador (`Content-Disposition: inline`, archivo `comprobante-<número>.pdf`) y no se guarda en caché (`Cache-Control: no-store`). "Emitido por" es el usuario de la sesión y la fecha de emisión, la del servidor en la hora del negocio. Los errores responden JSON, como el resto de la API.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE', 'ALUMNO')] as const,
   request: { params: pagoIdParamsSchema },
   responses: {
     200: {
@@ -114,12 +168,17 @@ export const obtenerComprobantePdfRoute = createRoute({
       content: { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } },
     },
     400: respuestaError('Id inválido (VALIDACION)'),
-    ...errores,
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(
+      'El rol no es mesa de entradas, gerente ni alumno, el usuario está inhabilitado o, para el alumno, la cuenta no tiene alumno o el pago es de otro alumno (SIN_PERMISO)',
+    ),
     404: respuestaError('El pago no existe (NO_ENCONTRADO)'),
   },
 })
 
 export const pagosRoutes = createRouter()
   .openapi(registrarPagoRoute, pagosController.registrar)
+  .openapi(listarPagosRoute, pagosController.listar)
+  .openapi(misPagosRoute, pagosController.misPagos)
   .openapi(obtenerComprobanteRoute, pagosController.obtenerComprobante)
   .openapi(obtenerComprobantePdfRoute, pagosController.obtenerComprobantePdf)

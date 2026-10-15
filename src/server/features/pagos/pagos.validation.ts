@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { usuarioAuditoriaSchema } from '@/server/shared/auditoria'
+import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import {
   fechaISO,
   horaHHmm,
@@ -358,6 +359,202 @@ export const comprobanteSchema = z
 export type Comprobante = z.infer<typeof comprobanteSchema>
 /** Lo que devuelve el repository: el comprobante sin el vuelto (lo calcula el service). */
 export type ComprobanteGuardado = Omit<Comprobante, 'vuelto'>
+
+/**
+ * El último comprobante adjunto **activo** del pago (HU-24), sin la clave del archivo ni la URL:
+ * la URL prefirmada la da `GET /adjuntos/pagos/{pagoId}`.
+ */
+export const adjuntoDelPagoSchema = z
+  .object({
+    id: z.number().int(),
+    nombre: z.string().openapi({ description: 'Nombre del archivo subido', example: 'macro.pdf' }),
+    tipo: z.string().openapi({
+      description: 'Tipo MIME del archivo: `image/jpeg`, `image/png` o `application/pdf`',
+      example: 'application/pdf',
+    }),
+    bytes: z.number().int().openapi({ description: 'Tamaño en bytes', example: 184320 }),
+    adjuntadoPor: usuarioAuditoriaSchema,
+    adjuntadoEl: z.iso.datetime().openapi({
+      description: 'Instante en que se adjuntó, ISO 8601 en UTC',
+      example: '2026-10-05T14:28:00.000Z',
+    }),
+  })
+  .openapi('AdjuntoDelPago')
+
+export type AdjuntoDelPago = z.infer<typeof adjuntoDelPagoSchema>
+
+/**
+ * Qué puede hacer quien pide el detalle sobre el pago (`PagoParaAcciones` del frontend): lo decide
+ * la API con `accionesDelPago`, según el rol, el estado, la forma de pago y si tiene adjunto.
+ */
+export const accionesPagoSchema = z
+  .object({
+    anular: z.boolean(),
+    reemplazarAdjunto: z.boolean().openapi({
+      description: 'Reemplazar el comprobante adjunto o, en un débito sin adjunto, adjuntar uno',
+    }),
+    quitarAdjunto: z.boolean(),
+  })
+  .openapi('AccionesPago')
+
+export type AccionesPago = z.infer<typeof accionesPagoSchema>
+
+/**
+ * Respuesta de `GET /pagos/{id}`: el comprobante, la cantidad de turnos, el último adjunto activo
+ * y las acciones (HU-36).
+ */
+export const detallePagoSchema = comprobanteSchema
+  .extend({
+    cantidad: z.number().int().openapi({ description: 'Turnos que incluye', example: 2 }),
+    adjunto: adjuntoDelPagoSchema.nullable().openapi({
+      description: 'El último comprobante adjunto activo; `null` si no tiene',
+    }),
+    acciones: accionesPagoSchema,
+  })
+  .openapi('DetallePago')
+
+export type DetallePago = z.infer<typeof detallePagoSchema>
+
+// --- Pagos realizados (HU-36) y mis pagos (HU-37) ---
+
+export const MENSAJE_RANGO_INVERTIDO = 'La fecha hasta no puede ser anterior a la fecha desde'
+
+/** Id entero positivo de un filtro del query (`?alumnoId=12`). */
+const idQuery = (nombre: string, description: string, example: number) =>
+  z.coerce
+    .number({ error: 'Debe ser un número' })
+    .int({ error: 'Debe ser un número entero' })
+    .positive({ error: 'Debe ser mayor a 0' })
+    .optional()
+    .openapi({ param: { name: nombre, in: 'query' }, description, example })
+
+/** `hasta` no puede ser anterior a `desde`: 400 en `hasta`, como en Cuentas. */
+function periodoEnOrden(datos: { desde: string; hasta: string }, ctx: z.RefinementCtx) {
+  if (datos.hasta < datos.desde) {
+    ctx.addIssue({ code: 'custom', message: MENSAJE_RANGO_INVERTIDO, path: ['hasta'] })
+  }
+}
+
+/**
+ * Query de `GET /pagos`: período por fecha de pago (obligatorio, sin tope de días), filtros
+ * opcionales y paginación. Un alumno, una materia o un profesor que no existen dan una lista vacía,
+ * sin 404.
+ */
+export const listarPagosQuerySchema = paginacionQuerySchema
+  .extend({
+    desde: fechaISO.openapi({
+      param: { name: 'desde', in: 'query' },
+      description: 'Primer día del período, por fecha de pago, incluido (YYYY-MM-DD)',
+      example: '2026-10-01',
+    }),
+    hasta: fechaISO.openapi({
+      param: { name: 'hasta', in: 'query' },
+      description:
+        'Último día del período, por fecha de pago, incluido (YYYY-MM-DD). No puede ser anterior a `desde`',
+      example: '2026-10-31',
+    }),
+    alumnoId: idQuery('alumnoId', 'Sólo los pagos de este alumno', 12),
+    materiaId: idQuery('materiaId', 'Sólo los pagos con algún turno de esta materia', 2),
+    profesorId: idQuery(
+      'profesorId',
+      'Sólo los pagos con algún turno de este profesor (con `materiaId`, el mismo turno)',
+      3,
+    ),
+    formaPago: z
+      .enum(FORMAS_PAGO, {
+        error: 'La forma de pago tiene que ser EFECTIVO, TRANSFERENCIA o DEBITO',
+      })
+      .optional()
+      .openapi({
+        param: { name: 'formaPago', in: 'query' },
+        description: 'Sólo los pagos de esta forma de pago, por su código',
+        example: 'TRANSFERENCIA',
+      }),
+  })
+  .superRefine(periodoEnOrden)
+
+export type ListarPagosQuery = z.infer<typeof listarPagosQuerySchema>
+
+/** Query de `GET /pagos/mis-pagos`: sólo la paginación (el alumno sale de la sesión). */
+export const misPagosQuerySchema = paginacionQuerySchema
+
+export type MisPagosQuery = z.infer<typeof misPagosQuerySchema>
+
+const formaPagoSalida = z
+  .object({ codigo: z.enum(FORMAS_PAGO), nombre: z.string() })
+  .openapi({ description: 'La forma de pago: su código fijo y su nombre para mostrar' })
+
+const materiasDelPago = z.array(referencia).openapi({
+  description: 'Las materias distintas de sus turnos, por nombre',
+})
+
+/** Un pago del listado de pagos realizados (HU-36): vigente o anulado, marcado con su estado. */
+export const pagoRealizadoSchema = z
+  .object({
+    id: z.number().int(),
+    numeroComprobante: z.number().int(),
+    fechaPago: fechaISO,
+    alumno: persona,
+    materias: materiasDelPago,
+    cantidad: z.number().int().openapi({ description: 'Turnos que incluye', example: 2 }),
+    total: z.number(),
+    formaPago: formaPagoSalida,
+    registradoPor: usuarioAuditoriaSchema,
+    estado: z.enum(['VIGENTE', 'ANULADO']),
+    anulacion: z
+      .object({ motivo: z.enum(MOTIVOS_ANULACION), detalle: z.string().nullable() })
+      .nullable()
+      .openapi({ description: 'Motivo y detalle si el pago está anulado; `null` si está vigente' }),
+  })
+  .openapi('PagoRealizado')
+
+export type PagoRealizado = z.infer<typeof pagoRealizadoSchema>
+
+/** Lo cobrado por cada forma de pago, en pesos. */
+const porFormaSchema = z
+  .object({ EFECTIVO: z.number(), TRANSFERENCIA: z.number(), DEBITO: z.number() })
+  .openapi('CobradoPorForma')
+
+/**
+ * Totales de **todo** el filtro, no de la página, y sólo de los pagos vigentes: un anulado se
+ * lista pero no suma. `cobrado` es la suma de las tres formas.
+ */
+export const totalesPagosSchema = z
+  .object({ cobrado: z.number(), porForma: porFormaSchema })
+  .openapi('TotalesPagos')
+
+export type TotalesPagos = z.infer<typeof totalesPagosSchema>
+
+/** Respuesta de `GET /pagos`: el listado paginado más `totales`, junto a `data` y `meta`. */
+export const listadoPagosSchema = paginatedSchema(pagoRealizadoSchema).extend({
+  totales: totalesPagosSchema,
+})
+
+export type ListadoPagos = z.infer<typeof listadoPagosSchema>
+
+/**
+ * Un pago del alumno de la sesión (HU-37). Sin quién lo registró, el adjunto, el alumno, las
+ * observaciones ni el motivo de la anulación.
+ */
+export const miPagoSchema = z
+  .object({
+    id: z.number().int(),
+    numeroComprobante: z.number().int(),
+    fechaPago: fechaISO,
+    materias: materiasDelPago,
+    cantidad: z.number().int(),
+    total: z.number(),
+    formaPago: formaPagoSalida,
+    estado: z.enum(['VIGENTE', 'ANULADO']),
+  })
+  .openapi('MiPago')
+
+export type MiPago = z.infer<typeof miPagoSchema>
+
+/** Respuesta de `GET /pagos/mis-pagos`. */
+export const misPagosSchema = paginatedSchema(miPagoSchema)
+
+export type MisPagos = z.infer<typeof misPagosSchema>
 
 /** El medio de un pago, ya validado: cada forma de pago con sus datos y sólo con ellos (HU-23). */
 export type MedioPago =

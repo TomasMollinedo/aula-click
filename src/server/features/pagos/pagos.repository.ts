@@ -1,7 +1,7 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
-import { vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import { ultimoAdjunto, vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
 import {
   bloquearAlumno,
   leerOcurrencias,
@@ -10,8 +10,21 @@ import {
 import type { Actor } from '@/server/shared/actor'
 import { SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate, type Reloj } from '@/server/shared/fechas'
+import {
+  armarMeta,
+  calcularSkipTake,
+  type MetaPaginacion,
+  type PaginacionQuery,
+} from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
 import {
+  pagosDelFiltro,
+  totalCobradoPorForma,
+  type FiltroPagos,
+  type TotalesPorForma,
+} from './pagos.condiciones'
+import {
+  agruparPorMateria,
   CODIGO_TURNOS_NO_COBRABLES,
   errorFormasDePago,
   MENSAJE_YA_PAGADO_CONCURRENTE,
@@ -19,10 +32,13 @@ import {
   type SnapshotPago,
 } from './pagos.reglas'
 import type {
+  AdjuntoDelPago,
   ComprobanteGuardado,
   EntradaPago,
   MedioPago,
+  MiPago,
   OcurrenciaPedida,
+  PagoRealizado,
 } from './pagos.validation'
 
 // Único lugar de la feature que usa Prisma. Sin reglas de negocio: qué se puede cobrar y cuánto lo
@@ -181,6 +197,71 @@ const SELECT_COMPROBANTE = {
   },
 } satisfies Prisma.PagoSelect
 
+/**
+ * Lo que muestra un pago en "Mis pagos" (HU-37): sin quién lo registró, el alumno, las
+ * observaciones ni la anulación, que ni se leen.
+ */
+const SELECT_MI_PAGO = {
+  id: true,
+  numeroComprobante: true,
+  fechaPago: true,
+  importeTotal: true,
+  estado: true,
+  formaPago: { select: { tipoFormaPago: true, nombre: true } },
+  turnos: { select: { turno: { select: { materia: { select: { id: true, nombre: true } } } } } },
+} satisfies Prisma.PagoSelect
+
+/** Un pago de los pagos realizados (HU-36): lo de "Mis pagos" más el alumno, la auditoría y la anulación. */
+const SELECT_PAGO_REALIZADO = {
+  ...SELECT_MI_PAGO,
+  alumno: { select: { id: true, nombre: true, apellido: true } },
+  createdBy: { select: SELECT_USUARIO_AUDITORIA },
+  anulacion: { select: { motivo: true, detalle: true } },
+} satisfies Prisma.PagoSelect
+
+/** Del más reciente al más antiguo, con el `id` de desempate (convenciones-backend.md → Paginación). */
+const ORDEN_PAGOS = [
+  { fechaPago: 'desc' },
+  { id: 'desc' },
+] as const satisfies Prisma.PagoOrderByWithRelationInput[]
+
+/**
+ * Un pago listado: las materias distintas de sus turnos, por nombre (con `agruparPorMateria`, el
+ * mismo orden que el comprobante), y la cantidad de turnos. Es la base de `aPagoRealizado`.
+ */
+function aMiPago(fila: Prisma.PagoGetPayload<{ select: typeof SELECT_MI_PAGO }>): MiPago {
+  const codigo = fila.formaPago.tipoFormaPago
+  if (codigo === null) throw errorFormasDePago()
+  const materias = agruparPorMateria(
+    fila.turnos.map((pt) => ({ materia: pt.turno.materia, importe: null })),
+  ).map((grupo) => grupo.materia)
+  return {
+    id: fila.id,
+    numeroComprobante: fila.numeroComprobante,
+    fechaPago: dateAFecha(fila.fechaPago),
+    materias,
+    cantidad: fila.turnos.length,
+    total: fila.importeTotal.toNumber(),
+    formaPago: { codigo, nombre: fila.formaPago.nombre },
+    estado: fila.estado,
+  }
+}
+
+function aPagoRealizado(
+  fila: Prisma.PagoGetPayload<{ select: typeof SELECT_PAGO_REALIZADO }>,
+): PagoRealizado {
+  return {
+    ...aMiPago(fila),
+    alumno: fila.alumno,
+    registradoPor: {
+      id: fila.createdBy.id,
+      nombre: fila.createdBy.nombre,
+      apellido: fila.createdBy.apellido,
+    },
+    anulacion: fila.anulacion && { motivo: fila.anulacion.motivo, detalle: fila.anulacion.detalle },
+  }
+}
+
 export const pagosRepository = {
   /**
    * Snapshot para el chequeo previo del service, **sin lock**: sólo sirve para dar errores claros
@@ -337,6 +418,71 @@ export const pagosRepository = {
       },
       registradoEl: fila.createdAt.toISOString(),
     }
+  },
+
+  /**
+   * Pagos realizados del filtro (HU-36), vigentes y anulados (`pagosDelFiltro`), del más reciente
+   * al más antiguo y paginados, con lo cobrado por forma de **todo** el filtro, sin los anulados
+   * (`totalCobradoPorForma`, la misma definición que el tablero). Cantidad fija de consultas: la
+   * página y el `count` en una transacción, y la suma por forma y el código de las formas.
+   */
+  async listarRealizados(
+    filtro: FiltroPagos,
+    paginacion: PaginacionQuery,
+  ): Promise<{ data: PagoRealizado[]; meta: MetaPaginacion; porForma: TotalesPorForma }> {
+    const where = pagosDelFiltro(filtro)
+    const [[filas, total], porForma] = await Promise.all([
+      prisma.$transaction([
+        prisma.pago.findMany({
+          where,
+          select: SELECT_PAGO_REALIZADO,
+          orderBy: [...ORDEN_PAGOS],
+          ...calcularSkipTake(paginacion),
+        }),
+        prisma.pago.count({ where }),
+      ]),
+      totalCobradoPorForma(prisma, filtro),
+    ])
+    return { data: filas.map(aPagoRealizado), meta: armarMeta(paginacion, total), porForma }
+  },
+
+  /**
+   * Los pagos del alumno (HU-37), vigentes y anulados, con el mismo orden que `listarRealizados`
+   * y paginados. No lee quién lo registró, el alumno, las observaciones ni la anulación.
+   */
+  async listarDelAlumno(
+    alumnoId: number,
+    paginacion: PaginacionQuery,
+  ): Promise<{ data: MiPago[]; meta: MetaPaginacion }> {
+    const where = { alumnoId }
+    const [filas, total] = await prisma.$transaction([
+      prisma.pago.findMany({
+        where,
+        select: SELECT_MI_PAGO,
+        orderBy: [...ORDEN_PAGOS],
+        ...calcularSkipTake(paginacion),
+      }),
+      prisma.pago.count({ where }),
+    ])
+    return { data: filas.map(aMiPago), meta: armarMeta(paginacion, total) }
+  },
+
+  /**
+   * El último comprobante adjunto activo del pago (`ultimoAdjunto`, de `adjuntos`), sin la clave
+   * del archivo: la URL la da `GET /adjuntos/pagos/{pagoId}`. `null` si no tiene. Una consulta.
+   */
+  async buscarAdjunto(pagoId: number): Promise<AdjuntoDelPago | null> {
+    const adjunto = await ultimoAdjunto(prisma, pagoId)
+    return (
+      adjunto && {
+        id: adjunto.id,
+        nombre: adjunto.nombre,
+        tipo: adjunto.tipo,
+        bytes: adjunto.bytes,
+        adjuntadoPor: adjunto.adjuntadoPor,
+        adjuntadoEl: adjunto.adjuntadoEl,
+      }
+    )
   },
 }
 

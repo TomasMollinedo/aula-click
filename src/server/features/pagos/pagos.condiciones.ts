@@ -1,3 +1,4 @@
+import type { Prisma } from '@/generated/prisma/client'
 import type { ClienteOcurrencias } from '@/server/features/turnos/ocurrencias.condiciones'
 import { SELECT_USUARIO_AUDITORIA, type UsuarioAuditoria } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
@@ -14,7 +15,8 @@ import type { CodigoFormaPago } from './pagos.validation'
 // - `ocurrencias`: el detalle de un turno ofrece "Registrar pago" con ese mismo tope y, si ya está
 //   pagado, muestra los datos de su pago (`leerPagoDeOcurrencia`).
 // - `tablero` (T-61): el total cobrado en un período (`totalCobradoEntre`) y, por forma de pago,
-//   para los pagos realizados (T-98) y el tablero (T-112): `totalCobradoPorForma`.
+//   para los pagos realizados (T-98) y el tablero (T-112): `totalCobradoPorForma`, con el filtro de
+//   los pagos realizados (`FiltroPagos`; el tablero pasa sólo el período).
 // - `cuentas` (T-101): la cuenta del portal agrupada por materia con el mismo agrupado que el
 //   comprobante (`agruparPorMateria`).
 // - `anulaciones` (T-104): el pago a anular con sus turnos (`leerPagoParaAnular`) y los otros pagos
@@ -72,19 +74,53 @@ export async function leerPagoDeOcurrencia(
 type Periodo = { desde: string; hasta: string }
 
 /**
- * Lo cobrado en el período: los pagos `VIGENTE` (un anulado no cuenta, HU-42) por su **fecha de
- * pago** (`fechaPago`, no `createdAt`). El mismo filtro para el total y para el total por forma.
+ * El filtro de los pagos realizados (HU-36): el período por **fecha de pago** (`fechaPago`, no
+ * `createdAt`) y, si vienen, el alumno, la materia y el profesor de algún turno (los dos sobre el
+ * **mismo** turno) y la forma de pago por su código (nunca por el nombre). Un `Periodo` solo ya es
+ * un filtro: así lo pasa el tablero (T-61, T-112).
  */
-function cobradosEntre({ desde, hasta }: Periodo) {
+export type FiltroPagos = Periodo & {
+  alumnoId?: number
+  materiaId?: number
+  profesorId?: number
+  formaPago?: CodigoFormaPago
+}
+
+/**
+ * El `where` de los pagos del filtro, **vigentes y anulados**: el que lista `GET /pagos`. Sin
+ * claves `undefined`: con sólo el período es `{ fechaPago }`.
+ */
+export function pagosDelFiltro({
+  desde,
+  hasta,
+  alumnoId,
+  materiaId,
+  profesorId,
+  formaPago,
+}: FiltroPagos): Prisma.PagoWhereInput {
+  const turno: Prisma.TurnoWhereInput = {
+    ...(materiaId !== undefined ? { materiaId } : {}),
+    ...(profesorId !== undefined ? { bloqueAgenda: { profesorId } } : {}),
+  }
   return {
-    estado: 'VIGENTE' as const,
     fechaPago: { gte: fechaADate(desde), lte: fechaADate(hasta) },
+    ...(alumnoId !== undefined ? { alumnoId } : {}),
+    ...(Object.keys(turno).length > 0 ? { turnos: { some: { turno } } } : {}),
+    ...(formaPago !== undefined ? { formaPago: { tipoFormaPago: formaPago } } : {}),
   }
 }
 
 /**
+ * Lo cobrado: los pagos del filtro que están `VIGENTE` (un anulado no cuenta, HU-42). La única
+ * definición: la usan el total, el total por forma y los totales de `GET /pagos`.
+ */
+function cobrados(filtro: FiltroPagos): Prisma.PagoWhereInput {
+  return { estado: 'VIGENTE', ...pagosDelFiltro(filtro) }
+}
+
+/**
  * Total cobrado en `[desde, hasta]` (`YYYY-MM-DD`, extremos incluidos): la suma de `importeTotal`
- * de los pagos `VIGENTE` por su fecha de pago (`cobradosEntre`), en pesos; 0 si no hay ninguno.
+ * de los pagos `VIGENTE` por su fecha de pago (`cobrados`), en pesos; 0 si no hay ninguno.
  * Una consulta. Lo usa el tablero del gerente (T-61).
  */
 export async function totalCobradoEntre(
@@ -92,7 +128,7 @@ export async function totalCobradoEntre(
   periodo: Periodo,
 ): Promise<number> {
   const { _sum } = await client.pago.aggregate({
-    where: cobradosEntre(periodo),
+    where: cobrados(periodo),
     _sum: { importeTotal: true },
   })
   // La base suma en `Decimal`, que es exacto: no hay error de coma flotante que acumular.
@@ -103,20 +139,22 @@ export async function totalCobradoEntre(
 export type TotalesPorForma = Record<CodigoFormaPago, number>
 
 /**
- * Total cobrado en `[desde, hasta]` por forma de pago (HU-36, HU-41): `{ EFECTIVO, TRANSFERENCIA,
- * DEBITO }`, con el mismo filtro que `totalCobradoEntre` (sólo pagos `VIGENTE`, por fecha de pago),
- * así la suma de las tres es ese total. Dos consultas: la suma por `formaPagoId` en la base y el
- * código de esas formas (la forma se decide por su código, nunca por el nombre). Una forma de pago
- * con pagos y sin código → 500 (falta el seed, decisión T-134).
+ * Total cobrado del filtro por forma de pago (HU-36, HU-39): `{ EFECTIVO, TRANSFERENCIA, DEBITO }`,
+ * sólo con pagos `VIGENTE` (`cobrados`). Con sólo el período es el mismo filtro que
+ * `totalCobradoEntre`, así la suma de las tres es ese total; con más filtros, son los pagos que
+ * lista `GET /pagos` sin los anulados (con materia o profesor, el total completo de cada pago). Dos
+ * consultas: la suma por `formaPagoId` en la base y el código de esas formas (la forma se decide
+ * por su código, nunca por el nombre). Una forma de pago con pagos y sin código → 500 (falta el
+ * seed, decisión T-134).
  */
 export async function totalCobradoPorForma(
   client: ClienteOcurrencias,
-  periodo: Periodo,
+  filtro: FiltroPagos,
 ): Promise<TotalesPorForma> {
   const totales: TotalesPorForma = { EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 }
   const grupos = await client.pago.groupBy({
     by: ['formaPagoId'],
-    where: cobradosEntre(periodo),
+    where: cobrados(filtro),
     _sum: { importeTotal: true },
   })
   if (grupos.length === 0) return totales
