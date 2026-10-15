@@ -130,14 +130,63 @@ export function ordenarPorFecha(sel: Seleccion): OcurrenciaACobrar[] {
   )
 }
 
+/**
+ * El máximo de turnos de un pago: `POST /pagos` rechaza más (400 en `ocurrencias`;
+ * docs/contrato-api.md → Pagos). La barra avisa antes de abrir el diálogo, sin reemplazar esa
+ * validación.
+ */
+export const MAX_TURNOS_POR_PAGO = 200
+
+export type SubtotalDeMateria = {
+  materia: { id: number; nombre: string }
+  cantidad: number
+  /** Suma de los importes de la API, o `null` si alguno no tiene precio. */
+  total: number | null
+}
+
+/**
+ * Lo tildado por materia (por nombre y, si se repite, por id), con la cantidad y el subtotal de
+ * cada una: el detalle de la barra cuando hay más de una materia (HU-25).
+ */
+export function subtotalesPorMateria(sel: Seleccion): SubtotalDeMateria[] {
+  const grupos = new Map<
+    number,
+    { materia: SubtotalDeMateria['materia']; importes: (number | null)[] }
+  >()
+  for (const o of sel.values()) {
+    const grupo = grupos.get(o.materia.id) ?? { materia: o.materia, importes: [] }
+    grupo.importes.push(o.importe)
+    grupos.set(o.materia.id, grupo)
+  }
+  return [...grupos.values()]
+    .map(({ materia, importes }) => ({
+      materia,
+      cantidad: importes.length,
+      total: sumarImportes(importes).total,
+    }))
+    .sort(
+      (a, b) =>
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
+    )
+}
+
 export type ResumenSeleccion = {
   cantidad: number
   /** Suma de los importes de la API, o `null` si alguno no tiene precio. */
   total: number | null
   sinPrecio: number
+  /** El subtotal de cada materia tildada (`subtotalesPorMateria`). */
+  porMateria: SubtotalDeMateria[]
 }
 
-/** Cantidad y total de lo tildado, con los importes que mandó la API (`sumarImportes`). */
+/**
+ * Cantidad, total y subtotal por materia de lo tildado, con los importes que mandó la API
+ * (`sumarImportes`).
+ */
 export function resumenSeleccion(sel: Seleccion): ResumenSeleccion {
-  return { cantidad: sel.size, ...sumarImportes([...sel.values()].map((o) => o.importe)) }
+  return {
+    cantidad: sel.size,
+    ...sumarImportes([...sel.values()].map((o) => o.importe)),
+    porMateria: subtotalesPorMateria(sel),
+  }
 }

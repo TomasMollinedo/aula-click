@@ -10,7 +10,8 @@ import {
   textoPeriodo,
   textoSinPrecio,
   textoTotalAPagar,
-  textoTurnosSeleccionados,
+  textoCantidadDeTurnos,
+  avisoMaximoDeTurnos,
   textoSinFilas,
   textoMaterias,
   textoSeleccionTodo,
@@ -23,10 +24,21 @@ const SEPTIEMBRE = { desde: '2026-09-01', hasta: '2026-09-30' }
 // Intl separa el `$` del número con un espacio duro (U+00A0).
 const NBSP = ' '
 
-describe('textoTurnosSeleccionados', () => {
+describe('textoCantidadDeTurnos', () => {
   it('singular y plural', () => {
-    expect(textoTurnosSeleccionados(1)).toBe('1 turno seleccionado')
-    expect(textoTurnosSeleccionados(4)).toBe('4 turnos seleccionados')
+    expect(textoCantidadDeTurnos(1)).toBe('1 turno')
+    expect(textoCantidadDeTurnos(8)).toBe('8 turnos')
+  })
+})
+
+describe('avisoMaximoDeTurnos', () => {
+  it('hasta el máximo, sin aviso', () => {
+    expect(avisoMaximoDeTurnos(200, 200)).toBeNull()
+    expect(avisoMaximoDeTurnos(3, 200)).toBeNull()
+  })
+
+  it('pasado el máximo, cuántos destildar', () => {
+    expect(avisoMaximoDeTurnos(212, 200)).toBe('Un pago puede tener hasta 200 turnos: destildá 12')
   })
 })
 

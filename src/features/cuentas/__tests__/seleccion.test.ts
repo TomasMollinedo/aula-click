@@ -4,6 +4,7 @@ import { aCobrar } from '../a-cobrar'
 import {
   SELECCION_VACIA,
   estadoSeleccionarTodo,
+  subtotalesPorMateria,
   alternar,
   estaSeleccionada,
   ordenarComoSeMuestran,
@@ -199,17 +200,56 @@ describe('ordenarPorFecha', () => {
   })
 })
 
+describe('subtotalesPorMateria', () => {
+  const fila = (
+    turnoId: number,
+    fecha: string,
+    materia: { id: number; nombre: string },
+    importe: number | null,
+  ) => ({ ...CUENTA.adeudados[0], turnoId, fecha, materia, importe })
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const INGLES = { id: 5, nombre: 'Inglés' }
+
+  it('una entrada por materia, por nombre, con su cantidad y subtotal', () => {
+    const sel = seleccionarTodos(SELECCION_VACIA, [
+      fila(41, '2026-09-21', MATEMATICA, 8000),
+      fila(52, '2026-09-22', INGLES, 9000),
+      fila(41, '2026-09-28', MATEMATICA, 8000.5),
+    ])
+
+    expect(subtotalesPorMateria(sel)).toEqual([
+      { materia: INGLES, cantidad: 1, total: 9000 },
+      { materia: MATEMATICA, cantidad: 2, total: 16000.5 },
+    ])
+  })
+
+  it('una materia con un turno sin precio queda sin subtotal', () => {
+    const sel = seleccionarTodos(SELECCION_VACIA, [
+      fila(41, '2026-09-21', MATEMATICA, 8000),
+      fila(41, '2026-09-28', MATEMATICA, null),
+    ])
+
+    expect(subtotalesPorMateria(sel)).toEqual([{ materia: MATEMATICA, cantidad: 2, total: null }])
+  })
+
+  it('vacía: sin materias', () => {
+    expect(subtotalesPorMateria(SELECCION_VACIA)).toEqual([])
+  })
+})
+
 describe('resumenSeleccion', () => {
-  it('cantidad y total con los importes de la API', () => {
-    expect(resumenSeleccion(seleccionarTodos(SELECCION_VACIA, MOSTRADA))).toEqual({
+  it('cantidad y total con los importes de la API, y el subtotal por materia', () => {
+    const sel = seleccionarTodos(SELECCION_VACIA, MOSTRADA)
+    expect(resumenSeleccion(sel)).toEqual({
       cantidad: 4,
       total: 33000,
       sinPrecio: 0,
+      porMateria: subtotalesPorMateria(sel),
     })
   })
 
   it('con decimales', () => {
-    expect(resumenSeleccion(seleccionarTodos(SELECCION_VACIA, ADEUDADOS.data))).toEqual({
+    expect(resumenSeleccion(seleccionarTodos(SELECCION_VACIA, ADEUDADOS.data))).toMatchObject({
       cantidad: 2,
       total: 17000.5,
       sinPrecio: 0,
@@ -218,10 +258,15 @@ describe('resumenSeleccion', () => {
 
   it('con un importe null: sin total', () => {
     const sel = seleccionarTodos(SELECCION_VACIA, [ADEUDADO_21, { ...PROXIMO_07, importe: null }])
-    expect(resumenSeleccion(sel)).toEqual({ cantidad: 2, total: null, sinPrecio: 1 })
+    expect(resumenSeleccion(sel)).toMatchObject({ cantidad: 2, total: null, sinPrecio: 1 })
   })
 
   it('vacía', () => {
-    expect(resumenSeleccion(SELECCION_VACIA)).toEqual({ cantidad: 0, total: 0, sinPrecio: 0 })
+    expect(resumenSeleccion(SELECCION_VACIA)).toEqual({
+      cantidad: 0,
+      total: 0,
+      sinPrecio: 0,
+      porMateria: [],
+    })
   })
 })
