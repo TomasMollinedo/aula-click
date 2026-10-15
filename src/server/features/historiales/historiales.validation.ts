@@ -158,6 +158,30 @@ export const historialQuerySchema = z.object({
 
 export type HistorialQuery = z.infer<typeof historialQuerySchema>
 
+// ---------------------------------------------------------------------------------------------
+// GET /historiales/alumnos/{alumnoId}/pdf?mes&materiaId&profesorId (HU-32, T-110)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * El documento es **de un mes** (no de un rango): `mes` reemplaza a `desde`/`hasta`, con los mismos
+ * filtros de materia y profesor que el historial de la ficha.
+ */
+export const historialPdfQuerySchema = z.object({
+  mes: mesISO.optional().openapi({
+    param: { name: 'mes', in: 'query' },
+    description: 'Mes del documento (AAAA-MM). Por defecto, el mes en curso',
+    example: '2026-10',
+  }),
+  materiaId: idPositivo('Sólo las clases y los exámenes de esta materia', 3)
+    .optional()
+    .openapi({ param: { name: 'materiaId', in: 'query' } }),
+  profesorId: idPositivo('Sólo las clases con este profesor (el del bloque)', 4)
+    .optional()
+    .openapi({ param: { name: 'profesorId', in: 'query' } }),
+})
+
+export type HistorialPdfQuery = z.infer<typeof historialPdfQuerySchema>
+
 /** Materias y profesores del **historial completo** del alumno, para los filtros de la pantalla. */
 const opcionesSchema = z
   .object({

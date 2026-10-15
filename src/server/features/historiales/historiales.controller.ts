@@ -1,9 +1,14 @@
 import type { RouteHandler } from '@hono/zod-openapi'
 import { alumnosRepository } from '@/server/features/alumnos/alumnos.repository'
+import { encabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
 import { profesoresRepository } from '@/server/features/profesores/profesores.repository'
 import type { AppEnv } from '@/server/router'
+import { respuestaPdf } from '@/server/shared/pdf/respuesta'
+import { nombreArchivoHistorial } from './historiales.documentos'
+import { renderizarHistorialPdf } from './historiales.pdf'
 import { historialesRepository } from './historiales.repository'
 import type {
+  historialDelAlumnoPdfRoute,
   historialDelAlumnoRoute,
   miMateriaRoute,
   misMateriasRoute,
@@ -30,6 +35,24 @@ export const historialDelAlumno: RouteHandler<typeof historialDelAlumnoRoute, Ap
     await historialesService.obtenerDelAlumno(alumnoId, c.req.valid('query'), c.get('actor')),
     200,
   )
+}
+
+/**
+ * El historial del mes en PDF (HU-32): el mismo cálculo del historial, con el encabezado oficial y
+ * los headers comunes de los documentos.
+ */
+export const historialDelAlumnoPdf: RouteHandler<
+  typeof historialDelAlumnoPdfRoute,
+  AppEnv
+> = async (c) => {
+  const { alumnoId } = c.req.valid('param')
+  const documento = await historialesService.historialParaDocumento(alumnoId, c.req.valid('query'))
+  const pdf = await renderizarHistorialPdf({
+    documento,
+    ...encabezadoDeDocumento(c.get('user')),
+  })
+  const { cuerpo, headers } = respuestaPdf(pdf, nombreArchivoHistorial(documento))
+  return c.body(cuerpo, 200, headers)
 }
 
 /** Portal (HU-33): el alumno sale del actor de la sesión. */

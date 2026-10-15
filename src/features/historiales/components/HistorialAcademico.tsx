@@ -20,6 +20,7 @@ import type { OpcionesDelHistorial } from '../historiales.types'
 import { useFiltrosHistorial } from '../hooks/use-filtros-historial'
 import { useHistorialDelAlumno } from '../hooks/use-historial-del-alumno'
 import { BarraFiltrosHistorial } from './BarraFiltrosHistorial'
+import { BotonPdfHistorial } from './BotonPdfHistorial'
 import { GrupoHistorial } from './GrupoHistorial'
 
 const SIN_OPCIONES: OpcionesDelHistorial = { materias: [], profesores: [] }
@@ -27,8 +28,9 @@ const SIN_OPCIONES: OpcionesDelHistorial = { materias: [], profesores: [] }
 export type HistorialAcademicoProps = {
   alumnoId: number
   /**
-   * Rol de quien mira. Hoy la pestaña es igual para mesa de entradas y profesor (sólo lectura en
-   * los dos, HU-31); lo usa T-110 para el botón "Generar PDF", que es de mesa de entradas (HU-32).
+   * Rol de quien mira. La pestaña es igual para mesa de entradas y profesor (sólo lectura en los
+   * dos, HU-31); lo único que cambia es el botón "Generar PDF", que sólo ve mesa de entradas
+   * (HU-32: el endpoint del documento también es sólo de ese rol).
    */
   rol: Role
   /**
@@ -61,8 +63,7 @@ function HistorialCargando() {
  * Pestaña "Historial académico" de la ficha del alumno (HU-31): las clases del período agrupadas
  * por materia y profesor, cada grupo con su resumen y sus bloques de **horas seguidas**. Los
  * filtros (un mes —mes y año—, por defecto el actual, o un rango, más materia y profesor) viven en
- * la URL junto
- * al `?tab=` de la ficha.
+ * la URL junto al `?tab=` de la ficha.
  *
  * **La pantalla sólo pinta lo que manda la API** (T-108): el estado de cada hora, su plazo o su
  * cierre por el sistema, el porcentaje, qué textos van una sola vez y el orden de los grupos y de
@@ -71,8 +72,11 @@ function HistorialCargando() {
  *
  * El clic en una clase navega a `?detalle=&fecha=`; quién monta el modal lo decide `app/` con
  * `renderDetalle` (ver sus props).
+ *
+ * Mesa de entradas tiene además "Generar PDF" junto a los filtros (HU-32), con el mes y los filtros
+ * que se están viendo; el profesor no lo ve.
  */
-export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademicoProps) {
+export function HistorialAcademico({ alumnoId, rol, renderDetalle }: HistorialAcademicoProps) {
   const id = useId()
   const { filtros, hoy, cambiar, elegirOpcion, elegirMes, elegirAnio, cambiarRango, limpiar } =
     useFiltrosHistorial()
@@ -105,6 +109,12 @@ export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademi
           errores={error?.tipo === 'filtros' ? error.campos : undefined}
           errorGeneral={error?.tipo === 'filtros' ? error.mensaje : null}
         />
+
+        {rol === 'MESA_ENTRADAS' && (
+          <div className="flex justify-end">
+            <BotonPdfHistorial alumnoId={alumnoId} filtros={filtros} />
+          </div>
+        )}
       </Card>
 
       {query.isPending ? (

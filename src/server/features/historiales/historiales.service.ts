@@ -4,6 +4,11 @@ import type { ProfesoresRepository } from '@/server/features/profesores/profesor
 import { alumnoDeLaSesion, type Actor } from '@/server/shared/actor'
 import { hoy, sumarDias, type Reloj } from '@/server/shared/fechas'
 import { mesDe } from '@/server/shared/zod'
+import {
+  canceladosDeLosGrupos,
+  type FiltrosDelDocumento,
+  type HistorialDocumento,
+} from './historiales.documentos'
 import type { HistorialesRepository, Ocurrencia } from './historiales.repository'
 import {
   HORIZONTE_PROXIMO_TURNO,
@@ -19,6 +24,7 @@ import {
 import type {
   GrupoDelHistorial,
   HistorialDelAlumno,
+  HistorialPdfQuery,
   HistorialQuery,
   MiMateria,
   MiMateriaQuery,
@@ -126,6 +132,33 @@ export function crearHistorialesService({
       },
       reloj,
     )
+  }
+
+  /**
+   * Los filtros con los que se pidió el PDF, con el **nombre** de la materia y del profesor para
+   * que la hoja diga qué se está viendo. Los nombres salen del historial **completo** del alumno
+   * (las mismas `opciones` de la pantalla), así se encuentran también en un mes sin clases; sin
+   * filtros no se consulta nada.
+   */
+  async function filtrosDelDocumento(
+    alumnoId: number,
+    query: Pick<HistorialPdfQuery, 'materiaId' | 'profesorId'>,
+    fechaHoy: string,
+  ): Promise<FiltrosDelDocumento> {
+    const materiaId = query.materiaId ?? null
+    const profesorId = query.profesorId ?? null
+    if (materiaId === null && profesorId === null) {
+      return { materiaId, profesorId, materia: null, profesor: null }
+    }
+    const opciones = opcionesDeLosGrupos(await historialCompleto(alumnoId, fechaHoy))
+    const materia = opciones.materias.find((m) => m.id === materiaId)
+    const profesor = opciones.profesores.find((p) => p.id === profesorId)
+    return {
+      materiaId,
+      profesorId,
+      materia: materia?.nombre ?? null,
+      profesor: profesor ? { nombre: profesor.nombre, apellido: profesor.apellido } : null,
+    }
   }
 
   return {
@@ -249,6 +282,58 @@ export function crearHistorialesService({
         // de las horas del mes.
         resumen: resumirHoras(delMes),
         bloques: bloquesDelPortal(grupo?.bloques ?? []),
+      }
+    },
+
+    /**
+     * Lo que va en el PDF del historial académico (HU-32, T-110), de **un mes**: el alumno con su
+     * nivel de escolaridad, el mes y los filtros, los grupos del historial, los turnos cancelados
+     * del mes y sus exámenes.
+     *
+     * Reusa `armarHistorial`, la misma función que la ficha y el portal: los grupos, su resumen y
+     * sus bloques de horas seguidas salen idénticos a los de la pantalla. Por defecto, el mes en
+     * curso (como "Mis materias"). Los cancelados salen de esos mismos grupos (`canceladosDeLosGrupos`),
+     * no de una segunda lectura del motor. Un alumno inexistente es 404, como en `obtenerDelAlumno`.
+     *
+     * El filtro de materia también se aplica a los exámenes (`materiaIds`); el de profesor no, porque
+     * un examen es del alumno y de la materia, no de un profesor. Sin observaciones internas.
+     */
+    async historialParaDocumento(
+      alumnoId: number,
+      query: HistorialPdfQuery,
+    ): Promise<HistorialDocumento> {
+      const fechaHoy = hoy(reloj)
+      const mes = query.mes ?? mesDe(fechaHoy)
+      const { desde, hasta } = rangoDelMes(mes)
+
+      const alumno = await alumnosRepository.buscarPorId(alumnoId)
+      if (!alumno) throw new NotFoundError(MENSAJE_ALUMNO_NO_ENCONTRADO)
+
+      const grupos = await armarHistorial(
+        { alumnoId, desde, hasta, materiaId: query.materiaId, profesorId: query.profesorId },
+        fechaHoy,
+      )
+      const examenes = await repository.leerExamenesDelPeriodo({
+        alumnoId,
+        desde,
+        hasta,
+        ...(query.materiaId !== undefined && { materiaIds: [query.materiaId] }),
+      })
+
+      return {
+        alumno: {
+          nombre: alumno.nombre,
+          apellido: alumno.apellido,
+          dni: alumno.dni,
+          nivelEscolaridad: alumno.nivelEscolaridad,
+        },
+        mes,
+        desde,
+        hasta,
+        filtros: await filtrosDelDocumento(alumnoId, query, fechaHoy),
+        grupos,
+        cancelados: canceladosDeLosGrupos(grupos),
+        examenes,
       }
     },
   }
