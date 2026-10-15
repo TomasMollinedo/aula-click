@@ -12,9 +12,29 @@ import type { ResumenSeleccion } from './seleccion'
 
 type Periodo = Pick<FiltrosCuenta, 'desde' | 'hasta'>
 
-/** `'1 turno seleccionado'` / `'4 turnos seleccionados'`. */
-export function textoTurnosSeleccionados(cantidad: number): string {
-  return cantidad === 1 ? '1 turno seleccionado' : `${cantidad} turnos seleccionados`
+/** `'1 turno'` / `'8 turnos'`: la cantidad de lo tildado, junto al total (`'8 turnos · $ …'`). */
+export function textoCantidadDeTurnos(cantidad: number): string {
+  return cantidad === 1 ? '1 turno' : `${cantidad} turnos`
+}
+
+/**
+ * El aviso de una selección que no entra en un pago: `'Un pago puede tener hasta 200 turnos:
+ * destildá 12'`. Con `MAX_TURNOS_POR_PAGO` o menos, `null`.
+ */
+export function avisoMaximoDeTurnos(cantidad: number, maximo: number): string | null {
+  return cantidad > maximo
+    ? `Un pago puede tener hasta ${maximo} turnos: destildá ${cantidad - maximo}`
+    : null
+}
+
+/**
+ * La aclaración de "Seleccionar todo": `'Se seleccionaron los 12 turnos del filtro'` (o, con uno
+ * solo, `'Se seleccionó el turno del filtro'`).
+ */
+export function textoSeleccionTodo(cantidad: number): string {
+  return cantidad === 1
+    ? 'Se seleccionó el turno del filtro'
+    : `Se seleccionaron los ${cantidad} turnos del filtro`
 }
 
 /**
@@ -64,9 +84,19 @@ export function textoPeriodo({ desde, hasta }: Periodo): string | null {
 }
 
 /**
+ * Las materias en una frase: `'Matemática'`, `'Inglés y Matemática'` o `'Física, Inglés y
+ * Matemática'`, en el orden en que llegan. Sin ninguna, `null`.
+ */
+export function textoMaterias(nombres: readonly string[]): string | null {
+  if (nombres.length === 0) return null
+  return new Intl.ListFormat('es', { type: 'conjunction' }).format(nombres)
+}
+
+/**
  * Los filtros activos en una línea, para debajo del total (así no se lee como el total general):
- * `'Lucía Álvarez · Del 01/09/2026 al 30/09/2026 · Matemática · Prof. Ana Gómez'`. Recibe los
- * nombres ya resueltos (`null` = sin ese filtro). Sin ningún filtro, `null`.
+ * `'Lucía Álvarez · Del 01/09/2026 al 30/09/2026 · Inglés y Matemática · Prof. Ana Gómez'`. Recibe
+ * los nombres ya resueltos (`null` = sin ese filtro; las materias, con `textoMaterias`). Sin ningún
+ * filtro, `null`.
  */
 export function textoFiltrosActivos({
   alumno = null,
@@ -108,7 +138,7 @@ const SIN_FILAS: Record<SeccionDeCuenta, string> = {
  */
 export function textoSinFilas(seccion: SeccionDeCuenta, filtros: FiltrosCuenta): string {
   if (hayPeriodo(filtros)) return `${SIN_FILAS[seccion]} en el período`
-  if (hayFiltros({ materiaId: filtros.materiaId, profesorId: filtros.profesorId })) {
+  if (hayFiltros({ materiaIds: filtros.materiaIds, profesorId: filtros.profesorId })) {
     return `${SIN_FILAS[seccion]} con los filtros elegidos`
   }
   return seccion === 'proximos' ? `${SIN_FILAS.proximos} para cobrar` : SIN_FILAS.adeudados

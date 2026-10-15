@@ -22,6 +22,7 @@ function turno(parcial: Partial<OcurrenciaDeAlumno> & { turnoId: number }): Ocur
     profesor: { id: 1, apellido: 'López', nombre: 'Marta' },
     materia: { id: 1, nombre: 'Matemática' },
     cancelable: true,
+    plazoAsistencia: null,
     ...parcial,
   }
 }

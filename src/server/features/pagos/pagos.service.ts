@@ -6,14 +6,16 @@ import type { PagosRepository } from './pagos.repository'
 import {
   calcularVuelto,
   MENSAJE_FECHA_PAGO_FUTURA,
+  medioDelPedido,
+  montoRecibidoDe,
   planificarPago,
   type PedidoPago,
 } from './pagos.reglas'
 import type { Comprobante, PagoRegistrado, RegistrarPago } from './pagos.validation'
 
-// Reglas de negocio del cobro (HU-15, T-51). No conoce HTTP ni Prisma: lanza AppError o sus
-// subclases. Qué se puede cobrar, el total y el vuelto los decide `planificarPago` (puro); del
-// alumno sólo lee, por su repository.
+// Reglas de negocio del cobro (HU-15, T-51; formas de pago, HU-23, T-96). No conoce HTTP ni Prisma:
+// lanza AppError o sus subclases. Qué se puede cobrar, el total y el vuelto los decide
+// `planificarPago` (puro); del alumno sólo lee, por su repository. El importe no depende del medio.
 
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
@@ -33,15 +35,17 @@ export function crearPagosService({
     /**
      * Registra el pago de una o varias ocurrencias de un alumno, todo o nada. Chequeos, en orden
      * (el primero que falla gana):
-     * 1. El body ya lo validó Zod (400), incluido que venga `montoRecibido` (el pago es en
-     *    efectivo).
+     * 1. El body ya lo validó Zod (400), incluidos los datos de su forma de pago (un pago, un
+     *    medio: `montoRecibido` en efectivo, `transferencia` y el adjunto en transferencia, `debito`
+     *    en débito).
      * 2. `fechaPago` posterior a hoy → 400 en `fechaPago`.
      * 3. Alumno inexistente → 404 (su estado no importa: una deuda se cobra igual).
      * 4. Chequeo previo sin lock (`planificarPago` sobre el snapshot): ocurrencia de otro alumno
-     *    → 400; alguna no cobrable → 409 `TURNOS_NO_COBRABLES`; total fuera de rango o
-     *    `montoRecibido` menor al total → 400.
+     *    → 400; alguna no cobrable → 409 `TURNOS_NO_COBRABLES`; total fuera de rango o, en
+     *    efectivo, `montoRecibido` menor al total → 400.
      * 5. `repository.registrar`, que bloquea el alumno, relee y vuelve a decidir con la misma
-     *    regla antes de escribir. La respuesta sale del plan decidido bajo lock.
+     *    regla antes de escribir, y vincula el comprobante adjunto (400 `ADJUNTO_INVALIDO` si no es
+     *    uno disponible de quien cobra). La respuesta sale del plan decidido bajo lock.
      */
     async registrar(datos: RegistrarPago, actor: Actor): Promise<PagoRegistrado> {
       const fechaHoy = hoy(reloj)
@@ -54,7 +58,8 @@ export function crearPagosService({
       const alumno = await alumnosRepository.buscarPorId(datos.alumnoId)
       if (!alumno) throw new NotFoundError('Alumno no encontrado')
 
-      const { montoRecibido } = datos
+      const medio = medioDelPedido(datos)
+      const montoRecibido = montoRecibidoDe(medio)
       const pedido: PedidoPago = {
         alumnoId: datos.alumnoId,
         ocurrencias: datos.ocurrencias,
@@ -70,7 +75,7 @@ export function crearPagosService({
           alumnoId: datos.alumnoId,
           ocurrencias: datos.ocurrencias,
           fechaPago: datos.fechaPago,
-          montoRecibido,
+          medio,
           observaciones: datos.observaciones ?? null,
         },
         verificar,
@@ -82,6 +87,7 @@ export function crearPagosService({
         numeroComprobante,
         cantidad: plan.lineas.length,
         total: plan.total,
+        formaPago: medio.formaPago,
         montoRecibido,
         vuelto: plan.vuelto,
       }

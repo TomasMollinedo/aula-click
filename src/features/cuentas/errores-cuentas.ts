@@ -25,12 +25,20 @@ export type ErrorCuenta = {
 export const MENSAJE_FILTROS_INVALIDOS = 'Los filtros no son válidos. Revisalos o limpialos.'
 
 const camposValidos = new Set<string>(CAMPOS_FILTRO)
+/** El filtro que se repite en el query: su error marca también la posición (`['materiaId', 1]`). */
+const CAMPO_REPETIDO: CampoFiltro = 'materiaId'
 
-/** Un detalle con la forma de Zod, de un solo campo conocido: `path: ['hasta']` y `message`. */
+/**
+ * Un detalle con la forma de Zod, de un solo campo conocido: `path: ['hasta']` y `message`. Las
+ * materias se repiten en el query, así que su error marca también la posición
+ * (`['materiaId', 1]`): va al mismo campo.
+ */
 function campoDelDetalle(detalle: unknown): { campo: CampoFiltro; mensaje: string } | null {
   if (typeof detalle !== 'object' || detalle === null) return null
   const { path, message } = detalle as { path?: unknown; message?: unknown }
-  if (!Array.isArray(path) || path.length !== 1 || typeof message !== 'string') return null
+  if (!Array.isArray(path) || typeof message !== 'string') return null
+  const conPosicion = path.length === 2 && path[0] === CAMPO_REPETIDO && typeof path[1] === 'number'
+  if (path.length !== 1 && !conPosicion) return null
   const [campo] = path
   return typeof campo === 'string' && camposValidos.has(campo)
     ? { campo: campo as CampoFiltro, mensaje: message }

@@ -73,6 +73,16 @@ describe('interpretarErrorCuenta: 400 de los filtros', () => {
     })
   })
 
+  it('una materia del parámetro repetido (`["materiaId", 1]`) va al campo de materias', () => {
+    const error = validacion([{ path: ['materiaId', 1], message: 'Debe ser mayor a 0' }])
+
+    expect(interpretarErrorCuenta(error)).toMatchObject({
+      tipo: 'filtros',
+      mensaje: null,
+      campos: { materiaId: 'Debe ser mayor a 0' },
+    })
+  })
+
   it('sin `details`: error general de los filtros', () => {
     expect(interpretarErrorCuenta(validacion())).toEqual({
       tipo: 'filtros',
@@ -86,6 +96,10 @@ describe('interpretarErrorCuenta: 400 de los filtros', () => {
   it.each([
     ['un campo que no es un filtro', [{ path: ['page'], message: 'Debe ser mayor a 0' }]],
     ['un path de más de un nivel', [{ path: ['hasta', 0], message: 'x' }]],
+    [
+      'una materia con una posición que no es un número',
+      [{ path: ['materiaId', 'x'], message: 'x' }],
+    ],
     ['un path vacío', [{ path: [], message: 'x' }]],
     ['sin path', [{ message: 'x' }]],
     ['sin message', [{ path: ['hasta'] }]],

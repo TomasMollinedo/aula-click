@@ -1,9 +1,14 @@
-import { ConflictError, ValidationError } from '@/server/errors'
+import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import { detallesPorPosicion } from '@/server/shared/detalles'
 import { sumarDias } from '@/server/shared/fechas'
 import { IMPORTE_MAX } from '@/server/shared/zod'
-import type { OcurrenciaPedida } from './pagos.validation'
+import type {
+  CodigoFormaPago,
+  MedioPago,
+  OcurrenciaPedida,
+  RegistrarPago,
+} from './pagos.validation'
 
 // Reglas puras del cobro (HU-15, T-51): qué ocurrencias se pueden cobrar, cuánto cuesta cada una,
 // el total y el vuelto. Sin Prisma y sin `hoy()` adentro: "hoy" lo pasa el service con su reloj.
@@ -39,6 +44,18 @@ export const MENSAJE_YA_PAGADO_CONCURRENTE = 'Alguno de los turnos ya fue pagado
 export const MENSAJE_DE_OTRO_ALUMNO = 'El turno no es del alumno'
 export const MENSAJE_FECHA_PAGO_FUTURA = 'La fecha de pago no puede ser posterior a hoy'
 
+/**
+ * Las formas de pago del catálogo no están como las carga el seed (decisión T-134): falta la de
+ * `codigo` activa, o hay una sin código. Es un error de configuración, no del pedido: 500. Lo usan
+ * el registro, el comprobante y el total por forma, con el mismo texto.
+ */
+export function errorFormasDePago(codigo?: CodigoFormaPago): AppError {
+  const problema = codigo
+    ? `Falta la forma de pago ${codigo} activa`
+    : 'Hay una forma de pago sin código'
+  return new AppError(`${problema}: corré \`pnpm db:seed\``, 500)
+}
+
 /** Lo que el cobro necesita de una ocurrencia (una `Ocurrencia` del motor lo cumple). */
 export type OcurrenciaCobro = Pick<
   Ocurrencia,
@@ -58,13 +75,17 @@ export type SnapshotPago = {
 export type PedidoPago = {
   alumnoId: number
   ocurrencias: readonly OcurrenciaPedida[]
-  montoRecibido: number
+  /** Sólo en efectivo (HU-23): con transferencia o débito, `null`, y no hay vuelto. */
+  montoRecibido: number | null
 }
 
 export type LineaPago = { turnoId: number; fecha: string; importe: number }
 
-/** Resultado del cobro. Los importes, en pesos con hasta dos decimales. */
-export type PlanPago = { lineas: LineaPago[]; total: number; vuelto: number }
+/**
+ * Resultado del cobro. Los importes, en pesos con hasta dos decimales. `vuelto` es `null` fuera del
+ * efectivo.
+ */
+export type PlanPago = { lineas: LineaPago[]; total: number; vuelto: number | null }
 
 const centavos = (importe: number) => Math.round(importe * 100)
 const clave = (turnoId: number, fecha: string) => `${turnoId}|${fecha}`
@@ -105,7 +126,75 @@ export function formatearPesos(importe: number): string {
   return `${signo}$ ${enteros},${resto}`
 }
 
-/** Motivo por el que no se puede cobrar (el primero, en el orden de la tabla), o `null`. */
+/**
+ * El medio del body ya validado (`registrarPagoSchema` garantiza que cada forma de pago trae sus
+ * datos y sólo los suyos): lo que el repository guarda.
+ */
+export function medioDelPedido(datos: RegistrarPago): MedioPago {
+  switch (datos.formaPago) {
+    case 'EFECTIVO':
+      return { formaPago: 'EFECTIVO', montoRecibido: datos.montoRecibido as number }
+    case 'TRANSFERENCIA':
+      return {
+        formaPago: 'TRANSFERENCIA',
+        transferencia: datos.transferencia as NonNullable<RegistrarPago['transferencia']>,
+        comprobanteAdjuntoId: datos.comprobanteAdjuntoId as number,
+      }
+    case 'DEBITO':
+      return {
+        formaPago: 'DEBITO',
+        debito: datos.debito as NonNullable<RegistrarPago['debito']>,
+        comprobanteAdjuntoId: datos.comprobanteAdjuntoId ?? null,
+      }
+  }
+}
+
+/** El monto recibido de un medio: el del efectivo, o `null` (no hay con transferencia ni débito). */
+export function montoRecibidoDe(medio: MedioPago): number | null {
+  return medio.formaPago === 'EFECTIVO' ? medio.montoRecibido : null
+}
+
+/** Los turnos de una materia, con su subtotal (HU-25). */
+export type GrupoDeMateria<T> = {
+  materia: { id: number; nombre: string }
+  turnos: T[]
+  /** La suma de los importes de esos turnos en centavos (`sumarImportes`); los `null` no suman. */
+  subtotal: number
+}
+
+/**
+ * Turnos agrupados por materia (HU-25): las materias por nombre (y por id si se repite) y, dentro
+ * de cada una, los turnos en el orden en que llegan. El subtotal es la suma de sus importes, sin
+ * recalcular nada: un importe `null` (una materia sin precio, en una cuenta) no suma. La única
+ * implementación: la usan el comprobante en PDF (lo cobrado) y la cuenta del portal (`cuentas`,
+ * por `pagos.condiciones`; lo que se debe).
+ */
+export function agruparPorMateria<
+  T extends { materia: { id: number; nombre: string }; importe: number | null },
+>(turnos: readonly T[]): GrupoDeMateria<T>[] {
+  const grupos = new Map<number, { materia: T['materia']; turnos: T[] }>()
+  for (const turno of turnos) {
+    const grupo = grupos.get(turno.materia.id) ?? { materia: turno.materia, turnos: [] as T[] }
+    grupo.turnos.push(turno)
+    grupos.set(turno.materia.id, grupo)
+  }
+  return [...grupos.values()]
+    .map(({ materia, turnos: deLaMateria }) => ({
+      materia: { id: materia.id, nombre: materia.nombre },
+      turnos: deLaMateria,
+      subtotal: sumarImportes(deLaMateria.flatMap((t) => (t.importe === null ? [] : [t.importe]))),
+    }))
+    .sort(
+      (a, b) =>
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
+    )
+}
+
+/**
+ * Motivo por el que no se puede cobrar (el primero, en el orden de la tabla), o `null`. El estado
+ * de asistencia no importa: un `REALIZADO` o un `AUSENTE` impago se cobra igual (HU-22), y una
+ * ocurrencia de un pago anulado vuelve a estar `PENDIENTE` (lo resuelve el motor, T-74).
+ */
 function motivoNoCobrable(
   ocurrencia: OcurrenciaCobro | undefined,
   precios: SnapshotPago['precios'],
@@ -125,13 +214,15 @@ function motivoNoCobrable(
  *    detalle por cada una, con su posición en el body).
  * 2. 409 `TURNOS_NO_COBRABLES` con un detalle por **cada** ocurrencia que no se puede cobrar, con
  *    un solo motivo por ocurrencia (el primero de `MOTIVOS_NO_COBRABLE`). Cobrable = existe (el
- *    motor la devuelve), estado `AGENDADO` o `SIN_REGISTRAR`, pago `PENDIENTE`, fecha <= hoy + 56
- *    días (las pasadas no tienen tope) y su materia tiene precio (esté activa o no).
+ *    motor la devuelve), no está cancelada (`AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`),
+ *    pago `PENDIENTE` (también la de un pago anulado), fecha <= hoy + 56 días (las pasadas no
+ *    tienen tope) y su materia tiene precio (esté activa o no).
  * 3. 400 `VALIDACION` en `ocurrencias` si el total no entra en `Decimal(10,2)` (decisión T-64).
- * 4. 400 `VALIDACION` en `montoRecibido` si es menor al total, con los dos importes en el mensaje.
+ * 4. Sólo en efectivo: 400 `VALIDACION` en `montoRecibido` si es menor al total, con los dos
+ *    importes en el mensaje. Con transferencia o débito no se compara ningún monto (HU-23).
  *
  * Si no lanza: una línea por ocurrencia, en el orden del pedido, con el precio vigente de su
- * materia; el total sumado en centavos; y el vuelto.
+ * materia; el total sumado en centavos; y el vuelto (`null` fuera del efectivo).
  */
 export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: string): PlanPago {
   const porClave = new Map(snapshot.ocurrencias.map((o) => [clave(o.turnoId, o.fecha), o]))
@@ -190,10 +281,11 @@ export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: 
     throw new ValidationError(mensaje, { details: [{ path: ['ocurrencias'], message: mensaje }] })
   }
 
-  if (centavos(pedido.montoRecibido) < centavos(total)) {
-    const mensaje = `El monto recibido (${formatearPesos(pedido.montoRecibido)}) es menor al total (${formatearPesos(total)})`
+  const { montoRecibido } = pedido
+  if (montoRecibido !== null && centavos(montoRecibido) < centavos(total)) {
+    const mensaje = `El monto recibido (${formatearPesos(montoRecibido)}) es menor al total (${formatearPesos(total)})`
     throw new ValidationError(mensaje, { details: [{ path: ['montoRecibido'], message: mensaje }] })
   }
 
-  return { lineas, total, vuelto: calcularVuelto(pedido.montoRecibido, total) }
+  return { lineas, total, vuelto: calcularVuelto(montoRecibido, total) }
 }

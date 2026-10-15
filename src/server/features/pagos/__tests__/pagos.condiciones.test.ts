@@ -1,5 +1,12 @@
 import { describe, expect, it, vi } from 'vitest'
-import { leerPagoDeOcurrencia, totalCobradoEntre } from '../pagos.condiciones'
+import { AppError } from '@/server/errors'
+import {
+  leerPagoDeOcurrencia,
+  leerPagoParaAnular,
+  pagosConMismaTransferencia,
+  totalCobradoEntre,
+  totalCobradoPorForma,
+} from '../pagos.condiciones'
 
 // `leerPagoDeOcurrencia`: lo que el detalle de una ocurrencia pagada muestra de su pago. Sin base:
 // el cliente es un falso con el `findUnique` de `pago`.
@@ -93,5 +100,196 @@ describe('totalCobradoEntre', () => {
   it('sin pagos en el período (`_sum.importeTotal` nulo) → 0', async () => {
     const { client } = clienteConSuma(null)
     await expect(totalCobradoEntre(client, PERIODO)).resolves.toBe(0)
+  })
+})
+
+describe('totalCobradoPorForma', () => {
+  const PERIODO = { desde: '2026-09-28', hasta: '2026-10-04' }
+  const decimal = (n: number) => ({ toNumber: () => n })
+
+  function clienteConGrupos(
+    grupos: { formaPagoId: number; importe: number | null }[],
+    formas: { id: number; tipoFormaPago: string | null }[],
+  ) {
+    const groupBy = vi.fn(async () =>
+      grupos.map((g) => ({
+        formaPagoId: g.formaPagoId,
+        _sum: { importeTotal: g.importe === null ? null : decimal(g.importe) },
+      })),
+    )
+    const findMany = vi.fn(async () => formas)
+    const client = { pago: { groupBy }, formaPago: { findMany } } as unknown as Cliente
+    return { client, groupBy, findMany }
+  }
+
+  const FORMAS = [
+    { id: 1, tipoFormaPago: 'EFECTIVO' },
+    { id: 2, tipoFormaPago: 'TRANSFERENCIA' },
+    { id: 3, tipoFormaPago: 'DEBITO' },
+  ]
+
+  it('cada forma con su total, por su código, en `number`', async () => {
+    const { client } = clienteConGrupos(
+      [
+        { formaPagoId: 1, importe: 30001.5 },
+        { formaPagoId: 2, importe: 15000 },
+        { formaPagoId: 3, importe: 7000 },
+      ],
+      FORMAS,
+    )
+
+    expect(await totalCobradoPorForma(client, PERIODO)).toEqual({
+      EFECTIVO: 30001.5,
+      TRANSFERENCIA: 15000,
+      DEBITO: 7000,
+    })
+  })
+
+  it('el mismo filtro que el total: sólo `VIGENTE`, por `fechaPago`, extremos incluidos', async () => {
+    const { client, groupBy } = clienteConGrupos([], FORMAS)
+    await totalCobradoPorForma(client, PERIODO)
+
+    expect(groupBy).toHaveBeenCalledWith({
+      by: ['formaPagoId'],
+      where: {
+        estado: 'VIGENTE',
+        fechaPago: {
+          gte: new Date('2026-09-28T00:00:00.000Z'),
+          lte: new Date('2026-10-04T00:00:00.000Z'),
+        },
+      },
+      _sum: { importeTotal: true },
+    })
+  })
+
+  it('una forma sin pagos queda en 0; sin pagos, todo en 0 y sin leer las formas', async () => {
+    const conEfectivo = clienteConGrupos([{ formaPagoId: 1, importe: 8000 }], FORMAS)
+    expect(await totalCobradoPorForma(conEfectivo.client, PERIODO)).toEqual({
+      EFECTIVO: 8000,
+      TRANSFERENCIA: 0,
+      DEBITO: 0,
+    })
+
+    const sinPagos = clienteConGrupos([], FORMAS)
+    expect(await totalCobradoPorForma(sinPagos.client, PERIODO)).toEqual({
+      EFECTIVO: 0,
+      TRANSFERENCIA: 0,
+      DEBITO: 0,
+    })
+    expect(sinPagos.findMany).not.toHaveBeenCalled()
+  })
+
+  it('una forma de pago con pagos y sin código → 500 que pide correr el seed', async () => {
+    const { client } = clienteConGrupos(
+      [{ formaPagoId: 9, importe: 100 }],
+      [{ id: 9, tipoFormaPago: null }],
+    )
+
+    const error = await totalCobradoPorForma(client, PERIODO).catch((e) => e)
+
+    expect(error).toBeInstanceOf(AppError)
+    expect(error.statusCode).toBe(500)
+    expect(error.message).toMatch(/pnpm db:seed/)
+  })
+})
+
+// T-104 (HU-42): lo que la anulación lee del pago y de las otras transferencias.
+describe('leerPagoParaAnular', () => {
+  const decimal = (n: number) => ({ toNumber: () => n })
+  const LORENZO = { id: 1, nombre: 'Lorenzo', apellido: 'Gutiérrez' }
+  const LENGUA = { id: 4, nombre: 'Lengua' }
+  const ECONOMIA = { id: 12, nombre: 'Economía' }
+
+  function fila(cambios: Record<string, unknown> = {}) {
+    return {
+      id: 171,
+      numeroComprobante: 171,
+      estado: 'VIGENTE',
+      importeTotal: decimal(15000),
+      transferenciaOperacion: '0004829137',
+      transferenciaBanco: 'Banco Macro',
+      alumno: LORENZO,
+      turnos: [
+        {
+          turnoId: 455,
+          fechaOcurrencia: new Date('2026-09-15T00:00:00.000Z'),
+          importeAplicado: decimal(8000),
+          turno: { materia: ECONOMIA },
+        },
+        {
+          turnoId: 419,
+          fechaOcurrencia: new Date('2026-09-12T00:00:00.000Z'),
+          importeAplicado: decimal(7000),
+          turno: { materia: LENGUA },
+        },
+      ],
+      ...cambios,
+    }
+  }
+
+  it('el pago con su total, sus turnos por fecha (con lo cobrado) y la transferencia', async () => {
+    const { client, findUnique } = cliente(fila())
+
+    expect(await leerPagoParaAnular(client, 171)).toEqual({
+      id: 171,
+      numeroComprobante: 171,
+      estado: 'VIGENTE',
+      alumno: LORENZO,
+      total: 15000,
+      turnos: [
+        { turnoId: 419, fecha: '2026-09-12', materia: LENGUA, importe: 7000 },
+        { turnoId: 455, fecha: '2026-09-15', materia: ECONOMIA, importe: 8000 },
+      ],
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro' },
+    })
+    expect(findUnique).toHaveBeenCalledTimes(1)
+  })
+
+  it('un pago que no es por transferencia: `transferencia: null`; un anulado lo dice', async () => {
+    const { client } = cliente(
+      fila({ estado: 'ANULADO', transferenciaOperacion: null, transferenciaBanco: null }),
+    )
+
+    expect(await leerPagoParaAnular(client, 171)).toMatchObject({
+      estado: 'ANULADO',
+      transferencia: null,
+    })
+  })
+
+  it('el pago no existe → `null`', async () => {
+    const { client } = cliente(null)
+    expect(await leerPagoParaAnular(client, 99)).toBeNull()
+  })
+})
+
+describe('pagosConMismaTransferencia', () => {
+  it('los otros pagos vigentes con la misma operación y banco, por número', async () => {
+    const otros = [
+      { id: 180, numeroComprobante: 180, alumno: { id: 7, nombre: 'Sofía', apellido: 'Paz' } },
+    ]
+    const findMany = vi.fn(async () => otros)
+    const client = { pago: { findMany } } as unknown as Cliente
+
+    const res = await pagosConMismaTransferencia(client, {
+      operacion: '0004829137',
+      banco: 'Banco Macro',
+      excluirPagoId: 171,
+    })
+
+    expect(res).toEqual(otros)
+    expect(findMany).toHaveBeenCalledWith({
+      where: {
+        transferenciaOperacion: '0004829137',
+        transferenciaBanco: 'Banco Macro',
+        estado: 'VIGENTE',
+        id: { not: 171 },
+      },
+      select: {
+        id: true,
+        numeroComprobante: true,
+        alumno: { select: { id: true, nombre: true, apellido: true } },
+      },
+      orderBy: { numeroComprobante: 'asc' },
+    })
   })
 })

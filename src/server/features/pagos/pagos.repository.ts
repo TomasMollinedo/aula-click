@@ -1,6 +1,7 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
-import { AppError, ConflictError } from '@/server/errors'
+import { ConflictError } from '@/server/errors'
+import { vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
 import {
   bloquearAlumno,
   leerOcurrencias,
@@ -12,21 +13,40 @@ import { dateAFecha, fechaADate, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import {
   CODIGO_TURNOS_NO_COBRABLES,
+  errorFormasDePago,
   MENSAJE_YA_PAGADO_CONCURRENTE,
   type PlanPago,
   type SnapshotPago,
 } from './pagos.reglas'
-import type { ComprobanteGuardado, EntradaPago, OcurrenciaPedida } from './pagos.validation'
+import type {
+  ComprobanteGuardado,
+  EntradaPago,
+  MedioPago,
+  OcurrenciaPedida,
+} from './pagos.validation'
 
 // Único lugar de la feature que usa Prisma. Sin reglas de negocio: qué se puede cobrar y cuánto lo
 // decide `planificarPago` (`pagos.reglas.ts`), que el service pasa como callback `verificar`. Las
 // ocurrencias salen del motor de `turnos` (`ocurrencias.condiciones.ts`), nunca de una expansión
 // propia. Los importes salen como `number` (`toNumber()`), nunca como `Prisma.Decimal`.
 
-/** Forma de pago de todos los cobros de este sprint (definición del catálogo en el seed). */
-export const FORMA_PAGO_EFECTIVO = 'Efectivo'
-
-const MENSAJE_SIN_EFECTIVO = `Falta la forma de pago "${FORMA_PAGO_EFECTIVO}" activa: corré \`pnpm db:seed\``
+/**
+ * Las columnas del medio en `Pago` (HU-23): las del medio elegido con sus datos y las de los otros
+ * en `null` (un pago, un medio). Nunca el número completo de la tarjeta: a lo sumo los últimos 4.
+ */
+function columnasDelMedio(medio: MedioPago) {
+  const transferencia = medio.formaPago === 'TRANSFERENCIA' ? medio.transferencia : null
+  const debito = medio.formaPago === 'DEBITO' ? medio.debito : null
+  return {
+    montoRecibido: medio.formaPago === 'EFECTIVO' ? aDecimal(medio.montoRecibido) : null,
+    transferenciaOperacion: transferencia?.operacion ?? null,
+    transferenciaBanco: transferencia?.banco ?? null,
+    transferenciaTitular: transferencia?.titular ?? null,
+    debitoRed: debito?.red ?? null,
+    debitoCupon: debito?.cupon ?? null,
+    debitoUltimos4: debito?.ultimos4 ?? null,
+  }
+}
 
 // Nombre del índice único de `PagoTurno (turnoId, fechaOcurrencia, vigente)` (migración de T-70).
 const INDICE_PAGO_TURNO = 'pago_turno_turno_id_fecha_ocurrencia_vigente_key'
@@ -118,7 +138,22 @@ const SELECT_COMPROBANTE = {
   observaciones: true,
   createdAt: true,
   alumno: { select: { id: true, nombre: true, apellido: true, dni: true } },
-  formaPago: { select: { id: true, nombre: true } },
+  formaPago: { select: { tipoFormaPago: true, nombre: true } },
+  transferenciaOperacion: true,
+  transferenciaBanco: true,
+  transferenciaTitular: true,
+  debitoRed: true,
+  debitoCupon: true,
+  debitoUltimos4: true,
+  estado: true,
+  anulacion: {
+    select: {
+      motivo: true,
+      detalle: true,
+      createdAt: true,
+      createdBy: { select: SELECT_USUARIO_AUDITORIA },
+    },
+  },
   createdBy: { select: SELECT_USUARIO_AUDITORIA },
   turnos: {
     select: {
@@ -157,12 +192,15 @@ export const pagosRepository = {
    * 1. `bloquearAlumno` (`alumno` `FOR UPDATE`), **antes de cualquier lectura**: serializa con
    *    otro pago, la cancelación, la finalización y la reprogramación de ese alumno (decisión
    *    T-59).
-   * 2. Relee con el `tx` las ocurrencias pedidas, los precios vigentes y la forma de pago
-   *    "Efectivo" activa (si falta, 500: es un error de configuración, falta el seed).
+   * 2. Relee con el `tx` las ocurrencias pedidas, los precios vigentes y la forma de pago activa
+   *    por su código (`tipoFormaPago`; si falta, 500: es un error de configuración, falta el seed).
    * 3. `verificar(snapshot)`: si lanza, no se escribe nada.
-   * 4. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con un `PagoTurno` por línea
-   *    (`fechaOcurrencia` = la fecha de la ocurrencia, `importeAplicado` = el precio vigente).
-   * 5. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
+   * 4. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con los datos de su medio
+   *    (`columnasDelMedio`) y un `PagoTurno` por línea (`fechaOcurrencia` = la fecha de la
+   *    ocurrencia, `importeAplicado` = el precio vigente).
+   * 5. Con comprobante adjunto, lo vincula al pago (`vincularAdjunto`, de `adjuntos`): si no es
+   *    un adjunto disponible de quien cobra, 400 `ADJUNTO_INVALIDO` y la transacción se deshace.
+   * 6. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
    *    `TURNOS_NO_COBRABLES` sin detalle por ocurrencia (la transacción ya se abortó).
    *
    * Devuelve el id, el número de comprobante y el plan con el que se registró (el decidido bajo
@@ -179,11 +217,12 @@ export const pagosRepository = {
         await bloquearAlumno(tx, entrada.alumnoId)
 
         const snapshot = await leerSnapshot(tx, entrada.ocurrencias, reloj)
+        const { medio } = entrada
         const formaPago = await tx.formaPago.findFirst({
-          where: { nombre: FORMA_PAGO_EFECTIVO, estado: 'ACTIVO' },
+          where: { tipoFormaPago: medio.formaPago, estado: 'ACTIVO' },
           select: { id: true },
         })
-        if (!formaPago) throw new AppError(MENSAJE_SIN_EFECTIVO, 500)
+        if (!formaPago) throw errorFormasDePago(medio.formaPago)
 
         const plan = verificar(snapshot)
 
@@ -193,7 +232,7 @@ export const pagosRepository = {
             formaPagoId: formaPago.id,
             importeTotal: aDecimal(plan.total),
             fechaPago: fechaADate(entrada.fechaPago),
-            montoRecibido: aDecimal(entrada.montoRecibido),
+            ...columnasDelMedio(medio),
             observaciones: entrada.observaciones,
             createdById: actor.userId,
             updatedById: actor.userId,
@@ -207,6 +246,13 @@ export const pagosRepository = {
           },
           select: { id: true, numeroComprobante: true },
         })
+        if (medio.formaPago !== 'EFECTIVO' && medio.comprobanteAdjuntoId !== null) {
+          await vincularAdjunto(tx, {
+            adjuntoId: medio.comprobanteAdjuntoId,
+            pagoId: pago.id,
+            actor,
+          })
+        }
         return { pagoId: pago.id, numeroComprobante: pago.numeroComprobante, plan }
       }, TRANSACCION_PAGO)
     } catch (error) {
@@ -216,13 +262,16 @@ export const pagosRepository = {
 
   /**
    * Datos del comprobante (sin el vuelto, que calcula el service), o `null` si no existe. Una sola
-   * consulta. Los turnos llevan los datos **actuales** de su turno (fecha, horario, materia y
-   * profesor; decisión T-63) y el importe cobrado (`importeAplicado`), ordenados por fecha, hora
-   * de inicio y `turnoId`.
+   * consulta, con la forma de pago por su código, los datos de su medio, el estado y, si está
+   * anulado, la anulación (se lee junto con el pago, decisión T-120). Los turnos llevan los datos
+   * **actuales** de su turno (fecha, horario, materia y profesor; decisión T-63) y el importe
+   * cobrado (`importeAplicado`), ordenados por fecha, hora de inicio y `turnoId`.
    */
   async buscarComprobante(id: number): Promise<ComprobanteGuardado | null> {
     const fila = await prisma.pago.findUnique({ where: { id }, select: SELECT_COMPROBANTE })
     if (!fila) return null
+    const codigo = fila.formaPago.tipoFormaPago
+    if (codigo === null) throw errorFormasDePago()
     const turnos = fila.turnos
       .map((pt) => ({
         turnoId: pt.turnoId,
@@ -252,7 +301,30 @@ export const pagosRepository = {
       turnos,
       total: fila.importeTotal.toNumber(),
       montoRecibido: fila.montoRecibido ? fila.montoRecibido.toNumber() : null,
-      formaPago: fila.formaPago,
+      formaPago: { codigo, nombre: fila.formaPago.nombre },
+      transferencia:
+        codigo === 'TRANSFERENCIA'
+          ? {
+              operacion: fila.transferenciaOperacion ?? '',
+              banco: fila.transferenciaBanco ?? '',
+              titular: fila.transferenciaTitular,
+            }
+          : null,
+      debito:
+        codigo === 'DEBITO' && fila.debitoRed !== null
+          ? { red: fila.debitoRed, cupon: fila.debitoCupon ?? '', ultimos4: fila.debitoUltimos4 }
+          : null,
+      estado: fila.estado,
+      anulacion: fila.anulacion && {
+        motivo: fila.anulacion.motivo,
+        detalle: fila.anulacion.detalle,
+        anuladoPor: {
+          id: fila.anulacion.createdBy.id,
+          nombre: fila.anulacion.createdBy.nombre,
+          apellido: fila.anulacion.createdBy.apellido,
+        },
+        anuladoEl: fila.anulacion.createdAt.toISOString(),
+      },
       observaciones: fila.observaciones,
       registradoPor: {
         id: fila.createdBy.id,

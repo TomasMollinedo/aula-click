@@ -14,7 +14,7 @@ const BASE = '/api/v1/cuentas'
 function conFiltros(searchParams: URLSearchParams, filtros: FiltrosCuentaParams): URLSearchParams {
   if (filtros.desde) searchParams.set('desde', filtros.desde)
   if (filtros.hasta) searchParams.set('hasta', filtros.hasta)
-  if (filtros.materiaId != null) searchParams.set('materiaId', String(filtros.materiaId))
+  for (const id of filtros.materiaId ?? []) searchParams.append('materiaId', String(id))
   if (filtros.profesorId != null) searchParams.set('profesorId', String(filtros.profesorId))
   return searchParams
 }

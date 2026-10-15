@@ -841,11 +841,11 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 ## Pagos
 
-HU-15 (T-51). Registrar el pago de una o varias ocurrencias de un alumno y leer su comprobante. Reglas en `dominio.md` → Pagos. **Los importes, el total y el vuelto los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
+HU-15 (T-51), con las formas de pago de HU-23 (T-96). Registrar el pago de una o varias ocurrencias de un alumno, en efectivo, por transferencia o con débito, y leer su comprobante. Reglas en `dominio.md` → Pagos. **Los importes, el total y el vuelto los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
 
 | Endpoint                     | Roles           | Qué hace                                                                                                   |
 | ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/pagos`         | `MESA_ENTRADAS` | Registra el pago en efectivo, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409        |
+| `POST /api/v1/pagos`         | `MESA_ENTRADAS` | Registra el pago, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409                    |
 | `GET /api/v1/pagos/{id}`     | `MESA_ENTRADAS` | Datos del comprobante. 404 si el pago no existe                                                            |
 | `GET /api/v1/pagos/{id}/pdf` | `MESA_ENTRADAS` | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 404 si el pago no existe |
 
@@ -861,16 +861,38 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
     { "turnoId": 57, "fecha": "2026-10-07" }
   ],
   "fechaPago": "2026-10-05",
+  "formaPago": "EFECTIVO",
   "montoRecibido": 20000,
   "observaciones": "Paga el mes de octubre"
 }
 ```
 
+El mismo cobro por transferencia y con débito (sin `montoRecibido`):
+
+```json
+{ "...": "...", "formaPago": "TRANSFERENCIA", "transferencia": { "operacion": "0004829137", "banco": "Banco Macro", "titular": "Marta López" }, "comprobanteAdjuntoId": 18 }
+{ "...": "...", "formaPago": "DEBITO", "debito": { "red": "VISA_DEBITO", "cupon": "000123", "ultimos4": "1234" } }
+```
+
 - `ocurrencias`: de 1 a 200 pares `(turnoId, fecha)` sin repetir (un repetido: 400 en `["ocurrencias", <posición>]`). Todas del alumno.
 - `fechaPago`: `YYYY-MM-DD`, obligatoria, hoy o anterior (400 en `["fechaPago"]`).
-- `montoRecibido`: **obligatorio** (el pago es en efectivo; decisión T-112): omitido o `null`, 400 `VALIDACION` en `["montoRecibido"]` ("El monto recibido es obligatorio"). Número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`, y >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)").
+- `formaPago`: **obligatoria y sin valor por defecto**: `EFECTIVO`, `TRANSFERENCIA` o `DEBITO` (400 en `["formaPago"]`: "La forma de pago es obligatoria").
+- **Un pago, un medio** (HU-23): cada forma lleva sus datos y no los de las otras. Un dato que falta o sobra es un 400 `VALIDACION` en ese campo:
+
+  | `formaPago`     | Lleva                                                           | No lleva                                          |
+  | --------------- | --------------------------------------------------------------- | ------------------------------------------------- |
+  | `EFECTIVO`      | `montoRecibido` (obligatorio)                                   | `transferencia`, `debito`, `comprobanteAdjuntoId` |
+  | `TRANSFERENCIA` | `transferencia` y `comprobanteAdjuntoId` (los dos obligatorios) | `montoRecibido`, `debito`                         |
+  | `DEBITO`        | `debito` (obligatorio) y, si se quiere, `comprobanteAdjuntoId`  | `montoRecibido`, `transferencia`                  |
+
+  Los mensajes: "El monto recibido es obligatorio", "El monto recibido sólo va en un pago en efectivo", "Faltan los datos de la transferencia", "Los datos de la transferencia sólo van en un pago por transferencia", "Faltan los datos del débito", "Los datos del débito sólo van en un pago con débito", "El comprobante es obligatorio con transferencia" y "Un pago en efectivo no lleva comprobante adjunto". Omitido o `null` es lo mismo.
+
+- `montoRecibido` (efectivo; decisión T-112): número JSON mayor a 0, con hasta dos decimales y hasta `99999999.99`, y >= el total: si es menor, 400 `VALIDACION` en `["montoRecibido"]` con el total en el mensaje ("El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)").
+- `transferencia`: `operacion` (obligatoria, hasta 50 caracteres), `banco` (obligatorio, hasta 100) y `titular` (opcional, hasta 100; `""` o `null` = sin titular). No se compara el importe transferido ni se impide repetir la operación: una transferencia puede cubrir a varios alumnos.
+- `debito`: `red` (`VISA_DEBITO`, `MASTERCARD_DEBITO`, `MAESTRO`, `CABAL_DEBITO` u `OTRA`), `cupon` (obligatorio, sólo números, hasta 20) y `ultimos4` (opcional: exactamente 4 números; `""` o `null` = sin ellos). **Nunca se pide ni se guarda el número completo de la tarjeta.**
+- `comprobanteAdjuntoId`: el `id` de un archivo subido con `POST /adjuntos` (ver Adjuntos), que se vincula al pago al registrarlo, en la misma transacción. Si no existe, ya se usó en otro pago o lo subió otro usuario, 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]` y no se registra nada. Con débito, el adjunto se puede agregar o quitar después (`PUT` y `DELETE /adjuntos/pagos/{pagoId}`); con transferencia sólo se reemplaza.
 - `observaciones`: opcional, hasta 500 caracteres; `""` o `null` = sin observaciones.
-- La forma de pago no viaja: es "Efectivo" (única en este sprint).
+- El importe no cambia según el medio.
 
 **Respuesta 201:**
 
@@ -880,16 +902,17 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
   "numeroComprobante": 1024,
   "cantidad": 2,
   "total": 17000,
+  "formaPago": "EFECTIVO",
   "montoRecibido": 20000,
   "vuelto": 3000
 }
 ```
 
-`montoRecibido` y `vuelto` siempre vienen (un vuelto de 0 es un pago justo). Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000,00" y "Vuelto: $ 3.000,00". El vuelto no se guarda.
+`montoRecibido` y `vuelto` siempre vienen: en efectivo con su valor (un vuelto de 0 es un pago justo) y en `null` con transferencia o débito. Con esto la UI arma "Pago registrado: 2 turnos por $ 17.000,00 por transferencia" y, en efectivo, "Vuelto: $ 3.000,00". El vuelto no se guarda.
 
 **Errores del `POST`**, en este orden (el primero que falla gana):
 
-1. Body inválido → 400 `VALIDACION`.
+1. Body inválido → 400 `VALIDACION`, incluidos los datos que faltan o sobran para la forma de pago.
 2. `fechaPago` posterior a hoy → 400 en `["fechaPago"]`.
 3. Alumno inexistente → 404 (su estado no importa).
 4. Alguna ocurrencia es de otro alumno → 400 `VALIDACION`, `details`: `[{ "path": ["ocurrencias", <posición>], "message": "El turno no es del alumno", "turnoId", "fecha" }]`.
@@ -903,7 +926,10 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
    | `FUERA_DE_RANGO` | Su fecha es posterior a hoy + 56 días                                                         | "Sólo se pueden cobrar turnos de las próximas 8 semanas" |
    | `SIN_PRECIO`     | Su materia no tiene precio cargado                                                            | "La materia no tiene precio cargado"                     |
 
-6. Total mayor a `99999999.99` → 400 en `["ocurrencias"]`; `montoRecibido` menor al total → 400 en `["montoRecibido"]`.
+6. Total mayor a `99999999.99` → 400 en `["ocurrencias"]`; en efectivo, `montoRecibido` menor al total → 400 en `["montoRecibido"]`.
+7. Comprobante adjunto que no se puede vincular → 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]`.
+
+Cobrable es una ocurrencia que no está cancelada: `AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE` (un turno dado e impago se cobra igual, HU-22). Una ocurrencia de un pago anulado vuelve a estar pendiente y se cobra de nuevo; el único de `PagoTurno` sigue siendo la red contra el pago doble (409 `TURNOS_NO_COBRABLES` sin `details`).
 
 **Respuesta de `GET /pagos/{id}`:**
 
@@ -925,9 +951,18 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
     }
   ],
   "total": 17000,
-  "montoRecibido": 20000,
-  "vuelto": 3000,
-  "formaPago": { "id": 1, "nombre": "Efectivo" },
+  "montoRecibido": null,
+  "vuelto": null,
+  "formaPago": { "codigo": "TRANSFERENCIA", "nombre": "Transferencia" },
+  "transferencia": { "operacion": "0004829137", "banco": "Banco Macro", "titular": "Marta López" },
+  "debito": null,
+  "estado": "ANULADO",
+  "anulacion": {
+    "motivo": "FORMA_PAGO_EQUIVOCADA",
+    "detalle": "Se cargó en efectivo y fue por transferencia",
+    "anuladoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+    "anuladoEl": "2026-10-06T12:00:00.000Z"
+  },
   "observaciones": null,
   "registradoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
   "registradoEl": "2026-10-05T14:30:00.000Z"
@@ -935,15 +970,21 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 ```
 
 - `turnos`: ordenados por fecha, hora de inicio y `turnoId`, con los datos **actuales** de su turno (una ocurrencia pagada que se reprogramó muestra su fecha, hora y profesor nuevos) e `importe` = lo que se cobró (no cambia si después cambia el precio de la materia).
-- `montoRecibido`: `null` sólo en un pago anterior a que el monto fuera obligatorio (T-112).
+- `montoRecibido`: sólo en efectivo; `null` con transferencia o débito, o en un pago anterior a que el monto fuera obligatorio (T-112).
 - `vuelto`: recalculado en cada lectura (`montoRecibido - total`); `null` sin monto recibido.
+- `formaPago`: `{ codigo, nombre }`, con el código fijo (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`) y el nombre para mostrar.
+- `transferencia` (`{ operacion, banco, titular }`, `titular` puede ser `null`) y `debito` (`{ red, cupon, ultimos4 }`, `ultimos4` puede ser `null`): los datos del medio; el del otro medio va `null`.
+- `estado`: `VIGENTE` o `ANULADO`. `anulacion`: `{ motivo, detalle, anuladoPor, anuladoEl }` si está anulado (HU-42; `motivo`: `ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`), `null` si está vigente. Se lee en la misma consulta que el pago.
 - `registradoPor` es un `UsuarioAuditoria`; `registradoEl`, un instante ISO 8601 en UTC.
 - `numeroComprobante` es correlativo y único, pero puede tener huecos (decisión T-62).
 
 **`GET /pagos/{id}/pdf`**: el comprobante de pago como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismos roles, misma validación del `id` y mismo 404 que `GET /pagos/{id}`, y **los mismos datos**: los importes, el total y el vuelto son los de esa respuesta, sin recalcular (decisiones T-63 y T-80).
 
 - Nombre del archivo: `comprobante-<numeroComprobante>.pdf` (sólo el número: `comprobante-1024.pdf`).
-- Contenido: número junto al título, alumno, DNI, fecha y forma de pago, la tabla de turnos (fecha, horario, materia, profesor e importe), el total con el monto recibido y el vuelto si los hay, las observaciones y el pie "Registrado por <nombre apellido> el dd/MM/yyyy HH:mm" (`registradoPor` y `registradoEl`, en la hora del negocio) con la leyenda "Comprobante interno de pago · No válido como factura" (decisión T-111).
+- Contenido: número junto al título, alumno, DNI, fecha y forma de pago, la tabla de turnos (fecha, horario, materia, profesor e importe), el total con el monto recibido y el vuelto si los hay, las observaciones y el pie "Registrado por <nombre apellido> el dd/MM/yyyy HH:mm" (`registradoPor` y `registradoEl`, en la hora del negocio) con la leyenda "Comprobante interno de pago · No válido como factura" (decisión T-111). Además (T-96):
+  - los datos del medio debajo de la forma de pago: operación, banco y titular de una transferencia; red, cupón y "**** 1234" de un débito (lo que no se cargó no va);
+  - con más de una materia, la tabla agrupada por materia (por nombre), con una fila "Subtotal <materia>" al final de cada una (HU-25);
+  - si el pago está anulado, arriba de todo una franja **"ANULADO"** con el motivo (y el detalle) y "Anulado el dd/MM/yyyy HH:mm por <nombre apellido>" (HU-42).
 - El frontend no lo pide con `fetchJson`: lo enlaza con `<a href="/api/v1/pagos/{id}/pdf" target="_blank">` (`hrefComprobante`).
 
 ## Cuentas
@@ -1265,7 +1306,7 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
 
 Los datos del centro (HU-11, HU-15, T-64): son los que el backend pone en el encabezado de los documentos PDF (ver [Documentos PDF](#documentos-pdf)). El frontend no los pide para eso, pero los endpoints son parte del contrato. Son constantes del backend, sin tabla: no hay pantalla para editarlos (definición G de las PO). Roles: `MESA_ENTRADAS`, `PROFESOR` y `GERENTE`.
 
-**`GET /api/v1/centro`**: `{ "nombre", "direccion", "telefono" }`, los tres `string`. `nombre` es el de la organización que emite los documentos (Nexo Académico), no el del sistema (Aula Click).
+**`GET /api/v1/centro`** (`MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y, desde T-91, `ALUMNO`: el teléfono del aviso del portal): `{ "nombre", "direccion", "telefono" }`, los tres `string`. `nombre` es el de la organización que emite los documentos (Nexo Académico), no el del sistema (Aula Click).
 
 ```json
 {
@@ -1554,7 +1595,34 @@ A completar por T-104 (HU-42).
 
 ## Usuarios
 
-A completar por T-91 (HU-28): lo que vale para cualquier usuario sin importar su rol (su usuario y el cambio de su contraseña).
+Lo que vale para cualquier usuario sin importar su rol (HU-28, T-91).
+
+**`GET /api/v1/usuarios/mi-usuario`** (todos los roles): el usuario de la sesión.
+
+```json
+{
+  "id": "usr_alumno_01",
+  "nombre": "Juan",
+  "apellido": "Pérez",
+  "role": "ALUMNO",
+  "usuario": "jperez456",
+  "contrasenaInicial": true
+}
+```
+
+- `usuario` es el de ingreso del alumno; `null` en los demás roles, que ingresan con su email.
+- `contrasenaInicial` sale de la cuenta `credential` (decisión T-135): `true` mientras siga siendo la que puso el sistema (el DNI). El portal la usa para el aviso "Por seguridad, te recomendamos cambiar tu contraseña". Sin cuenta, `false`.
+
+**`PATCH /api/v1/usuarios/mi-usuario/contrasena`** (`ALUMNO` en este incremento): body `{ "actual", "nueva", "repeticion" }`. Responde `200` con mi usuario, ya con `contrasenaInicial: false`; **la sesión sigue abierta**. Errores 400 `VALIDACION`, en este orden (el primero que falla gana), con `details` en el campo:
+
+| Campo        | Cuándo                                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------------- |
+| el que falte | Alguno de los tres está vacío ("Es obligatoria")                                                            |
+| `repeticion` | `nueva` y `repeticion` no coinciden ("Las contraseñas no coinciden")                                        |
+| `nueva`      | Tiene menos de 8 caracteres, es igual a la actual o es el DNI del alumno (con o sin puntos)                 |
+| `actual`     | No es la contraseña actual ("La contraseña actual no es correcta"): no cambia nada. La verifica Better Auth |
+
+Errores comunes: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` en el `PATCH` para cualquier rol que no sea `ALUMNO`.
 
 ## Portal del alumno
 
@@ -1568,16 +1636,17 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
-| Feature       | Endpoints del portal                                                              | Tarea |
-| ------------- | --------------------------------------------------------------------------------- | ----- |
-| `ocurrencias` | `GET /ocurrencias/mis-turnos?desde&hasta` y `/mis-turnos/{turnoId}/{fecha}`       | T-84  |
-| `alumnos`     | `GET /alumnos/mi-perfil`                                                          | T-88  |
-| `usuarios`    | A completar por T-91                                                              | T-91  |
-| `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`   | T-93  |
-| `pagos`       | A completar por T-98                                                              | T-98  |
-| `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                    | T-101 |
-| `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106)) | T-106 |
-| `historiales` | `GET /historiales/mis-materias` y `/mis-materias/{materiaId}/{profesorId}?mes`    | T-108 |
+
+| Feature       | Endpoints del portal                                                                        | Tarea |
+| ------------- | ------------------------------------------------------------------------------------------- | ----- |
+| `ocurrencias` | `GET /ocurrencias/mis-turnos?desde&hasta` y `/mis-turnos/{turnoId}/{fecha}`                 | T-84  |
+| `alumnos`     | `GET /alumnos/mi-perfil`                                                                    | T-88  |
+| `usuarios`    | `GET /usuarios/mi-usuario`, `PATCH /usuarios/mi-usuario/contrasena` ([Usuarios](#usuarios)) | T-91  |
+| `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`             | T-93  |
+| `pagos`       | A completar por T-98                                                                        | T-98  |
+| `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                              | T-101 |
+| `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106))           | T-106 |
+| `historiales` | `GET /historiales/mis-materias` y `/mis-materias/{materiaId}/{profesorId}?mes`              | T-108 |
 
 ## Documentos PDF
 

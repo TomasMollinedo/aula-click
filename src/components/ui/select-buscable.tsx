@@ -1,6 +1,7 @@
 'use client'
 
 import { ComboboxBuscador, useComboboxBuscador } from '@/components/ui/combobox-buscador'
+import { coincideConBusqueda } from '@/utils/busqueda'
 
 type Opcion = { id: number; nombre: string }
 
@@ -19,14 +20,6 @@ type SelectBuscableProps = {
   textoVacio: string
 }
 
-/** Sin tildes ni mayúsculas, para que "nunez" encuentre a "Núñez". */
-function normalizar(texto: string): string {
-  return texto
-    .normalize('NFD')
-    .replace(/\p{Diacritic}/gu, '')
-    .toLowerCase()
-}
-
 /**
  * Un selector con buscador para elegir una opción de una lista que ya está en el cliente: se abre,
  * se escribe para acotar (todas las palabras, en cualquier orden, sin tildes) y se elige. Es un
@@ -43,11 +36,7 @@ export function SelectBuscable({
 }: SelectBuscableProps) {
   const estado = useComboboxBuscador()
 
-  const terminos = normalizar(estado.texto).split(/\s+/).filter(Boolean)
-  const visibles = opciones.filter((opcion) => {
-    const nombre = normalizar(opcion.nombre)
-    return terminos.every((termino) => nombre.includes(termino))
-  })
+  const visibles = opciones.filter((opcion) => coincideConBusqueda(opcion.nombre, estado.texto))
 
   return (
     <ComboboxBuscador
