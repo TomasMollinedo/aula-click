@@ -1147,6 +1147,7 @@ async function crear(azar: Azar) {
         turnoId: t.id,
         fechaOcurrencia: t.fechaInicio,
         importeAplicado: importes[i] ?? '0',
+        porcentajeCentro: 15,
       })),
     })
   }

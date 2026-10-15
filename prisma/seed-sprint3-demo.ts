@@ -561,6 +561,7 @@ async function crear() {
             turnoId: turnoDe(clave).id,
             fechaOcurrencia: fechaADate(turnoDe(clave).fecha),
             importeAplicado: aImporte(precioCentavos),
+            porcentajeCentro: 15,
             // Un pago anulado deja `vigente` en null: la ocurrencia puede cobrarse de nuevo.
             vigente: anulado ? null : true,
           })),

@@ -359,6 +359,17 @@ HU-34 y HU-35 (T-106).
 - **No afecta lo que ya tiene:** sus turnos siguen como están, y se pueden cancelar y reprogramar (HU-13, HU-20).
 - **Mensajes:** a la mesa de entrada, con la cantidad y el total ("El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos"); al alumno, sin importes ("Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada"). El portal se lo avisa al entrar a "Sacar turno", antes del paso 1, y el alta lo vuelve a comprobar al confirmar.
 
+## Reparto y liquidaciones (modelo)
+
+HU-43 a HU-47 (tarea T-118). Qué se guarda y para qué; los términos (reparto, devengo, ajuste, saldo, estados) son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación), y las reglas, las de cada tarea.
+
+- **`PorcentajeCentro`:** el historial del porcentaje que retiene el centro. Cada cambio es una fila nueva (desde cuándo rige y quién lo cambió); el vigente es el último. No se edita (decisión T-155).
+- **`PagoTurno.porcentajeCentro`:** el porcentaje vigente al registrarse el pago, guardado en cada cobro de un turno. Las partes del centro y del profesor no se guardan: salen de este porcentaje y el importe cobrado (decisión T-155).
+- **`Liquidacion`:** la liquidación **cerrada** de un profesor en un mes, `PAGADA` (con la fecha y el número de operación de la transferencia) o `DESCONTADA` (su saldo lo absorbió otra liquidación). Guarda los totales congelados y quién registró el pago y cuándo. Un mes se cierra una sola vez; una liquidación sin pagar no tiene fila: se calcula al consultarla (decisión T-156).
+- **`LiquidacionTurno`:** cada turno de una liquidación cerrada, con su fecha de devengo, importe, porcentaje y parte del profesor congelados. Un cobro se liquida una sola vez (decisión T-157).
+- **`AjusteLiquidacion`:** un ajuste aplicado en una liquidación cerrada, por la anulación de un turno ya liquidado o por el saldo de una liquidación anterior. Cada turno anulado y cada saldo se descuentan una sola vez (decisión T-157).
+- **Comprobante de la transferencia:** un `ComprobanteAdjunto` vinculado a la liquidación en lugar de a un pago, con las reglas de [Comprobante adjunto](#comprobante-adjunto) (decisión T-158).
+
 ## Auditoría
 
 Todas las entidades registran quién las creó y quién las modificó por última vez, y cuándo (`createdById`, `updatedById`, `createdAt`, `updatedAt`).

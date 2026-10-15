@@ -162,6 +162,8 @@ describe('registrar', () => {
               turnoId: 41,
               fechaOcurrencia: new Date('2026-10-12T00:00:00.000Z'),
               importeAplicado: '8000.50',
+              // Provisorio: T-122 guarda el porcentaje vigente
+              porcentajeCentro: 15,
             },
           ],
         },
