@@ -49,6 +49,11 @@ type DetalleModalProps = {
    * hay acciones, no se muestra.
    */
   soloCruz?: boolean
+  /**
+   * Por debajo de `md`, el modal ocupa toda la pantalla, sin márgenes ni bordes redondeados (el
+   * portal del alumno, pensado para el celular). Desde `md`, igual que siempre.
+   */
+  pantallaCompletaEnCelular?: boolean
   /** Los datos del registro, normalmente un `<Datos>` con sus `<Dato>`. */
   children?: ReactNode
 }
@@ -71,6 +76,10 @@ const PIE =
 const CRUZ_DESTACADA =
   'border-input text-foreground hover:border-oscuro/50 border bg-background shadow-sm [&_svg]:size-5 [&_svg]:stroke-[2.5]'
 
+// `pantallaCompletaEnCelular`: por debajo de `md`, todo el ancho y el alto visibles.
+const PANTALLA_COMPLETA =
+  'max-md:h-dvh max-md:max-h-dvh max-md:w-screen max-md:max-w-none max-md:rounded-none'
+
 /**
  * Detalle de solo lectura de una entidad sencilla, como modal sobre la pantalla actual (sin página
  * propia): encabezado, los datos, la trazabilidad (auditoría) y el pie con "Cerrar" y las acciones
@@ -91,13 +100,18 @@ function DetalleModal({
   acciones,
   accionesEncabezado,
   soloCruz = false,
+  pantallaCompletaEnCelular = false,
   children,
 }: DetalleModalProps) {
   const hayDatos = !cargando && !error
   const idTrazabilidad = useId()
 
   return (
-    <Panel mode="modal" onClose={onCerrar} className="max-w-xl">
+    <Panel
+      mode="modal"
+      onClose={onCerrar}
+      className={cn('max-w-xl', pantallaCompletaEnCelular && PANTALLA_COMPLETA)}
+    >
       <PanelHeader
         actions={hayDatos && accionesEncabezado}
         closeClassName={soloCruz ? CRUZ_DESTACADA : undefined}

@@ -24,6 +24,7 @@ export type OcurrenciaDetallePortalProps = {
  * (las mismas piezas que el detalle del personal: `AsistenciaDelTurno`). De solo lectura: sin
  * acciones, prioridad, observaciones del turno ni auditoría, que la API no manda. Las otras horas del
  * grupo abren su propio detalle del portal. El pago no se muestra en una cancelada (nunca se cobró).
+ * En el celular ocupa toda la pantalla (`pantallaCompletaEnCelular`).
  */
 export function OcurrenciaDetallePortal({
   turnoId,
@@ -50,6 +51,7 @@ export function OcurrenciaDetallePortal({
       onReintentar={() => refetch()}
       textoNoEncontrado="Turno no encontrado"
       soloCruz
+      pantallaCompletaEnCelular
     >
       {turno && (
         <div className="space-y-6">

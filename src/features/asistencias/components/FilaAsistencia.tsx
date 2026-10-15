@@ -1,41 +1,27 @@
 'use client'
 
-import { zodResolver } from '@hookform/resolvers/zod'
-import { AlertCircle, Pencil, UserRound } from 'lucide-react'
-import { useId, useState } from 'react'
-import { Controller, useForm, useWatch } from 'react-hook-form'
+import { Pencil, UserRound } from 'lucide-react'
+import { useState } from 'react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
-import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
-import { Label } from '@/components/ui/label'
-import { useToast } from '@/hooks/use-toast'
 import { rangoHoras } from '@/utils/horas'
 
-import { type FilaAsistenciaForm, filaAsistenciaSchema } from '../asistencias.schema'
 import type { PlazoAsistencia } from '../asistencias.types'
-import { mensajeErrorRegistro } from '../errores-asistencias'
 import {
-  MAX_OBSERVACION,
-  MAX_TEXTO_PRESENTE,
-  MENSAJE_REGISTRADA,
   OBSERVACION_CIERRE_SISTEMA,
   fechaCortaAsistencia,
   textoOtrasHoras,
 } from '../formato-asistencias'
-import { useRegistrarAsistencias } from '../hooks/use-registrar-asistencias'
 import {
   type FilaDeHora,
   otrasHorasSinRegistrar,
-  registrosDeFila,
   seVeCompacta,
   textosRegistrados,
   valoresIniciales,
 } from '../registro-asistencia'
-import { SelectorEstadoAsistencia } from './SelectorEstadoAsistencia'
-import { TextoConContador } from './TextoConContador'
+import { FormularioAsistencia } from './FormularioAsistencia'
 
 type Props = {
   fila: FilaDeHora
@@ -137,173 +123,16 @@ function RegistroFila({
   /** Sólo al corregir: cierra el formulario sin guardar. */
   onCancelar?: () => void
 }) {
-  const id = useId()
-  const toast = useToast()
-  const registrar = useRegistrarAsistencias()
-  const [error, setError] = useState<string | null>(null)
-  const nombre = `${fila.alumno.apellido}, ${fila.alumno.nombre}`
-
-  const {
-    control,
-    handleSubmit,
-    formState: { isDirty },
-  } = useForm<FilaAsistenciaForm>({
-    resolver: zodResolver(filaAsistenciaSchema),
-    defaultValues: valoresIniciales(fila),
-  })
-  // Al corregir, "Guardar" se habilita recién cuando algo cambia.
-  const sinCambios = Boolean(onCancelar) && !isDirty
-  const estado = useWatch({ control, name: 'estado' })
-
-  // Las otras horas del alumno que todavía no están registradas (las registradas se corrigen en su fila).
-  const sinRegistrar = otrasHorasSinRegistrar(fila)
-
-  const guardar = handleSubmit((datos) => {
-    const registros = registrosDeFila(fila, datos)
-    if (registros.length === 0) return
-    setError(null)
-    registrar.mutate(
-      { registros },
-      {
-        onSuccess: () => {
-          toast.success(MENSAJE_REGISTRADA)
-          onGuardado()
-        },
-        onError: (e) => setError(mensajeErrorRegistro(e)),
-      },
-    )
-  })
-
   return (
-    <form onSubmit={guardar} className="space-y-4" noValidate>
-      <Controller
-        control={control}
-        name="estado"
-        render={({ field, fieldState }) => (
-          <div className="space-y-1">
-            <SelectorEstadoAsistencia
-              value={field.value}
-              onChange={field.onChange}
-              etiqueta={`Asistencia de ${nombre}`}
-              invalido={Boolean(fieldState.error)}
-            />
-            {fieldState.error && (
-              <p className="text-destructive text-xs">{fieldState.error.message}</p>
-            )}
-          </div>
-        )}
-      />
-
-      {estado === 'PRESENTE' && (
-        <div className="grid gap-4 md:grid-cols-2">
-          <Controller
-            control={control}
-            name="trabajado"
-            render={({ field, fieldState }) => (
-              <TextoConContador
-                id={`${id}-trabajado`}
-                label="Qué se trabajó"
-                max={MAX_TEXTO_PRESENTE}
-                error={fieldState.error?.message}
-                {...field}
-              />
-            )}
-          />
-          <Controller
-            control={control}
-            name="indicaciones"
-            render={({ field, fieldState }) => (
-              <TextoConContador
-                id={`${id}-indicaciones`}
-                label="Indicaciones para la próxima sesión"
-                max={MAX_TEXTO_PRESENTE}
-                error={fieldState.error?.message}
-                {...field}
-              />
-            )}
-          />
-        </div>
-      )}
-
-      {estado === 'AUSENTE' && (
-        <Controller
-          control={control}
-          name="observacion"
-          render={({ field, fieldState }) => (
-            <TextoConContador
-              id={`${id}-observacion`}
-              label="Observación"
-              max={MAX_OBSERVACION}
-              error={fieldState.error?.message}
-              {...field}
-            />
-          )}
-        />
-      )}
-
-      {sinRegistrar.length > 0 && (
-        <Controller
-          control={control}
-          name="otrasHoras"
-          render={({ field }) => (
-            <fieldset className="space-y-2">
-              <legend className="text-sm font-medium">Aplicar también a</legend>
-              {sinRegistrar.map((hora) => {
-                const idHora = `${id}-hora-${hora.turnoId}`
-                const tildada = field.value.includes(hora.turnoId)
-                return (
-                  <div key={hora.turnoId} className="flex items-center gap-2">
-                    <Checkbox
-                      id={idHora}
-                      checked={tildada}
-                      onCheckedChange={(v) =>
-                        field.onChange(
-                          v === true
-                            ? [...field.value, hora.turnoId]
-                            : field.value.filter((t) => t !== hora.turnoId),
-                        )
-                      }
-                    />
-                    <Label htmlFor={idHora}>{rangoHoras(hora.horaInicio, hora.horaFin)}</Label>
-                  </div>
-                )
-              })}
-            </fieldset>
-          )}
-        />
-      )}
-
-      {error && (
-        <Alert variant="destructive">
-          <AlertCircle />
-          <AlertDescription className="text-destructive">{error}</AlertDescription>
-        </Alert>
-      )}
-
-      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-        {onCancelar && (
-          <Button
-            type="button"
-            variant="outline"
-            size="lg"
-            className="w-full sm:w-auto"
-            onClick={onCancelar}
-            disabled={registrar.isPending}
-          >
-            Cancelar
-          </Button>
-        )}
-        <Button
-          type="submit"
-          variant="confirmado"
-          size="lg"
-          className="w-full sm:w-auto"
-          disabled={registrar.isPending || sinCambios}
-        >
-          {registrar.isPending ? 'Guardando…' : 'Guardar'}
-        </Button>
-      </div>
-    </form>
+    <FormularioAsistencia
+      etiqueta={`Asistencia de ${fila.alumno.apellido}, ${fila.alumno.nombre}`}
+      valoresIniciales={valoresIniciales(fila)}
+      hora={fila.hora}
+      // Las otras horas del alumno sin registrar (las registradas se corrigen en su fila).
+      horasOfrecidas={otrasHorasSinRegistrar(fila)}
+      onGuardado={onGuardado}
+      onCancelar={onCancelar}
+    />
   )
 }
 

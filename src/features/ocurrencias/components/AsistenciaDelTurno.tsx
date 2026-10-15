@@ -1,6 +1,7 @@
 'use client'
 
 import Link from 'next/link'
+import type { ReactNode } from 'react'
 import { ClipboardCheck, History, Lock } from 'lucide-react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
@@ -25,6 +26,11 @@ export type AsistenciaDelTurnoProps = {
   horasSeguidas: HorasSeguidasVisibles | null
   /** El enlace al detalle de otra hora del grupo (`hrefDetalle` de `useDetalleEnUrl`). */
   hrefHora: (turnoId: number, fecha: string) => string
+  /**
+   * Al final de la sección: registrar o corregir la asistencia (el detalle del profesor lo compone
+   * desde `app/` con `renderRegistrarAsistencia`). El portal no lo pasa.
+   */
+  registro?: ReactNode
 }
 
 function Textos({ textos, className }: { textos: TextoAsistencia[]; className?: string }) {
@@ -54,6 +60,7 @@ export function AsistenciaDelTurno({
   asistencia,
   horasSeguidas,
   hrefHora,
+  registro,
 }: AsistenciaDelTurnoProps) {
   const hora = vistaAsistenciaHora(asistencia, plazo, { conHorasSeguidas: horasSeguidas !== null })
   const grupo = horasSeguidas && vistaHorasSeguidas(horasSeguidas)
@@ -127,6 +134,8 @@ export function AsistenciaDelTurno({
           </ul>
         </div>
       )}
+
+      {registro}
     </SeccionDetalle>
   )
 }

@@ -43,6 +43,12 @@ export type OcurrenciaDetalleProps = {
    * `features/pagos` y solo de mesa de entradas); sin esta prop, la sección de pago no lo muestra.
    */
   renderComprobante?: (pago: PagoRegistrado) => ReactNode
+  /**
+   * Registrar o corregir la asistencia, dentro de la sección "Asistencia". Lo compone `app/profesor`
+   * (`RegistrarAsistenciaTurno`, de `features/asistencias`), que decide si se muestra con
+   * `ocurrencia.acciones.registrarAsistencia`; sin esta prop, la sección es de solo lectura.
+   */
+  renderRegistrarAsistencia?: (ocurrencia: OcurrenciaDetalleDatos) => ReactNode
 }
 
 /** El pago de una ocurrencia ya pagada. */
@@ -100,8 +106,8 @@ function SeccionPago({
  * Detalle de un turno en una fecha (T-43/T-44, HU-13 a HU-20, HU-22): datos del turno (con el
  * período de la serie si es recurrente), prioridad, la asistencia de esa hora con sus horas seguidas
  * (`AsistenciaDelTurno`), pago, cancelación y las acciones del pie. Si el turno lo sacó el alumno
- * desde el portal, la trazabilidad lo dice (HU-29). Se cierra solo
- * con la cruz del encabezado (no hay "Cerrar" en el pie). La sección de pago no se muestra en una
+ * desde el portal, la trazabilidad lo dice (HU-29). El profesor del turno registra la asistencia
+ * desde la sección (`renderRegistrarAsistencia`). Se cierra solo con la cruz del encabezado (no hay "Cerrar" en el pie). La sección de pago no se muestra en una
  * cancelada (nunca se cobró: la API manda "Pendiente" y confundiría) ni cuando la API no manda
  * `pago` (el profesor).
  */
@@ -112,6 +118,7 @@ export function OcurrenciaDetalle({
   renderAcciones,
   renderAccionesEncabezado,
   renderComprobante,
+  renderRegistrarAsistencia,
 }: OcurrenciaDetalleProps) {
   const { data: ocurrencia, isLoading, error, refetch } = useOcurrencia({ turnoId, fecha })
   const { hrefDetalle } = useDetalleEnUrl()
@@ -193,6 +200,7 @@ export function OcurrenciaDetalle({
               asistencia={ocurrencia.asistencia}
               horasSeguidas={ocurrencia.horasSeguidas}
               hrefHora={hrefDetalle}
+              registro={renderRegistrarAsistencia?.(ocurrencia)}
             />
           )}
 
