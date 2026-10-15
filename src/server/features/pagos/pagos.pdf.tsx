@@ -14,12 +14,14 @@ import {
 } from '@/server/shared/pdf/estilos'
 import { renderizarPdf } from '@/server/shared/pdf/renderizar'
 import { CeldaPdf, CierrePdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pdf/tabla'
-import { datosDelMedio, textoNumero, textoRegistradoPor } from './pagos.formato'
+import { datosDelMedio, textoNumero, textoRegistradoPor, turnosPorMateria } from './pagos.formato'
 import type { Comprobante } from './pagos.validation'
 
 // El comprobante de pago en PDF (HU-15, T-111; formas de pago, HU-23, T-96). Solo presentación:
 // recibe el comprobante que devuelve el service y no suma ni recalcula nada (importes, total y
 // vuelto son los de la API). Los textos salen de `pagos.formato.ts`.
+
+type Turno = Comprobante['turnos'][number]
 
 export type DatosComprobantePdf = {
   comprobante: Comprobante
@@ -69,6 +71,7 @@ const estilos = StyleSheet.create({
     marginBottom: 2.4,
   },
   total: { ...TEXTO.titulo, fontWeight: 600 },
+  subtotal: { fontWeight: 700 },
   recibido: {
     marginTop: px(12),
     paddingTop: px(12),
@@ -93,6 +96,19 @@ export function ComprobantePdf({
 }: DatosComprobantePdf) {
   const { alumno, turnos } = comprobante
   const medio = datosDelMedio(comprobante)
+  // Con más de una materia, la tabla va agrupada por materia con el subtotal de cada una (HU-25).
+  const grupos = turnosPorMateria(turnos)
+  const filaDe = (turno: Turno) => (
+    <FilaPdf key={`${turno.turnoId}|${turno.fecha}`}>
+      <CeldaPdf>{fechaDocumento(turno.fecha)}</CeldaPdf>
+      <CeldaPdf>{rangoHoras(turno.horaInicio, turno.horaFin)}</CeldaPdf>
+      <CeldaPdf>{turno.materia.nombre}</CeldaPdf>
+      <CeldaPdf>
+        {turno.profesor.nombre} {turno.profesor.apellido}
+      </CeldaPdf>
+      <CeldaPdf>{formatearPesos(turno.importe)}</CeldaPdf>
+    </FilaPdf>
+  )
   return (
     <DocumentoOficialPdf
       titulo={TITULO}
@@ -124,17 +140,23 @@ export function ComprobantePdf({
         ) : null}
 
         <TablaPdf columnas={COLUMNAS} cierre={<Cierre comprobante={comprobante} />}>
-          {turnos.map((turno) => (
-            <FilaPdf key={`${turno.turnoId}|${turno.fecha}`}>
-              <CeldaPdf>{fechaDocumento(turno.fecha)}</CeldaPdf>
-              <CeldaPdf>{rangoHoras(turno.horaInicio, turno.horaFin)}</CeldaPdf>
-              <CeldaPdf>{turno.materia.nombre}</CeldaPdf>
-              <CeldaPdf>
-                {turno.profesor.nombre} {turno.profesor.apellido}
-              </CeldaPdf>
-              <CeldaPdf>{formatearPesos(turno.importe)}</CeldaPdf>
-            </FilaPdf>
-          ))}
+          {grupos.length > 1
+            ? grupos.flatMap((grupo) => [
+                ...grupo.turnos.map(filaDe),
+                <FilaPdf key={`subtotal-${grupo.materia.id}`}>
+                  <CeldaPdf>{''}</CeldaPdf>
+                  <CeldaPdf>{''}</CeldaPdf>
+                  <CeldaPdf>{''}</CeldaPdf>
+                  {/* En la columna más ancha, pegado al importe: el nombre no se parte. */}
+                  <CeldaPdf>
+                    <Text style={estilos.subtotal}>Subtotal {grupo.materia.nombre}</Text>
+                  </CeldaPdf>
+                  <CeldaPdf>
+                    <Text style={estilos.subtotal}>{formatearPesos(grupo.subtotal)}</Text>
+                  </CeldaPdf>
+                </FilaPdf>,
+              ])
+            : turnos.map(filaDe)}
         </TablaPdf>
       </View>
     </DocumentoOficialPdf>

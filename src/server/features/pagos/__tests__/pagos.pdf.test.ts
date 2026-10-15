@@ -91,6 +91,26 @@ describe('renderizarComprobantePdf', { timeout: 60_000 }, () => {
     },
   )
 
+  it('con Inglés y Matemática: agrupado por materia con sus subtotales, en una hoja', async () => {
+    const base = comprobante(4)
+    const turnos = base.turnos.map((turno, i) => ({
+      ...turno,
+      materia: i % 2 === 0 ? { id: 2, nombre: 'Matemática' } : { id: 5, nombre: 'Inglés' },
+    }))
+    const pdf = await renderizar({ ...base, turnos })
+    expect(contarPaginas(pdf)).toBe(1)
+  })
+
+  it('con 200 turnos de varias materias: agrupado y en varias hojas, sin fallar', async () => {
+    const base = comprobante(200)
+    const turnos = base.turnos.map((turno, i) => ({
+      ...turno,
+      materia: { id: i % 3, nombre: ['Física', 'Inglés', 'Matemática'][i % 3] as string },
+    }))
+    const pdf = await renderizar({ ...base, turnos })
+    expect(contarPaginas(pdf)).toBeGreaterThan(1)
+  })
+
   it('con observaciones de varias líneas y sin monto recibido (pago anterior a T-112)', async () => {
     const pdf = await renderizar(
       comprobante(1, {
