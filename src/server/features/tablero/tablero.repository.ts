@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/prisma'
 import { totalAdeudado } from '@/server/features/cuentas/cuentas.condiciones'
-import { totalCobradoEntre } from '@/server/features/pagos/pagos.condiciones'
+import {
+  totalCobradoEntre,
+  totalCobradoPorForma,
+  type TotalesPorForma,
+} from '@/server/features/pagos/pagos.condiciones'
 import { leerOcurrencias, type Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import type { Reloj } from '@/server/shared/fechas'
 
@@ -9,7 +13,7 @@ import type { Reloj } from '@/server/shared/fechas'
 // `turnos`, la deuda de `cuentas.condiciones` y lo cobrado de `pagos.condiciones`: acá no se
 // reimplementa ninguna regla. Los importes salen como `number`, nunca como `Prisma.Decimal`.
 
-export type { Ocurrencia }
+export type { Ocurrencia, TotalesPorForma }
 
 export const tableroRepository = {
   /**
@@ -57,6 +61,14 @@ export const tableroRepository = {
   /** Suma de los pagos `VIGENTE` con `fechaPago` en el período (extremos incluidos). */
   async totalCobrado(periodo: { desde: string; hasta: string }): Promise<number> {
     return totalCobradoEntre(prisma, periodo)
+  },
+
+  /**
+   * Lo cobrado en el período por forma de pago (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`), con el mismo
+   * filtro que `totalCobrado`: sólo pagos `VIGENTE`, así que las tres suman ese total.
+   */
+  async totalCobradoPorForma(periodo: { desde: string; hasta: string }): Promise<TotalesPorForma> {
+    return totalCobradoPorForma(prisma, periodo)
   },
 
   /** Total adeudado a `hoy`, de todos los alumnos y sin período: la deuda de `cuentas`. */

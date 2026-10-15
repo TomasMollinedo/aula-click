@@ -14,6 +14,7 @@ const { repository, getSession } = vi.hoisted(() => ({
     capacidadesDeBloques: vi.fn(),
     contarAlumnosNuevos: vi.fn(),
     totalCobrado: vi.fn(),
+    totalCobradoPorForma: vi.fn(),
     totalAdeudado: vi.fn(),
   },
   getSession: vi.fn(),
@@ -41,7 +42,9 @@ const ocurrencia = {
   turnoId: 41,
   fecha: '2020-01-06',
   bloqueAgendaId: 10,
+  alumnoId: 12,
   estado: 'SIN_REGISTRAR',
+  plazoAsistencia: { vence: '2020-01-13', vencido: true },
   materia: { id: 2, nombre: 'Matemática' },
   profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez', busqueda: 'gomez ana' },
 }
@@ -56,6 +59,11 @@ beforeEach(() => {
   repository.capacidadesDeBloques.mockResolvedValue(new Map([[10, 4]]))
   repository.contarAlumnosNuevos.mockResolvedValue(2)
   repository.totalCobrado.mockResolvedValue(16000)
+  repository.totalCobradoPorForma.mockResolvedValue({
+    EFECTIVO: 10000,
+    TRANSFERENCIA: 6000,
+    DEBITO: 0,
+  })
   repository.totalAdeudado.mockResolvedValue(48000.5)
 })
 
@@ -96,16 +104,20 @@ describe('GET /tablero', () => {
         cancelados: { cantidad: 1, porcentaje: 50 },
         sinRegistrar: { cantidad: 1, porcentaje: 50 },
         agendados: null,
-        asistio: { disponible: false },
-        noAsistio: { disponible: false },
+        asistio: { cantidad: 0, porcentaje: 0 },
+        noAsistio: { cantidad: 0, porcentaje: 0 },
       },
       ocupacion: { turnos: 1, capacidad: 4, porcentaje: 25 },
-      alumnos: { nuevos: 2, atendidos: { disponible: false } },
+      alumnos: { nuevos: 2, atendidos: 0 },
       materiasConMasDemanda: [{ materia: { id: 2, nombre: 'Matemática' }, cantidad: 1 }],
       profesoresConMasTurnos: [
         { profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' }, cantidad: 1 },
       ],
-      pagos: { totalCobrado: 16000, totalAdeudado: 48000.5 },
+      pagos: {
+        totalCobrado: 16000,
+        cobradoPorForma: { EFECTIVO: 10000, TRANSFERENCIA: 6000, DEBITO: 0 },
+        totalAdeudado: 48000.5,
+      },
     })
   })
 
@@ -115,6 +127,20 @@ describe('GET /tablero', () => {
     const periodo = { desde: '2020-01-06', hasta: '2020-01-12' }
     expect(repository.ocurrenciasDelPeriodo.mock.calls[0]?.[0]).toEqual(periodo)
     expect(repository.totalCobrado).toHaveBeenCalledExactlyOnceWith(periodo)
+    expect(repository.totalCobradoPorForma).toHaveBeenCalledExactlyOnceWith(periodo)
+  })
+
+  it('con asistencia registrada, asistió, no asistió y atendidos tienen valor', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      { ...ocurrencia, turnoId: 51, estado: 'REALIZADO', alumnoId: 12 },
+      { ...ocurrencia, turnoId: 52, estado: 'REALIZADO', alumnoId: 13 },
+      { ...ocurrencia, turnoId: 53, estado: 'AUSENTE', alumnoId: 14 },
+    ])
+    const json = await (await pedir()).json()
+
+    expect(json.turnos.asistio).toEqual({ cantidad: 2, porcentaje: 66.7 })
+    expect(json.turnos.noAsistio).toEqual({ cantidad: 1, porcentaje: 33.3 })
+    expect(json.alumnos.atendidos).toBe(2)
   })
 
   it('período futuro → `agendados` con cantidad, no `null`', async () => {
@@ -211,14 +237,178 @@ describe('OpenAPI', () => {
     ])
   })
 
-  it('el indicador no disponible sólo admite `{ disponible: false }`', () => {
-    const schema = doc.components?.schemas?.IndicadorNoDisponible
-
-    expect(schema).toMatchObject({
+  it('ya no hay indicadores "no disponibles": asistió y no asistió son conteos', () => {
+    expect(doc.components?.schemas?.IndicadorNoDisponible).toBeUndefined()
+    expect(doc.components?.schemas?.TableroConteoAsistencia).toMatchObject({
       type: 'object',
-      required: ['disponible'],
-      additionalProperties: false,
+      required: ['cantidad', 'porcentaje'],
     })
+  })
+})
+
+describe('GET /tablero/asistencia', () => {
+  const pedirAsistencia = (query = '?desde=2020-01-06&hasta=2020-01-12') =>
+    app.request(`/api/v1/tablero/asistencia${query}`)
+
+  const PERIODO = { desde: '2020-01-06', hasta: '2020-01-12' }
+
+  beforeEach(() => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      { ...ocurrencia, turnoId: 61, estado: 'REALIZADO' },
+      { ...ocurrencia, turnoId: 62, estado: 'AUSENTE', alumnoId: 13 },
+      { ...ocurrencia, turnoId: 63 },
+      { ...ocurrencia, turnoId: 64, estado: 'CANCELADO' },
+    ])
+  })
+
+  it('sin sesión → 401 NO_AUTENTICADO', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    const res = await pedirAsistencia()
+
+    expect(res.status).toBe(401)
+    expect((await res.json()).error.code).toBe('NO_AUTENTICADO')
+    ningunaLectura()
+  })
+
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'ALUMNO'])('con %s → 403 SIN_PERMISO', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+    const res = await pedirAsistencia()
+
+    expect(res.status).toBe(403)
+    expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    ningunaLectura()
+  })
+
+  it('con GERENTE → 200 con el resumen y las dos tablas, con sus defaults', async () => {
+    const res = await pedirAsistencia()
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toStrictEqual({
+      periodo: PERIODO,
+      hoy: expect.stringMatching(FECHA),
+      resumen: {
+        porcentajeAsistencia: 50,
+        cerradosSinRegistrar: 1,
+        profesoresSinRegistrar: 1,
+        alumnosBajoElUmbral: 1,
+      },
+      profesores: {
+        data: [
+          {
+            profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+            clasesRealizadas: 1,
+            ausencias: 1,
+            porcentajeAsistencia: 50,
+            cerradosSinRegistrar: 1,
+            dentroDelPlazo: 0,
+            porcentajeSinRegistrar: 33.3,
+            noRegistraAsistencia: true,
+          },
+        ],
+        meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
+      },
+      materias: {
+        data: [
+          {
+            materia: { id: 2, nombre: 'Matemática' },
+            clasesRealizadas: 1,
+            ausencias: 1,
+            porcentajeAsistencia: 50,
+            cerradosSinRegistrar: 1,
+            dentroDelPlazo: 0,
+            porcentajeSinRegistrar: 33.3,
+          },
+        ],
+        meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
+      },
+    })
+  })
+
+  it('lee las ocurrencias una sola vez, con el período tal cual, y no pide nada más', async () => {
+    await pedirAsistencia()
+
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(1)
+    expect(repository.ocurrenciasDelPeriodo.mock.calls[0]?.[0]).toEqual(PERIODO)
+    expect(repository.totalCobrado).not.toHaveBeenCalled()
+    expect(repository.totalAdeudado).not.toHaveBeenCalled()
+  })
+
+  it('`soloSinRegistrar`, `orden` y `direccion` se aceptan', async () => {
+    const res = await pedirAsistencia(
+      '?desde=2020-01-06&hasta=2020-01-12&soloSinRegistrar=true&orden=profesor&direccion=asc',
+    )
+
+    expect(res.status).toBe(200)
+    expect((await res.json()).profesores.data).toHaveLength(1)
+  })
+
+  it('`soloSinRegistrar=true` sin ningún profesor que no registre → tabla vacía', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([{ ...ocurrencia, estado: 'REALIZADO' }])
+    const json = await (
+      await pedirAsistencia('?desde=2020-01-06&hasta=2020-01-12&soloSinRegistrar=true')
+    ).json()
+
+    expect(json.profesores).toEqual({
+      data: [],
+      meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },
+    })
+    expect(json.materias.data).toHaveLength(1)
+  })
+
+  it('un solo día y 366 días → 200', async () => {
+    expect((await pedirAsistencia('?desde=2020-01-06&hasta=2020-01-06')).status).toBe(200)
+    expect((await pedirAsistencia('?desde=2028-01-01&hasta=2028-12-31')).status).toBe(200)
+  })
+
+  const BASE = '?desde=2020-01-06&hasta=2020-01-12'
+  it.each([
+    ['sin `desde`', '?hasta=2020-01-12', 'desde'],
+    ['sin `hasta`', '?desde=2020-01-06', 'hasta'],
+    ['`hasta` anterior a `desde`', '?desde=2020-01-12&hasta=2020-01-06', 'hasta'],
+    ['más de 366 días', '?desde=2028-01-01&hasta=2029-01-01', 'hasta'],
+    ['página de profesores en 0', `${BASE}&paginaProfesores=0`, 'paginaProfesores'],
+    ['página de materias decimal', `${BASE}&paginaMaterias=1.5`, 'paginaMaterias'],
+    ['página que no es un número', `${BASE}&paginaProfesores=x`, 'paginaProfesores'],
+    ['columna que no existe', `${BASE}&orden=alumno`, 'orden'],
+    ['dirección que no existe', `${BASE}&direccion=arriba`, 'direccion'],
+    ['`soloSinRegistrar` que no es booleano', `${BASE}&soloSinRegistrar=si`, 'soloSinRegistrar'],
+  ])('%s → 400 VALIDACION sobre el campo', async (_caso, query, campo) => {
+    const res = await pedirAsistencia(query)
+
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error.code).toBe('VALIDACION')
+    expect(json.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: [campo] })]),
+    )
+    ningunaLectura()
+  })
+
+  it('OpenAPI: declara sus status codes, los parámetros y los componentes de la respuesta', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    const get = doc.paths?.['/api/v1/tablero/asistencia']?.get
+
+    expect(Object.keys(get?.responses ?? {}).sort()).toEqual(['200', '400', '401', '403'])
+    for (const codigo of ['400', '401', '403']) {
+      const respuesta = get?.responses?.[codigo]
+      const contenido = respuesta && 'content' in respuesta ? respuesta.content : undefined
+      expect(contenido?.['application/json']?.example).toBeDefined()
+    }
+    const parametros = (get?.parameters ?? []).flatMap((p) =>
+      'in' in p && p.in === 'query' ? [{ name: p.name, required: p.required }] : [],
+    )
+    expect(parametros).toEqual([
+      { name: 'desde', required: true },
+      { name: 'hasta', required: true },
+      { name: 'paginaProfesores', required: false },
+      { name: 'paginaMaterias', required: false },
+      { name: 'orden', required: false },
+      { name: 'direccion', required: false },
+      { name: 'soloSinRegistrar', required: false },
+    ])
+    for (const nombre of ['TableroAsistenciaProfesor', 'TableroAsistenciaMateria']) {
+      expect(doc.components?.schemas?.[nombre]).toBeDefined()
+    }
   })
 })
 
@@ -249,6 +439,43 @@ describe('GET /tablero/pdf', { timeout: 30_000 }, () => {
     const periodo = { desde: '2020-01-06', hasta: '2020-01-12' }
     expect(repository.ocurrenciasDelPeriodo.mock.calls[0]?.[0]).toEqual(periodo)
     expect(repository.totalCobrado).toHaveBeenCalledExactlyOnceWith(periodo)
+  })
+
+  it('`seccion=general` es lo mismo que sin `seccion`: mismo archivo y mismo título', async () => {
+    const res = await pedirPdf('?desde=2020-01-06&hasta=2020-01-12&seccion=general')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-disposition')).toContain('tablero-2020-01-06_2020-01-12.pdf')
+    expect(metadato(Buffer.from(await res.arrayBuffer()), 'Title')).toBe('Tablero semanal')
+    expect(repository.totalCobradoPorForma).toHaveBeenCalledTimes(1)
+  })
+
+  it('`seccion=asistencia` → el PDF de asistencia, con su archivo y sin pedir lo del dinero', async () => {
+    const res = await pedirPdf('?desde=2020-01-06&hasta=2020-01-12&seccion=asistencia')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/pdf')
+    expect(res.headers.get('content-disposition')).toBe(
+      `inline; filename="tablero-asistencia-2020-01-06_2020-01-12.pdf"; filename*=UTF-8''tablero-asistencia-2020-01-06_2020-01-12.pdf`,
+    )
+    const pdf = Buffer.from(await res.arrayBuffer())
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(metadato(pdf, 'Title')).toBe('Asistencia semanal')
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(1)
+    expect(repository.totalCobrado).not.toHaveBeenCalled()
+    expect(repository.totalCobradoPorForma).not.toHaveBeenCalled()
+  })
+
+  it('`seccion` que no existe → 400 JSON sobre `seccion`, sin lecturas', async () => {
+    const res = await pedirPdf('?desde=2020-01-06&hasta=2020-01-12&seccion=pagos')
+
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error.code).toBe('VALIDACION')
+    expect(json.error.details).toEqual(
+      expect.arrayContaining([expect.objectContaining({ path: ['seccion'] })]),
+    )
+    ningunaLectura()
   })
 
   it('sin sesión → 401 JSON, sin lecturas', async () => {
