@@ -98,6 +98,9 @@ export function DatosAlumno({
           </Datos>
         </Seccion>
 
+        {/* En la grilla, al lado de "Datos escolares": ocupa el lugar que quedaba libre. */}
+        <AccesoPortalFicha alumno={alumno} puedeEditar={puedeEditar} />
+
         <Seccion icon={NotebookPen} titulo="Observaciones" className="lg:col-span-2">
           <p className="text-sm whitespace-pre-line">
             {alumno.observaciones ?? (
@@ -106,8 +109,6 @@ export function DatosAlumno({
           </p>
         </Seccion>
       </div>
-
-      <AccesoPortalFicha alumno={alumno} puedeEditar={puedeEditar} />
 
       <Trazabilidad auditoria={alumno} />
     </div>
