@@ -118,16 +118,23 @@ src/
 │ │ # turnos-vigentes.ts y TurnosQueImpidenLaBaja (una muestra de los turnos que impiden la baja),
 │ │ # HorarioProfesor, BloquePanel, BloqueForm, BloqueDetalleModal, ConfirmarBajaBloque;
 │ │ # el listado es una grilla de tarjetas con foto (ProfesoresGrid + ProfesorCard), no una tabla
-│ ├── turnos/ # registrar turno (HU-07) y reprogramar un turno (HU-20, T-50)
-│ │ ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts
+│ ├── turnos/ # registrar turno (HU-07), reprogramar (HU-20, T-50) y sacar turno desde el portal (HU-29, T-94)
+│ │ ├── turnos.types.ts, turnos.schema.ts, reprogramacion.types.ts, mis-turnos.types.ts
 │ │ ├── errores-turnos.ts, formato-turnos.ts, seleccion-turno.ts, errores-reprogramaciones.ts, formato-reprogramaciones.ts
-│ │ ├── api/{turnos.api.ts, turnos.keys.ts, reprogramaciones.api.ts}
+│ │ ├── sacar-turno.ts # portal: el schema del formulario, el body del alta y los textos del alumno
+│ │ ├── api/{turnos.api.ts, turnos.keys.ts, reprogramaciones.api.ts, mis-turnos.api.ts, mis-turnos.keys.ts}
 │ │ ├── hooks/{use-disponibilidad.ts, use-invalidar-disponibilidad.ts, use-crear-turnos.ts, use-reprogramar-turno.ts}
+│ │ │ y los del portal: {use-mi-habilitacion.ts, use-mis-materias.ts, use-mi-disponibilidad.ts,
+│ │ │ use-invalidar-mi-disponibilidad.ts, use-sacar-turno.ts}
 │ │ └── components/
 │ │ ├── RegistrarTurnoPantalla.tsx, RegistrarTurno.tsx: una pantalla por secciones (SeccionPaso.tsx,
 │ │ │ SeleccionAlumno.tsx, FiltrosDisponibilidad.tsx, ResultadosDisponibilidad.tsx, HorasDelBloque.tsx,
 │ │ │ TurnoForm.tsx, RechazoAlta.tsx, ConfirmacionTurno.tsx); la confirmación abre el detalle del turno
 │ │ │ (`?detalle=&fecha=`) que le llega por `renderDetalle`
+│ │ ├── SacarTurno.tsx: "Sacar turno" del portal (HU-29), el mismo recorrido en una pantalla por secciones
+│ │ │ (SeccionPaso.tsx, el de la mesa) sin elegir alumno ni observaciones, con archivos propios
+│ │ │ (SacarTurnoBusqueda.tsx, SacarTurnoDatos.tsx, SacarTurnoResumen.tsx, SacarTurnoReservado.tsx):
+│ │ │ el alta de la mesa no se toca
 │ │ └── AccionReprogramarTurno.tsx, ReprogramarTurnoDialog.tsx # reprogramar: reutiliza la búsqueda (FiltrosDisponibilidad con
 │ │ materiaFija, HorasDelBloque con unaSola); al reprogramar abre el detalle con el turnoId de la API y la fecha nueva
 │ ├── agendas/ # las tres agendas: diaria (HU-09), propia (HU-10) y de la ficha del profesor (HU-02)

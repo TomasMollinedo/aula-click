@@ -267,6 +267,32 @@ describe('interpretarErrorAlta: volver a buscar', () => {
   })
 })
 
+describe('interpretarErrorAlta: DEUDA_VENCIDA', () => {
+  // `details` es un objeto (no un arreglo) y el `message` ya viene redactado para cada rol.
+  it.each([
+    'El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos',
+    'Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada',
+  ])('con details { cantidad, total }: %s', (mensaje) => {
+    const error = new ApiError(409, 'DEUDA_VENCIDA', mensaje, { cantidad: 3, total: 24000 })
+    expect(interpretarErrorAlta(error, 'RECURRENTE')).toEqual({
+      tipo: 'deudaVencida',
+      mensaje,
+      cantidad: 3,
+      total: 24000,
+    })
+  })
+
+  it.each([undefined, [{ cantidad: 3, total: 24000 }], { cantidad: '3', total: 24000 }])(
+    'details sin la forma esperada (%o): general con el message',
+    (details) => {
+      const mensaje = 'Tenés clases adeudadas de hace más de 30 días'
+      expect(
+        interpretarErrorAlta(new ApiError(409, 'DEUDA_VENCIDA', mensaje, details), 'SESION_UNICA'),
+      ).toEqual({ tipo: 'general', mensaje })
+    },
+  )
+})
+
 describe('interpretarErrorAlta: general', () => {
   it.each([
     [new ApiError(404, 'NO_ENCONTRADO', 'Alumno no encontrado'), 'Alumno no encontrado'],

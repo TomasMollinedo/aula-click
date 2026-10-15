@@ -34,6 +34,8 @@ export function interpretarErrorReprogramacion(error: unknown): ErrorReprogramac
         mensaje: interpretado.camposMarcados[0]?.mensaje ?? interpretado.mensaje ?? error.message,
       }
     case 'fechasLlenas':
+    // La deuda vencida no impide reprogramar (dominio.md → Tope de deuda): si llegara, se muestra.
+    case 'deudaVencida':
       return { tipo: 'general', mensaje: interpretado.mensaje }
   }
 }
