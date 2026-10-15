@@ -4,6 +4,7 @@ import {
   leerPagoDeOcurrencia,
   leerPagoParaAnular,
   pagosConMismaTransferencia,
+  pagosDelFiltro,
   totalCobradoEntre,
   totalCobradoPorForma,
 } from '../pagos.condiciones'
@@ -179,6 +180,35 @@ describe('totalCobradoPorForma', () => {
     expect(sinPagos.findMany).not.toHaveBeenCalled()
   })
 
+  it('con el filtro de los pagos realizados (T-98): los mismos pagos que el listado, sólo `VIGENTE`', async () => {
+    const { client, groupBy } = clienteConGrupos([{ formaPagoId: 2, importe: 34000 }], FORMAS)
+
+    const totales = await totalCobradoPorForma(client, {
+      ...PERIODO,
+      alumnoId: 12,
+      materiaId: 2,
+      profesorId: 3,
+      formaPago: 'TRANSFERENCIA',
+    })
+
+    // Con forma de pago, las otras dos quedan en 0.
+    expect(totales).toEqual({ EFECTIVO: 0, TRANSFERENCIA: 34000, DEBITO: 0 })
+    expect(groupBy).toHaveBeenCalledWith({
+      by: ['formaPagoId'],
+      where: {
+        estado: 'VIGENTE',
+        fechaPago: {
+          gte: new Date('2026-09-28T00:00:00.000Z'),
+          lte: new Date('2026-10-04T00:00:00.000Z'),
+        },
+        alumnoId: 12,
+        turnos: { some: { turno: { materiaId: 2, bloqueAgenda: { profesorId: 3 } } } },
+        formaPago: { tipoFormaPago: 'TRANSFERENCIA' },
+      },
+      _sum: { importeTotal: true },
+    })
+  })
+
   it('una forma de pago con pagos y sin código → 500 que pide correr el seed', async () => {
     const { client } = clienteConGrupos(
       [{ formaPagoId: 9, importe: 100 }],
@@ -190,6 +220,49 @@ describe('totalCobradoPorForma', () => {
     expect(error).toBeInstanceOf(AppError)
     expect(error.statusCode).toBe(500)
     expect(error.message).toMatch(/pnpm db:seed/)
+  })
+})
+
+// T-98 (HU-36): el filtro de los pagos realizados. Es el `where` del listado (vigentes y anulados);
+// los totales le suman `estado: 'VIGENTE'` (arriba).
+describe('pagosDelFiltro', () => {
+  const FECHA_PAGO = {
+    gte: new Date('2026-10-01T00:00:00.000Z'),
+    lte: new Date('2026-10-31T00:00:00.000Z'),
+  }
+
+  it('sólo el período: la fecha de pago con los dos extremos, sin estado ni otras claves', () => {
+    expect(pagosDelFiltro({ desde: '2026-10-01', hasta: '2026-10-31' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+    })
+  })
+
+  it('combinados: período, alumno, materia y profesor sobre el mismo turno y forma por código', () => {
+    expect(
+      pagosDelFiltro({
+        desde: '2026-10-01',
+        hasta: '2026-10-31',
+        alumnoId: 12,
+        materiaId: 2,
+        profesorId: 3,
+        formaPago: 'DEBITO',
+      }),
+    ).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+      alumnoId: 12,
+      turnos: { some: { turno: { materiaId: 2, bloqueAgenda: { profesorId: 3 } } } },
+      formaPago: { tipoFormaPago: 'DEBITO' },
+    })
+  })
+
+  it('sólo la materia o sólo el profesor: algún turno que cumpla eso', () => {
+    const periodo = { desde: '2026-10-01', hasta: '2026-10-31' }
+    expect(pagosDelFiltro({ ...periodo, materiaId: 2 }).turnos).toStrictEqual({
+      some: { turno: { materiaId: 2 } },
+    })
+    expect(pagosDelFiltro({ ...periodo, profesorId: 3 }).turnos).toStrictEqual({
+      some: { turno: { bloqueAgenda: { profesorId: 3 } } },
+    })
   })
 })
 
