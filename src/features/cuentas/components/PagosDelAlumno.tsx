@@ -61,10 +61,10 @@ export type PagosDelAlumnoProps = {
 export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumnoProps) {
   const { filtros: deLaUrl, cambiar, limpiar } = useFiltrosCuenta()
   // Los de la ficha: sin el alumno (es el de la ficha) ni páginas.
-  const { desde, hasta, materiaId, profesorId } = deLaUrl
+  const { desde, hasta, materiaIds, profesorId } = deLaUrl
   const filtros = useMemo<Filtros>(
-    () => ({ desde, hasta, materiaId, profesorId }),
-    [desde, hasta, materiaId, profesorId],
+    () => ({ desde, hasta, materiaIds, profesorId }),
+    [desde, hasta, materiaIds, profesorId],
   )
 
   const query = useCuentaDelAlumno(alumnoId, aParams(filtros))

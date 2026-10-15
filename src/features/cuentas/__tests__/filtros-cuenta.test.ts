@@ -21,7 +21,7 @@ const TODOS: FiltrosGlobal = {
   alumnoId: 12,
   desde: '2026-09-01',
   hasta: '2026-09-30',
-  materiaId: 2,
+  materiaIds: [2, 5],
   profesorId: 3,
 }
 
@@ -32,17 +32,25 @@ describe('leerFiltros', () => {
   })
 
   it('todos los filtros de la vista global', () => {
-    expect(leer('alumnoId=12&desde=2026-09-01&hasta=2026-09-30&materiaId=2&profesorId=3')).toEqual(
-      TODOS,
-    )
+    expect(
+      leer('alumnoId=12&desde=2026-09-01&hasta=2026-09-30&materiaId=2&materiaId=5&profesorId=3'),
+    ).toEqual(TODOS)
   })
 
   it('los de la ficha, junto al tab', () => {
     expect(leer('tab=pagos&desde=2026-09-01&materiaId=2')).toEqual({
       ...FILTROS_VACIOS,
       desde: '2026-09-01',
-      materiaId: 2,
+      materiaIds: [2],
     })
+  })
+
+  it('varias materias: sin repetir y de menor a mayor, sin importar el orden de la URL', () => {
+    expect(leer('materiaId=5&materiaId=2&materiaId=5').materiaIds).toEqual([2, 5])
+  })
+
+  it('de las materias se descartan solo las inválidas', () => {
+    expect(leer('materiaId=2&materiaId=abc&materiaId=0&materiaId=7').materiaIds).toEqual([2, 7])
   })
 
   it.each([
@@ -61,7 +69,7 @@ describe('leerFiltros', () => {
     (valor) => {
       const filtros = leer(new URLSearchParams({ alumnoId: valor, materiaId: valor }).toString())
       expect(filtros.alumnoId).toBeNull()
-      expect(filtros.materiaId).toBeNull()
+      expect(filtros.materiaIds).toEqual([])
     },
   )
 
@@ -99,9 +107,9 @@ describe('paramsConFiltros', () => {
     const params = paramsConFiltros(new URLSearchParams(), {
       ...FILTROS_VACIOS,
       desde: '2026-09-01',
-      materiaId: 2,
+      materiaIds: [5, 2],
     })
-    expect(params.toString()).toBe('desde=2026-09-01&materiaId=2')
+    expect(params.toString()).toBe('desde=2026-09-01&materiaId=2&materiaId=5')
   })
 
   it('ida y vuelta: lo que escribe es lo que lee', () => {
@@ -128,9 +136,17 @@ describe('paramsConFiltros', () => {
   it('cambiar un filtro vuelve las dos tablas a la página 1', () => {
     const params = paramsConFiltros(
       new URLSearchParams('alumnoId=12&pageAdeudados=3&pageProximos=2'),
-      { ...FILTROS_VACIOS, alumnoId: 12, materiaId: 2 },
+      { ...FILTROS_VACIOS, alumnoId: 12, materiaIds: [2] },
     )
     expect(params.toString()).toBe('alumnoId=12&materiaId=2')
+  })
+
+  it('cambiar las materias reemplaza todas las de la URL', () => {
+    const params = paramsConFiltros(new URLSearchParams('materiaId=2&materiaId=5'), {
+      ...FILTROS_VACIOS,
+      materiaIds: [7],
+    })
+    expect(params.getAll('materiaId')).toEqual(['7'])
   })
 
   it('no modifica los parámetros que recibe', () => {
@@ -186,9 +202,10 @@ describe('hayPeriodo y hayFiltros', () => {
   it('hay filtros si alguno está puesto', () => {
     expect(hayFiltros(FILTROS_VACIOS)).toBe(false)
     expect(hayFiltros({ ...FILTROS_VACIOS, alumnoId: 12 })).toBe(true)
-    expect(hayFiltros({ desde: null, hasta: null, materiaId: null, profesorId: 3 })).toBe(true)
+    expect(hayFiltros({ desde: null, hasta: null, materiaIds: [], profesorId: 3 })).toBe(true)
+    expect(hayFiltros({ desde: null, hasta: null, materiaIds: [2], profesorId: null })).toBe(true)
     // La ficha no mira el alumno: se le pasan los filtros sin `alumnoId`.
-    expect(hayFiltros({ desde: null, hasta: null, materiaId: null, profesorId: null })).toBe(false)
+    expect(hayFiltros({ desde: null, hasta: null, materiaIds: [], profesorId: null })).toBe(false)
   })
 })
 
@@ -206,7 +223,7 @@ describe('aParams y aParamsGlobal', () => {
     expect(aParams(TODOS)).toEqual({
       desde: '2026-09-01',
       hasta: '2026-09-30',
-      materiaId: 2,
+      materiaId: [2, 5],
       profesorId: 3,
     })
     expect(aParamsGlobal(TODOS, 2)).toEqual({ ...aParams(TODOS), alumnoId: 12, page: 2 })
@@ -223,11 +240,16 @@ describe('claveDeFiltros', () => {
       { alumnoId: null },
       { desde: '2026-09-02' },
       { hasta: null },
-      { materiaId: 7 },
+      { materiaIds: [2] },
+      { materiaIds: [] },
       { profesorId: null },
     ]) {
       expect(claveDeFiltros({ ...TODOS, ...cambio })).not.toBe(base)
     }
+  })
+
+  it('no depende del orden en que se eligieron las materias', () => {
+    expect(claveDeFiltros({ ...TODOS, materiaIds: [5, 2] })).toBe(claveDeFiltros(TODOS))
   })
 
   it('no depende de las páginas: paginar no cambia la clave', () => {

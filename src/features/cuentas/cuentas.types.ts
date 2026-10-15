@@ -63,7 +63,8 @@ export type ProximosGlobal = PaginatedResponse<OcurrenciaDeCuentaGlobal> & {
 export type FiltrosCuentaParams = {
   desde?: string
   hasta?: string
-  materiaId?: number
+  /** Una o más materias: el parámetro se repite en el query (`?materiaId=2&materiaId=5`). */
+  materiaId?: number[]
   profesorId?: number
 }
 
