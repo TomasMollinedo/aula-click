@@ -1,6 +1,12 @@
 import type { ApiError } from '@/utils/fetch-json'
 
-import { type CampoExamenForm, EXAMEN_FORM_FIELDS, TIPOS_EXAMEN } from './examenes.schema'
+import {
+  type CampoExamenForm,
+  type CampoNotaForm,
+  EXAMEN_FORM_FIELDS,
+  NOTA_FORM_FIELDS,
+  TIPOS_EXAMEN,
+} from './examenes.schema'
 import type { ExamenPendiente } from './examenes.types'
 
 // Errores de la API de exámenes (docs/contrato-api.md → Exámenes y Errores) en lo que muestra la
@@ -86,4 +92,40 @@ export function interpretarErrorExamen(error: ApiError): ErrorExamen {
 /** Mensaje de un error de una acción sin formulario (eliminar). */
 export function mensajeErrorAccion(error: ApiError): string {
   return error.status === 403 ? MENSAJE_SIN_PERMISO : error.message
+}
+
+export const CODIGO_EXAMEN_FUTURO = 'EXAMEN_FUTURO'
+
+const CAMPOS_NOTA = new Set<string>(NOTA_FORM_FIELDS)
+
+const MENSAJE_SIN_PERMISO_NOTA =
+  'No tenés permiso para cargar esta nota: solo podés cargar las de las materias que le dictás a este alumno'
+
+/**
+ * Error de la carga de la nota en lo que muestra el diálogo: el 400 de la API sobre `nota` (el
+ * rango, de 1 a 10) va en el campo; el 409 `EXAMEN_FUTURO`, el 403 y el resto, como mensaje
+ * general.
+ */
+export function interpretarErrorNota(error: ApiError): {
+  campos: { campo: CampoNotaForm; mensaje: string }[]
+  mensaje: string | null
+} {
+  if (error.status === 403) return { campos: [], mensaje: MENSAJE_SIN_PERMISO_NOTA }
+  if (error.status !== 400 || error.code !== 'VALIDACION') {
+    return { campos: [], mensaje: error.message }
+  }
+  const details = Array.isArray(error.details) ? (error.details as unknown[]) : []
+  const campos: { campo: CampoNotaForm; mensaje: string }[] = []
+  let mensaje: string | null = null
+  for (const d of details) {
+    if (!esRegistro(d) || typeof d.message !== 'string') continue
+    const campo = Array.isArray(d.path) ? d.path[0] : null
+    if (typeof campo === 'string' && CAMPOS_NOTA.has(campo)) {
+      campos.push({ campo: campo as CampoNotaForm, mensaje: d.message })
+    } else {
+      mensaje ??= d.message
+    }
+  }
+  if (campos.length === 0 && mensaje === null) mensaje = error.message
+  return { campos, mensaje }
 }
