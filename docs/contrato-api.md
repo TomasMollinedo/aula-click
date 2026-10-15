@@ -1832,6 +1832,18 @@ Lo que vale para cualquier usuario sin importar su rol (HU-28, T-91).
 
 Errores comunes: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` en el `PATCH` para cualquier rol que no sea `ALUMNO`.
 
+## Reparto
+
+A completar por T-120 (HU-43).
+
+## Liquidaciones
+
+A completar por T-124 (HU-44). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+
+## Caja
+
+A completar por T-127 (HU-46).
+
 ## Portal del alumno
 
 El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: cada endpoint del alumno vive en la feature dueña del concepto (`pagos`, `ocurrencias`, `cuentas`…) y se documenta en la sección de esa feature, con las convenciones de [Formatos](#formatos), [Errores](#errores) y [Roles](#roles). Acá están la convención y el índice.
@@ -1855,6 +1867,20 @@ Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuan
 | `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                              | T-101 |
 | `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106))           | T-106 |
 | `historiales` | `GET /historiales/mis-materias` y `/mis-materias/{materiaId}/{profesorId}?mes`              | T-108 |
+
+## Endpoints del profesor
+
+Como el portal, lo propio del profesor vive en la feature dueña del concepto y se documenta en su sección.
+
+- **Nombre:** la misma convención `mis-…` / `mi-…` del [Portal del alumno](#portal-del-alumno).
+- **Rol:** `requireRole('PROFESOR')`.
+- **El profesor sale de la sesión.** Ningún endpoint recibe un `profesorId`: uno en el query se ignora.
+
+| Feature         | Endpoints del profesor                                               | Tarea |
+| --------------- | -------------------------------------------------------------------- | ----- |
+| `alumnos`       | `GET /alumnos/mis-alumnos` ([Alumnos](#alumnos))                     | —     |
+| `agendas`       | `GET /agendas/propia` ([Agenda propia](#agenda-propia-del-profesor)) | T-25  |
+| `liquidaciones` | A completar por T-126                                                | T-126 |
 
 ## Documentos PDF
 
@@ -1996,6 +2022,7 @@ Valores del campo `role` de la sesión: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y
 | `ALUMNO`        | Alumno           |
 
 - `ALUMNO` está activo: ingresa con su usuario (ver [Autenticación](#autenticación)) y usa los endpoints del [Portal del alumno](#portal-del-alumno). Su cuenta lleva el alumno vinculado (`Usuario.alumnoId`), que la API toma de la sesión.
+- `PROFESOR` usa, además de los endpoints de su agenda y sus asistencias, los [Endpoints del profesor](#endpoints-del-profesor) (`mis-…` / `mi-…`), con el profesor de la sesión.
 - Base de datos: catálogo `rol` (lo carga el seed); `Usuario.role` es un FK a él.
 - Backend: `ROLES` en `src/server/shared/actor.ts`.
 - Frontend: el tipo `Role` de `src/types/index.ts`.

@@ -3,13 +3,13 @@ import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.reposi
 import type { ProfesoresRepository } from '@/server/features/profesores/profesores.repository'
 import { alumnoDeLaSesion, type Actor } from '@/server/shared/actor'
 import { hoy, sumarDias, type Reloj } from '@/server/shared/fechas'
+import { mesDe } from '@/server/shared/zod'
 import type { HistorialesRepository, Ocurrencia } from './historiales.repository'
 import {
   HORIZONTE_PROXIMO_TURNO,
   armarGrupos,
   armarMisMaterias,
   bloquesDelPortal,
-  mesDe,
   mesEnCurso,
   opcionesDeLosGrupos,
   rangoDelMes,

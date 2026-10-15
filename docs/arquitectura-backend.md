@@ -81,6 +81,9 @@ Features de API del Sprint 3 (T-73 registra sus routers vacíos; cada una la com
 - `adjuntos`: comprobante adjunto de un pago, que se sube antes de registrarlo y se reemplaza sin borrar el anterior (HU-24, T-95).
 - `anulaciones`: anulación de un pago completo, con su motivo (HU-42, T-104).
 - `usuarios`: lo que vale para cualquier usuario sin importar su rol, hoy su usuario y el cambio de su contraseña (HU-28, T-91).
+- `reparto`: porcentaje del centro y reparto de cada turno cobrado; publica `repartoDeTurno` en sus condiciones (HU-43, T-120).
+- `liquidaciones`: motor de liquidaciones, liquidación mensual y pago a profesores, y los endpoints `mis-…` del profesor (HU-44, HU-45, T-121/T-124/T-126).
+- `caja`: caja diaria del gerente, calculada al consultar, sin tablas propias (HU-46, T-127).
 
 El portal del alumno no es una feature: sus endpoints `mis-…` / `mi-…` viven en la feature dueña del concepto (`contrato-api.md` → Portal del alumno).
 

@@ -5,8 +5,8 @@ import {
   textosDeHorasSeguidas,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
-import { dateAFecha, fechaADate, sumarDias } from '@/server/shared/fechas'
-import { minutosAHora } from '@/server/shared/zod'
+import { fechaADate } from '@/server/shared/fechas'
+import { mesDe, minutosAHora, primerDiaDelMes, ultimoDiaDelMes } from '@/server/shared/zod'
 import type {
   BloqueDelHistorial,
   BloqueDelPortal,
@@ -61,20 +61,9 @@ export type OcurrenciaHistorial = Pick<
 // Período
 // ---------------------------------------------------------------------------------------------
 
-/** El mes de `fecha` (`YYYY-MM-DD` o `YYYY-MM`) como `YYYY-MM`. */
-export function mesDe(fecha: string): string {
-  return fecha.slice(0, 7)
-}
-
-/**
- * Primer y último día del mes `YYYY-MM`. El último se calcula con el día 0 del mes siguiente, así
- * que no hay que saber cuántos días tiene ni si el año es bisiesto.
- */
+/** Primer y último día del mes `YYYY-MM`, como período `{ desde, hasta }`. */
 export function rangoDelMes(mes: string): { desde: string; hasta: string } {
-  const desde = `${mes}-01`
-  const siguiente = new Date(fechaADate(desde).getTime())
-  siguiente.setUTCMonth(siguiente.getUTCMonth() + 1)
-  return { desde, hasta: sumarDias(dateAFecha(siguiente), -1) }
+  return { desde: primerDiaDelMes(mes), hasta: ultimoDiaDelMes(mes) }
 }
 
 /** El período por defecto de los dos endpoints: el mes en curso completo. */

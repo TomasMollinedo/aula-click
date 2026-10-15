@@ -4,6 +4,7 @@ import {
   dateAFecha,
   diaSemanaISO,
   fechaADate,
+  fechaEnZona,
   hoy,
   proximaFechaDelDia,
   sumarDias,
@@ -30,6 +31,19 @@ describe('hoy', () => {
     vi.useFakeTimers()
     vi.setSystemTime(new Date('2026-09-23T02:30:00Z'))
     expect(hoy()).toBe('2026-09-22')
+  })
+})
+
+describe('fechaEnZona', () => {
+  it.each([
+    ['2026-11-01T01:00:00Z', '2026-10-31'], // 31/10 a las 22:00 en Salta
+    ['2026-11-01T03:00:00Z', '2026-11-01'], // el borde: 00:00 en Salta
+  ])('%s → %s', (instante, fecha) => {
+    expect(fechaEnZona(new Date(instante))).toBe(fecha)
+  })
+
+  it('lanza RangeError con un Invalid Date', () => {
+    expect(() => fechaEnZona(new Date('no es una fecha'))).toThrow(RangeError)
   })
 })
 
