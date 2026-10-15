@@ -484,6 +484,10 @@ El **detalle** de una entidad con secciones propias es una **página** (`[id]/pa
 
 `CambiarContrasena` (`features/usuarios`, en `/portal/configuracion`): contraseña actual, nueva y repetición, enmascaradas y con un botón para mostrarlas (`CampoContrasena`, como el login). El formulario sólo exige los tres campos: las reglas (coinciden, al menos 8, distinta de la actual y del DNI, actual correcta) las valida `PATCH /usuarios/mi-usuario/contrasena`, y cada 400 se ve en su campo (`errores-api.ts`). Al terminar bien muestra "Contraseña actualizada" (toast), vacía el formulario y la sesión sigue abierta; la mutación deja mi usuario en la cache y lo invalida, así el aviso de la contraseña inicial se va enseguida.
 
+### Configuración del gerente (HU-43, T-130)
+
+`PorcentajeCentro` (`features/reparto`, en `/gerente/configuracion`): arriba el porcentaje vigente ("El centro retiene el 18 % de cada turno cobrado", desde cuándo y quién lo cambió); debajo, "Nuevo porcentaje" y el historial paginado con `?page=` en la URL (la primera fila de la página 1 es el vigente, marcada "Vigente"). Guardar abre una confirmación con el valor que se va a mandar ("Desde ahora, el centro retendrá el 18 % …"): es de la UI, la API no la pide. El schema (`leerPorcentaje`) replica el formato de la API (0 a 99,99, hasta dos decimales, coma o punto) para dar feedback inmediato; que sea distinto del vigente ("El porcentaje ya es 15 %") lo decide la API, y todo 400 en `porcentaje` cierra la confirmación y se ve en el campo. Cualquier otro error queda en la confirmación para reintentar. La mutación invalida sólo las keys de `reparto`: cada cobro guarda su porcentaje, así que cobros, liquidaciones, caja y tablero no cambian.
+
 ### Ida y vuelta al alta desde otra pantalla (`volverA`)
 
 Una pantalla que necesita un alta de otra entidad y volver con lo creado (registrar turno → alta de alumno) abre el alta con `?volverA=<destino>`. Al crear, el alta va al destino con el id (`/mesa/turnos?alumnoId=<id>`); al cancelar, al destino solo. Sin `volverA`, el alta se comporta como siempre.
