@@ -106,18 +106,19 @@ describe('período', () => {
 
   it.each(RUTAS)('%s con filtros inválidos → 400 VALIDACION en el campo', async (path) => {
     for (const [query, campo] of [
-      ['desde=2026-02-30', 'desde'],
-      ['hasta=30-09-2026', 'hasta'],
-      ['materiaId=abc', 'materiaId'],
-      ['profesorId=0', 'profesorId'],
-    ]) {
+      ['desde=2026-02-30', ['desde']],
+      ['hasta=30-09-2026', ['hasta']],
+      ['materiaId=abc', ['materiaId', 0]],
+      ['materiaId=2&materiaId=0', ['materiaId', 1]],
+      ['profesorId=0', ['profesorId']],
+    ] as const) {
       const res = await pedir(`${path}?${query}`)
 
       expect(res.status).toBe(400)
       const json = await res.json()
       expect(json.error.code).toBe('VALIDACION')
       expect(json.error.details).toEqual(
-        expect.arrayContaining([expect.objectContaining({ path: [campo] })]),
+        expect.arrayContaining([expect.objectContaining({ path: campo })]),
       )
     }
   })
@@ -155,7 +156,7 @@ describe('GET /cuentas/alumnos/{alumnoId}', () => {
     expect(res.status).toBe(200)
     const filtro = {
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
       desde: '2020-01-01',
       hasta: '2099-12-31',
@@ -217,7 +218,7 @@ describe('GET /cuentas/adeudados', () => {
   it('materia y profesor llegan como número', async () => {
     expect((await pedir('/adeudados?materiaId=2&profesorId=3')).status).toBe(200)
     expect(repository.leerAdeudados.mock.calls[0]?.[0]).toMatchObject({
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
     })
   })
@@ -290,7 +291,7 @@ describe('GET /cuentas/proximos', () => {
     expect((await pedir('/proximos?alumnoId=12&materiaId=2&profesorId=3')).status).toBe(200)
     expect(repository.leerProximos.mock.calls[0]?.[0]).toMatchObject({
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
     })
   })
@@ -333,6 +334,110 @@ describe('GET /cuentas/proximos', () => {
   })
 })
 
+describe('varias materias (HU-25, T-101)', () => {
+  it.each(RUTAS)(
+    '%s con `materiaId` repetido: una lectura con todas las materias',
+    async (path) => {
+      expect((await pedir(`${path}?materiaId=2&materiaId=5`)).status).toBe(200)
+
+      const lecturas = [
+        ...repository.leerAdeudados.mock.calls,
+        ...repository.leerProximos.mock.calls,
+      ]
+      expect(lecturas.length).toBeGreaterThan(0)
+      for (const [filtro] of lecturas) expect(filtro.materiaIds).toEqual([2, 5])
+    },
+  )
+
+  it.each(RUTAS)('%s con una sola materia: una lista de un id', async (path) => {
+    expect((await pedir(`${path}?materiaId=2`)).status).toBe(200)
+
+    const lecturas = [...repository.leerAdeudados.mock.calls, ...repository.leerProximos.mock.calls]
+    for (const [filtro] of lecturas) expect(filtro.materiaIds).toEqual([2])
+  })
+
+  it('sin `materiaId`: sin filtro de materia', async () => {
+    expect((await pedir('/alumnos/12')).status).toBe(200)
+
+    expect(repository.leerAdeudados.mock.calls[0]?.[0].materiaIds).toBeUndefined()
+  })
+})
+
+describe('GET /cuentas/mi-cuenta (portal, HU-37, T-101)', () => {
+  const sesionAlumno = (alumnoId?: number) => ({
+    headers: new Headers(),
+    response: {
+      user: { id: 'usr_alumno', role: 'ALUMNO', estado: 'ACTIVO', alumnoId },
+      session: { id: 's-2' },
+    },
+  })
+
+  it('200 con la cuenta del alumno de la sesión, agrupada por materia', async () => {
+    getSession.mockResolvedValue(sesionAlumno(12))
+
+    const res = await pedir('/mi-cuenta')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      totalAdeudado: 8000,
+      adeudados: [
+        {
+          materia: { id: 2, nombre: 'Matemática' },
+          subtotal: 8000,
+          ocurrencias: [
+            {
+              turnoId: 41,
+              fecha: '2026-09-28',
+              horaInicio: '09:00',
+              horaFin: '10:00',
+              materia: { id: 2, nombre: 'Matemática' },
+              profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+              estado: 'SIN_REGISTRAR',
+              importe: 8000,
+            },
+          ],
+        },
+      ],
+      proximos: [],
+      limiteCobro: expect.stringMatching(FECHA),
+    })
+    expect(repository.leerAdeudados.mock.calls[0]?.[0]).toMatchObject({ alumnoId: 12 })
+    expect(alumnosRepository.buscarPorId).not.toHaveBeenCalled()
+  })
+
+  it('ignora un `alumnoId` en el query: siempre el de la sesión', async () => {
+    getSession.mockResolvedValue(sesionAlumno(12))
+
+    expect((await pedir('/mi-cuenta?alumnoId=99')).status).toBe(200)
+    expect(repository.leerAdeudados.mock.calls[0]?.[0]).toMatchObject({ alumnoId: 12 })
+  })
+
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'])('con %s → 403', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+
+    expect((await pedir('/mi-cuenta')).status).toBe(403)
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
+  })
+
+  it('una cuenta ALUMNO sin alumno vinculado → 403', async () => {
+    getSession.mockResolvedValue(sesionAlumno())
+
+    expect((await pedir('/mi-cuenta')).status).toBe(403)
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+
+    expect((await pedir('/mi-cuenta')).status).toBe(401)
+  })
+
+  it('el alumno no entra a los endpoints de mesa', async () => {
+    getSession.mockResolvedValue(sesionAlumno(12))
+
+    for (const path of RUTAS) expect((await pedir(path)).status).toBe(403)
+  })
+})
+
 describe('OpenAPI', () => {
   it('declara todos los status codes de cada endpoint', () => {
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
@@ -346,6 +451,9 @@ describe('OpenAPI', () => {
     expect(
       Object.keys(doc.paths?.['/api/v1/cuentas/proximos']?.get?.responses ?? {}).sort(),
     ).toEqual(codigos)
+    expect(
+      Object.keys(doc.paths?.['/api/v1/cuentas/mi-cuenta']?.get?.responses ?? {}).sort(),
+    ).toEqual(['200', '401', '403'])
   })
 
   it('los tres endpoints declaran los filtros de período, materia y profesor en el query', () => {
@@ -360,5 +468,21 @@ describe('OpenAPI', () => {
     expect(enQuery('/api/v1/cuentas/alumnos/{alumnoId}')).toEqual(filtros)
     expect(enQuery('/api/v1/cuentas/adeudados')).toEqual(listado)
     expect(enQuery('/api/v1/cuentas/proximos')).toEqual(listado)
+  })
+
+  it('`materiaId` es una lista de ids que se repite en el query (`form`, `explode`)', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    for (const path of ['/alumnos/{alumnoId}', '/adeudados', '/proximos']) {
+      const param = (doc.paths?.[`/api/v1/cuentas${path}`]?.get?.parameters ?? []).find(
+        (p) => 'name' in p && p.name === 'materiaId',
+      )
+      expect(param).toMatchObject({
+        in: 'query',
+        required: false,
+        style: 'form',
+        explode: true,
+        schema: { type: 'array', items: { type: 'integer' } },
+      })
+    }
   })
 })

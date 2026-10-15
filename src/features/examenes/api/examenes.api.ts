@@ -6,6 +6,7 @@ import type {
   ExamenEditar,
   ExamenesListado,
   MateriaExamen,
+  NotaCargar,
 } from '../examenes.types'
 
 const BASE = '/api/v1/examenes'
@@ -42,4 +43,13 @@ export function editarExamen(id: number, datos: ExamenEditar): Promise<ExamenDet
 /** "Eliminar" un examen es darlo de baja: deja de listarse y de contar para la prioridad. */
 export function eliminarExamen(id: number): Promise<ExamenDetalle> {
   return fetchJson<ExamenDetalle>(`${BASE}/${id}/baja`, { method: 'PATCH' })
+}
+
+/** Carga o corrige la nota de un examen ya rendido (HU-34). */
+export function cargarNota(id: number, datos: NotaCargar): Promise<ExamenDetalle> {
+  return fetchJson<ExamenDetalle>(`${BASE}/${id}/nota`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(datos),
+  })
 }

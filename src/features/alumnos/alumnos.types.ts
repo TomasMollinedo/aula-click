@@ -1,4 +1,4 @@
-import type { Auditoria, PaginatedResponse } from '@/types'
+import type { Auditoria, PaginatedResponse, UsuarioAuditoria } from '@/types'
 
 export type NivelEscolaridad = 'INICIAL' | 'PRIMARIO' | 'SECUNDARIO' | 'TERCIARIO' | 'UNIVERSITARIO'
 
@@ -40,7 +40,20 @@ export type AlumnoDetalle = {
   menorDeEdad: boolean
   /** URL prefirmada (vive 15 min) o null si no tiene foto. No se guarda fuera de la query. */
   fotoUrl: string | null
+  /** Acceso al portal (HU-27), o `null` si todavía no lo tiene. */
+  acceso: AccesoPortal | null
 } & Auditoria
+
+/** El acceso al portal de un alumno (HU-27). La contraseña nunca viaja. */
+export type AccesoPortal = {
+  usuario: string
+  creadoPor: UsuarioAuditoria | null
+  /** Instante ISO 8601 en UTC. */
+  creadoEl: string
+  /** Quién restableció la contraseña por última vez, o `null` si nunca se restableció. */
+  restablecidaPor: UsuarioAuditoria | null
+  restablecidaEl: string | null
+}
 
 export type AlumnoCrear = {
   nombre: string

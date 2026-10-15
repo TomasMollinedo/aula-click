@@ -4,7 +4,7 @@ import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.reposi
 import type { Actor } from '@/server/shared/actor'
 import { crearPagosService } from '../pagos.service'
 import type { RegistrarPago } from '../pagos.validation'
-import { crearPagosEnMemoria, type OcurrenciaEnBase } from './pagos-en-memoria'
+import { crearPagosEnMemoria, type AdjuntoEnBase, type OcurrenciaEnBase } from './pagos-en-memoria'
 
 // Service de pagos (T-51) contra el repository en memoria (`pagos-en-memoria.ts`), que ejecuta el
 // `verificar` real bajo una cola como el lock del alumno. Reloj fijo: lunes 05/10/2026 al
@@ -32,12 +32,13 @@ function ocurrencia(parcial: Partial<OcurrenciaEnBase> = {}): OcurrenciaEnBase {
 
 let base: OcurrenciaEnBase[]
 let precios: Map<number, number | null>
+let adjuntos: Map<number, AdjuntoEnBase>
 let memoria: ReturnType<typeof crearPagosEnMemoria>
 let alumnosRepository: { buscarPorId: ReturnType<typeof vi.fn<AlumnosRepository['buscarPorId']>> }
 let service: ReturnType<typeof crearPagosService>
 
 function armar() {
-  memoria = crearPagosEnMemoria(base, precios)
+  memoria = crearPagosEnMemoria(base, precios, adjuntos)
   service = crearPagosService({ repository: memoria.repository, alumnosRepository, reloj })
 }
 
@@ -57,6 +58,12 @@ beforeEach(() => {
     [2, 8000],
     [7, 9000],
   ])
+  // Comprobantes subidos con `POST /adjuntos`: el 18 y el 19 por quien cobra, el 20 por otro.
+  adjuntos = new Map([
+    [18, { subidoPor: 'usr_mesa', pagoId: null }],
+    [19, { subidoPor: 'usr_mesa', pagoId: null }],
+    [20, { subidoPor: 'usr_otra_mesa', pagoId: null }],
+  ])
   alumnosRepository = {
     buscarPorId: vi.fn<AlumnosRepository['buscarPorId']>().mockResolvedValue({
       id: 12,
@@ -70,6 +77,7 @@ function pago(parcial: Partial<RegistrarPago> = {}): RegistrarPago {
     alumnoId: 12,
     ocurrencias: [{ turnoId: 41, fecha: '2026-10-12' }],
     fechaPago: '2026-10-05',
+    formaPago: 'EFECTIVO',
     montoRecibido: 50000,
     ...parcial,
   }
@@ -93,6 +101,7 @@ describe('registrar: camino feliz', () => {
       numeroComprobante: 1024,
       cantidad: 1,
       total: 8000,
+      formaPago: 'EFECTIVO',
       montoRecibido: 50000,
       vuelto: 42000,
     })
@@ -101,7 +110,7 @@ describe('registrar: camino feliz', () => {
         alumnoId: 12,
         ocurrencias: [{ turnoId: 41, fecha: '2026-10-12' }],
         fechaPago: '2026-10-05',
-        montoRecibido: 50000,
+        medio: { formaPago: 'EFECTIVO', montoRecibido: 50000 },
         observaciones: null,
       },
       expect.any(Function),
@@ -211,6 +220,155 @@ describe('registrar: camino feliz', () => {
     })
 
     expect((await service.registrar(pago(), actor)).total).toBe(8500)
+  })
+})
+
+// HU-23 (T-96): transferencia y débito. Qué datos lleva cada medio lo valida el schema (tests de
+// rutas); acá, lo que decide el cobro con cada uno y el comprobante adjunto.
+describe('registrar: formas de pago', () => {
+  const transferencia = (parcial: Partial<RegistrarPago> = {}) =>
+    pago({
+      formaPago: 'TRANSFERENCIA',
+      montoRecibido: undefined,
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: 'Marta López' },
+      comprobanteAdjuntoId: 18,
+      ...parcial,
+    })
+  const debito = (parcial: Partial<RegistrarPago> = {}) =>
+    pago({
+      formaPago: 'DEBITO',
+      montoRecibido: undefined,
+      debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+      ...parcial,
+    })
+
+  it('transferencia: registra con sus datos, vincula el comprobante y no hay monto ni vuelto', async () => {
+    const res = await service.registrar(transferencia(), actor)
+
+    expect(res).toEqual({
+      pagoId: 31,
+      numeroComprobante: 1024,
+      cantidad: 1,
+      total: 8000,
+      formaPago: 'TRANSFERENCIA',
+      montoRecibido: null,
+      vuelto: null,
+    })
+    expect(memoria.pagos[0]?.entrada.medio).toEqual({
+      formaPago: 'TRANSFERENCIA',
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: 'Marta López' },
+      comprobanteAdjuntoId: 18,
+    })
+    expect(adjuntos.get(18)?.pagoId).toBe(31)
+  })
+
+  it('transferencia: el importe no se compara con nada (no hay monto recibido)', async () => {
+    const res = await service.registrar(
+      transferencia({
+        ocurrencias: [
+          { turnoId: 41, fecha: '2026-10-12' },
+          { turnoId: 57, fecha: '2026-10-07' },
+        ],
+      }),
+      actor,
+    )
+    expect(res).toMatchObject({ total: 17000, montoRecibido: null, vuelto: null })
+  })
+
+  it('una transferencia puede cubrir a varios alumnos: la misma operación se repite sin error', async () => {
+    await service.registrar(transferencia(), actor)
+    const res = await service.registrar(
+      transferencia({
+        ocurrencias: [{ turnoId: 41, fecha: '2026-10-19' }],
+        comprobanteAdjuntoId: 19,
+      }),
+      actor,
+    )
+    expect(res.pagoId).toBe(32)
+  })
+
+  it('débito sin adjunto: es opcional', async () => {
+    const res = await service.registrar(debito(), actor)
+
+    expect(res).toMatchObject({ formaPago: 'DEBITO', montoRecibido: null, vuelto: null })
+    expect(memoria.pagos[0]?.entrada.medio).toEqual({
+      formaPago: 'DEBITO',
+      debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+      comprobanteAdjuntoId: null,
+    })
+  })
+
+  it('débito con adjunto: lo vincula', async () => {
+    await service.registrar(debito({ comprobanteAdjuntoId: 19 }), actor)
+    expect(adjuntos.get(19)?.pagoId).toBe(31)
+  })
+
+  it('el importe no cambia según el medio: el mismo turno vale lo mismo en los tres', async () => {
+    const enEfectivo = await service.registrar(pago(), actor)
+    armar()
+    const porTransferencia = await service.registrar(transferencia(), actor)
+    armar()
+    const conDebito = await service.registrar(debito(), actor)
+
+    expect([enEfectivo.total, porTransferencia.total, conDebito.total]).toEqual([8000, 8000, 8000])
+  })
+
+  it.each([
+    ['subido por otro usuario', 20],
+    ['que no existe', 77],
+  ])('adjunto %s → 400 ADJUNTO_INVALIDO en comprobanteAdjuntoId, sin registrar', async (_, id) => {
+    const error = await errorDe(
+      service.registrar(transferencia({ comprobanteAdjuntoId: id }), actor),
+    )
+
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(error.code).toBe('ADJUNTO_INVALIDO')
+    expect(error.details).toEqual([{ path: ['comprobanteAdjuntoId'], message: expect.any(String) }])
+    expect(memoria.pagos).toHaveLength(0)
+  })
+
+  it('un adjunto ya usado en otro pago → 400 ADJUNTO_INVALIDO', async () => {
+    await service.registrar(transferencia(), actor)
+
+    const error = await errorDe(
+      service.registrar(
+        transferencia({ ocurrencias: [{ turnoId: 41, fecha: '2026-10-19' }] }),
+        actor,
+      ),
+    )
+
+    expect(error.code).toBe('ADJUNTO_INVALIDO')
+    expect(memoria.pagos).toHaveLength(1)
+  })
+})
+
+// HU-22: la asistencia no cambia lo que se cobra, y un pago anulado libera sus ocurrencias.
+describe('registrar: qué se puede cobrar con asistencia y anulaciones', () => {
+  it.each(['REALIZADO', 'AUSENTE'] as const)('un %s impago se cobra', async (estado) => {
+    base = [ocurrencia({ fecha: '2026-09-28', estado })]
+    armar()
+
+    const res = await service.registrar(
+      pago({ ocurrencias: [{ turnoId: 41, fecha: '2026-09-28' }] }),
+      actor,
+    )
+
+    expect(res).toMatchObject({ cantidad: 1, total: 8000 })
+  })
+
+  it('una ocurrencia de un pago anulado vuelve a estar pendiente y se cobra de nuevo', async () => {
+    // El motor no cuenta los `PagoTurno` de un pago anulado (`vigente = null`): la devuelve
+    // `PENDIENTE`, sin `pagoId`.
+    base = [ocurrencia({ fecha: '2026-09-28', estado: 'REALIZADO', pago: { estado: 'PENDIENTE' } })]
+    armar()
+
+    const res = await service.registrar(
+      pago({ ocurrencias: [{ turnoId: 41, fecha: '2026-09-28' }] }),
+      actor,
+    )
+
+    expect(res.cantidad).toBe(1)
+    expect(memoria.pagadas.get('41|2026-09-28')).toBe(res.pagoId)
   })
 })
 
@@ -408,7 +566,11 @@ describe('obtenerComprobante', () => {
       total: 17000,
       montoRecibido: 20000,
       vuelto: 3000,
-      formaPago: { id: 1, nombre: 'Efectivo' },
+      formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+      transferencia: null,
+      debito: null,
+      estado: 'VIGENTE',
+      anulacion: null,
     })
     expect(comprobante.turnos.map((t) => [t.turnoId, t.profesor.id, t.importe])).toEqual([
       [57, 5, 9000],
@@ -436,6 +598,28 @@ describe('obtenerComprobante', () => {
     const comprobante = await service.obtenerComprobante(pagoId)
     expect(comprobante.total).toBe(8000)
     expect(comprobante.turnos[0]?.importe).toBe(8000)
+  })
+
+  it('de una transferencia: la forma por su código, sus datos y sin monto ni vuelto', async () => {
+    await service.registrar(
+      pago({
+        formaPago: 'TRANSFERENCIA',
+        montoRecibido: undefined,
+        transferencia: { operacion: '0004829137', banco: 'Banco Macro' },
+        comprobanteAdjuntoId: 18,
+      }),
+      actor,
+    )
+
+    expect(await service.obtenerComprobante(31)).toMatchObject({
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
+      debito: null,
+      montoRecibido: null,
+      vuelto: null,
+      estado: 'VIGENTE',
+      anulacion: null,
+    })
   })
 
   it('inexistente → 404', async () => {

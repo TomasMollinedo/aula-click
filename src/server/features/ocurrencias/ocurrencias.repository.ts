@@ -11,11 +11,18 @@ import {
 import {
   leerFilasDeLaSerie,
   leerOcurrencias,
+  materiasDelProfesorConAlumno,
   type FilaDeSerie,
   type FiltroOcurrencias,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
-import { armarAuditoria, SELECT_USUARIO_AUDITORIA, type Auditoria } from '@/server/shared/auditoria'
+import type { Role } from '@/server/shared/actor'
+import {
+  armarAuditoria,
+  SELECT_USUARIO_AUDITORIA,
+  type Auditoria,
+  type UsuarioAuditoria,
+} from '@/server/shared/auditoria'
 import { dateAFecha, type Reloj } from '@/server/shared/fechas'
 
 // Único lugar de la feature que usa Prisma. `ocurrencias` no tiene tabla propia: combina el motor
@@ -35,39 +42,26 @@ export type Finalizacion = {
   createdAt: string
 }
 
+/** Usuario de auditoría con su rol (`createdBy` del turno, HU-29). */
+export type UsuarioAuditoriaConRol = UsuarioAuditoria & { rol: Role }
+
 /**
- * Lo del turno que `leerOcurrencias` no trae: DNI del alumno, observaciones, temas, auditoría y el
+ * Lo del turno que `leerOcurrencias` no trae: el alumno (su id, para leer sus ocurrencias del día), su DNI, observaciones, temas, auditoría y el
  * precio por hora **vigente** de su materia (`null` si no tiene; un `number`, nunca un `Decimal`).
+ * `createdBy` trae además su rol, para que el detalle diga si lo registró el alumno desde el portal.
  */
 export type DatosAdicionalesTurno = {
+  alumnoId: number
   alumnoDni: string
   observaciones: string | null
   temas: string | null
   precioVigente: number | null
-} & Auditoria
+} & Omit<Auditoria, 'createdBy'> & { createdBy: UsuarioAuditoriaConRol | null }
 
 export const ocurrenciasRepository = {
   /**
-   * La ocurrencia `(turnoId, fecha)` calculada por el motor, o `null` si el turno no existe o esa
-   * fecha no es una de sus ocurrencias (el mismo `leerOcurrencias` de T-30 resuelve las dos cosas:
-   * sin filas, ninguna de las dos existe).
-   */
-  async buscarOcurrencia(
-    turnoId: number,
-    fecha: string,
-    reloj?: Reloj,
-  ): Promise<Ocurrencia | null> {
-    const ocurrencias = await leerOcurrencias(
-      prisma,
-      { desde: fecha, hasta: fecha, turnoIds: [turnoId] },
-      reloj,
-    )
-    return ocurrencias[0] ?? null
-  },
-
-  /**
-   * DNI del alumno, observaciones, temas, auditoría y precio vigente de la materia del turno: lo
-   * que no trae `leerOcurrencias`. Una sola consulta.
+   * El alumno y su DNI, observaciones, temas, auditoría y precio vigente de la materia del turno:
+   * lo que no trae `leerOcurrencias`. Una sola consulta; `null` si el turno no existe.
    */
   async buscarDatosAdicionales(turnoId: number): Promise<DatosAdicionalesTurno | null> {
     const fila = await prisma.turno.findUnique({
@@ -75,21 +69,32 @@ export const ocurrenciasRepository = {
       select: {
         observaciones: true,
         temas: true,
+        alumnoId: true,
         alumno: { select: { dni: true } },
         materia: { select: { precioHora: true } },
         createdAt: true,
         updatedAt: true,
-        createdBy: { select: SELECT_USUARIO_AUDITORIA },
+        createdBy: { select: { ...SELECT_USUARIO_AUDITORIA, role: true } },
         updatedBy: { select: SELECT_USUARIO_AUDITORIA },
       },
     })
     if (!fila) return null
+    const { createdBy } = fila
     return {
+      alumnoId: fila.alumnoId,
       alumnoDni: fila.alumno.dni,
       observaciones: fila.observaciones,
       temas: fila.temas,
       precioVigente: fila.materia.precioHora ? fila.materia.precioHora.toNumber() : null,
       ...armarAuditoria(fila),
+      // `Usuario.role` es `string` en Prisma (FK a la tabla `Rol`, T-23): la base ya garantiza que
+      // sólo tiene valores del catálogo, que son los mismos que `ROLES` (`shared/actor.ts`).
+      createdBy: createdBy && {
+        id: createdBy.id,
+        nombre: createdBy.nombre,
+        apellido: createdBy.apellido,
+        rol: createdBy.role as Role,
+      },
     }
   },
 
@@ -130,7 +135,11 @@ export const ocurrenciasRepository = {
     }
   },
 
-  /** Ocurrencias del alumno en `[desde, hasta]` (motor de T-30), incluidas las canceladas. */
+  /**
+   * Ocurrencias del alumno en `[desde, hasta]` (motor de T-30), incluidas las canceladas. El
+   * detalle la usa con `desde = hasta`: las del alumno ese día, para la ocurrencia y sus horas
+   * seguidas en una sola lectura.
+   */
   async leerOcurrenciasDelAlumno(filtro: FiltroOcurrencias, reloj?: Reloj): Promise<Ocurrencia[]> {
     return leerOcurrencias(prisma, filtro, reloj)
   },
@@ -144,6 +153,28 @@ export const ocurrenciasRepository = {
     id: string,
   ): Promise<{ id: string; nombre: string; apellido: string } | null> {
     return prisma.usuario.findUnique({ where: { id }, select: SELECT_USUARIO_AUDITORIA })
+  },
+
+  /**
+   * `{ id, nombre, apellido }` de varios usuarios, por id, en una sola consulta. Lo usa el detalle
+   * para resolver quién registró y quién modificó la asistencia (`Ocurrencia.asistencia` sólo trae
+   * los ids). Un id que no existe no está en el `Map`.
+   */
+  async resolverUsuariosAuditoria(ids: string[]): Promise<Map<string, UsuarioAuditoria>> {
+    const usuarios = await prisma.usuario.findMany({
+      where: { id: { in: ids } },
+      select: SELECT_USUARIO_AUDITORIA,
+    })
+    return new Map(usuarios.map((usuario) => [usuario.id, usuario]))
+  },
+
+  /**
+   * Si el alumno tiene o tuvo turnos con el profesor (`materiasDelProfesorConAlumno` del motor no
+   * vacío). Con eso un profesor ve en sólo lectura el detalle de un turno de otro profesor (HU-31).
+   */
+  async profesorTieneAlumno(profesorId: number, alumnoId: number): Promise<boolean> {
+    const materias = await materiasDelProfesorConAlumno(prisma, { profesorId, alumnoId })
+    return materias.length > 0
   },
 
   /** Los datos del pago de una ocurrencia pagada (`Ocurrencia.pago.pagoId`), en una consulta. */

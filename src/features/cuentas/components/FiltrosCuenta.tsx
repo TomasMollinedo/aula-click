@@ -4,30 +4,20 @@ import { type ReactNode, useId } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { BarraFiltros, claseControlFiltro } from '@/components/ui/barra-filtros'
+import { BarraFiltros } from '@/components/ui/barra-filtros'
 import { CalendarioFecha } from '@/components/ui/calendario-fecha'
 import { Field, fieldErrorId } from '@/components/ui/field'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select'
 
 import type { CampoFiltro } from '../errores-cuentas'
 import type { FiltrosCuenta as Filtros } from '../filtros-cuenta'
-import { useMateriasDeCuenta } from '../hooks/use-materias-de-cuenta'
 import type { NombresDeFiltros } from '../hooks/use-nombres-de-filtros'
+import { FiltroMaterias } from './FiltroMaterias'
 import { FiltroProfesor } from './FiltroProfesor'
-
-// Radix no admite value="": un valor especial representa "todas las materias" (sin filtrar).
-const TODAS_LAS_MATERIAS = '__TODAS__'
 
 type FiltrosCuentaProps = {
   filtros: Filtros
-  /** Los nombres de lo filtrado, para el profesor elegido y la materia que no esté en la lista. */
-  nombres: Pick<NombresDeFiltros, 'materia' | 'profesor'>
+  /** Los nombres de lo filtrado: el profesor elegido y cada materia elegida (también fuera de la lista). */
+  nombres: Pick<NombresDeFiltros, 'materias' | 'profesor'>
   onCambiar: (cambios: Partial<Filtros>) => void
   onLimpiar: () => void
   /** Si hay algún filtro puesto (en la vista global, también el alumno). */
@@ -41,7 +31,8 @@ type FiltrosCuentaProps = {
 }
 
 /**
- * Los filtros de `cuentas`, en las dos vistas: período (cada extremo opcional), materia y profesor.
+ * Los filtros de `cuentas`, en las dos vistas: período (cada extremo opcional), materias (una o
+ * más, `FiltroMaterias`) y profesor.
  * No guarda estado: muestra los de la URL y avisa cada cambio, que se aplica enseguida. No valida el
  * período: un "Hasta" anterior al "Desde" se manda igual y el error de la API sale junto al campo.
  *
@@ -66,13 +57,6 @@ export function FiltrosCuenta({
     materia: `${id}-materia`,
     profesor: `${id}-profesor`,
   }
-  const { materias, isLoading: cargandoMaterias } = useMateriasDeCuenta()
-  // La materia de la URL puede no estar en la lista (no existe, o no entró en la página): se
-  // muestra igual, para que el control diga qué se está filtrando.
-  const materiaFueraDeLista =
-    filtros.materiaId !== null &&
-    !cargandoMaterias &&
-    !materias.some((m) => m.id === filtros.materiaId)
 
   return (
     <div className="space-y-3">
@@ -118,35 +102,15 @@ export function FiltrosCuenta({
           />
         </Field>
 
-        <Field label="Materia" htmlFor={ids.materia} error={errores.materiaId}>
-          <Select
-            value={filtros.materiaId === null ? TODAS_LAS_MATERIAS : String(filtros.materiaId)}
-            onValueChange={(valor) =>
-              onCambiar({ materiaId: valor === TODAS_LAS_MATERIAS ? null : Number(valor) })
-            }
-            disabled={cargandoMaterias}
-          >
-            <SelectTrigger
-              id={ids.materia}
-              className={claseControlFiltro(filtros.materiaId === null)}
-            >
-              <SelectValue placeholder="Todas" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={TODAS_LAS_MATERIAS}>Todas</SelectItem>
-              {materiaFueraDeLista && filtros.materiaId !== null && (
-                <SelectItem value={String(filtros.materiaId)}>
-                  {nombres.materia ?? 'Materia no disponible'}
-                </SelectItem>
-              )}
-              {materias.map((materia) => (
-                <SelectItem key={materia.id} value={String(materia.id)}>
-                  {materia.nombre}
-                  {materia.inactiva && ' (dada de baja)'}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <Field label="Materias" htmlFor={ids.materia} error={errores.materiaId}>
+          <FiltroMaterias
+            id={ids.materia}
+            value={filtros.materiaIds}
+            elegidas={nombres.materias}
+            onChange={(materiaIds) => onCambiar({ materiaIds })}
+            aria-invalid={errores.materiaId ? true : undefined}
+            aria-describedby={errores.materiaId ? fieldErrorId(ids.materia) : undefined}
+          />
         </Field>
 
         <Field label="Profesor" htmlFor={ids.profesor} error={errores.profesorId}>

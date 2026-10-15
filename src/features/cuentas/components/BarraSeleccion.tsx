@@ -1,22 +1,39 @@
 'use client'
 
-import { type ReactNode, useEffect, useRef, useState } from 'react'
-import { Banknote, ListChecks, X } from 'lucide-react'
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { Banknote, ListChecks, ListX, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/utils/cn'
 
-import { textoSinPrecio, textoTotalAPagar, textoTurnosSeleccionados } from '../formato-cuentas'
-import type { ResumenSeleccion } from '../seleccion'
+import {
+  avisoMaximoDeTurnos,
+  textoCantidadDeTurnos,
+  textoSeleccionTodo,
+  textoSinPrecio,
+  textoTotalAPagar,
+} from '../formato-cuentas'
+import {
+  MAX_TURNOS_POR_PAGO,
+  type ResumenSeleccion,
+  type estadoSeleccionarTodo,
+} from '../seleccion'
+
+/** El botón "Seleccionar todo" (HU-25): todos los turnos del filtro, adeudados y próximos. */
+export type SeleccionarTodo = {
+  estado: ReturnType<typeof estadoSeleccionarTodo>
+  /** Cuántos turnos deja el filtro (los de todas las páginas, en la vista global). */
+  cantidad: number
+  /** Tilda todos (si no estaban todos) o los destilda (si estaban). */
+  onAlternar: () => void
+  /** Sin turnos en el filtro, o mientras se piden los de las otras páginas. */
+  deshabilitado?: boolean
+}
 
 type AccionesDeLaBarra = {
   resumen: ResumenSeleccion
-  /**
-   * "Seleccionar todos los adeudados": en la ficha y, con un alumno filtrado, en la vista global.
-   * Solo si la sección de adeudados aplica al período: sin esta prop, el botón no está.
-   */
-  onSeleccionarTodos?: () => void
-  seleccionarTodosDeshabilitado?: boolean
+  /** "Seleccionar todo": en la ficha y, con un alumno filtrado, en la vista global. */
+  seleccionarTodo: SeleccionarTodo
   onQuitar: () => void
   /** Abre el diálogo con la selección; recibe el botón para devolverle el foco al cerrar. */
   onRegistrar: (boton: HTMLButtonElement) => void
@@ -42,8 +59,9 @@ type BarraSeleccionProps = AccionesDeLaBarra & {
  * siempre: sin selección dice "Ningún turno seleccionado" y los botones quedan deshabilitados; con
  * selección, el total a pagar va destacado (grande y en negrita), con la cantidad de turnos. El
  * total es la suma de los importes de la API (`resumenSeleccion`); el real sale de la respuesta
- * del pago. A la izquierda van "Seleccionar todos los adeudados" y "Quitar selección"; a la
- * derecha, el total a pagar al lado de "Registrar pago". La copia flotante usa el mismo orden.
+ * del pago. A la izquierda van "Seleccionar todo" (con todo tildado pasa a "Deseleccionar todo" y
+ * aclara "Se seleccionaron los 12 turnos del filtro") y "Quitar selección"; a la derecha, el total a pagar al lado de "Registrar pago". La copia
+ * flotante usa el mismo orden.
  *
  * **Copia flotante.** Cuando al scrollear las listas la barra deja de verse y hay algo tildado, la
  * misma barra aparece flotando abajo, para registrar el pago sin volver al principio: una bolita
@@ -133,8 +151,7 @@ export function BarraSeleccion({ mostrar = true, children, ...acciones }: BarraS
 /** Lo que muestran las dos barras: el resumen de lo tildado y los botones. */
 function Contenido({
   resumen,
-  onSeleccionarTodos,
-  seleccionarTodosDeshabilitado = false,
+  seleccionarTodo,
   onQuitar,
   onRegistrar,
   enEspera = false,
@@ -143,28 +160,46 @@ function Contenido({
   /** Solo la barra de arriba anuncia los cambios: si no, un lector de pantalla los diría dos veces. */
   anunciar?: boolean
 }) {
+  const id = useId()
   const vacia = resumen.cantidad === 0
   const sinPrecio = textoSinPrecio(resumen)
+  // Más turnos de los que entran en un pago: se avisa y no se abre el diálogo (la API lo rechazaría).
+  const excedido = avisoMaximoDeTurnos(resumen.cantidad, MAX_TURNOS_POR_PAGO)
+  const todos = seleccionarTodo.estado === 'todos'
 
   return (
     <>
       {/* A la izquierda, las acciones sobre la selección. */}
-      <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-        {onSeleccionarTodos && (
+      <div className="flex flex-col gap-1.5">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+          {/*
+            Un botón que alterna: `aria-pressed` dice si está todo tildado, y `mixed` si hay una
+            parte (con una parte, vuelve a tildar todo).
+          */}
           <Button
             type="button"
             variant="outline"
-            onClick={onSeleccionarTodos}
-            disabled={seleccionarTodosDeshabilitado || enEspera}
+            onClick={seleccionarTodo.onAlternar}
+            disabled={seleccionarTodo.deshabilitado || enEspera}
+            aria-pressed={todos ? true : seleccionarTodo.estado === 'algunos' ? 'mixed' : false}
+            aria-describedby={todos ? `${id}-aclaracion` : undefined}
           >
-            <ListChecks />
-            Seleccionar todos los adeudados
+            {todos ? <ListX /> : <ListChecks />}
+            {todos ? 'Deseleccionar todo' : 'Seleccionar todo'}
           </Button>
-        )}
-        <Button type="button" variant="outline" onClick={onQuitar} disabled={vacia || enEspera}>
-          <X />
-          Quitar selección
-        </Button>
+          <Button type="button" variant="outline" onClick={onQuitar} disabled={vacia || enEspera}>
+            <X />
+            Quitar selección
+          </Button>
+        </div>
+        {/* Siempre montada en la barra de arriba, para que el aviso se anuncie al aparecer. */}
+        <p
+          id={`${id}-aclaracion`}
+          aria-live={anunciar ? 'polite' : undefined}
+          className="text-muted-foreground px-1 text-xs"
+        >
+          {todos ? textoSeleccionTodo(seleccionarTodo.cantidad) : ''}
+        </p>
       </div>
       {/* A la derecha, lo que se va a cobrar pegado al botón que lo cobra. */}
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-end sm:gap-4">
@@ -179,22 +214,42 @@ function Contenido({
           ) : (
             <>
               <p className="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-                Total a pagar · {textoTurnosSeleccionados(resumen.cantidad)}
+                Total a pagar
               </p>
-              {/*
-                Resaltado: letras blancas sobre el verde de los importes (`confirmado`), grande y en
-                negrita. Es lo que se va a cobrar. Sin total (algún turno sin precio) va en el color
-                de aviso, no en verde.
-              */}
-              <p
-                className={cn(
-                  'mt-1 inline-block rounded-md px-2.5 py-0.5 text-2xl leading-tight font-bold text-white tabular-nums',
-                  resumen.total === null ? 'bg-urgente' : 'bg-confirmado',
-                )}
-              >
-                {textoTotalAPagar(resumen)}
+              {/* "8 turnos · $ 64.000,00" (HU-25). */}
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 sm:justify-end">
+                <span className="text-sm font-medium">
+                  {textoCantidadDeTurnos(resumen.cantidad)} ·
+                </span>
+                {/*
+                  Resaltado: letras blancas sobre el verde de los importes (`confirmado`), grande y
+                  en negrita. Es lo que se va a cobrar. Sin total (algún turno sin precio) va en el
+                  color de aviso, no en verde.
+                */}
+                <span
+                  className={cn(
+                    'inline-block rounded-md px-2.5 py-0.5 text-2xl leading-tight font-bold text-white tabular-nums',
+                    resumen.total === null ? 'bg-urgente' : 'bg-confirmado',
+                  )}
+                >
+                  {textoTotalAPagar(resumen)}
+                </span>
               </p>
+              {/* Con más de una materia, el subtotal de cada una (HU-25). */}
+              {resumen.porMateria.length > 1 && (
+                <ul className="text-muted-foreground mt-1 flex flex-wrap gap-x-3 text-xs sm:justify-end">
+                  {resumen.porMateria.map(({ materia, cantidad, total }) => (
+                    <li key={materia.id}>
+                      {materia.nombre} ({cantidad}):{' '}
+                      <span className="text-foreground font-medium tabular-nums">
+                        {textoTotalAPagar({ total })}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
+              )}
               {sinPrecio && <p className="text-urgente text-xs font-medium">{sinPrecio}</p>}
+              {excedido && <p className="text-urgente text-xs font-medium">{excedido}</p>}
             </>
           )}
         </div>
@@ -202,7 +257,7 @@ function Contenido({
           type="button"
           className="shrink-0"
           onClick={(e) => onRegistrar(e.currentTarget)}
-          disabled={vacia || enEspera}
+          disabled={vacia || enEspera || excedido !== null}
         >
           <Banknote />
           Registrar pago

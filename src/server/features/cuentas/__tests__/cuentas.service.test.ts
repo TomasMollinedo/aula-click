@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NotFoundError } from '@/server/errors'
+import { ForbiddenError, NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
+import type { Actor } from '@/server/shared/actor'
 import type { Adeudado, Ocurrencia } from '../cuentas.condiciones'
 import type { CuentasRepository } from '../cuentas.repository'
 import { crearCuentasService } from '../cuentas.service'
@@ -19,26 +20,33 @@ const PERIODO_FUTURO = { desde: '2026-10-12', hasta: '2026-10-31' }
 const PERIODO_QUE_CRUZA_HOY = { desde: '2026-09-21', hasta: '2026-10-19' }
 const PERIODO_DESPUES_DEL_TOPE = { desde: '2026-12-01', hasta: '2026-12-31' }
 
+const MATEMATICA = { id: 2, nombre: 'Matemática' }
+const INGLES = { id: 5, nombre: 'Inglés' }
+const FISICA = { id: 7, nombre: 'Física' }
+
 function adeudado(parcial: {
   turnoId?: number
   fecha: string
   alumnoId?: number
   estado?: Ocurrencia['estado']
   importe?: number | null
+  materia?: { id: number; nombre: string }
+  horaInicio?: number
 }): Adeudado {
   const alumnoId = parcial.alumnoId ?? 12
+  const materia = parcial.materia ?? MATEMATICA
   return {
     ocurrencia: {
       turnoId: parcial.turnoId ?? 41,
       fecha: parcial.fecha,
       bloqueAgendaId: 10,
       diaSemana: 1,
-      horaInicio: 540,
-      horaFin: 600,
+      horaInicio: parcial.horaInicio ?? 540,
+      horaFin: (parcial.horaInicio ?? 540) + 60,
       profesorId: 3,
       aulaId: 1,
       alumnoId,
-      materiaId: 2,
+      materiaId: materia.id,
       tipo: 'RECURRENTE',
       estado: parcial.estado ?? 'SIN_REGISTRAR',
       pago: { estado: 'PENDIENTE' },
@@ -47,7 +55,7 @@ function adeudado(parcial: {
       serie: { serieId: null, fechaInicio: '2026-09-07', fechaFin: null, finEfectivo: null },
       alumno: { id: alumnoId, nombre: `Alumno${alumnoId}`, apellido: 'Paz', busqueda: 'paz' },
       profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez', busqueda: 'gomez ana' },
-      materia: { id: 2, nombre: 'Matemática' },
+      materia,
       aula: { id: 1, nombre: 'Aula 1' },
     },
     importe: parcial.importe === undefined ? 8000 : parcial.importe,
@@ -105,7 +113,7 @@ describe('obtenerCuenta', () => {
 
     const filtro = {
       alumnoId: 12,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,
@@ -205,9 +213,14 @@ describe('obtenerCuenta', () => {
   })
 
   it('materia y profesor llegan al repository en las dos secciones', async () => {
-    await service.obtenerCuenta(12, { materiaId: 2, profesorId: 3 })
+    await service.obtenerCuenta(12, { materiaId: [2], profesorId: 3 })
 
-    const filtro = expect.objectContaining({ alumnoId: 12, materiaId: 2, profesorId: 3, hoy: HOY })
+    const filtro = expect.objectContaining({
+      alumnoId: 12,
+      materiaIds: [2],
+      profesorId: 3,
+      hoy: HOY,
+    })
     expect(repository.leerAdeudados).toHaveBeenCalledWith(filtro)
     expect(repository.leerProximos).toHaveBeenCalledWith(filtro)
   })
@@ -232,7 +245,7 @@ describe('listarAdeudados', () => {
 
     expect(repository.leerAdeudados).toHaveBeenCalledWith({
       alumnoId: undefined,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,
@@ -306,14 +319,14 @@ describe('listarAdeudados', () => {
       page: 1,
       pageSize: 20,
       alumnoId: 12,
-      materiaId: 2,
+      materiaId: [2],
       profesorId: 3,
       ...PERIODO_QUE_CRUZA_HOY,
     })
 
     expect(repository.leerAdeudados).toHaveBeenCalledWith({
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
       ...PERIODO_QUE_CRUZA_HOY,
       hoy: HOY,
@@ -361,7 +374,7 @@ describe('listarProximos', () => {
 
     expect(repository.leerProximos).toHaveBeenCalledWith({
       alumnoId: undefined,
-      materiaId: undefined,
+      materiaIds: undefined,
       profesorId: undefined,
       desde: undefined,
       hasta: undefined,
@@ -403,7 +416,7 @@ describe('listarProximos', () => {
       page: 1,
       pageSize: 20,
       alumnoId: 12,
-      materiaId: 2,
+      materiaId: [2],
       profesorId: 3,
       ...PERIODO_QUE_CRUZA_HOY,
     })
@@ -411,7 +424,7 @@ describe('listarProximos', () => {
     expect(alumnosRepository.buscarPorId).toHaveBeenCalledWith(12)
     expect(repository.leerProximos).toHaveBeenCalledWith({
       alumnoId: 12,
-      materiaId: 2,
+      materiaIds: [2],
       profesorId: 3,
       ...PERIODO_QUE_CRUZA_HOY,
       hoy: HOY,
@@ -475,5 +488,138 @@ describe('listarProximos', () => {
 
     expect(res.data).toEqual([])
     expect(res.meta).toEqual({ page: 9, pageSize: 2, total: 5, totalPages: 3 })
+  })
+})
+
+describe('varias materias (HU-25, T-101)', () => {
+  // Qué trae cada materia lo deciden las condiciones (`cuentas.condiciones`); acá, que las materias
+  // pedidas llegan juntas en una sola lectura por sección y que el total es el de esa lectura.
+  const ADEUDADOS = [
+    adeudado({ turnoId: 52, fecha: '2026-09-21', materia: INGLES, horaInicio: 480, importe: 9000 }),
+    adeudado({ turnoId: 41, fecha: '2026-09-21', materia: MATEMATICA }),
+    adeudado({ turnoId: 63, fecha: '2026-09-22', materia: FISICA, importe: 7000 }),
+  ]
+  const PROXIMOS = [
+    proximo({ turnoId: 52, fecha: HOY, materia: INGLES, horaInicio: 480, importe: 9000 }),
+    proximo({ turnoId: 63, fecha: '2026-10-06', materia: FISICA, importe: 7000 }),
+  ]
+  const deLasMaterias =
+    (lista: Adeudado[]) =>
+    async ({ materiaIds }: { materiaIds?: readonly number[] }) =>
+      lista.filter((a) => materiaIds === undefined || materiaIds.includes(a.ocurrencia.materiaId))
+
+  beforeEach(() => {
+    repository.leerAdeudados.mockImplementation(deLasMaterias(ADEUDADOS))
+    repository.leerProximos.mockImplementation(deLasMaterias(PROXIMOS))
+  })
+
+  it('Matemática e Inglés: una lectura por sección con las dos, y el total de las dos', async () => {
+    const cuenta = await service.obtenerCuenta(12, { materiaId: [2, 5] })
+
+    expect(repository.leerAdeudados).toHaveBeenCalledTimes(1)
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(
+      expect.objectContaining({ alumnoId: 12, materiaIds: [2, 5], hoy: HOY }),
+    )
+    expect(repository.leerProximos).toHaveBeenCalledWith(
+      expect.objectContaining({ materiaIds: [2, 5] }),
+    )
+    expect(cuenta.adeudados?.map((o) => o.materia.nombre)).toEqual(['Inglés', 'Matemática'])
+    expect(cuenta.proximos?.map((o) => o.materia.nombre)).toEqual(['Inglés'])
+    expect(cuenta.totalAdeudado).toBe(17000)
+  })
+
+  it('vista global: las dos materias en una lectura, con el total de las dos', async () => {
+    const adeudados = await service.listarAdeudados({ page: 1, pageSize: 1, materiaId: [2, 5] })
+    const proximos = await service.listarProximos({ page: 1, pageSize: 20, materiaId: [2, 5] })
+
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(
+      expect.objectContaining({ materiaIds: [2, 5] }),
+    )
+    expect(adeudados.meta).toEqual({ page: 1, pageSize: 1, total: 2, totalPages: 2 })
+    expect(adeudados.totalAdeudado).toBe(17000)
+    expect(proximos.data.map((o) => o.materia.nombre)).toEqual(['Inglés'])
+  })
+})
+
+describe('miCuenta (portal, HU-37, T-101)', () => {
+  const ALUMNO: Actor = { userId: 'usr_alumno', role: 'ALUMNO', alumnoId: 12 }
+
+  beforeEach(() => {
+    repository.leerAdeudados.mockResolvedValue([
+      adeudado({ turnoId: 41, fecha: '2026-09-21', materia: MATEMATICA }),
+      adeudado({ turnoId: 63, fecha: '2026-09-22', materia: FISICA, importe: 7000.5 }),
+      adeudado({ turnoId: 41, fecha: '2026-09-28', materia: MATEMATICA, importe: null }),
+      adeudado({ turnoId: 52, fecha: '2026-09-29', materia: INGLES, importe: 9000 }),
+      adeudado({ turnoId: 63, fecha: '2026-09-29', materia: FISICA, importe: 7000.5 }),
+    ])
+    repository.leerProximos.mockResolvedValue([
+      proximo({ turnoId: 52, fecha: HOY, materia: INGLES, importe: 9000 }),
+      proximo({ turnoId: 41, fecha: '2026-10-12', materia: MATEMATICA }),
+    ])
+  })
+
+  it('el alumno de la sesión, sin filtros y sin buscar el alumno', async () => {
+    await service.miCuenta(ALUMNO)
+
+    const filtro = {
+      alumnoId: 12,
+      materiaIds: undefined,
+      profesorId: undefined,
+      desde: undefined,
+      hasta: undefined,
+      hoy: HOY,
+    }
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(filtro)
+    expect(repository.leerProximos).toHaveBeenCalledWith(filtro)
+    expect(alumnosRepository.buscarPorId).not.toHaveBeenCalled()
+  })
+
+  it('agrupa por materia (por nombre), con su subtotal y las ocurrencias en orden', async () => {
+    const cuenta = await service.miCuenta(ALUMNO)
+
+    expect(
+      cuenta.adeudados.map((g) => ({
+        materia: g.materia.nombre,
+        subtotal: g.subtotal,
+        fechas: g.ocurrencias.map((o) => o.fecha),
+      })),
+    ).toEqual([
+      { materia: 'Física', subtotal: 14001, fechas: ['2026-09-22', '2026-09-29'] },
+      { materia: 'Inglés', subtotal: 9000, fechas: ['2026-09-29'] },
+      { materia: 'Matemática', subtotal: 8000, fechas: ['2026-09-21', '2026-09-28'] },
+    ])
+    expect(cuenta.proximos.map((g) => [g.materia.nombre, g.subtotal])).toEqual([
+      ['Inglés', 9000],
+      ['Matemática', 8000],
+    ])
+    expect(cuenta.limiteCobro).toBe(TOPE)
+  })
+
+  it('el mismo total adeudado que ve mesa de entradas, igual a la suma de los subtotales', async () => {
+    const delPortal = await service.miCuenta(ALUMNO)
+    const deLaMesa = await service.obtenerCuenta(12)
+
+    expect(delPortal.totalAdeudado).toBe(31001)
+    expect(delPortal.totalAdeudado).toBe(deLaMesa.totalAdeudado)
+    expect(delPortal.adeudados.flatMap((g) => g.ocurrencias)).toHaveLength(5)
+  })
+
+  it('sin nada pendiente: total 0 y las dos secciones vacías', async () => {
+    repository.leerAdeudados.mockResolvedValue([])
+    repository.leerProximos.mockResolvedValue([])
+
+    expect(await service.miCuenta(ALUMNO)).toEqual({
+      totalAdeudado: 0,
+      adeudados: [],
+      proximos: [],
+      limiteCobro: TOPE,
+    })
+  })
+
+  it('una sesión sin alumno → 403 sin leer nada', async () => {
+    await expect(
+      service.miCuenta({ userId: 'usr_mesa', role: 'MESA_ENTRADAS' }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
   })
 })

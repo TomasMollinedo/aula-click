@@ -27,7 +27,11 @@ function comprobante(cantidad: number, cambios: Partial<Comprobante> = {}): Comp
     total: 8000.5 * cantidad,
     montoRecibido: 8000.5 * cantidad + 1000,
     vuelto: 1000,
-    formaPago: { id: 1, nombre: 'Efectivo' },
+    formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+    transferencia: null,
+    debito: null,
+    estado: 'VIGENTE',
+    anulacion: null,
     observaciones: null,
     registradoPor: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
     registradoEl: '2026-10-05T14:30:00.000Z',
@@ -62,6 +66,64 @@ describe('renderizarComprobantePdf', { timeout: 60_000 }, () => {
 
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(contarPaginas(pdf)).toBeGreaterThan(1)
+  })
+
+  it.each([
+    [
+      'transferencia',
+      {
+        formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+        transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: 'Marta López' },
+      },
+    ],
+    [
+      'débito',
+      {
+        formaPago: { codigo: 'DEBITO', nombre: 'Tarjeta de débito' },
+        debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+      },
+    ],
+  ] as const)(
+    'pago por %s: con los datos del medio, sin monto ni vuelto, en una hoja',
+    async (_, medio) => {
+      const pdf = await renderizar(comprobante(2, { ...medio, montoRecibido: null, vuelto: null }))
+      expect(contarPaginas(pdf)).toBe(1)
+    },
+  )
+
+  it('con Inglés y Matemática: agrupado por materia con sus subtotales, en una hoja', async () => {
+    const base = comprobante(4)
+    const turnos = base.turnos.map((turno, i) => ({
+      ...turno,
+      materia: i % 2 === 0 ? { id: 2, nombre: 'Matemática' } : { id: 5, nombre: 'Inglés' },
+    }))
+    const pdf = await renderizar({ ...base, turnos })
+    expect(contarPaginas(pdf)).toBe(1)
+  })
+
+  it('con 200 turnos de varias materias: agrupado y en varias hojas, sin fallar', async () => {
+    const base = comprobante(200)
+    const turnos = base.turnos.map((turno, i) => ({
+      ...turno,
+      materia: { id: i % 3, nombre: ['Física', 'Inglés', 'Matemática'][i % 3] as string },
+    }))
+    const pdf = await renderizar({ ...base, turnos })
+    expect(contarPaginas(pdf)).toBeGreaterThan(1)
+  })
+
+  it('anulado: con la franja ANULADO, el motivo y la fecha, en una hoja', async () => {
+    const pdf = await renderizar(
+      comprobante(2, {
+        estado: 'ANULADO',
+        anulacion: {
+          motivo: 'FORMA_PAGO_EQUIVOCADA',
+          detalle: 'Se cargó en efectivo y fue por transferencia',
+          anuladoPor: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+          anuladoEl: '2026-10-06T12:00:00.000Z',
+        },
+      }),
+    )
+    expect(contarPaginas(pdf)).toBe(1)
   })
 
   it('con observaciones de varias líneas y sin monto recibido (pago anterior a T-112)', async () => {

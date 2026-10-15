@@ -31,11 +31,12 @@ import { type AperturaDePago, useDialogoDePago } from '../hooks/use-dialogo-de-p
 import { useFiltrosCuenta } from '../hooks/use-filtros-cuenta'
 import { useNombresDeFiltros } from '../hooks/use-nombres-de-filtros'
 import { useProximos } from '../hooks/use-proximos'
-import { useTodosLosAdeudados } from '../hooks/use-todos-los-adeudados'
+import { useTodosLosDelFiltro } from '../hooks/use-todos-los-del-filtro'
 import {
   SELECCION_VACIA,
   type Seleccion,
   alternar,
+  estadoSeleccionarTodo,
   ordenarPorFecha,
   quitar,
   quitarTodos,
@@ -75,8 +76,8 @@ const FILAS_VACIAS: readonly FilaDeCuenta[] = []
  *   (`renderDetalle`, en la URL junto a los filtros y las páginas). Sin alumno filtrado es la única
  *   forma de cobrar, porque un pago es de un solo alumno.
  * - Con alumno filtrado, además, casillas en las dos tablas y una barra de selección: adeudados y
- *   próximos se pueden cobrar juntos, y "Seleccionar todos los adeudados" tilda los de todas las
- *   páginas (los pide a la cuenta del alumno). La selección se conserva al paginar cualquiera de las dos y
+ *   próximos se pueden cobrar juntos, y "Seleccionar todo" tilda los de todas las páginas de las
+ *   dos tablas (los pide a la cuenta del alumno). La selección se conserva al paginar cualquiera de las dos y
  *   se vacía cuando cambia **cualquier** filtro. No se poda contra la página (solo está la actual):
  *   al cerrar el diálogo, si alguna de las dos listas se volvió a pedir mientras estaba abierto
  *   (cambió su `dataUpdatedAt`) o se está volviendo a pedir (`isFetching`: registrar invalida sin
@@ -112,29 +113,37 @@ export function PagosGlobal({ renderRegistrarPago, renderDetalle }: PagosGlobalP
   }
   const resumen = useMemo(() => resumenSeleccion(seleccion), [seleccion])
 
-  // "Seleccionar todos los adeudados" (con alumno filtrado): los de todas las páginas, no solo los
-  // de la que se ve. Si entran en la página actual se toman de ahí; si no, se piden a la cuenta del
-  // alumno, con los mismos filtros. Si el filtro cambió mientras llegaban, no se tildan.
+  // "Seleccionar todo" (con alumno filtrado, HU-25): los turnos de todas las páginas de las dos
+  // tablas, adeudados y próximos, no solo los de las que se ven (decisión T-102). Si cada tabla
+  // entra en su página actual se toman de ahí; si no, se piden a la cuenta del alumno, con los
+  // mismos filtros. Si el filtro cambió mientras llegaban, no se tildan.
   const toast = useToast()
-  const todosLosAdeudados = useTodosLosAdeudados()
+  const todosLosDelFiltro = useTodosLosDelFiltro()
   const claveActual = useRef(clave)
   useEffect(() => {
     claveActual.current = clave
   })
-  const seleccionarTodosLosAdeudados = async () => {
+  const cantidadDelFiltro = (adeudados.data?.meta.total ?? 0) + (proximos.data?.meta.total ?? 0)
+  const estadoTodo = estadoSeleccionarTodo(seleccion, cantidadDelFiltro)
+  const seleccionarTodoElFiltro = async () => {
     if (alumnoId === null) return
     const pedida = clave
-    const pagina = adeudados.isPlaceholderData ? undefined : adeudados.data
+    const paginaCompleta = (query: typeof adeudados | typeof proximos) =>
+      !query.isPlaceholderData && query.data && query.data.meta.totalPages <= 1
+        ? query.data.data
+        : null
+    const deAdeudados = paginaCompleta(adeudados)
+    const deProximos = paginaCompleta(proximos)
     try {
       const todos =
-        pagina && pagina.meta.totalPages <= 1
-          ? pagina.data
-          : await todosLosAdeudados.traer(alumnoId, aParams(filtros))
+        deAdeudados && deProximos
+          ? [...deAdeudados, ...deProximos]
+          : await todosLosDelFiltro.traer(alumnoId, aParams(filtros))
       if (claveActual.current === pedida) {
         setSeleccion((actual) => seleccionarTodos(actual, todos))
       }
     } catch {
-      toast.error('No se pudieron seleccionar todos los adeudados. Intentá de nuevo.')
+      toast.error('No se pudieron seleccionar todos los turnos. Intentá de nuevo.')
     }
   }
 
@@ -308,12 +317,15 @@ export function PagosGlobal({ renderRegistrarPago, renderDetalle }: PagosGlobalP
           <BarraSeleccion
             mostrar={conBarra}
             resumen={resumen}
-            onSeleccionarTodos={
-              adeudados.data?.aplica ? () => void seleccionarTodosLosAdeudados() : undefined
-            }
-            seleccionarTodosDeshabilitado={
-              adeudados.data?.meta.total === 0 || todosLosAdeudados.cargando
-            }
+            seleccionarTodo={{
+              estado: estadoTodo,
+              cantidad: cantidadDelFiltro,
+              onAlternar: () =>
+                estadoTodo === 'todos'
+                  ? setSeleccion(quitarTodos())
+                  : void seleccionarTodoElFiltro(),
+              deshabilitado: cantidadDelFiltro === 0 || todosLosDelFiltro.cargando,
+            }}
             onQuitar={() => setSeleccion(quitarTodos())}
             onRegistrar={(boton) =>
               alumnoId !== null &&

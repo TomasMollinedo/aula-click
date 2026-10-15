@@ -160,14 +160,17 @@ HU-22 (T-74: estados y plazo). La asistencia se registra por ocurrencia (`Asiste
 - **Plazo para registrar:** hasta las 23:59 del **séptimo día** después de la fecha del turno (vence = fecha + 7 días de calendario; el día 7 entero está dentro del plazo). Un "Sin registrar" dentro del plazo se muestra **"Sin registrar · vence el DD/MM"**; vencido, **"Sin registrar · cerrado por el sistema"**, con la observación "No registrada por el profesor en el plazo de 7 días. Cierre automático del sistema". Si el plazo venció o no, lo dice la API: la UI no lo calcula.
 - **Pasado el plazo, el estado es definitivo:** un "Sin registrar" cerrado por el sistema no se puede registrar ni corregir, y lo ya registrado tampoco se puede corregir.
 - **El cierre se calcula al leer** (decisión T-138, **pendiente de confirmación de las PO**, punto 2 de "Puntos a confirmar" del Sprint 3): no hay un proceso programado ni una fila que lo guarde. La fecha y hora del cierre que se muestra es el vencimiento (las 23:59 del séptimo día), no el momento en que corrió un proceso.
-- **Horas seguidas:** cada hora es una ocurrencia con su propio estado y su propia asistencia. Sólo la pantalla "Asistencia" del profesor permite registrar las horas seguidas de un alumno, profesor y materia de una vez; todas las vistas, también esa, muestran cada hora por separado.
+- **Horas seguidas** (ajuste del equipo y de las PO del 14/10): las ocurrencias no canceladas de un mismo alumno, profesor y materia en un día, una a continuación de la otra (de 8 a 9 y de 9 a 10, sí; de 8 a 9 y de 20 a 21, no; una hora cancelada en el medio corta el grupo).
+  - **Cada hora es una ocurrencia**, con su propio estado y su propia asistencia: se cobra, se cuenta en los indicadores y en los porcentajes por separado. Los textos se guardan en **cada** hora; "una sola vez" es cómo se muestran.
+  - **Cómo se ven:** en el detalle del turno (también el del portal), el historial, su PDF y "Mis materias", las horas seguidas se muestran **juntas**, con el estado de **cada** hora y "Qué se trabajó" e "Indicaciones para la próxima sesión" **una sola vez**. Si alguna hora tiene otros textos (porque se corrigió sola), se muestran también los de esa hora. Qué textos van una vez y cuáles aparte lo decide la API, así todas las vistas dicen lo mismo. Las listas y los calendarios no cambian: no muestran la asistencia.
+  - **Registro desde el detalle:** el profesor del turno registra la asistencia de esa hora y, con "Aplicar también a…", la de sus horas seguidas **sin registrar**, con los mismos textos. Una hora ya registrada se corrige desde su propio detalle.
 
 HU-22 (T-81: registro).
 
 - **Quién:** sólo el **profesor del turno** registra y corrige su asistencia. Mesa de entrada y gerente no registran ni corrigen: la ven en el detalle del turno, el historial y el tablero.
 - **Cuándo:** turnos de **hoy** (también antes de su hora) y de días anteriores dentro del plazo. Una fecha futura o una ocurrencia cancelada no se registran. Un día vencido se sigue viendo, en sólo lectura.
 - **Campos:** "Presente" con "Qué se trabajó" e "Indicaciones para la próxima sesión" (opcionales, hasta 1000 caracteres cada uno), o "Ausente" con una "Observación" (opcional, hasta 500). Un ausente no lleva "Qué se trabajó" ni indicaciones.
-- **Horas seguidas:** cada clase (una hora) muestra a todos sus alumnos, así un alumno de 16 a 18 aparece en las dos. Se registra cada hora, o, con "Aplicar también a…", todas sus horas seguidas de una vez: el estado y los textos quedan en **cada** hora.
+- **Horas seguidas en la pantalla "Asistencia":** cada clase (una hora) muestra a todos sus alumnos, así un alumno de 16 a 18 aparece en las dos. Se registra cada hora, o, con "Aplicar también a…", sus otras horas seguidas sin registrar de una vez: el estado y los textos quedan en **cada** hora. Desde el detalle del turno se registra igual (ver Horas seguidas, arriba).
 - **Corrección:** registrar de nuevo la misma ocurrencia la corrige: es la misma asistencia (una por ocurrencia), y queda quién y cuándo la modificó. Dentro del plazo se puede corregir; pasado el plazo, no.
 - **"Marcar todos presentes"** marca sólo las filas sin asistencia: un ausente ya registrado no cambia (propuesta, punto 4 de "Puntos a confirmar" del Sprint 3).
 - **Cierre:** pasado el séptimo día, lo que quedó "Sin registrar" se cierra solo (ver Plazo para registrar) y nada de esa fecha se puede registrar ni corregir.
@@ -178,7 +181,7 @@ HU-22 (T-81: registro).
 - **Quién:** sólo el **profesor del turno** registra y corrige su asistencia. Mesa de entrada y gerente no registran ni corrigen: la ven en el detalle del turno, el historial y el tablero.
 - **Cuándo:** turnos de **hoy** (también antes de su hora) y de días anteriores dentro del plazo. Una fecha futura o una ocurrencia cancelada no se registran. Un día vencido se sigue viendo, en sólo lectura.
 - **Campos:** "Presente" con "Qué se trabajó" e "Indicaciones para la próxima sesión" (opcionales, hasta 1000 caracteres cada uno), o "Ausente" con una "Observación" (opcional, hasta 500). Un ausente no lleva "Qué se trabajó" ni indicaciones.
-- **Horas seguidas:** se registran una vez para todo el grupo: el estado y los textos quedan en **cada** hora presente. "Ajustar por hora" registra cada hora por separado.
+- **Horas seguidas en la pantalla "Asistencia":** cada clase (una hora) muestra a todos sus alumnos, así un alumno de 16 a 18 aparece en las dos. Se registra cada hora, o, con "Aplicar también a…", sus otras horas seguidas sin registrar de una vez: el estado y los textos quedan en **cada** hora. Desde el detalle del turno se registra igual (ver Horas seguidas, arriba).
 - **Corrección:** registrar de nuevo la misma ocurrencia la corrige: es la misma asistencia (una por ocurrencia), y queda quién y cuándo la modificó. Dentro del plazo se puede corregir; pasado el plazo, no.
 - **"Marcar todos presentes"** marca sólo las filas sin asistencia: un ausente ya registrado no cambia (propuesta, punto 4 de "Puntos a confirmar" del Sprint 3).
 - **Cierre:** pasado el séptimo día, lo que quedó "Sin registrar" se cierra solo (ver Plazo para registrar) y nada de esa fecha se puede registrar ni corregir.
@@ -186,19 +189,27 @@ HU-22 (T-81: registro).
 
 ## Pagos
 
-HU-15 (T-51; modelo de datos: T-29).
+HU-15 (T-51; modelo de datos: T-29), con las formas de pago de HU-23 (T-96).
 
 - **Un pago, un alumno:** un pago (`Pago`) es de **un solo alumno** y puede incluir una o varias de sus ocurrencias (`PagoTurno`), cada una identificada igual que una cancelación: `(turnoId, fecha de la ocurrencia)`. Genera un único comprobante, con `numeroComprobante` correlativo y único.
-- **Forma de pago:** `FormaPago` es un catálogo con baja lógica; el seed carga **"Efectivo"**, **"Transferencia"** y **"Tarjeta de débito"**, identificadas por `tipoFormaPago` (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`) y no por el nombre (T-134). Los datos del medio se guardan en el `Pago` y los exige la API según el tipo (HU-23): en una transferencia, operación, banco y titular; con débito, red de la tarjeta, cupón y últimos 4 dígitos (nunca el número completo). El ABM completo del catálogo sigue fuera de alcance.
+- **Forma de pago:** `FormaPago` es un catálogo con baja lógica; el seed carga **"Efectivo"**, **"Transferencia"** y **"Tarjeta de débito"**, identificadas por `tipoFormaPago` (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`) y no por el nombre (T-134). Todo pago tiene una forma de pago, que se elige siempre (no hay una por defecto). El ABM completo del catálogo sigue fuera de alcance.
+- **Un pago, un medio** (HU-23): cada forma de pago lleva sus datos, que se guardan en el `Pago`, y no lleva los de las otras.
+  - **Efectivo:** el monto recibido (ver abajo). Sin comprobante adjunto.
+  - **Transferencia:** número de operación y banco (obligatorios) y titular (opcional), más el **comprobante adjunto, obligatorio**. No se compara el importe transferido con el total ni se impide repetir una operación: una transferencia puede cubrir los pagos de varios alumnos (por ejemplo, de hermanos).
+  - **Débito:** red de la tarjeta (de una lista), número de cupón y, si se quiere, los últimos 4 números de la tarjeta (**nunca el número completo**); el comprobante adjunto es **opcional**, y después de registrado el pago se puede agregar o quitar sin que el pago deje de valer.
+  - **El importe no cambia según el medio:** es el precio vigente de cada materia, se pague como se pague.
 - **Comprobante adjunto** (HU-24): el archivo que trae la familia como respaldo de un pago, distinto del comprobante de pago que emite el centro. Se sube antes de registrar el pago (`ComprobanteAdjunto.pagoId` nulo) y se vincula al registrarlo. Un pago puede tener varios: se muestra el último activo y los reemplazados quedan guardados; quitarlo es una baja lógica (T-136).
 - **Una sola vez:** una ocurrencia tiene a lo sumo un pago **vigente**, y lo garantiza la base (T-133): `PagoTurno.vigente` es `true` mientras el pago está vigente y el único `(turnoId, fechaOcurrencia, vigente)` impide un segundo. Un pago nace `VIGENTE`; al anularlo (HU-42) pasa a `ANULADO`, se registra su `AnulacionPago` (motivo y detalle) y sus filas de `PagoTurno` pasan a `vigente = null`: conserva todos sus datos, pero sus turnos vuelven a estar pendientes y se pueden cobrar de nuevo. Un turno con pago vigente no se puede cancelar.
-- **Qué se puede cobrar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), con estado `AGENDADO` o `SIN_REGISTRAR` (las canceladas no) y pago `PENDIENTE`. Pasadas o futuras.
+- **Qué se puede cobrar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), que no está cancelada (`AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`: un turno dado e impago se cobra igual, HU-22) y sin un pago vigente (una de un pago anulado se vuelve a cobrar). Pasadas o futuras.
 - **Tope de 8 semanas:** una ocurrencia futura, de una serie o una sesión única, se cobra sólo hasta hoy + 56 días. Las pasadas no tienen tope (T-60).
 - **Precio vigente:** el importe de cada ocurrencia (`PagoTurno.importeAplicado`) es el precio por hora de su materia (`Materia.precioHora`) al registrar el pago (no lo manda el cliente). Cambiar el precio de la materia después no modifica los pagos ya registrados. Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
 - **Todo o nada:** si alguna ocurrencia no se puede cobrar, no se registra ninguna y la API informa cuáles y por qué (no existe, cancelada, ya pagada, fuera de las 8 semanas o sin precio). Dos pagos simultáneos de la misma ocurrencia: sólo uno se registra.
 - **Fecha de pago:** obligatoria, hoy o anterior.
-- **Monto recibido y vuelto:** el pago es en efectivo, así que el monto recibido es **obligatorio**: mayor a 0 y >= el total. Sin él no se registra el pago (T-112). El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**.
-- **Comprobante:** muestra los datos **actuales** de cada turno (si una ocurrencia pagada se reprograma, reimprimirlo muestra la fecha, la hora y el profesor nuevos) y el importe que se cobró, que no cambia (T-63). La numeración es correlativa pero puede tener huecos (T-62).
+- **Monto recibido y vuelto:** sólo en efectivo, donde el monto recibido es **obligatorio**: mayor a 0 y >= el total. Sin él no se registra el pago (T-112). El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**. Con transferencia o débito no hay monto recibido ni vuelto.
+- **Comprobante:** muestra los datos **actuales** de cada turno (si una ocurrencia pagada se reprograma, reimprimirlo muestra la fecha, la hora y el profesor nuevos) y el importe que se cobró, que no cambia (T-63). La numeración es correlativa pero puede tener huecos (T-62). Además:
+  - la forma de pago con sus datos: el monto recibido y el vuelto del efectivo; la operación, el banco y el titular de una transferencia; la red, el cupón y "**** 1234" de un débito;
+  - con más de una materia, los turnos **agrupados por materia**, con el subtotal de cada una (HU-25);
+  - si el pago está anulado, **"ANULADO"** bien visible, con el motivo, la fecha y quién lo anuló (HU-42).
 - Los importes, el total y el vuelto los calcula siempre la API; la UI sólo los muestra.
 
 ## Deuda
@@ -210,7 +221,7 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 - **Próximos turnos:** ocurrencias no canceladas e impagas de hoy en adelante, de series y sesiones únicas, hasta el mismo tope que el cobro ([Pagos](#pagos): 8 semanas). Un turno de **hoy** con asistencia ("Realizado" o "Ausente") sigue en próximos hasta mañana: la fecha separa las dos secciones (propuesta pendiente de confirmación de las PO, punto 6 de "Puntos a confirmar" del Sprint 3). **Nunca son deuda:** no suman al total, pero se pueden cobrar por adelantado.
 - **Importe:** el precio por hora **vigente** de la materia. Si el gerente cambia el precio, los turnos impagos muestran el precio nuevo; lo ya pagado conserva el importe que se cobró. Una materia sin precio muestra el turno sin importe y no suma al total.
 - **Dos secciones, en las dos vistas:** "Turnos adeudados" y "Próximos turnos" se muestran por separado, tanto en la cuenta de un alumno como en la vista global (de todos los alumnos, o de uno). Hoy las separa: una ocurrencia nunca está en las dos.
-- **Filtros:** período (desde y hasta, cada uno opcional y sin tope de días), materia y profesor en las dos vistas; en la global, además, el alumno.
+- **Filtros:** período (desde y hasta, cada uno opcional y sin tope de días), una o más materias y profesor en las dos vistas; en la global, además, el alumno. Para cobrar una o varias materias completas (HU-25) se eligen en el filtro de materias y se seleccionan todos sus turnos, adeudados y próximos; no hay filtro por meses ni por tipo de turno.
 - **Sin período:** los adeudados son todos los impagos anteriores a hoy y los próximos van de hoy al tope de cobro.
 - **Con período:** cada sección muestra la parte del período que le toca.
   - Adeudados: del período, pero nunca hoy ni después. Si el período es sólo futuro (empieza hoy o después), la sección **no aplica**.
@@ -264,16 +275,31 @@ A completar por T-81 (HU-22): quién la registra, plazo, campos, horas seguidas,
 
 ## Historial académico
 
-A completar por T-108 (HU-31, HU-33).
+HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios ni se guarda. Son las clases ya dadas del alumno, una por hora, con el estado, la asistencia y la cancelación que ya definen Asistencia y Turnos. Es de **sólo lectura**: la asistencia se registra y se corrige sólo desde HU-22.
+
+- **Dónde se ve:** mesa de entrada, en la ficha del alumno; el profesor, desde "Mis alumnos" (sólo los alumnos que tienen o tuvieron turnos con él, y de ellos ve el historial **completo**: también las clases de otras materias y de otros profesores, para entender su situación global); el alumno, en "Mis materias" del portal.
+- **Agrupado por materia y profesor** ("Matemática — Prof. Gómez"), porque un alumno puede cursar la misma materia con más de un profesor. Cada grupo tiene su propio resumen.
+- **Resumen de un grupo:** clases realizadas, ausencias y porcentaje de asistencia (realizadas sobre realizadas más ausencias, con un decimal). **Cada hora cuenta como un turno.** Los **cancelados**, los **sin registrar** y los **agendados no cuentan** para el porcentaje, que es 0 cuando no hay ninguna realizada ni ausente.
+- **Las horas seguidas se muestran juntas** (ajuste del 14/10, ver `decisiones.md`): un bloque por día con el estado de **cada** hora y "Qué se trabajó" e "Indicaciones para la próxima sesión" **una sola vez**; si una hora tiene otros textos (porque se corrigió sola), se muestran también los suyos. Una hora cancelada **corta** el bloque y se muestra sola, con su motivo (HU-13). Cada hora sigue contando por separado.
+- **Una clase cerrada por el sistema** (un "Sin registrar" con el plazo vencido, HU-22) se muestra con su observación, y se distingue de un "Sin registrar" que todavía está dentro del plazo.
+- **Sólo clases de hoy o anteriores:** los turnos futuros no son historial, están en los turnos del alumno. Una clase **de hoy** todavía sin asistencia se ve "Agendado" en la ficha, y **no se le muestra al alumno** (decisión T-148).
+- **Orden:** de la clase más reciente a la más antigua.
+- **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
+- **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
+- **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Tampoco las clases "Sin registrar" (decisión T-148, _pendiente de confirmación de las PO_: punto 8 de "Puntos a confirmar" del Sprint 3).
+- **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
+- El PDF mensual del historial es HU-32 (T-110).
 
 ## Portal del alumno
 
-El alumno (o su familia) entra al portal con una cuenta propia. La convención de sus endpoints está en `contrato-api.md` → Portal del alumno; la contraseña y su cambio, en T-91 (HU-28).
+El alumno (o su familia) entra al portal con una cuenta propia. La convención de sus endpoints está en `contrato-api.md` → Portal del alumno; la contraseña y su cambio, abajo (HU-28).
 
 - **Cada alumno tiene una sola cuenta** y **cada persona, un solo usuario por DNI**: si el DNI ya tiene usuario (por ejemplo, el de un profesor que además toma clases), el alta del alumno se rechaza. _Pendiente de confirmación de las PO_ (punto 10 de "Puntos a confirmar" del Sprint 3).
 - **El usuario lo genera el sistema** y no se escribe a mano: inicial del nombre + apellido + últimos 3 dígitos del DNI, en minúsculas, sin espacios ni tildes y con la "ñ" como "n" (Juan Pérez, DNI 45.123.456 → `jperez456`). Si ya está tomado, se agrega un número al final (`jperez456-2`).
 - **El usuario no cambia nunca**, aunque después se corrija el nombre o el apellido: es el dato con el que el alumno ingresa. El nombre que muestra la sesión sí se sincroniza con el del alumno.
 - **La contraseña inicial es el DNI del alumno**, sin puntos, y queda marcada como inicial mientras siga siendo la que puso el sistema (el portal recomienda cambiarla, HU-28). No se muestra ni se devuelve nunca.
+- **Cambiar la contraseña** (el alumno, desde "Configuración" en el portal, HU-28): pide la actual, la nueva y repetirla. La nueva tiene al menos 8 caracteres y no puede ser la actual ni su DNI. Si la actual no es correcta, no cambia nada. Al cambiarla deja de estar marcada como inicial (el portal deja de recomendar cambiarla) y la sesión sigue abierta.
 - **Restablecer la contraseña** (mesa de entradas) la vuelve a dejar en el DNI y marcada como inicial. Es la forma de resolver un olvido: no hay recuperación por email. Queda registrado quién la restableció y cuándo, igual que quién creó el acceso.
 - **Fuera de alcance en este incremento:** recuperación por email, y baja o reactivación del acceso.
 

@@ -20,7 +20,14 @@ import { type AlumnoDetalle, NIVEL_ESCOLARIDAD_LABEL } from '../alumnos.types'
 import { AccesoPortalFicha } from './AccesoPortalFicha'
 
 /** La pestaña "Datos" de la ficha del alumno: datos personales, contacto, tutor, escolares y trazabilidad. */
-export function DatosAlumno({ alumno }: { alumno: AlumnoDetalle }) {
+export function DatosAlumno({
+  alumno,
+  puedeEditar = false,
+}: {
+  alumno: AlumnoDetalle
+  /** Mesa de entradas: muestra las acciones del acceso al portal (ver `AccesoPortalFicha`). */
+  puedeEditar?: boolean
+}) {
   const tieneDatosTutor = [
     alumno.tutorNombre,
     alumno.tutorApellido,
@@ -91,6 +98,9 @@ export function DatosAlumno({ alumno }: { alumno: AlumnoDetalle }) {
           </Datos>
         </Seccion>
 
+        {/* En la grilla, al lado de "Datos escolares": ocupa el lugar que quedaba libre. */}
+        <AccesoPortalFicha alumno={alumno} puedeEditar={puedeEditar} />
+
         <Seccion icon={NotebookPen} titulo="Observaciones" className="lg:col-span-2">
           <p className="text-sm whitespace-pre-line">
             {alumno.observaciones ?? (
@@ -99,8 +109,6 @@ export function DatosAlumno({ alumno }: { alumno: AlumnoDetalle }) {
           </p>
         </Seccion>
       </div>
-
-      <AccesoPortalFicha alumno={alumno} />
 
       <Trazabilidad auditoria={alumno} />
     </div>

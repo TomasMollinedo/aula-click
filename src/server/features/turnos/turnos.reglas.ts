@@ -259,8 +259,9 @@ function compararTextos(a: string, b: string): number {
  * aparecen en ningún grupo y cortan la cadena. No calcula un estado del grupo: cada hora conserva
  * el suyo. Sale ordenada por fecha, `horaInicio`, `alumnoId`, `profesorId` y `materiaId`.
  *
- * Sólo la usa la pantalla "Asistencia" del profesor (T-81): el resto de las vistas muestra cada
- * hora por separado.
+ * La usan la pantalla "Asistencia" del profesor (T-81) y, desde el ajuste del 14/10, el detalle
+ * del turno (T-84) y el historial (T-108), que muestran las horas seguidas juntas con los textos de
+ * `textosDeHorasSeguidas`.
  */
 export function agruparHorasSeguidas<T extends HoraDeOcurrencia>(
   ocurrencias: readonly T[],
@@ -313,6 +314,53 @@ export function agruparHorasSeguidas<T extends HoraDeOcurrencia>(
       compararNumeros(a.profesorId, b.profesorId) ||
       compararNumeros(a.materiaId, b.materiaId),
   )
+}
+
+/** "Qué se trabajó" e "Indicaciones para la próxima sesión" de una asistencia presente. */
+export type TextosAsistencia = { trabajado: string | null; indicaciones: string | null }
+
+/** Lo que `textosDeHorasSeguidas` necesita de una hora: su asistencia, si la tiene. */
+type HoraConAsistencia = {
+  asistencia: {
+    estado: EstadoAsistencia
+    trabajado: string | null
+    indicaciones: string | null
+  } | null
+}
+
+/**
+ * Textos de unas **horas seguidas** (ajuste del 14/10): "el texto una sola vez y, si alguna hora
+ * cambió, la que cambió". Recibe las horas de un grupo en orden (las `ocurrencias` de un grupo de
+ * `agruparHorasSeguidas`, o las `Ocurrencia` del motor) y devuelve:
+ * - `textos`: los de la primera hora `PRESENTE`, que se muestran una sola vez; `null` si ninguna
+ *   está presente.
+ * - `porHora`, alineado con `horas`: los textos de esa hora sólo si es `PRESENTE` y difieren de
+ *   `textos` en `trabajado` o en `indicaciones` (comparación exacta: el PUT ya guarda los vacíos
+ *   como `null`); `null` si coinciden, si es ausente o si no tiene asistencia.
+ *
+ * La observación de un ausente no entra: es siempre de su hora. La usan el detalle del turno (T-84)
+ * y el historial (T-108); ninguna vista compara textos por su cuenta.
+ */
+export function textosDeHorasSeguidas<T extends HoraConAsistencia>(
+  horas: readonly T[],
+): { textos: TextosAsistencia | null; porHora: (TextosAsistencia | null)[] } {
+  const primera = horas.find((hora) => hora.asistencia?.estado === 'PRESENTE')?.asistencia
+  const textos = primera
+    ? { trabajado: primera.trabajado, indicaciones: primera.indicaciones }
+    : null
+
+  const porHora = horas.map(({ asistencia }) => {
+    if (!textos || asistencia?.estado !== 'PRESENTE') return null
+    if (
+      asistencia.trabajado === textos.trabajado &&
+      asistencia.indicaciones === textos.indicaciones
+    ) {
+      return null
+    }
+    return { trabajado: asistencia.trabajado, indicaciones: asistencia.indicaciones }
+  })
+
+  return { textos, porHora }
 }
 
 /**

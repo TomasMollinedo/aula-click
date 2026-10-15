@@ -1,3 +1,5 @@
+import type { AsistenciaDeOcurrencia, HorasSeguidas } from '@/types/ocurrencia'
+
 import type { FilaAsistenciaForm } from './asistencias.schema'
 import type {
   AsistenciasDelDia,
@@ -69,9 +71,20 @@ export function clasesPorHora(dia: AsistenciasDelDia): ClaseDeHora[] {
   }))
 }
 
-/** Los valores con los que se abre el formulario: lo ya registrado de esa hora. */
-export function valoresIniciales(fila: FilaDeHora): FilaAsistenciaForm {
-  const a = fila.hora.asistencia
+/** Lo que necesita un registro de una hora (`registrosDeHoras`). */
+export type HoraARegistrar = { turnoId: number; fecha: string; horaInicio: string }
+
+/** Una hora que ofrece "Aplicar también a…": se muestra con su horario. */
+export type HoraOfrecida = HoraARegistrar & { horaFin: string }
+
+/** Lo que el formulario usa de una asistencia ya registrada (la de la pantalla o la del detalle). */
+type AsistenciaParaFormulario = Pick<
+  AsistenciaDeOcurrencia,
+  'estado' | 'trabajado' | 'indicaciones' | 'observacion'
+>
+
+/** Los valores con los que se abre el formulario a partir de una asistencia (o de ninguna). */
+export function valoresDeAsistencia(a: AsistenciaParaFormulario | null): FilaAsistenciaForm {
   return {
     estado: a?.estado ?? null,
     trabajado: a?.trabajado ?? '',
@@ -79,6 +92,11 @@ export function valoresIniciales(fila: FilaDeHora): FilaAsistenciaForm {
     observacion: a?.observacion ?? '',
     otrasHoras: [],
   }
+}
+
+/** Los valores con los que se abre el formulario: lo ya registrado de esa hora. */
+export function valoresIniciales(fila: FilaDeHora): FilaAsistenciaForm {
+  return valoresDeAsistencia(fila.hora.asistencia)
 }
 
 /**
@@ -90,21 +108,33 @@ export function otrasHorasSinRegistrar(fila: FilaDeHora): HoraAsistencia[] {
 }
 
 /**
- * Los registros de una fila: esa hora y, con "Aplicar también a…", cada otra hora tildada, con el
- * mismo estado y los mismos textos. Un registro por hora, así se pueden tildar horas que no son
- * seguidas entre sí; el `PUT` es todo o nada. Un texto vacío viaja como `''` y la API lo guarda
- * como `null`. `[]` si falta el estado.
+ * Los registros de una fila: esa hora y, con "Aplicar también a…", cada otra hora sin registrar
+ * tildada (`registrosDeHoras`).
  */
 export function registrosDeFila(
   fila: FilaDeHora,
   valores: FilaAsistenciaForm,
 ): RegistroAsistencia[] {
-  if (valores.estado === null) return []
-  const estado = valores.estado
   const tildadas = otrasHorasSinRegistrar(fila).filter((h) =>
     valores.otrasHoras.includes(h.turnoId),
   )
-  return [fila.hora, ...tildadas]
+  return registrosDeHoras(fila.hora, tildadas, valores)
+}
+
+/**
+ * Los registros de una hora y de las otras tildadas en "Aplicar también a…", con el mismo estado
+ * y los mismos textos, en orden de hora. Un registro por hora, así se pueden tildar horas que no
+ * son seguidas entre sí; el `PUT` es todo o nada. Un texto vacío viaja como `''` y la API lo guarda
+ * como `null`. `[]` si falta el estado. Lo usan la pantalla "Asistencia" y el detalle del turno.
+ */
+export function registrosDeHoras(
+  hora: HoraARegistrar,
+  otrasTildadas: HoraARegistrar[],
+  valores: FilaAsistenciaForm,
+): RegistroAsistencia[] {
+  if (valores.estado === null) return []
+  const estado = valores.estado
+  return [hora, ...otrasTildadas]
     .sort((a, b) => a.horaInicio.localeCompare(b.horaInicio))
     .map((hora) =>
       estado === 'PRESENTE'
@@ -148,4 +178,25 @@ export function textosRegistrados(fila: FilaDeHora): [string, string][] {
         ]
       : [['Observación', a.observacion]]
   return textos.filter((t): t is [string, string] => Boolean(t[1]))
+}
+
+/**
+ * El detalle del turno ya tiene asistencia registrada de esa hora (presente o ausente): se ve
+ * "Corregir". Sin ella (o cerrada por el sistema, que no trae estado), el formulario directo.
+ */
+export function tieneAsistenciaRegistrada(asistencia: { estado: unknown } | null): boolean {
+  return asistencia !== null && asistencia.estado !== null
+}
+
+/**
+ * Las horas que el detalle del turno ofrece en "Aplicar también a…": las de sus horas seguidas que
+ * la API marca `registrable`, salvo la del detalle. Sin reglas propias.
+ */
+export function horasOfrecidasDelDetalle(
+  horasSeguidas: Pick<HorasSeguidas, 'ocurrencias'> | null,
+): HoraOfrecida[] {
+  if (!horasSeguidas) return []
+  return horasSeguidas.ocurrencias
+    .filter((h) => h.registrable && !h.actual)
+    .map(({ turnoId, fecha, horaInicio, horaFin }) => ({ turnoId, fecha, horaInicio, horaFin }))
 }

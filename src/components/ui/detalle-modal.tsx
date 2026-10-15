@@ -34,6 +34,8 @@ type DetalleModalProps = {
   textoNoEncontrado?: string
   /** Quién creó el registro y quién lo modificó por última vez. */
   auditoria?: Auditoria
+  /** Reemplaza la línea "Creado por …" de la trazabilidad (`Trazabilidad`). */
+  textoCreacion?: string
   /**
    * Acciones además de "Cerrar" (por ejemplo, un link a la edición), cada una un
    * `DetalleModalAccion`. Cada acción aporta al pie **un solo elemento** (o ninguno): el pie
@@ -47,6 +49,11 @@ type DetalleModalProps = {
    * hay acciones, no se muestra.
    */
   soloCruz?: boolean
+  /**
+   * Por debajo de `md`, el modal ocupa toda la pantalla, sin márgenes ni bordes redondeados (el
+   * portal del alumno, pensado para el celular). Desde `md`, igual que siempre.
+   */
+  pantallaCompletaEnCelular?: boolean
   /** Los datos del registro, normalmente un `<Datos>` con sus `<Dato>`. */
   children?: ReactNode
 }
@@ -69,6 +76,10 @@ const PIE =
 const CRUZ_DESTACADA =
   'border-input text-foreground hover:border-oscuro/50 border bg-background shadow-sm [&_svg]:size-5 [&_svg]:stroke-[2.5]'
 
+// `pantallaCompletaEnCelular`: por debajo de `md`, todo el ancho y el alto visibles.
+const PANTALLA_COMPLETA =
+  'max-md:h-dvh max-md:max-h-dvh max-md:w-screen max-md:max-w-none max-md:rounded-none'
+
 /**
  * Detalle de solo lectura de una entidad sencilla, como modal sobre la pantalla actual (sin página
  * propia): encabezado, los datos, la trazabilidad (auditoría) y el pie con "Cerrar" y las acciones
@@ -85,16 +96,22 @@ function DetalleModal({
   onReintentar,
   textoNoEncontrado = 'No se encontró el registro',
   auditoria,
+  textoCreacion,
   acciones,
   accionesEncabezado,
   soloCruz = false,
+  pantallaCompletaEnCelular = false,
   children,
 }: DetalleModalProps) {
   const hayDatos = !cargando && !error
   const idTrazabilidad = useId()
 
   return (
-    <Panel mode="modal" onClose={onCerrar} className="max-w-xl">
+    <Panel
+      mode="modal"
+      onClose={onCerrar}
+      className={cn('max-w-xl', pantallaCompletaEnCelular && PANTALLA_COMPLETA)}
+    >
       <PanelHeader
         actions={hayDatos && accionesEncabezado}
         closeClassName={soloCruz ? CRUZ_DESTACADA : undefined}
@@ -148,7 +165,7 @@ function DetalleModal({
               <History className="text-cobalto size-4" />
               Trazabilidad
             </h3>
-            <Trazabilidad auditoria={auditoria} />
+            <Trazabilidad auditoria={auditoria} textoCreacion={textoCreacion} />
           </section>
         )}
       </PanelBody>

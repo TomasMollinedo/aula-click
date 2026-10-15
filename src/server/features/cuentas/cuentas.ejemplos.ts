@@ -2,6 +2,7 @@ import type { ErrorResponse } from '@/server/errors'
 import type {
   AdeudadosGlobal,
   CuentaDelAlumno,
+  MiCuenta,
   OcurrenciaDeCuenta,
   ProximosGlobal,
 } from './cuentas.validation'
@@ -71,6 +72,33 @@ export const ejemploProximos = {
   aplica: true,
   limiteCobro: '2026-11-26',
 } satisfies ProximosGlobal
+
+export const ejemploMiCuenta = {
+  totalAdeudado: 25000.5,
+  adeudados: [
+    {
+      materia: { id: 7, nombre: 'Física' },
+      subtotal: 9000.5,
+      ocurrencias: [
+        { ...proximoDeFisica, fecha: '2026-09-23', estado: 'SIN_REGISTRAR', importe: 9000.5 },
+      ],
+    },
+    {
+      materia: { id: 2, nombre: 'Matemática' },
+      subtotal: 16000,
+      ocurrencias: [adeudado, { ...adeudado, fecha: '2026-09-28' }],
+    },
+  ],
+  proximos: [
+    { materia: { id: 7, nombre: 'Física' }, subtotal: 9000, ocurrencias: [proximoDeFisica] },
+    {
+      materia: { id: 2, nombre: 'Matemática' },
+      subtotal: 8000,
+      ocurrencias: [{ ...adeudado, fecha: '2026-10-05', estado: 'AGENDADO' }],
+    },
+  ],
+  limiteCobro: '2026-11-26',
+} satisfies MiCuenta
 
 export const ejemploErrorAlumno = {
   error: { code: 'NO_ENCONTRADO', message: 'Alumno no encontrado' },

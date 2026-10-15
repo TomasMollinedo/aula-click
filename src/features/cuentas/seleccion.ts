@@ -72,6 +72,22 @@ export function quitar(sel: Seleccion, ocurrencias: readonly Ocurrencia[]): Sele
   return nueva
 }
 
+/**
+ * El estado de "Seleccionar todo" (HU-25): `'todos'` si está tildado cada turno del filtro,
+ * `'algunos'` si hay una parte (la casilla queda intermedia) y `'ninguno'` si no hay nada.
+ * `cantidadDelFiltro` es cuántos turnos deja el filtro: en la ficha, los de la cuenta que se ve; en
+ * la vista global, los de todas las páginas de las dos tablas (`meta.total`). La selección es
+ * siempre de ese filtro (en la ficha se poda y en la vista global se vacía al cambiarlo), así que
+ * alcanza con contar.
+ */
+export function estadoSeleccionarTodo(
+  sel: Seleccion,
+  cantidadDelFiltro: number,
+): 'ninguno' | 'algunos' | 'todos' {
+  if (sel.size === 0) return 'ninguno'
+  return cantidadDelFiltro > 0 && sel.size >= cantidadDelFiltro ? 'todos' : 'algunos'
+}
+
 /** "Quitar selección". */
 export function quitarTodos(): Seleccion {
   return SELECCION_VACIA
@@ -114,14 +130,63 @@ export function ordenarPorFecha(sel: Seleccion): OcurrenciaACobrar[] {
   )
 }
 
+/**
+ * El máximo de turnos de un pago: `POST /pagos` rechaza más (400 en `ocurrencias`;
+ * docs/contrato-api.md → Pagos). La barra avisa antes de abrir el diálogo, sin reemplazar esa
+ * validación.
+ */
+export const MAX_TURNOS_POR_PAGO = 200
+
+export type SubtotalDeMateria = {
+  materia: { id: number; nombre: string }
+  cantidad: number
+  /** Suma de los importes de la API, o `null` si alguno no tiene precio. */
+  total: number | null
+}
+
+/**
+ * Lo tildado por materia (por nombre y, si se repite, por id), con la cantidad y el subtotal de
+ * cada una: el detalle de la barra cuando hay más de una materia (HU-25).
+ */
+export function subtotalesPorMateria(sel: Seleccion): SubtotalDeMateria[] {
+  const grupos = new Map<
+    number,
+    { materia: SubtotalDeMateria['materia']; importes: (number | null)[] }
+  >()
+  for (const o of sel.values()) {
+    const grupo = grupos.get(o.materia.id) ?? { materia: o.materia, importes: [] }
+    grupo.importes.push(o.importe)
+    grupos.set(o.materia.id, grupo)
+  }
+  return [...grupos.values()]
+    .map(({ materia, importes }) => ({
+      materia,
+      cantidad: importes.length,
+      total: sumarImportes(importes).total,
+    }))
+    .sort(
+      (a, b) =>
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
+    )
+}
+
 export type ResumenSeleccion = {
   cantidad: number
   /** Suma de los importes de la API, o `null` si alguno no tiene precio. */
   total: number | null
   sinPrecio: number
+  /** El subtotal de cada materia tildada (`subtotalesPorMateria`). */
+  porMateria: SubtotalDeMateria[]
 }
 
-/** Cantidad y total de lo tildado, con los importes que mandó la API (`sumarImportes`). */
+/**
+ * Cantidad, total y subtotal por materia de lo tildado, con los importes que mandó la API
+ * (`sumarImportes`).
+ */
 export function resumenSeleccion(sel: Seleccion): ResumenSeleccion {
-  return { cantidad: sel.size, ...sumarImportes([...sel.values()].map((o) => o.importe)) }
+  return {
+    cantidad: sel.size,
+    ...sumarImportes([...sel.values()].map((o) => o.importe)),
+    porMateria: subtotalesPorMateria(sel),
+  }
 }
