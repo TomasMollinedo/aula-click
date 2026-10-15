@@ -212,6 +212,17 @@ HU-15 (T-51; modelo de datos: T-29), con las formas de pago de HU-23 (T-96).
   - si el pago está anulado, **"ANULADO"** bien visible, con el motivo, la fecha y quién lo anuló (HU-42).
 - Los importes, el total y el vuelto los calcula siempre la API; la UI sólo los muestra.
 
+### Pagos realizados (HU-36, HU-37)
+
+T-98. El historial de pagos que HU-16 había dejado para después.
+
+- **Qué se lista:** los pagos con **fecha de pago** (no la de registro) en el período, del más reciente al más antiguo y paginados. Cada pago muestra número de comprobante, fecha de pago, alumno, materias incluidas, cantidad de turnos, total, forma de pago, quién lo registró y su estado.
+- **Filtros:** el período (obligatorio; la UI propone el mes en curso), el alumno, una materia, un profesor y la forma de pago. La materia y el profesor se aplican a **cada turno**, como en la deuda: un pago aparece si alguno de sus turnos es de esa materia o de ese profesor y, con los dos, si un mismo turno cumple los dos. La forma de pago se elige por su código, no por el nombre.
+- **Totales:** arriba, el total cobrado del filtro completo (no sólo de la página) y su detalle por forma de pago (efectivo, transferencia y débito). **Los pagos anulados se listan, marcados como "Anulado" con su motivo, pero no suman.** Con un filtro de materia o de profesor, cada pago suma su total completo. Lo cobrado se define igual que en el tablero.
+- **Gerente:** ve cada pago (la lista, el detalle y el comprobante en PDF) en **sólo lectura**: no registra pagos, no anula ni toca el comprobante adjunto. HU-36 amplía HU-21, que lo limitaba a datos agregados; sigue sin ver la agenda ni la ficha del alumno.
+- **Alumno ("Mis pagos" en el portal):** ve sólo los suyos, vigentes y anulados (número, fecha, materias, total, forma de pago y estado), **sin quién lo registró ni el comprobante adjunto**, y descarga el comprobante de pago en PDF de cada uno: el mismo documento que entrega la mesa. Un anulado se ve marcado y sus turnos vuelven a figurar como pendientes.
+- **Acciones del detalle:** las decide la API. Sólo la mesa de entradas actúa, y sólo sobre un pago vigente: anularlo; reemplazar el comprobante adjunto (o adjuntar uno, en un débito sin adjunto) si no es en efectivo; quitarlo, sólo en un débito que lo tenga (con transferencia es obligatorio).
+
 ## Deuda
 
 HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla vale para la cuenta del alumno, la vista global "Pagos" y el tablero del gerente.
@@ -317,7 +328,16 @@ HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la i
 
 ## Anulación de pagos
 
-A completar por T-104 (HU-42).
+HU-42 (T-104). Es la anulación que HU-13, HU-14 y HU-15 dejaron fuera de alcance.
+
+- **Quién:** mesa de entrada, de forma directa, sin aprobación del gerente ni plazo máximo.
+- **Qué se anula:** el pago **completo**, nunca un turno suelto ni una parte. No se deshace: un pago anulado no se puede volver a activar (409 `PAGO_ANULADO`); si hay que cobrar de nuevo, se registra un pago nuevo.
+- **Motivo:** `ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`. El detalle (hasta 500 caracteres) es obligatorio con `OTRO`.
+- **Efecto:** el pago pasa a `ANULADO` y se registra su anulación (motivo, detalle, quién y cuándo); sus ocurrencias dejan de tener un pago vigente (`PagoTurno.vigente = null`), así que **vuelven a estar pendientes de pago** y se pueden cobrar de nuevo al precio vigente. Los turnos pasados vuelven a ser deuda (con 30 días o más, deuda vencida: HU-29); los futuros vuelven a ser próximos.
+- **Nada se borra:** el pago conserva todos sus datos, su forma de pago y su comprobante adjunto (que ya no se reemplaza ni se quita). Su comprobante de pago en PDF se sigue consultando con la leyenda "ANULADO", el motivo y la fecha. El número de comprobante no se reutiliza.
+- **Avisos al confirmar** (informan, no bloquean): el alumno quedaría con deuda vencida; el precio vigente de una materia es distinto del cobrado (los turnos se volverán a cobrar al vigente); otros pagos vigentes comparten la misma transferencia (misma operación y banco), que **no** se anulan con éste.
+- **Concurrencia:** anular toma el mismo lock del alumno que pagar, cancelar, finalizar y reprogramar, así que dos anulaciones del mismo pago, o una anulación y un cobro de las mismas ocurrencias, se ordenan; el único de `PagoTurno` sigue siendo la red contra el pago doble.
+- **Fuera de alcance:** anulación parcial, "Anular y volver a cobrar" en un solo paso, anulación conjunta de los pagos de una misma transferencia y registro de devolución de dinero.
 
 ## Notas de exámenes
 
@@ -338,6 +358,17 @@ HU-34 y HU-35 (T-106).
 - **Se calcula en el momento de sacar el turno**, con la misma regla que la cuenta del alumno: alcanza con pagar los turnos adeudados de 30 días o más para volver a sacar turnos; una deuda más reciente no bloquea, y los próximos turnos impagos no son deuda.
 - **No afecta lo que ya tiene:** sus turnos siguen como están, y se pueden cancelar y reprogramar (HU-13, HU-20).
 - **Mensajes:** a la mesa de entrada, con la cantidad y el total ("El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos"); al alumno, sin importes ("Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada"). El portal se lo avisa al entrar a "Sacar turno", antes del paso 1, y el alta lo vuelve a comprobar al confirmar.
+
+## Reparto y liquidaciones (modelo)
+
+HU-43 a HU-47 (tarea T-118). Qué se guarda y para qué; los términos (reparto, devengo, ajuste, saldo, estados) son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación), y las reglas, las de cada tarea.
+
+- **`PorcentajeCentro`:** el historial del porcentaje que retiene el centro. Cada cambio es una fila nueva (desde cuándo rige y quién lo cambió); el vigente es el último. No se edita (decisión T-155).
+- **`PagoTurno.porcentajeCentro`:** el porcentaje vigente al registrarse el pago, guardado en cada cobro de un turno. Las partes del centro y del profesor no se guardan: salen de este porcentaje y el importe cobrado (decisión T-155).
+- **`Liquidacion`:** la liquidación **cerrada** de un profesor en un mes, `PAGADA` (con la fecha y el número de operación de la transferencia) o `DESCONTADA` (su saldo lo absorbió otra liquidación). Guarda los totales congelados y quién registró el pago y cuándo. Un mes se cierra una sola vez; una liquidación sin pagar no tiene fila: se calcula al consultarla (decisión T-156).
+- **`LiquidacionTurno`:** cada turno de una liquidación cerrada, con su fecha de devengo, importe, porcentaje y parte del profesor congelados. Un cobro se liquida una sola vez (decisión T-157).
+- **`AjusteLiquidacion`:** un ajuste aplicado en una liquidación cerrada, por la anulación de un turno ya liquidado o por el saldo de una liquidación anterior. Cada turno anulado y cada saldo se descuentan una sola vez (decisión T-157).
+- **Comprobante de la transferencia:** un `ComprobanteAdjunto` vinculado a la liquidación en lugar de a un pago, con las reglas de [Comprobante adjunto](#comprobante-adjunto) (decisión T-158).
 
 ## Auditoría
 

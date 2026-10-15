@@ -144,5 +144,22 @@ export function crearPagosEnMemoria(
     return comprobante
   })
 
-  return { repository: { leerSnapshot, registrar, buscarComprobante }, pagos, pagadas }
+  // Los pagos realizados, "Mis pagos" y el adjunto (T-98) no los simula la base en memoria: cada test
+  // les pone su respuesta.
+  const listarRealizados = vi.fn<PagosRepository['listarRealizados']>()
+  const listarDelAlumno = vi.fn<PagosRepository['listarDelAlumno']>()
+  const buscarAdjunto = vi.fn<PagosRepository['buscarAdjunto']>(async () => null)
+
+  return {
+    repository: {
+      leerSnapshot,
+      registrar,
+      buscarComprobante,
+      listarRealizados,
+      listarDelAlumno,
+      buscarAdjunto,
+    },
+    pagos,
+    pagadas,
+  }
 }

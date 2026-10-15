@@ -1,21 +1,37 @@
-import { NotFoundError, ValidationError } from '@/server/errors'
+import { ForbiddenError, NotFoundError, ValidationError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
-import type { Actor } from '@/server/shared/actor'
+import { alumnoDeLaSesion, type Actor } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { PagosRepository } from './pagos.repository'
 import {
+  accionesDelPago,
   calcularVuelto,
   MENSAJE_FECHA_PAGO_FUTURA,
   medioDelPedido,
   montoRecibidoDe,
   planificarPago,
+  sumarImportes,
   type PedidoPago,
 } from './pagos.reglas'
-import type { Comprobante, PagoRegistrado, RegistrarPago } from './pagos.validation'
+import type {
+  Comprobante,
+  DetallePago,
+  ListadoPagos,
+  ListarPagosQuery,
+  MisPagos,
+  MisPagosQuery,
+  PagoRegistrado,
+  RegistrarPago,
+} from './pagos.validation'
 
 // Reglas de negocio del cobro (HU-15, T-51; formas de pago, HU-23, T-96). No conoce HTTP ni Prisma:
 // lanza AppError o sus subclases. Qué se puede cobrar, el total y el vuelto los decide
 // `planificarPago` (puro); del alumno sólo lee, por su repository. El importe no depende del medio.
+// Pagos realizados, detalle con acciones y "Mis pagos" (HU-36, HU-37, T-98): las acciones las
+// decide `accionesDelPago` (puro) y el alumno del portal sale de la sesión.
+
+/** 403 del PDF de un pago de otro alumno (HU-37). */
+export const MENSAJE_PAGO_AJENO = 'El pago no es suyo'
 
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
@@ -27,10 +43,28 @@ export function crearPagosService({
   alumnosRepository,
   reloj,
 }: {
-  repository: Pick<PagosRepository, 'leerSnapshot' | 'registrar' | 'buscarComprobante'>
+  repository: Pick<
+    PagosRepository,
+    | 'leerSnapshot'
+    | 'registrar'
+    | 'buscarComprobante'
+    | 'listarRealizados'
+    | 'listarDelAlumno'
+    | 'buscarAdjunto'
+  >
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
 }) {
+  /** Datos del comprobante. El vuelto se recalcula, nunca se lee de la base. 404 si no existe. */
+  async function leerComprobante(id: number): Promise<Comprobante> {
+    const comprobante = await repository.buscarComprobante(id)
+    if (!comprobante) throw new NotFoundError('Pago no encontrado')
+    return {
+      ...comprobante,
+      vuelto: calcularVuelto(comprobante.montoRecibido, comprobante.total),
+    }
+  }
+
   return {
     /**
      * Registra el pago de una o varias ocurrencias de un alumno, todo o nada. Chequeos, en orden
@@ -93,16 +127,61 @@ export function crearPagosService({
       }
     },
 
-    /** Datos del comprobante. El vuelto se recalcula, nunca se lee de la base. 404 si no existe. */
-    async obtenerComprobante(id: number): Promise<Comprobante> {
-      const comprobante = await repository.buscarComprobante(id)
-      if (!comprobante) throw new NotFoundError('Pago no encontrado')
+    /**
+     * Pagos realizados (HU-36): la página del filtro, vigentes y anulados, y los totales de
+     * **todo** el filtro sin los anulados. `cobrado` es la suma de las tres formas, en centavos. El
+     * período ya viene en orden (lo valida el query). Un alumno, una materia o un profesor que no
+     * existen dan una lista vacía y los totales en 0, sin 404.
+     */
+    async listar(query: ListarPagosQuery): Promise<ListadoPagos> {
+      const { page, pageSize, ...filtro } = query
+      const { data, meta, porForma } = await repository.listarRealizados(filtro, {
+        page,
+        pageSize,
+      })
+      return { data, meta, totales: { cobrado: sumarImportes(Object.values(porForma)), porForma } }
+    },
+
+    /**
+     * Detalle del pago (HU-36): el comprobante, la cantidad de turnos, el último adjunto activo y
+     * las acciones de quien lo pide (`accionesDelPago`). 404 si no existe.
+     */
+    async obtenerDetalle(id: number, actor: Actor): Promise<DetallePago> {
+      const comprobante = await leerComprobante(id)
+      const adjunto = await repository.buscarAdjunto(id)
       return {
         ...comprobante,
-        vuelto: calcularVuelto(comprobante.montoRecibido, comprobante.total),
+        cantidad: comprobante.turnos.length,
+        adjunto,
+        acciones: accionesDelPago({
+          rol: actor.role,
+          estado: comprobante.estado,
+          formaPago: comprobante.formaPago.codigo,
+          tieneAdjunto: adjunto !== null,
+        }),
       }
+    },
+
+    /**
+     * El comprobante para el PDF: el mismo documento para todos los roles, sin leer el adjunto.
+     * Para el alumno (HU-37), en este orden: cuenta sin alumno → 403; pago inexistente → 404; pago
+     * de otro alumno → 403 `SIN_PERMISO` (como `miTurno` de ocurrencias).
+     */
+    async comprobanteParaDocumento(id: number, actor: Actor): Promise<Comprobante> {
+      const alumnoId = actor.role === 'ALUMNO' ? alumnoDeLaSesion(actor) : null
+      const comprobante = await leerComprobante(id)
+      if (alumnoId !== null && comprobante.alumno.id !== alumnoId) {
+        throw new ForbiddenError(MENSAJE_PAGO_AJENO)
+      }
+      return comprobante
+    },
+
+    /**
+     * Los pagos del alumno de la sesión (HU-37), vigentes y anulados, del más reciente al más
+     * antiguo. Nunca recibe un `alumnoId`: 403 si la cuenta no tiene alumno.
+     */
+    async misPagos(query: MisPagosQuery, actor: Actor): Promise<MisPagos> {
+      return repository.listarDelAlumno(alumnoDeLaSesion(actor), query)
     },
   }
 }
-
-export type PagosService = ReturnType<typeof crearPagosService>
