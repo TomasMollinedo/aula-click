@@ -364,6 +364,81 @@ describe('varias materias (HU-25, T-101)', () => {
   })
 })
 
+describe('GET /cuentas/mi-cuenta (portal, HU-37, T-101)', () => {
+  const sesionAlumno = (alumnoId?: number) => ({
+    headers: new Headers(),
+    response: {
+      user: { id: 'usr_alumno', role: 'ALUMNO', estado: 'ACTIVO', alumnoId },
+      session: { id: 's-2' },
+    },
+  })
+
+  it('200 con la cuenta del alumno de la sesión, agrupada por materia', async () => {
+    getSession.mockResolvedValue(sesionAlumno(12))
+
+    const res = await pedir('/mi-cuenta')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      totalAdeudado: 8000,
+      adeudados: [
+        {
+          materia: { id: 2, nombre: 'Matemática' },
+          subtotal: 8000,
+          ocurrencias: [
+            {
+              turnoId: 41,
+              fecha: '2026-09-28',
+              horaInicio: '09:00',
+              horaFin: '10:00',
+              materia: { id: 2, nombre: 'Matemática' },
+              profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+              estado: 'SIN_REGISTRAR',
+              importe: 8000,
+            },
+          ],
+        },
+      ],
+      proximos: [],
+      limiteCobro: expect.stringMatching(FECHA),
+    })
+    expect(repository.leerAdeudados.mock.calls[0]?.[0]).toMatchObject({ alumnoId: 12 })
+    expect(alumnosRepository.buscarPorId).not.toHaveBeenCalled()
+  })
+
+  it('ignora un `alumnoId` en el query: siempre el de la sesión', async () => {
+    getSession.mockResolvedValue(sesionAlumno(12))
+
+    expect((await pedir('/mi-cuenta?alumnoId=99')).status).toBe(200)
+    expect(repository.leerAdeudados.mock.calls[0]?.[0]).toMatchObject({ alumnoId: 12 })
+  })
+
+  it.each(['MESA_ENTRADAS', 'PROFESOR', 'GERENTE'])('con %s → 403', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+
+    expect((await pedir('/mi-cuenta')).status).toBe(403)
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
+  })
+
+  it('una cuenta ALUMNO sin alumno vinculado → 403', async () => {
+    getSession.mockResolvedValue(sesionAlumno())
+
+    expect((await pedir('/mi-cuenta')).status).toBe(403)
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+
+    expect((await pedir('/mi-cuenta')).status).toBe(401)
+  })
+
+  it('el alumno no entra a los endpoints de mesa', async () => {
+    getSession.mockResolvedValue(sesionAlumno(12))
+
+    for (const path of RUTAS) expect((await pedir(path)).status).toBe(403)
+  })
+})
+
 describe('OpenAPI', () => {
   it('declara todos los status codes de cada endpoint', () => {
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
@@ -377,6 +452,9 @@ describe('OpenAPI', () => {
     expect(
       Object.keys(doc.paths?.['/api/v1/cuentas/proximos']?.get?.responses ?? {}).sort(),
     ).toEqual(codigos)
+    expect(
+      Object.keys(doc.paths?.['/api/v1/cuentas/mi-cuenta']?.get?.responses ?? {}).sort(),
+    ).toEqual(['200', '401', '403'])
   })
 
   it('los tres endpoints declaran los filtros de período, materia y profesor en el query', () => {

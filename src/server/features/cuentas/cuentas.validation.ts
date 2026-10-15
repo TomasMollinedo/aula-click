@@ -197,3 +197,44 @@ export const proximosGlobalSchema = z
   .openapi('ProximosGlobal')
 
 export type ProximosGlobal = z.infer<typeof proximosGlobalSchema>
+
+/** Las ocurrencias de una materia en `mi-cuenta`, con su subtotal. */
+export const grupoDeCuentaSchema = z
+  .object({
+    materia: referencia,
+    subtotal: z.number().openapi({
+      description: 'Suma de los importes de `ocurrencias` (los `null` no suman)',
+      example: 16000,
+    }),
+    ocurrencias: z.array(ocurrenciaDeCuentaSchema).openapi({
+      description: 'Las ocurrencias de la materia, por fecha, hora de inicio y `turnoId`',
+    }),
+  })
+  .openapi('GrupoDeCuenta')
+
+export type GrupoDeCuenta = z.infer<typeof grupoDeCuentaSchema>
+
+/**
+ * Respuesta de `GET /cuentas/mi-cuenta` (portal, HU-37, T-101): la cuenta del alumno de la sesión
+ * sin filtros, con cada sección agrupada por materia.
+ */
+export const miCuentaSchema = z
+  .object({
+    totalAdeudado: z.number().openapi({
+      description:
+        'Suma de los importes de todos los adeudados (los `null` no suman): el mismo total que ve mesa de entradas. Los próximos nunca suman',
+      example: 25000,
+    }),
+    adeudados: z.array(grupoDeCuentaSchema).openapi({
+      description:
+        'Turnos anteriores a hoy, sin registrar e impagos, agrupados por materia (por nombre); `[]` si no hay ninguno',
+    }),
+    proximos: z.array(grupoDeCuentaSchema).openapi({
+      description:
+        'Turnos agendados e impagos de hoy a `limiteCobro`, agrupados por materia (por nombre). No suman a la deuda; `[]` si no hay ninguno',
+    }),
+    limiteCobro,
+  })
+  .openapi('MiCuenta')
+
+export type MiCuenta = z.infer<typeof miCuentaSchema>

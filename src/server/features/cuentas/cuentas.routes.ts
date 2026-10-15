@@ -7,6 +7,7 @@ import {
   ejemploAdeudados,
   ejemploCuenta,
   ejemploErrorAlumno,
+  ejemploMiCuenta,
   ejemploProximos,
 } from './cuentas.ejemplos'
 import {
@@ -15,6 +16,7 @@ import {
   cuentaDelAlumnoSchema,
   filtroCuentaQuerySchema,
   listadoCuentaQuerySchema,
+  miCuentaSchema,
   proximosGlobalSchema,
 } from './cuentas.validation'
 
@@ -105,7 +107,29 @@ export const listarProximosRoute = createRoute({
   },
 })
 
+// Portal (HU-37, T-101): el alumno sale de la sesión, nunca de un parámetro.
+export const miCuentaRoute = createRoute({
+  method: 'get',
+  path: '/mi-cuenta',
+  tags,
+  summary: 'Mi cuenta: turnos adeudados y próximos (portal del alumno)',
+  description:
+    'La cuenta del alumno de la sesión, sin filtros: la misma que ve mesa de entradas en `GET /cuentas/alumnos/{alumnoId}` (los mismos importes y el mismo `totalAdeudado`), con `adeudados` y `proximos` agrupados por materia (por nombre), cada grupo con su subtotal. Los próximos llegan hasta `limiteCobro` y no suman a la deuda.',
+  middleware: [requireAuth(), requireRole('ALUMNO')] as const,
+  responses: {
+    200: {
+      description: 'Mi cuenta',
+      content: { 'application/json': { schema: miCuentaSchema, example: ejemploMiCuenta } },
+    },
+    401: errores[401],
+    403: respuestaError(
+      'El rol no es alumno, el usuario está inhabilitado o la cuenta no tiene alumno (SIN_PERMISO)',
+    ),
+  },
+})
+
 export const cuentasRoutes = createRouter()
+  .openapi(miCuentaRoute, cuentasController.miCuenta)
   .openapi(obtenerCuentaRoute, cuentasController.obtenerCuenta)
   .openapi(listarAdeudadosRoute, cuentasController.listarAdeudados)
   .openapi(listarProximosRoute, cuentasController.listarProximos)

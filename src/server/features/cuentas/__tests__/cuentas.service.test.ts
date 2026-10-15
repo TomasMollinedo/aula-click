@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NotFoundError } from '@/server/errors'
+import { ForbiddenError, NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
+import type { Actor } from '@/server/shared/actor'
 import type { Adeudado, Ocurrencia } from '../cuentas.condiciones'
 import type { CuentasRepository } from '../cuentas.repository'
 import { crearCuentasService } from '../cuentas.service'
@@ -566,5 +567,88 @@ describe('varias materias (HU-25, T-101)', () => {
     expect(adeudados.meta).toEqual({ page: 1, pageSize: 3, total: 4, totalPages: 2 })
     expect(adeudados.totalAdeudado).toBe(34000)
     expect(claves(proximos.data)).toEqual(['52|2026-10-05', '41|2026-10-12'])
+  })
+})
+
+describe('miCuenta (portal, HU-37, T-101)', () => {
+  const ALUMNO: Actor = { userId: 'usr_alumno', role: 'ALUMNO', alumnoId: 12 }
+
+  beforeEach(() => {
+    repository.leerAdeudados.mockResolvedValue([
+      adeudado({ turnoId: 41, fecha: '2026-09-21', materia: MATEMATICA }),
+      adeudado({ turnoId: 63, fecha: '2026-09-22', materia: FISICA, importe: 7000.5 }),
+      adeudado({ turnoId: 41, fecha: '2026-09-28', materia: MATEMATICA, importe: null }),
+      adeudado({ turnoId: 52, fecha: '2026-09-29', materia: INGLES, importe: 9000 }),
+      adeudado({ turnoId: 63, fecha: '2026-09-29', materia: FISICA, importe: 7000.5 }),
+    ])
+    repository.leerProximos.mockResolvedValue([
+      proximo({ turnoId: 52, fecha: HOY, materia: INGLES, importe: 9000 }),
+      proximo({ turnoId: 41, fecha: '2026-10-12', materia: MATEMATICA }),
+    ])
+  })
+
+  it('el alumno de la sesión, sin filtros y sin buscar el alumno', async () => {
+    await service.miCuenta(ALUMNO)
+
+    const filtro = {
+      alumnoId: 12,
+      materiaId: undefined,
+      profesorId: undefined,
+      desde: undefined,
+      hasta: undefined,
+      hoy: HOY,
+    }
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(filtro)
+    expect(repository.leerProximos).toHaveBeenCalledWith(filtro)
+    expect(alumnosRepository.buscarPorId).not.toHaveBeenCalled()
+  })
+
+  it('agrupa por materia (por nombre), con su subtotal y las ocurrencias en orden', async () => {
+    const cuenta = await service.miCuenta(ALUMNO)
+
+    expect(
+      cuenta.adeudados.map((g) => ({
+        materia: g.materia.nombre,
+        subtotal: g.subtotal,
+        fechas: g.ocurrencias.map((o) => o.fecha),
+      })),
+    ).toEqual([
+      { materia: 'Física', subtotal: 14001, fechas: ['2026-09-22', '2026-09-29'] },
+      { materia: 'Inglés', subtotal: 9000, fechas: ['2026-09-29'] },
+      { materia: 'Matemática', subtotal: 8000, fechas: ['2026-09-21', '2026-09-28'] },
+    ])
+    expect(cuenta.proximos.map((g) => [g.materia.nombre, g.subtotal])).toEqual([
+      ['Inglés', 9000],
+      ['Matemática', 8000],
+    ])
+    expect(cuenta.limiteCobro).toBe(TOPE)
+  })
+
+  it('el mismo total adeudado que ve mesa de entradas, igual a la suma de los subtotales', async () => {
+    const delPortal = await service.miCuenta(ALUMNO)
+    const deLaMesa = await service.obtenerCuenta(12)
+
+    expect(delPortal.totalAdeudado).toBe(31001)
+    expect(delPortal.totalAdeudado).toBe(deLaMesa.totalAdeudado)
+    expect(delPortal.adeudados.flatMap((g) => g.ocurrencias)).toHaveLength(5)
+  })
+
+  it('sin nada pendiente: total 0 y las dos secciones vacías', async () => {
+    repository.leerAdeudados.mockResolvedValue([])
+    repository.leerProximos.mockResolvedValue([])
+
+    expect(await service.miCuenta(ALUMNO)).toEqual({
+      totalAdeudado: 0,
+      adeudados: [],
+      proximos: [],
+      limiteCobro: TOPE,
+    })
+  })
+
+  it('una sesión sin alumno → 403 sin leer nada', async () => {
+    await expect(
+      service.miCuenta({ userId: 'usr_mesa', role: 'MESA_ENTRADAS' }),
+    ).rejects.toBeInstanceOf(ForbiddenError)
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
   })
 })

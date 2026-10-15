@@ -1,6 +1,7 @@
 import { NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
+import { type Actor, alumnoDeLaSesion } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import type { Adeudado, FiltroDeuda } from './cuentas.condiciones'
@@ -10,17 +11,20 @@ import type {
   AdeudadosGlobal,
   CuentaDelAlumno,
   FiltroCuentaQuery,
+  GrupoDeCuenta,
   ListadoCuentaQuery,
+  MiCuenta,
   OcurrenciaDeCuenta,
   OcurrenciaDeCuentaGlobal,
   ProximosGlobal,
 } from './cuentas.validation'
 
-// Cuenta del alumno y vistas globales de adeudados y próximos (HU-16, T-53). No conoce HTTP ni
-// Prisma: lanza AppError o sus subclases. No hace consultas propias: qué se adeuda y qué es próximo
-// lo leen las condiciones por el repository; acá se calcula `hoy`, se chequea el alumno, se decide
-// qué sección aplica al período (`rangosDelPeriodo`: la que no aplica no se lee), se suma, se
-// pagina y se arman los DTOs.
+// Cuenta del alumno y vistas globales de adeudados y próximos (HU-16, T-53); varias materias y la
+// cuenta del portal (HU-25 y HU-37, T-101). No conoce HTTP ni Prisma: lanza AppError o sus
+// subclases. No hace consultas propias: qué se adeuda y qué es próximo lo leen las condiciones por
+// el repository; acá se calcula `hoy`, se chequea el alumno, se decide qué sección aplica al
+// período (`rangosDelPeriodo`: la que no aplica no se lee), se suma, se pagina, se agrupa y se
+// arman los DTOs.
 
 const MENSAJE_ALUMNO_NO_ENCONTRADO = 'Alumno no encontrado'
 
@@ -49,6 +53,29 @@ function aOcurrenciaDeCuenta({ ocurrencia, importe }: Adeudado): OcurrenciaDeCue
 /** El orden de las condiciones (fecha, hora de inicio y `turnoId`), para juntar varias lecturas. */
 function porFechaHoraYTurno({ ocurrencia: a }: Adeudado, { ocurrencia: b }: Adeudado): number {
   return a.fecha.localeCompare(b.fecha) || a.horaInicio - b.horaInicio || a.turnoId - b.turnoId
+}
+
+/**
+ * Las ocurrencias agrupadas por materia (por nombre y, si se repite, por id), cada una con su
+ * subtotal. Dentro de cada grupo conservan el orden en que llegan.
+ */
+function agruparPorMateria(ocurrencias: readonly OcurrenciaDeCuenta[]): GrupoDeCuenta[] {
+  const grupos = new Map<number, GrupoDeCuenta>()
+  for (const ocurrencia of ocurrencias) {
+    const grupo = grupos.get(ocurrencia.materia.id) ?? {
+      materia: ocurrencia.materia,
+      subtotal: 0,
+      ocurrencias: [],
+    }
+    grupo.ocurrencias.push(ocurrencia)
+    grupos.set(ocurrencia.materia.id, grupo)
+  }
+  return [...grupos.values()]
+    .map((grupo) => ({ ...grupo, subtotal: totalDe(grupo.ocurrencias) }))
+    .sort(
+      (a, b) =>
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
+    )
 }
 
 /** La fila de una vista global: la ocurrencia con su alumno y el DNI leído aparte. */
@@ -137,32 +164,54 @@ export function crearCuentasService({
     return { data: pagina.data.map((a) => aOcurrenciaGlobal(a, dnis)), meta: pagina.meta }
   }
 
+  /**
+   * La cuenta de un alumno que ya se sabe que existe. Una sección que no aplica al período va
+   * `null` y no se lee; el total es sólo de los adeudados (los próximos nunca suman).
+   */
+  async function leerCuenta(alumnoId: number, filtro: FiltroCuentaQuery): Promise<CuentaDelAlumno> {
+    const fechaHoy = hoy(reloj)
+    const rangos = rangosDelPeriodo(filtro, fechaHoy)
+    const [adeudados, proximos] = await Promise.all([
+      rangos.adeudados === null
+        ? null
+        : leerSeccion(repository.leerAdeudados, filtro, alumnoId, fechaHoy),
+      rangos.proximos === null
+        ? null
+        : leerSeccion(repository.leerProximos, filtro, alumnoId, fechaHoy),
+    ])
+    return {
+      totalAdeudado: totalDe(adeudados ?? []),
+      adeudados: adeudados && adeudados.map(aOcurrenciaDeCuenta),
+      proximos: proximos && proximos.map(aOcurrenciaDeCuenta),
+      limiteCobro: limiteDeCobro(fechaHoy),
+    }
+  }
+
   return {
     /**
      * Cuenta de un alumno: total adeudado, adeudados, próximos y el tope de cobro, con los filtros
-     * de período, materia y profesor. Una sección que no aplica al período va `null` y no se lee;
-     * el total es sólo de los adeudados (los próximos nunca suman). 404 si el alumno no existe.
+     * de período, materias y profesor (`leerCuenta`). 404 si el alumno no existe.
      */
     async obtenerCuenta(
       alumnoId: number,
       filtro: FiltroCuentaQuery = {},
     ): Promise<CuentaDelAlumno> {
       await exigirAlumno(alumnoId)
-      const fechaHoy = hoy(reloj)
-      const rangos = rangosDelPeriodo(filtro, fechaHoy)
-      const [adeudados, proximos] = await Promise.all([
-        rangos.adeudados === null
-          ? null
-          : leerSeccion(repository.leerAdeudados, filtro, alumnoId, fechaHoy),
-        rangos.proximos === null
-          ? null
-          : leerSeccion(repository.leerProximos, filtro, alumnoId, fechaHoy),
-      ])
+      return leerCuenta(alumnoId, filtro)
+    },
+
+    /**
+     * Cuenta del alumno de la sesión (portal, HU-37): la misma lectura que ve mesa de entradas sin
+     * filtros (los mismos importes y el mismo total), con adeudados y próximos agrupados por materia
+     * con su subtotal. 403 si la sesión no tiene alumno.
+     */
+    async miCuenta(actor: Actor): Promise<MiCuenta> {
+      const cuenta = await leerCuenta(alumnoDeLaSesion(actor), {})
       return {
-        totalAdeudado: totalDe(adeudados ?? []),
-        adeudados: adeudados && adeudados.map(aOcurrenciaDeCuenta),
-        proximos: proximos && proximos.map(aOcurrenciaDeCuenta),
-        limiteCobro: limiteDeCobro(fechaHoy),
+        totalAdeudado: cuenta.totalAdeudado,
+        adeudados: agruparPorMateria(cuenta.adeudados ?? []),
+        proximos: agruparPorMateria(cuenta.proximos ?? []),
+        limiteCobro: cuenta.limiteCobro,
       }
     },
 
