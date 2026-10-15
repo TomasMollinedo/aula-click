@@ -1413,7 +1413,142 @@ Registro de la asistencia de los turnos por su profesor (HU-22, T-81). Rol: **s�
 
 ## Historiales
 
-A completar por T-108 (HU-31, HU-33). El PDF del historial lo suma T-110 en [Documentos PDF](#documentos-pdf).
+Historial académico del alumno (HU-31, T-108) y "Mis materias" del portal (HU-33). Es **sólo lectura y sin tablas propias**: las clases son las ocurrencias pasadas del alumno, una por hora, con el estado, la asistencia y la cancelación que calcula el motor ([Ocurrencias](#ocurrencias)); la asistencia se registra y se corrige sólo desde [Asistencias](#asistencias) (HU-22). Reglas en `dominio.md` → Historial académico. El PDF del historial lo suma T-110 en [Documentos PDF](#documentos-pdf).
+
+| Endpoint                                                                      | Roles                       | Qué hace                                                  |
+| ----------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------- |
+| `GET /api/v1/historiales/alumnos/{alumnoId}?desde&hasta&materiaId&profesorId` | `MESA_ENTRADAS`, `PROFESOR` | El historial del alumno en el período. 200; 400; 403; 404 |
+| `GET /api/v1/historiales/mis-materias`                                        | `ALUMNO`                    | Mis materias con su próximo turno y mi porcentaje. 200    |
+| `GET /api/v1/historiales/mis-materias/{materiaId}/{profesorId}?mes`           | `ALUMNO`                    | Mi historial de esa materia, por mes. 200; 400; 404       |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**Forma común: grupos, bloques y clases.** Los tres endpoints usan la misma estructura (fechas y horas, como siempre, en [Formatos](#formatos)):
+
+- Un **grupo** es una **materia con un profesor** ("Matemática — Prof. Gómez": un alumno puede cursar la misma materia con más de un profesor), con su `resumen` y sus `bloques`. Van por nombre de materia, apellido y nombre del profesor.
+- `resumen` es `{ realizadas, ausencias, porcentaje }`: **cada hora cuenta como un turno**; el porcentaje es realizadas sobre realizadas más ausencias, con un decimal, y **0 sin base**. Los cancelados, los sin registrar y los agendados **no cuentan**.
+- Un **bloque** son las **horas seguidas** de un día (mismo alumno, profesor y materia, una a continuación de la otra): `{ fecha, horaInicio, horaFin, horas, textos, clases }`. `textos` son "Qué se trabajó" e "Indicaciones para la próxima sesión", que se muestran **una sola vez** (`null` si ninguna hora está presente). Una hora suelta, o una cancelada, es un bloque de una, y una cancelada en el medio **corta** el bloque. Los bloques van de la fecha más reciente a la más antigua.
+- Una **clase** es **una hora**: `{ turnoId, fecha, horaInicio, horaFin, estado, plazoAsistencia, cerradaPorSistema, textosPropios, observacion, cancelacion }`. `turnoId` y `fecha` son los de `GET /ocurrencias/{turnoId}/{fecha}`, para abrir el detalle. `estado` es uno de `ESTADOS_OCURRENCIA` ([Ocurrencias](#ocurrencias)) y `cerradaPorSistema` marca un "Sin registrar" con el plazo vencido. `textosPropios` sólo viene si la hora es presente y sus textos **difieren** de los del bloque (si no, `null`). `observacion` es la de la ausencia o la del cierre del sistema; `cancelacion` es `{ motivo, detalle }` sólo si la hora está cancelada (HU-13).
+
+**`GET /api/v1/historiales/alumnos/{alumnoId}`**: el historial del alumno en `[desde, hasta]`.
+
+- **Período:** sin `desde` ni `hasta`, el **mes en curso** (si viene uno solo, el otro extremo es el del mes en curso). `hasta` anterior a `desde`, o un período de más de **366 días** (decisión T-147), es 400 `VALIDACION` con `details` sobre `hasta`.
+- **Sólo clases de hoy o anteriores:** los turnos futuros están en los turnos del alumno (`GET /ocurrencias`), así que `hasta` se recorta a hoy al leer. El `desde` y el `hasta` de la respuesta son los del período **pedido** (o los del mes en curso), no los recortados.
+- **Filtros:** `materiaId` y `profesorId` (el del bloque). Una materia o un profesor sin clases dan `grupos: []`, sin 404.
+- **`opciones`** (`{ materias, profesores }`) sale del historial **completo** del alumno, no del período filtrado, así los filtros de la pantalla no se quedan sin valores al elegir un mes sin clases.
+- **Roles:** `MESA_ENTRADAS`, y `PROFESOR` sólo si el alumno **tiene o tuvo** turnos con él (el criterio de "Mis alumnos"); si no, 403 `SIN_PERMISO`. El profesor ve el historial **completo** del alumno, también las clases de otras materias y de otros profesores (HU-31). Un alumno inexistente es 404 `NO_ENCONTRADO`, y se chequea **antes** que el permiso del profesor; el período, antes que los dos.
+
+```json
+{
+  "alumno": { "id": 12, "nombre": "Lucía", "apellido": "González", "dni": "40123456" },
+  "desde": "2026-10-01",
+  "hasta": "2026-10-31",
+  "grupos": [
+    {
+      "materia": { "id": 3, "nombre": "Matemática" },
+      "profesor": { "id": 4, "nombre": "Ana", "apellido": "Pérez" },
+      "resumen": { "realizadas": 3, "ausencias": 1, "porcentaje": 75 },
+      "bloques": [
+        {
+          "fecha": "2026-10-13",
+          "horaInicio": "08:00",
+          "horaFin": "10:00",
+          "horas": 2,
+          "textos": {
+            "trabajado": "Ecuaciones de primer grado",
+            "indicaciones": "Practicar los ejercicios 4 a 10 de la guía"
+          },
+          "clases": [
+            {
+              "turnoId": 31,
+              "fecha": "2026-10-13",
+              "horaInicio": "08:00",
+              "horaFin": "09:00",
+              "estado": "REALIZADO",
+              "plazoAsistencia": { "vence": "2026-10-20", "vencido": false },
+              "cerradaPorSistema": false,
+              "textosPropios": null,
+              "observacion": null,
+              "cancelacion": null
+            },
+            {
+              "turnoId": 32,
+              "fecha": "2026-10-13",
+              "horaInicio": "09:00",
+              "horaFin": "10:00",
+              "estado": "REALIZADO",
+              "plazoAsistencia": { "vence": "2026-10-20", "vencido": false },
+              "cerradaPorSistema": false,
+              "textosPropios": {
+                "trabajado": "Ecuaciones de primer grado y verificación",
+                "indicaciones": "Practicar los ejercicios 4 a 10 de la guía"
+              },
+              "observacion": null,
+              "cancelacion": null
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "opciones": {
+    "materias": [{ "id": 3, "nombre": "Matemática" }],
+    "profesores": [{ "id": 4, "nombre": "Ana", "apellido": "Pérez" }]
+  }
+}
+```
+
+**`GET /api/v1/historiales/mis-materias`** (portal, HU-33): cada materia y profesor en los que el alumno de la sesión **tiene o tuvo** turnos, con su `proximoTurno` (`{ fecha, horaInicio, horaFin }`: la primera clase **no cancelada** de hoy en adelante, hasta **366 días**, decisión T-149; `null` si no tiene ninguna) y su `porcentaje` de asistencia sobre **todo** su historial en esa materia con ese profesor. Sin paginar, en el mismo orden que los grupos. Una materia y profesor cuyo primer turno todavía no pasó también aparece, con `porcentaje: 0`.
+
+```json
+[
+  {
+    "materia": { "id": 3, "nombre": "Matemática" },
+    "profesor": { "id": 4, "nombre": "Ana", "apellido": "Pérez" },
+    "proximoTurno": { "fecha": "2026-10-20", "horaInicio": "08:00", "horaFin": "09:00" },
+    "porcentaje": 75
+  }
+]
+```
+
+**`GET /api/v1/historiales/mis-materias/{materiaId}/{profesorId}?mes`** (portal, HU-33): el historial del alumno de la sesión en una materia con un profesor, **por mes** (`mes` es `AAAA-MM`; por defecto, el mes en curso; otro formato es 400 `VALIDACION`). Trae `indicacionesProximaClase` (`{ fecha, indicaciones }` de la última clase realizada con indicaciones, de **cualquier** fecha, también anterior al mes; `null` si no hay), el `resumen` **del mes** y sus `bloques`. Una materia y un profesor en los que no cursa ni cursó → 404 `NO_ENCONTRADO`.
+
+Lo que el alumno **no** ve (ver [Portal del alumno](#portal-del-alumno)): la `observacion` de la ausencia y la del cierre del sistema, la `cancelacion` (ni su motivo ni su detalle), el `plazoAsistencia`, `cerradaPorSistema` y datos de otros alumnos. Y las clases **`SIN_REGISTRAR` y `AGENDADO` no se le muestran**: se omiten del bloque, y un bloque que se queda sin ninguna no viene (HU-33 sólo nombra "Realizado", "Ausente" y "Cancelado"; decisión T-148). `horas` sigue siendo el total del bloque, así que puede ser mayor que la cantidad de `clases`.
+
+```json
+{
+  "materia": { "id": 3, "nombre": "Matemática" },
+  "profesor": { "id": 4, "nombre": "Ana", "apellido": "Pérez" },
+  "mes": "2026-10",
+  "indicacionesProximaClase": {
+    "fecha": "2026-10-13",
+    "indicaciones": "Practicar los ejercicios 4 a 10 de la guía"
+  },
+  "resumen": { "realizadas": 3, "ausencias": 1, "porcentaje": 75 },
+  "bloques": [
+    {
+      "fecha": "2026-10-13",
+      "horaInicio": "08:00",
+      "horaFin": "10:00",
+      "horas": 2,
+      "textos": {
+        "trabajado": "Ecuaciones de primer grado",
+        "indicaciones": "Practicar los ejercicios 4 a 10 de la guía"
+      },
+      "clases": [
+        {
+          "turnoId": 31,
+          "fecha": "2026-10-13",
+          "horaInicio": "08:00",
+          "horaFin": "09:00",
+          "estado": "REALIZADO",
+          "textosPropios": null
+        }
+      ]
+    }
+  ]
+}
+```
 
 ## Adjuntos
 
@@ -1501,6 +1636,7 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
 
+
 | Feature       | Endpoints del portal                                                                        | Tarea |
 | ------------- | ------------------------------------------------------------------------------------------- | ----- |
 | `ocurrencias` | `GET /ocurrencias/mis-turnos?desde&hasta` y `/mis-turnos/{turnoId}/{fecha}`                 | T-84  |
@@ -1510,7 +1646,7 @@ Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuan
 | `pagos`       | A completar por T-98                                                                        | T-98  |
 | `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                              | T-101 |
 | `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106))           | T-106 |
-| `historiales` | A completar por T-108                                                                       | T-108 |
+| `historiales` | `GET /historiales/mis-materias` y `/mis-materias/{materiaId}/{profesorId}?mes`              | T-108 |
 
 ## Documentos PDF
 
