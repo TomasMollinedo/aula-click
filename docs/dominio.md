@@ -370,6 +370,18 @@ HU-43 a HU-47 (tarea T-118). Qué se guarda y para qué; los términos (reparto,
 - **`AjusteLiquidacion`:** un ajuste aplicado en una liquidación cerrada, por la anulación de un turno ya liquidado o por el saldo de una liquidación anterior. Cada turno anulado y cada saldo se descuentan una sola vez (decisión T-157).
 - **Comprobante de la transferencia:** un `ComprobanteAdjunto` vinculado a la liquidación en lugar de a un pago, con las reglas de [Comprobante adjunto](#comprobante-adjunto) (decisión T-158).
 
+## Reparto
+
+A completar por T-120 (HU-43).
+
+## Liquidaciones
+
+A completar por T-121 (HU-44).
+
+## Caja diaria
+
+A completar por T-127 (HU-46).
+
 ## Auditoría
 
 Todas las entidades registran quién las creó y quién las modificó por última vez, y cuándo (`createdById`, `updatedById`, `createdAt`, `updatedAt`).

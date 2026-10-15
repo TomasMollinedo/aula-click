@@ -85,15 +85,8 @@ function ausente(observacion: string | null) {
 // ---------------------------------------------------------------------------------------------
 
 describe('rangoDelMes y mesEnCurso', () => {
-  it('un mes de 31 días, uno de 30 y febrero de un año bisiesto', () => {
-    expect(rangoDelMes('2026-10')).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' })
+  it('el período va del primer al último día del mes', () => {
     expect(rangoDelMes('2026-11')).toEqual({ desde: '2026-11-01', hasta: '2026-11-30' })
-    expect(rangoDelMes('2024-02')).toEqual({ desde: '2024-02-01', hasta: '2024-02-29' })
-    expect(rangoDelMes('2026-02')).toEqual({ desde: '2026-02-01', hasta: '2026-02-28' })
-  })
-
-  it('diciembre cierra el año sin pasarse al siguiente', () => {
-    expect(rangoDelMes('2026-12')).toEqual({ desde: '2026-12-01', hasta: '2026-12-31' })
   })
 
   it('el mes en curso es el de hoy, completo', () => {

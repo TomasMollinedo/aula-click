@@ -1,4 +1,5 @@
 import { z } from '@hono/zod-openapi'
+import { dateAFecha, fechaADate } from './fechas'
 
 // Primitivas de validación comunes (docs/convenciones-backend.md → Especificación de shared/).
 // Los mensajes viajan al usuario en `details` del 400 VALIDACION: van en español.
@@ -16,6 +17,8 @@ const NOMBRE_ALGUNA_LETRA = /\p{L}/u
 // HH:mm de 00:00 a 23:59.
 const HORA_FORMATO = /^([01]\d|2[0-3]):([0-5]\d)$/
 const MINUTOS_POR_DIA = 1440
+// YYYY-MM con mes de 01 a 12.
+const MES_FORMATO = /^(\d{4})-(0[1-9]|1[0-2])$/
 // Se valida sobre `String(valor)`, la representación más corta que vuelve al mismo número
 // (`1.13` → `"1.13"`): multiplicar por 100 falla con floats (`1.13 * 100 = 112.99999999999999`).
 // `1.005` o `1e-7` no pasan: tienen más de dos decimales.
@@ -191,6 +194,56 @@ export function partirEnHoras(
     horas.push({ horaInicio: minuto, horaFin: minuto + 60 })
   }
   return horas
+}
+
+/** Mes de calendario. Entrada y salida: string `YYYY-MM` con mes de `01` a `12`. */
+export const mesISO = z
+  .string({ error: MENSAJE_TEXTO })
+  .regex(MES_FORMATO, { error: 'El mes debe tener el formato AAAA-MM' })
+  .openapi({ description: 'Mes de calendario (AAAA-MM)', example: '2026-10' })
+
+/** `"YYYY-MM"` → año y mes (1 a 12). Lanza `RangeError` si no es un mes `YYYY-MM` válido. */
+function partesDelMes(mes: string): { anio: number; mes: number } {
+  const partes = MES_FORMATO.exec(mes)
+  if (!partes) throw new RangeError(`Mes inválido: "${mes}" (se espera YYYY-MM)`)
+  return { anio: Number(partes[1]), mes: Number(partes[2]) }
+}
+
+/**
+ * Primer día del mes `YYYY-MM` (`"2026-10"` → `"2026-10-01"`).
+ * Lanza `RangeError` si no es un mes `YYYY-MM` válido.
+ */
+export function primerDiaDelMes(mes: string): string {
+  partesDelMes(mes)
+  return `${mes}-01`
+}
+
+/**
+ * Último día del mes `YYYY-MM` (`"2026-10"` → `"2026-10-31"`): el día 0 del mes siguiente, así
+ * que no hace falta saber cuántos días tiene ni si el año es bisiesto.
+ * Lanza `RangeError` si no es un mes `YYYY-MM` válido.
+ */
+export function ultimoDiaDelMes(mes: string): string {
+  const partes = partesDelMes(mes)
+  return dateAFecha(new Date(Date.UTC(partes.anio, partes.mes, 0)))
+}
+
+/**
+ * Mes de una fecha `YYYY-MM-DD` (`"2026-10-15"` → `"2026-10"`).
+ * Lanza `RangeError` si la fecha es inválida.
+ */
+export function mesDe(fecha: string): string {
+  fechaADate(fecha)
+  return fecha.slice(0, 7)
+}
+
+/**
+ * Mes anterior a `YYYY-MM` (`"2026-01"` → `"2025-12"`).
+ * Lanza `RangeError` si no es un mes `YYYY-MM` válido.
+ */
+export function mesAnterior(mes: string): string {
+  const partes = partesDelMes(mes)
+  return mesDe(dateAFecha(new Date(Date.UTC(partes.anio, partes.mes - 2, 1))))
 }
 
 const MENSAJE_DIA_SEMANA = 'Debe ser un día de la semana válido (1 a 7)'

@@ -93,6 +93,12 @@ describe('ESLint: las condiciones no usan Prisma, salvo sus tipos', { timeout: 3
       'src/server/features/adjuntos/adjuntos.condiciones.ts',
       "import { Prisma } from '@/generated/prisma/client'",
     ],
+    // Las condiciones de la ampliación (T-119) caen en el mismo bloque.
+    [
+      'src/server/features/liquidaciones/liquidaciones.condiciones.ts',
+      "import { prisma } from '@/lib/prisma'",
+    ],
+    ['src/server/features/reparto/reparto.condiciones.ts', "import { prisma } from '@/lib/prisma'"],
   ])('%s: `%s` da error', async (filePath, import_) => {
     expect(
       await erroresDeImport(
@@ -115,6 +121,14 @@ export type { Prisma }
     ],
     [
       'src/server/features/turnos/ocurrencias.condiciones.ts',
+      "import type { Prisma } from '@/generated/prisma/client'",
+    ],
+    [
+      'src/server/features/liquidaciones/liquidaciones.condiciones.ts',
+      "import type { Prisma } from '@/generated/prisma/client'",
+    ],
+    [
+      'src/server/features/reparto/reparto.condiciones.ts',
       "import type { Prisma } from '@/generated/prisma/client'",
     ],
     ['src/server/features/pagos/pagos.repository.ts', "import { prisma } from '@/lib/prisma'"],
@@ -179,6 +193,12 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
     ],
     ['src/server/features/adjuntos/adjuntos.service.ts', '@/server/features/pagos/pagos.reglas'],
     ['src/server/features/adjuntos/adjuntos.service.ts', '@/lib/prisma'],
+    // Ampliación (T-119): de reparto solo sus condiciones.
+    ['src/server/features/caja/caja.service.ts', '@/server/features/reparto/reparto.reglas'],
+    [
+      'src/server/features/liquidaciones/liquidaciones.condiciones.ts',
+      '@/server/features/reparto/reparto.reglas',
+    ],
   ])('desde %s, importar %s da error', async (filePath, ruta) => {
     expect(await erroresDeImport(filePath, importar(ruta))).toHaveLength(1)
   })
@@ -213,6 +233,11 @@ describe('ESLint: de otra feature solo *.repository o *.condiciones', { timeout:
     ['src/server/features/adjuntos/adjuntos.repository.ts', './adjuntos.condiciones'],
     ['src/server/features/adjuntos/adjuntos.service.ts', '@/server/shared/archivos'],
     ['src/server/features/usuarios/usuarios.routes.ts', '@/server/router'],
+    ['src/server/features/caja/caja.service.ts', '@/server/features/reparto/reparto.condiciones'],
+    [
+      'src/server/features/liquidaciones/liquidaciones.condiciones.ts',
+      '@/server/features/reparto/reparto.condiciones',
+    ],
   ])('desde %s, importar %s está permitido', async (filePath, ruta) => {
     expect(await erroresDeImport(filePath, importar(ruta))).toEqual([])
   })
