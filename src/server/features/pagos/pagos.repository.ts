@@ -126,6 +126,9 @@ function traducirPagoDoble(error: unknown): never {
   throw error
 }
 
+// Provisorio: T-122 guarda el porcentaje vigente
+const PORCENTAJE_CENTRO = 15
+
 /** Importe `number` → texto con dos decimales para el `Decimal` (no pasa por un float de la base). */
 const aDecimal = (importe: number) => importe.toFixed(2)
 
@@ -241,6 +244,7 @@ export const pagosRepository = {
                 turnoId: linea.turnoId,
                 fechaOcurrencia: fechaADate(linea.fecha),
                 importeAplicado: aDecimal(linea.importe),
+                porcentajeCentro: PORCENTAJE_CENTRO,
               })),
             },
           },

@@ -1,6 +1,7 @@
 // Seed de desarrollo: roles, un usuario por rol, materias con precio, aulas, las tres formas de
-// pago (con su tipo), una materia asignada al profesor y un alumno de demo con acceso al portal
-// (HU-27). Idempotente: todo es upsert por clave natural.
+// pago (con su tipo), una materia asignada al profesor, el historial del porcentaje del centro
+// (HU-43) y un alumno de demo con acceso al portal (HU-27). Idempotente: todo es upsert por clave
+// natural, salvo el porcentaje, que se carga sólo si la tabla está vacía.
 //
 // Se corre con `pnpm db:seed` (Prisma 7 no lo ejecuta solo después de `migrate dev`).
 // Es la única excepción, fuera de los repositories, que usa Prisma directo (AGENTS.md, regla 3).
@@ -11,7 +12,7 @@ import { env } from '@/config/env'
 import { hashPassword } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { normalizarBusqueda } from '@/server/shared/busqueda'
-import { fechaADate } from '@/server/shared/fechas'
+import { dateAFecha, fechaADate, hoy } from '@/server/shared/fechas'
 
 const ROLES = [
   {
@@ -221,6 +222,13 @@ async function upsertAlumnoConAcceso(mesaId: string) {
   return { alumno, username }
 }
 
+/** Día 1 del mes a `meses` del de hoy, a las 09:00 de Salta (UTC-3). */
+function diaUnoDelMes(meses: number): Date {
+  const [anio, mes] = hoy().split('-').map(Number) as [number, number]
+  const primero = new Date(Date.UTC(anio, mes - 1 + meses, 1))
+  return new Date(`${dateAFecha(primero)}T09:00:00-03:00`)
+}
+
 async function main() {
   const c = credenciales()
 
@@ -330,12 +338,26 @@ async function main() {
     })
   }
 
+  // Porcentaje del centro (HU-43): historial con dos filas, para que se vea el cambio y haya cobros
+  // con porcentajes distintos. Sólo si la tabla está vacía: si el gerente ya lo cambió, no se toca.
+  const porcentajesCargados = (await prisma.porcentajeCentro.count()) === 0
+  if (porcentajesCargados) {
+    await prisma.porcentajeCentro.createMany({
+      data: [
+        { porcentaje: '12.00', createdAt: diaUnoDelMes(-2), createdById: gerente.id },
+        { porcentaje: '15.00', createdAt: diaUnoDelMes(-1), createdById: gerente.id },
+      ],
+    })
+  }
+
   const { username: usuarioAlumno } = await upsertAlumnoConAcceso(mesa.id)
 
   console.log(
     `Seed completo: ${ROLES.length} roles, 3 usuarios, ${MATERIAS.length} materias ` +
       `(${preciosCargados} con precio recién cargado), Matemática asignada al profesor, ` +
-      `${AULAS.length} aulas, ${FORMAS_PAGO.length} formas de pago y un alumno con acceso al ` +
+      `${AULAS.length} aulas, ${FORMAS_PAGO.length} formas de pago, ` +
+      `${porcentajesCargados ? 'el historial del porcentaje del centro (12 % y 15 %)' : 'el porcentaje del centro sin cambios'} ` +
+      `y un alumno con acceso al ` +
       `portal (usuario "${usuarioAlumno}", contraseña inicial = su DNI); ` +
       `${sinPrecio.count} materia(s) sin precio pasadas a INACTIVO.`,
   )
