@@ -246,6 +246,15 @@ export function mesAnterior(mes: string): string {
   return mesDe(dateAFecha(new Date(Date.UTC(partes.anio, partes.mes - 2, 1))))
 }
 
+/**
+ * Mes siguiente a `YYYY-MM` (`"2026-12"` → `"2027-01"`).
+ * Lanza `RangeError` si no es un mes `YYYY-MM` válido.
+ */
+export function mesSiguiente(mes: string): string {
+  const partes = partesDelMes(mes)
+  return mesDe(dateAFecha(new Date(Date.UTC(partes.anio, partes.mes, 1))))
+}
+
 const MENSAJE_DIA_SEMANA = 'Debe ser un día de la semana válido (1 a 7)'
 
 // Mismas reglas y mensajes para el body (número) y el query (texto que se coerciona).

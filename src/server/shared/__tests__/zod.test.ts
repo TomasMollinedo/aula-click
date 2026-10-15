@@ -13,6 +13,7 @@ import {
   mesAnterior,
   mesDe,
   mesISO,
+  mesSiguiente,
   minutosAHora,
   nombrePersona,
   opcional,
@@ -430,5 +431,15 @@ describe('mesAnterior', () => {
 
   it('lanza RangeError con un mes inválido', () => {
     expect(() => mesAnterior('2026-1')).toThrow(RangeError)
+  })
+})
+
+describe('mesSiguiente', () => {
+  it('en diciembre pasa al enero del año siguiente', () => {
+    expect(mesSiguiente('2026-12')).toBe('2027-01')
+  })
+
+  it('lanza RangeError con un mes inválido', () => {
+    expect(() => mesSiguiente('2026-13')).toThrow(RangeError)
   })
 })
