@@ -16,6 +16,9 @@ import type { CodigoFormaPago } from './pagos.validation'
 //   pagado, muestra los datos de su pago (`leerPagoDeOcurrencia`).
 // - `tablero` (T-61): el total cobrado en un período (`totalCobradoEntre`) y, por forma de pago,
 //   para los pagos realizados (T-98) y el tablero (T-112): `totalCobradoPorForma`.
+// - `anulaciones` (T-104): el pago a anular con sus turnos (`leerPagoParaAnular`) y los otros pagos
+//   vigentes de la misma transferencia (`pagosConMismaTransferencia`), para la confirmación y sus
+//   avisos.
 //
 // El tope y la suma sólo se re-exportan: la implementación es la de `pagos.reglas.ts`.
 
@@ -125,4 +128,110 @@ export async function totalCobradoPorForma(
     totales[codigo] = sumarImportes([totales[codigo], importe])
   }
   return totales
+}
+
+/** Una ocurrencia de un pago a anular: la fecha, la materia y lo que se cobró por ella. */
+export type TurnoDePagoAAnular = {
+  turnoId: number
+  fecha: string
+  materia: { id: number; nombre: string }
+  /** El importe cobrado (`importeAplicado`), en pesos: no cambia si después cambia el precio. */
+  importe: number
+}
+
+/**
+ * Lo que la anulación (HU-42, T-104) necesita de un pago: el estado (un anulado no se anula de
+ * nuevo), el alumno, el número y el total para la confirmación, los turnos (fecha, materia e
+ * importe cobrado) para los avisos de deuda y de precio, y la operación y el banco de una
+ * transferencia para el aviso de transferencia compartida (`null` si es de otra forma).
+ */
+export type PagoParaAnular = {
+  id: number
+  numeroComprobante: number
+  estado: 'VIGENTE' | 'ANULADO'
+  alumno: { id: number; nombre: string; apellido: string }
+  total: number
+  turnos: TurnoDePagoAAnular[]
+  transferencia: { operacion: string; banco: string } | null
+}
+
+/**
+ * El pago `pagoId` para anularlo, o `null` si no existe. Una consulta. Los turnos van ordenados
+ * por fecha y `turnoId`. Recibe `prisma` o el `tx` de la anulación (con el lock del alumno).
+ */
+export async function leerPagoParaAnular(
+  client: ClienteOcurrencias,
+  pagoId: number,
+): Promise<PagoParaAnular | null> {
+  const fila = await client.pago.findUnique({
+    where: { id: pagoId },
+    select: {
+      id: true,
+      numeroComprobante: true,
+      estado: true,
+      importeTotal: true,
+      transferenciaOperacion: true,
+      transferenciaBanco: true,
+      alumno: { select: { id: true, nombre: true, apellido: true } },
+      turnos: {
+        select: {
+          turnoId: true,
+          fechaOcurrencia: true,
+          importeAplicado: true,
+          turno: { select: { materia: { select: { id: true, nombre: true } } } },
+        },
+      },
+    },
+  })
+  if (!fila) return null
+  const { transferenciaOperacion: operacion, transferenciaBanco: banco } = fila
+  return {
+    id: fila.id,
+    numeroComprobante: fila.numeroComprobante,
+    estado: fila.estado,
+    alumno: fila.alumno,
+    total: fila.importeTotal.toNumber(),
+    turnos: fila.turnos
+      .map((pt) => ({
+        turnoId: pt.turnoId,
+        fecha: dateAFecha(pt.fechaOcurrencia),
+        materia: pt.turno.materia,
+        importe: pt.importeAplicado.toNumber(),
+      }))
+      .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.turnoId - b.turnoId),
+    transferencia: operacion !== null && banco !== null ? { operacion, banco } : null,
+  }
+}
+
+/** Otro pago de la misma transferencia: su número y su alumno. */
+export type PagoDeLaMismaTransferencia = {
+  id: number
+  numeroComprobante: number
+  alumno: { id: number; nombre: string; apellido: string }
+}
+
+/**
+ * Los otros pagos **vigentes** con la misma operación y el mismo banco (una transferencia puede
+ * cubrir a varios alumnos, HU-23), sin `excluirPagoId` (el que se está por anular), por número de
+ * comprobante. Es el aviso de HU-42: anular uno no anula los otros. Compara el texto tal como se
+ * guardó (recortado); usa el índice `(transferenciaOperacion, transferenciaBanco)`. Una consulta.
+ */
+export async function pagosConMismaTransferencia(
+  client: ClienteOcurrencias,
+  { operacion, banco, excluirPagoId }: { operacion: string; banco: string; excluirPagoId: number },
+): Promise<PagoDeLaMismaTransferencia[]> {
+  return client.pago.findMany({
+    where: {
+      transferenciaOperacion: operacion,
+      transferenciaBanco: banco,
+      estado: 'VIGENTE',
+      id: { not: excluirPagoId },
+    },
+    select: {
+      id: true,
+      numeroComprobante: true,
+      alumno: { select: { id: true, nombre: true, apellido: true } },
+    },
+    orderBy: { numeroComprobante: 'asc' },
+  })
 }
