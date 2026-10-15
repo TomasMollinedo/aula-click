@@ -23,6 +23,7 @@ import {
   SELECCION_VACIA,
   type Seleccion,
   alternar,
+  estadoSeleccionarTodo,
   ordenarComoSeMuestran,
   podar,
   quitarTodos,
@@ -45,10 +46,11 @@ export type PagosDelAlumnoProps = {
 }
 
 /**
- * Pestaña "Pagos" de la ficha del alumno (HU-16): total adeudado, filtros (período, materia y
+ * Pestaña "Pagos" de la ficha del alumno (HU-16): total adeudado, filtros (período, materias y
  * profesor, en la URL junto a `?tab=pagos`), y turnos adeudados y próximos con una sola selección
- * para cobrarlos juntos. Importes, totales y qué sección aplica al período los manda la API: una
- * sección que llega `null` no se muestra; el cliente solo suma lo tildado (`resumenSeleccion`).
+ * para cobrarlos juntos ("Seleccionar todo" tilda los dos, HU-25). Importes, totales y qué sección
+ * aplica al período los manda la API: una sección que llega `null` no se muestra; el cliente solo
+ * suma lo tildado (`resumenSeleccion`).
  *
  * Un turno solo se cobra desde su detalle ("Ver detalle" de la fila); "Registrar pago" de la barra
  * cobra lo tildado, sin pasar por el detalle.
@@ -61,10 +63,10 @@ export type PagosDelAlumnoProps = {
 export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumnoProps) {
   const { filtros: deLaUrl, cambiar, limpiar } = useFiltrosCuenta()
   // Los de la ficha: sin el alumno (es el de la ficha) ni páginas.
-  const { desde, hasta, materiaId, profesorId } = deLaUrl
+  const { desde, hasta, materiaIds, profesorId } = deLaUrl
   const filtros = useMemo<Filtros>(
-    () => ({ desde, hasta, materiaId, profesorId }),
-    [desde, hasta, materiaId, profesorId],
+    () => ({ desde, hasta, materiaIds, profesorId }),
+    [desde, hasta, materiaIds, profesorId],
   )
 
   const query = useCuentaDelAlumno(alumnoId, aParams(filtros))
@@ -162,12 +164,19 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
           <Card className="gap-0 p-0">
             <BarraSeleccion
               resumen={resumen}
-              onSeleccionarTodos={
-                cuenta.adeudados
-                  ? () => setSeleccion((actual) => seleccionarTodos(actual, cuenta.adeudados ?? []))
-                  : undefined
-              }
-              seleccionarTodosDeshabilitado={cuenta.adeudados?.length === 0}
+              seleccionarTodo={{
+                // Todo lo que deja el filtro: los adeudados y los próximos que se ven (la cuenta
+                // no está paginada).
+                estado: estadoSeleccionarTodo(seleccion, mostrada.length),
+                cantidad: mostrada.length,
+                onAlternar: () =>
+                  setSeleccion((actual) =>
+                    estadoSeleccionarTodo(actual, mostrada.length) === 'todos'
+                      ? quitarTodos()
+                      : seleccionarTodos(actual, mostrada),
+                  ),
+                deshabilitado: mostrada.length === 0,
+              }}
               onQuitar={() => setSeleccion(quitarTodos())}
               onRegistrar={(boton) =>
                 abrirDialogo(

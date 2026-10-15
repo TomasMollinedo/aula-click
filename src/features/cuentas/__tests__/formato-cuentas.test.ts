@@ -10,21 +10,35 @@ import {
   textoPeriodo,
   textoSinPrecio,
   textoTotalAPagar,
-  textoTurnosSeleccionados,
+  textoCantidadDeTurnos,
+  avisoMaximoDeTurnos,
   textoSinFilas,
+  textoMaterias,
+  textoSeleccionTodo,
 } from '../formato-cuentas'
 import { ADEUDADOS, CUENTA } from './fixtures'
 
-const SIN_FILTROS: FiltrosCuenta = { desde: null, hasta: null, materiaId: null, profesorId: null }
+const SIN_FILTROS: FiltrosCuenta = { desde: null, hasta: null, materiaIds: [], profesorId: null }
 const SEPTIEMBRE = { desde: '2026-09-01', hasta: '2026-09-30' }
 
 // Intl separa el `$` del número con un espacio duro (U+00A0).
 const NBSP = ' '
 
-describe('textoTurnosSeleccionados', () => {
+describe('textoCantidadDeTurnos', () => {
   it('singular y plural', () => {
-    expect(textoTurnosSeleccionados(1)).toBe('1 turno seleccionado')
-    expect(textoTurnosSeleccionados(4)).toBe('4 turnos seleccionados')
+    expect(textoCantidadDeTurnos(1)).toBe('1 turno')
+    expect(textoCantidadDeTurnos(8)).toBe('8 turnos')
+  })
+})
+
+describe('avisoMaximoDeTurnos', () => {
+  it('hasta el máximo, sin aviso', () => {
+    expect(avisoMaximoDeTurnos(200, 200)).toBeNull()
+    expect(avisoMaximoDeTurnos(3, 200)).toBeNull()
+  })
+
+  it('pasado el máximo, cuántos destildar', () => {
+    expect(avisoMaximoDeTurnos(212, 200)).toBe('Un pago puede tener hasta 200 turnos: destildá 12')
   })
 })
 
@@ -148,7 +162,7 @@ describe('avisoDelTope', () => {
 
 describe('textoSinFilas', () => {
   it('con período: "en el período"', () => {
-    const filtros = { ...SIN_FILTROS, ...SEPTIEMBRE, materiaId: 2 }
+    const filtros = { ...SIN_FILTROS, ...SEPTIEMBRE, materiaIds: [2] }
     expect(textoSinFilas('adeudados', filtros)).toBe('Sin turnos adeudados en el período')
     expect(textoSinFilas('proximos', filtros)).toBe('Sin próximos turnos en el período')
     expect(textoSinFilas('proximos', { ...SIN_FILTROS, desde: '2026-12-01' })).toBe(
@@ -157,7 +171,7 @@ describe('textoSinFilas', () => {
   })
 
   it('con materia o profesor, sin período: "con los filtros elegidos"', () => {
-    expect(textoSinFilas('adeudados', { ...SIN_FILTROS, materiaId: 2 })).toBe(
+    expect(textoSinFilas('adeudados', { ...SIN_FILTROS, materiaIds: [2, 5] })).toBe(
       'Sin turnos adeudados con los filtros elegidos',
     )
     expect(textoSinFilas('proximos', { ...SIN_FILTROS, profesorId: 3 })).toBe(
@@ -168,6 +182,22 @@ describe('textoSinFilas', () => {
   it('sin filtros: los textos de siempre', () => {
     expect(textoSinFilas('adeudados', SIN_FILTROS)).toBe('Sin turnos adeudados')
     expect(textoSinFilas('proximos', SIN_FILTROS)).toBe('Sin próximos turnos para cobrar')
+  })
+})
+
+describe('textoSeleccionTodo', () => {
+  it('singular y plural', () => {
+    expect(textoSeleccionTodo(1)).toBe('Se seleccionó el turno del filtro')
+    expect(textoSeleccionTodo(12)).toBe('Se seleccionaron los 12 turnos del filtro')
+  })
+})
+
+describe('textoMaterias', () => {
+  it('una, dos o más materias en una frase; sin ninguna, null', () => {
+    expect(textoMaterias([])).toBeNull()
+    expect(textoMaterias(['Matemática'])).toBe('Matemática')
+    expect(textoMaterias(['Inglés', 'Matemática'])).toBe('Inglés y Matemática')
+    expect(textoMaterias(['Física', 'Inglés', 'Matemática'])).toBe('Física, Inglés y Matemática')
   })
 })
 

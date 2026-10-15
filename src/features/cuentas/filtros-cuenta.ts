@@ -8,15 +8,18 @@ import type { FiltrosCuentaParams, ListarGlobalParams } from './cuentas.types'
 // - Ficha del alumno: `?tab=pagos&desde=&hasta=&materiaId=&profesorId=`. El `tab` es de
 //   `AlumnoDetalle`, que al cambiar de pestaña arma la URL de cero: los filtros se van solos.
 // - Vista global: `?alumnoId=&desde=&hasta=&materiaId=&profesorId=&pageAdeudados=&pageProximos=`.
+// - `materiaId` se repite, una vez por materia (`?materiaId=2&materiaId=5`, HU-25), igual que en
+//   el query de la API.
 //
 // Qué parte del período le toca a cada sección lo decide la API (dominio → Deuda): acá no se
 // compara nada contra hoy, y un `hasta` anterior a `desde` no se corrige (lo rechaza la API).
 
-/** Período, materia y profesor: los filtros de las dos vistas. `null` = sin ese filtro. */
+/** Período, materias y profesor: los filtros de las dos vistas. `null` = sin ese filtro. */
 export type FiltrosCuenta = {
   desde: string | null
   hasta: string | null
-  materiaId: number | null
+  /** Las materias elegidas, de menor a mayor y sin repetir; `[]` = todas (sin ese filtro). */
+  materiaIds: readonly number[]
   profesorId: number | null
 }
 
@@ -31,7 +34,7 @@ export const FILTROS_VACIOS: FiltrosGlobal = {
   alumnoId: null,
   desde: null,
   hasta: null,
-  materiaId: null,
+  materiaIds: [],
   profesorId: null,
 }
 
@@ -54,13 +57,29 @@ function fecha(valor: string | null): string | null {
     : null
 }
 
-/** Un valor inválido (o ausente) es "sin filtro": la URL nunca rompe la pantalla. */
+/**
+ * Ids sin repetir y de menor a mayor: el mismo filtro es siempre la misma lista (y la misma URL y
+ * la misma `claveDeFiltros`), sin importar en qué orden se eligieron las materias.
+ */
+export function normalizarIds(ids: Iterable<number>): number[] {
+  return [...new Set(ids)].sort((a, b) => a - b)
+}
+
+/**
+ * Un valor inválido (o ausente) es "sin filtro": la URL nunca rompe la pantalla. De las materias
+ * se descartan solo las inválidas.
+ */
 export function leerFiltros(params: URLSearchParams): FiltrosGlobal {
   return {
     alumnoId: enteroPositivo(params.get('alumnoId')),
     desde: fecha(params.get('desde')),
     hasta: fecha(params.get('hasta')),
-    materiaId: enteroPositivo(params.get('materiaId')),
+    materiaIds: normalizarIds(
+      params
+        .getAll('materiaId')
+        .map(enteroPositivo)
+        .filter((id): id is number => id !== null),
+    ),
     profesorId: enteroPositivo(params.get('profesorId')),
   }
 }
@@ -86,10 +105,13 @@ function sinPaginas(params: URLSearchParams): URLSearchParams {
  */
 export function paramsConFiltros(params: URLSearchParams, filtros: FiltrosGlobal): URLSearchParams {
   const nuevos = sinPaginas(params)
-  for (const [nombre, valor] of Object.entries(filtros)) {
+  const { materiaIds, ...unicos } = filtros
+  for (const [nombre, valor] of Object.entries(unicos)) {
     if (valor === null) nuevos.delete(nombre)
     else nuevos.set(nombre, String(valor))
   }
+  nuevos.delete('materiaId')
+  for (const id of normalizarIds(materiaIds)) nuevos.append('materiaId', String(id))
   return nuevos
 }
 
@@ -117,7 +139,9 @@ export function hayPeriodo(filtros: Pick<FiltrosCuenta, 'desde' | 'hasta'>): boo
 
 /** Si hay algo que limpiar. En la ficha se le pasan los filtros sin `alumnoId`. */
 export function hayFiltros(filtros: Partial<FiltrosGlobal>): boolean {
-  return Object.values(filtros).some((valor) => valor != null)
+  return Object.values(filtros).some((valor) =>
+    Array.isArray(valor) ? valor.length > 0 : valor != null,
+  )
 }
 
 /** Los filtros como van al query de la API: sin los vacíos. */
@@ -125,7 +149,7 @@ export function aParams(filtros: FiltrosCuenta): FiltrosCuentaParams {
   return {
     ...(filtros.desde !== null && { desde: filtros.desde }),
     ...(filtros.hasta !== null && { hasta: filtros.hasta }),
-    ...(filtros.materiaId !== null && { materiaId: filtros.materiaId }),
+    ...(filtros.materiaIds.length > 0 && { materiaId: normalizarIds(filtros.materiaIds) }),
     ...(filtros.profesorId !== null && { profesorId: filtros.profesorId }),
   }
 }

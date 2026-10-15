@@ -178,23 +178,25 @@ src/
 │ ├── cuentas/ # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
 │ │ ├── cuentas.types.ts, a-cobrar.ts # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
 │ │ ├── filtros-cuenta.ts # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
-│ │ ├── seleccion.ts # la selección a cobrar (inmutable) y su resumen
+│ │ ├── seleccion.ts # la selección a cobrar (inmutable), "Seleccionar todo", su resumen con el subtotal por materia y el tope de 200 por pago
+│ │ ├── materias-del-filtro.ts # el filtro de varias materias: opciones, búsqueda, texto del botón y alternar (puro)
 │ │ ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts # textos (total, filtros activos, tope); errores de lectura y del período; ficha
 │ │ ├── api/{cuentas.api.ts, cuentas.keys.ts}
 │ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts,
 │ │ │ use-filtros-cuenta.ts, # los filtros de la URL con router.replace
 │ │ │ use-materias-de-cuenta.ts, use-nombres-de-filtros.ts, # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
-│ │ │ use-todos-los-adeudados.ts, # todos los adeudados de un alumno, a pedido ("Seleccionar todos" de la vista global)
+│ │ │ use-todos-los-del-filtro.ts, # adeudados y próximos de un alumno con sus filtros, a pedido ("Seleccionar todo" de la vista global)
 │ │ │ use-dialogo-de-pago.ts, # el diálogo de cobro de la selección: copia al abrir, ajuste de la selección y foco al cerrar
 │ │ │ use-detalle-de-cuenta.ts} # "Ver detalle" de una fila: abre el detalle del turno en la URL; ajuste y foco al cerrar
 │ │ └── components/
 │ │ ├── PagosDelAlumno.tsx # pestaña "Pagos" de la ficha (?tab=pagos&desde=…); la compone app/ con renderRegistrarPago
 │ │ ├── PagosGlobal.tsx # /mesa/pagos: filtros y una página por tabla en la URL; la compone app/ (renderRegistrarPago, renderDetalle)
-│ │ ├── FiltrosCuenta.tsx # período, materia y profesor, en las dos vistas; el 400 del período junto a "Hasta"
+│ │ ├── FiltrosCuenta.tsx # período, materias y profesor, en las dos vistas; el 400 del período junto a "Hasta"
+│ │ ├── FiltroMaterias.tsx # selección múltiple de materias (menú con buscador y casillas; tildar no lo cierra)
 │ │ ├── FiltroAlumno.tsx, FiltroProfesor.tsx # los dos usos del selector con buscador (`ComboboxBuscador` de components/ui)
 │ │ ├── SeccionOcurrencias.tsx # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
 │ │ ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx # filas con casilla y "Ver detalle"; el importe destacado
-│ │ ├── BarraSeleccion.tsx # resumen y acciones de la selección; envuelve las listas y flota abajo cuando deja de verse
+│ │ ├── BarraSeleccion.tsx # "Seleccionar todo", cantidad, total y subtotal por materia; envuelve las listas y flota abajo cuando deja de verse
 │ │ └── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
 │ ├── asistencias/ # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
 │ │ ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
@@ -277,7 +279,7 @@ src/
 │ ├── pago.ts # OcurrenciaACobrar, SolicitudRegistrarPago y PagoParaAcciones: lo que pagos, cuentas y anulaciones comparten
 │ └── agenda.ts # FiltrosAgenda (profesor, incluir cancelados y prioridad)
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts,
-moneda.ts, vista-en-url.ts} # vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas
+moneda.ts, vista-en-url.ts, busqueda.ts} # busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas
 
 ## Anatomía de una feature de UI
 
@@ -405,12 +407,13 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 
 Los filtros que no son texto (un select, una fecha, un profesor elegido) siguen el mismo criterio, sin debounce, con un archivo puro que conoce los nombres de los parámetros y un hook que los lee y los escribe: `filtros-agenda.ts` + `use-filtros-agenda.ts` en las agendas y `filtros-cuenta.ts` + `use-filtros-cuenta.ts` en `cuentas`. Reglas comunes: un valor inválido de la URL se ignora (es "sin filtro"), un filtro vacío no se escribe, los demás parámetros de la URL se conservan y cambiar un filtro vuelve a la página 1.
 
-Los filtros se ven igual en toda pantalla: van en una `BarraFiltros` de `components/ui/barra-filtros.tsx`, una grilla en la que cada filtro es un `Field` (label arriba) con un control compacto y, al final, el botón que los saca todos. La usan `FiltrosCuenta`, las agendas (`BarraFiltrosAgenda` en las listas y `CalendarioSemanal`) y la pestaña "Turnos" de la ficha del alumno (`TurnosDelAlumno`). Quien la usa le pasa las columnas de cada ancho (`className`), desde qué ancho el botón entra en la fila de los campos (`limpiarEnFila`), `hayFiltros` y `onLimpiar`. Los controles que no son un input toman sus clases de `claseControlFiltro(sinFiltro)` (sin nada elegido, el texto va atenuado y la opción se llama "Todos" o "Todas"): el trigger de un `Select`, y los selectores con buscador `ComboboxBuscador` (las opciones las trae quien lo usa, con el hook de su feature) y `SelectBuscable` (las opciones ya están en el cliente), los dos de `components/ui/`.
+Los filtros se ven igual en toda pantalla: van en una `BarraFiltros` de `components/ui/barra-filtros.tsx`, una grilla en la que cada filtro es un `Field` (label arriba) con un control compacto y, al final, el botón que los saca todos. La usan `FiltrosCuenta`, las agendas (`BarraFiltrosAgenda` en las listas y `CalendarioSemanal`) y la pestaña "Turnos" de la ficha del alumno (`TurnosDelAlumno`). Quien la usa le pasa las columnas de cada ancho (`className`), desde qué ancho el botón entra en la fila de los campos (`limpiarEnFila`), `hayFiltros` y `onLimpiar`. Los controles que no son un input toman sus clases de `claseControlFiltro(sinFiltro)` (sin nada elegido, el texto va atenuado y la opción se llama "Todos" o "Todas"): el trigger de un `Select`, y los selectores con buscador de `components/ui/`. Todos se arman sobre `MenuConBuscador` (el botón compacto, el menú con el buscador arriba, el foco al buscador al abrir y las flechas entre el buscador y la lista): `ComboboxBuscador` elige una opción (las trae quien lo usa, con el hook de su feature), `SelectBuscable` es un `ComboboxBuscador` con las opciones ya en el cliente (`coincideConBusqueda` de `utils/busqueda.ts`), y un selector de varias opciones pone sus casillas (`menuitemcheckbox`, que no cierran el menú) sobre el mismo `MenuConBuscador`, como `FiltroMaterias` de `cuentas`.
 
 El botón es `LimpiarFiltros` de `components/ui/limpiar-filtros.tsx`, siempre visible: recibe `hayFiltros` (sin filtros queda deshabilitado; con filtros va en rojo y con el contorno marcado) y el `onClick` de quien lo usa, que decide qué es limpiar (qué parámetros se sacan o a qué valor por defecto se vuelve: en "Turnos", al mes en curso). Tiene la altura de un control compacto, para ir en la misma fila que los filtros.
 
-`cuentas` (decisiones T-97 y T-98) suma tres casos:
+`cuentas` (decisiones T-97, T-98 y T-147) suma cuatro casos:
 
+- **Un filtro que se repite.** Las materias son una o más: `materiaId` se repite en la URL (`?materiaId=2&materiaId=5`), igual que en el query de la API, siempre sin repetidos y de menor a mayor (`normalizarIds`), así la misma elección es siempre la misma URL y la misma clave de selección. "Limpiar filtros" las saca todas.
 - **Filtros dentro de un tab.** La pestaña "Pagos" de la ficha guarda sus filtros junto al tab (`?tab=pagos&desde=…&hasta=…&materiaId=…&profesorId=…`). `AlumnoDetalle` arma la URL de cero al cambiar de pestaña (`?tab=<valor>`), así que los filtros se van solos al salir de "Pagos": un tab con filtros propios no necesita limpiarlos ni que el detalle los conozca.
 - **Dos listados paginados en una pantalla.** La vista global tiene una página por tabla (`pageAdeudados`, `pageProximos`), no un `page` compartido. Cambiar un filtro las vuelve a las dos a la 1, y una página fuera de rango se corrige en cada tabla por separado.
 - **Lo que valida la API no se revalida en el cliente.** Un "Hasta" anterior al "Desde" se manda tal cual; el 400 vuelve con `details` sobre `hasta` y `errores-cuentas.ts` lo ubica junto al campo, con el `message` de la API. Qué parte del período le toca a cada sección tampoco se calcula: una sección que la API marca como que no aplica (`null`, `aplica: false`) no se muestra.
