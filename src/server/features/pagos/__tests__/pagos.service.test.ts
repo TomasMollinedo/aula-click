@@ -1,5 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { AppError, ConflictError, NotFoundError, ValidationError } from '@/server/errors'
+import {
+  AppError,
+  ConflictError,
+  ForbiddenError,
+  NotFoundError,
+  ValidationError,
+} from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { Actor } from '@/server/shared/actor'
 import { crearPagosService } from '../pagos.service'
@@ -545,7 +551,7 @@ describe('registrar: concurrencia', () => {
   })
 })
 
-describe('obtenerComprobante', () => {
+describe('obtenerDetalle: el comprobante', () => {
   it('devuelve el comprobante con el vuelto recalculado', async () => {
     const { pagoId } = await service.registrar(
       pago({
@@ -558,7 +564,7 @@ describe('obtenerComprobante', () => {
       actor,
     )
 
-    const comprobante = await service.obtenerComprobante(pagoId)
+    const comprobante = await service.obtenerDetalle(pagoId, actor)
 
     expect(comprobante).toMatchObject({
       id: pagoId,
@@ -585,7 +591,7 @@ describe('obtenerComprobante', () => {
       guardado && { ...guardado, montoRecibido: null },
     )
 
-    expect(await service.obtenerComprobante(pagoId)).toMatchObject({
+    expect(await service.obtenerDetalle(pagoId, actor)).toMatchObject({
       montoRecibido: null,
       vuelto: null,
     })
@@ -595,7 +601,7 @@ describe('obtenerComprobante', () => {
     const { pagoId } = await service.registrar(pago(), actor)
     precios.set(2, 9999)
 
-    const comprobante = await service.obtenerComprobante(pagoId)
+    const comprobante = await service.obtenerDetalle(pagoId, actor)
     expect(comprobante.total).toBe(8000)
     expect(comprobante.turnos[0]?.importe).toBe(8000)
   })
@@ -611,7 +617,7 @@ describe('obtenerComprobante', () => {
       actor,
     )
 
-    expect(await service.obtenerComprobante(31)).toMatchObject({
+    expect(await service.obtenerDetalle(31, actor)).toMatchObject({
       formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
       transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
       debito: null,
@@ -623,6 +629,191 @@ describe('obtenerComprobante', () => {
   })
 
   it('inexistente → 404', async () => {
-    expect(await errorDe(service.obtenerComprobante(99))).toBeInstanceOf(NotFoundError)
+    expect(await errorDe(service.obtenerDetalle(99, actor))).toBeInstanceOf(NotFoundError)
+  })
+})
+
+// T-98 (HU-36, HU-37): detalle con acciones, PDF por rol, pagos realizados y "Mis pagos".
+
+const gerente: Actor = { userId: 'usr_gerente', role: 'GERENTE' }
+const alumno: Actor = { userId: 'usr_alumno', role: 'ALUMNO', alumnoId: 12 }
+const otroAlumno: Actor = { userId: 'usr_otro', role: 'ALUMNO', alumnoId: 99 }
+
+const ADJUNTO = {
+  id: 18,
+  nombre: 'cupon.pdf',
+  tipo: 'application/pdf',
+  bytes: 1024,
+  adjuntadoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+  adjuntadoEl: '2026-10-05T14:28:00.000Z',
+}
+
+/** Registra un pago con débito y el comprobante 18 adjunto. */
+async function pagoConDebito() {
+  const { pagoId } = await service.registrar(
+    pago({
+      formaPago: 'DEBITO',
+      montoRecibido: undefined,
+      debito: { red: 'VISA_DEBITO', cupon: '000123' },
+      comprobanteAdjuntoId: 18,
+    }),
+    actor,
+  )
+  memoria.repository.buscarAdjunto.mockResolvedValue(ADJUNTO)
+  return pagoId
+}
+
+describe('obtenerDetalle: cantidad, adjunto y acciones', () => {
+  it('la mesa de entradas, en un débito vigente con adjunto: puede anular, reemplazar y quitar', async () => {
+    const pagoId = await pagoConDebito()
+
+    const detalle = await service.obtenerDetalle(pagoId, actor)
+
+    expect(detalle).toMatchObject({
+      id: pagoId,
+      cantidad: 1,
+      adjunto: ADJUNTO,
+      acciones: { anular: true, reemplazarAdjunto: true, quitarAdjunto: true },
+    })
+    expect(memoria.repository.buscarAdjunto).toHaveBeenCalledExactlyOnceWith(pagoId)
+  })
+
+  it('el gerente ve el mismo pago en sólo lectura: todas las acciones en false', async () => {
+    const pagoId = await pagoConDebito()
+
+    const detalle = await service.obtenerDetalle(pagoId, gerente)
+
+    expect(detalle.adjunto).toEqual(ADJUNTO)
+    expect(detalle.acciones).toEqual({
+      anular: false,
+      reemplazarAdjunto: false,
+      quitarAdjunto: false,
+    })
+  })
+
+  it('un efectivo sin adjunto: `adjunto: null`, sólo anular', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    expect(await service.obtenerDetalle(pagoId, actor)).toMatchObject({
+      adjunto: null,
+      acciones: { anular: true, reemplazarAdjunto: false, quitarAdjunto: false },
+    })
+  })
+
+  it('inexistente → 404 sin leer el adjunto', async () => {
+    expect(await errorDe(service.obtenerDetalle(99, gerente))).toBeInstanceOf(NotFoundError)
+    expect(memoria.repository.buscarAdjunto).not.toHaveBeenCalled()
+  })
+})
+
+describe('comprobanteParaDocumento', () => {
+  it('la mesa y el gerente: el comprobante con el vuelto, sin leer el adjunto', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    for (const quien of [actor, gerente]) {
+      expect(await service.comprobanteParaDocumento(pagoId, quien)).toMatchObject({
+        id: pagoId,
+        vuelto: 42000,
+      })
+    }
+    expect(memoria.repository.buscarAdjunto).not.toHaveBeenCalled()
+  })
+
+  it('el alumno, un pago suyo: el mismo documento', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    expect(await service.comprobanteParaDocumento(pagoId, alumno)).toMatchObject({
+      id: pagoId,
+      alumno: { id: 12 },
+    })
+  })
+
+  it('el alumno, un pago de otro alumno → 403 SIN_PERMISO', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    const error = await errorDe(service.comprobanteParaDocumento(pagoId, otroAlumno))
+
+    expect(error).toBeInstanceOf(ForbiddenError)
+    expect(error.code).toBe('SIN_PERMISO')
+  })
+
+  it('el alumno, un pago inexistente → 404 (antes que el 403 de propiedad)', async () => {
+    expect(await errorDe(service.comprobanteParaDocumento(99, otroAlumno))).toBeInstanceOf(
+      NotFoundError,
+    )
+  })
+
+  it('una cuenta ALUMNO sin alumno → 403, sin buscar el pago', async () => {
+    const sinAlumno: Actor = { userId: 'usr_x', role: 'ALUMNO' }
+
+    expect(await errorDe(service.comprobanteParaDocumento(99, sinAlumno))).toBeInstanceOf(
+      ForbiddenError,
+    )
+    expect(memoria.repository.buscarComprobante).not.toHaveBeenCalled()
+  })
+})
+
+describe('listar (pagos realizados)', () => {
+  it('pasa el filtro y la paginación por separado; `cobrado` es la suma de las formas, en centavos', async () => {
+    memoria.repository.listarRealizados.mockResolvedValue({
+      data: [],
+      meta: { page: 2, pageSize: 5, total: 7, totalPages: 2 },
+      porForma: { EFECTIVO: 0.1, TRANSFERENCIA: 0.2, DEBITO: 10000 },
+    })
+
+    const res = await service.listar({
+      desde: '2026-10-01',
+      hasta: '2026-10-31',
+      alumnoId: 12,
+      materiaId: 2,
+      profesorId: 3,
+      formaPago: 'EFECTIVO',
+      page: 2,
+      pageSize: 5,
+    })
+
+    expect(memoria.repository.listarRealizados).toHaveBeenCalledExactlyOnceWith(
+      {
+        desde: '2026-10-01',
+        hasta: '2026-10-31',
+        alumnoId: 12,
+        materiaId: 2,
+        profesorId: 3,
+        formaPago: 'EFECTIVO',
+      },
+      { page: 2, pageSize: 5 },
+    )
+    expect(res).toEqual({
+      data: [],
+      meta: { page: 2, pageSize: 5, total: 7, totalPages: 2 },
+      totales: {
+        cobrado: 10000.3,
+        porForma: { EFECTIVO: 0.1, TRANSFERENCIA: 0.2, DEBITO: 10000 },
+      },
+    })
+  })
+})
+
+describe('misPagos', () => {
+  const pagina = { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } }
+
+  it('lee los pagos del alumno de la sesión', async () => {
+    memoria.repository.listarDelAlumno.mockResolvedValue(pagina)
+
+    expect(await service.misPagos({ page: 1, pageSize: 10 }, alumno)).toEqual(pagina)
+    expect(memoria.repository.listarDelAlumno).toHaveBeenCalledExactlyOnceWith(12, {
+      page: 1,
+      pageSize: 10,
+    })
+  })
+
+  it.each([
+    ['una cuenta ALUMNO sin alumno', { userId: 'usr_x', role: 'ALUMNO' } as Actor],
+    ['la mesa de entradas', actor],
+  ])('%s → 403, sin leer', async (_caso, quien) => {
+    expect(await errorDe(service.misPagos({ page: 1, pageSize: 10 }, quien))).toBeInstanceOf(
+      ForbiddenError,
+    )
+    expect(memoria.repository.listarDelAlumno).not.toHaveBeenCalled()
   })
 })

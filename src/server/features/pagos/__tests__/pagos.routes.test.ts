@@ -9,7 +9,14 @@ import { pagosRoutes } from '../pagos.routes'
 // service y en `pagos.reglas`.
 
 const { repository, alumnosRepository, getSession } = vi.hoisted(() => ({
-  repository: { leerSnapshot: vi.fn(), registrar: vi.fn(), buscarComprobante: vi.fn() },
+  repository: {
+    leerSnapshot: vi.fn(),
+    registrar: vi.fn(),
+    buscarComprobante: vi.fn(),
+    listarRealizados: vi.fn(),
+    listarDelAlumno: vi.fn(),
+    buscarAdjunto: vi.fn(),
+  },
   alumnosRepository: { buscarPorId: vi.fn() },
   getSession: vi.fn(),
 }))
@@ -69,14 +76,58 @@ const comprobante = {
   registradoEl: '2026-10-05T15:00:00.000Z',
 }
 
-function sesion(role = 'MESA_ENTRADAS') {
+function sesion(role = 'MESA_ENTRADAS', alumnoId?: number) {
   return {
     headers: new Headers(),
     response: {
-      user: { id: 'usr_mesa', role, estado: 'ACTIVO', name: 'Laura', apellido: 'Gómez' },
+      user: {
+        id: 'usr_mesa',
+        role,
+        estado: 'ACTIVO',
+        name: 'Laura',
+        apellido: 'Gómez',
+        ...(alumnoId !== undefined ? { alumnoId } : {}),
+      },
       session: { id: 's-1' },
     },
   }
+}
+
+/** Una página de pagos realizados con un vigente y un anulado, como la arma el repository. */
+const realizados = {
+  data: [
+    {
+      id: 33,
+      numeroComprobante: 1026,
+      fechaPago: HOY,
+      alumno: { id: 12, nombre: 'Lucía', apellido: 'Álvarez' },
+      materias: [{ id: 2, nombre: 'Matemática' }],
+      cantidad: 2,
+      total: 16000,
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      registradoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      estado: 'VIGENTE',
+      anulacion: null,
+    },
+  ],
+  meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
+  porForma: { EFECTIVO: 0, TRANSFERENCIA: 16000, DEBITO: 0 },
+}
+
+const misPagos = {
+  data: [
+    {
+      id: 33,
+      numeroComprobante: 1026,
+      fechaPago: HOY,
+      materias: [{ id: 2, nombre: 'Matemática' }],
+      cantidad: 2,
+      total: 16000,
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      estado: 'VIGENTE',
+    },
+  ],
+  meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
 }
 
 function pedir(path: string, metodo = 'GET', datos?: unknown) {
@@ -110,11 +161,16 @@ beforeEach(() => {
     plan: verificar(await repository.leerSnapshot()),
   }))
   repository.buscarComprobante.mockResolvedValue(comprobante)
+  repository.buscarAdjunto.mockResolvedValue(null)
+  repository.listarRealizados.mockResolvedValue(realizados)
+  repository.listarDelAlumno.mockResolvedValue(misPagos)
 })
 
 describe('auth', () => {
   it.each([
     ['POST', ''],
+    ['GET', `?desde=${HOY}&hasta=${HOY}`],
+    ['GET', '/mis-pagos'],
     ['GET', '/31'],
     ['GET', '/31/pdf'],
   ])('%s %s sin sesión → 401', async (metodo, path) => {
@@ -124,15 +180,167 @@ describe('auth', () => {
     expect((await res.json()).error.code).toBe('NO_AUTENTICADO')
   })
 
-  it.each(['PROFESOR', 'GERENTE', 'ALUMNO'])('POST y GET con %s → 403', async (role) => {
-    getSession.mockResolvedValue(sesion(role))
+  it('PROFESOR → 403 en todos', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR'))
+    for (const path of [`?desde=${HOY}&hasta=${HOY}`, '/mis-pagos', '/31', '/31/pdf']) {
+      const res = await pedir(path)
+      expect(res.status).toBe(403)
+      expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    }
     expect((await pedir('', 'POST', body)).status).toBe(403)
-    expect((await pedir('/31')).status).toBe(403)
-    const pdf = await pedir('/31/pdf')
-    expect(pdf.status).toBe(403)
-    expect((await pdf.json()).error.code).toBe('SIN_PERMISO')
-    expect(repository.registrar).not.toHaveBeenCalled()
     expect(repository.buscarComprobante).not.toHaveBeenCalled()
+  })
+
+  it('GERENTE: ve los pagos realizados, el detalle y el PDF, pero no registra ni ve "Mis pagos"', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE'))
+
+    expect((await pedir(`?desde=${HOY}&hasta=${HOY}`)).status).toBe(200)
+    const detalle = await pedir('/31')
+    expect(detalle.status).toBe(200)
+    expect((await detalle.json()).acciones).toEqual({
+      anular: false,
+      reemplazarAdjunto: false,
+      quitarAdjunto: false,
+    })
+    expect((await pedir('/31/pdf')).status).toBe(200)
+
+    const post = await pedir('', 'POST', body)
+    expect(post.status).toBe(403)
+    expect((await post.json()).error.code).toBe('SIN_PERMISO')
+    expect(repository.registrar).not.toHaveBeenCalled()
+    expect((await pedir('/mis-pagos')).status).toBe(403)
+  }, 30_000)
+
+  it('ALUMNO: no ve los pagos realizados, el detalle ni registra', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 12))
+
+    for (const path of [`?desde=${HOY}&hasta=${HOY}`, '/31']) {
+      const res = await pedir(path)
+      expect(res.status).toBe(403)
+      expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    }
+    expect((await pedir('', 'POST', body)).status).toBe(403)
+    expect(repository.listarRealizados).not.toHaveBeenCalled()
+    expect(repository.buscarComprobante).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /pagos (pagos realizados)', () => {
+  const RANGO = '?desde=2026-10-01&hasta=2026-10-31'
+
+  it('200 con la página y los totales del filtro, junto a `data` y `meta`', async () => {
+    const res = await pedir(
+      `${RANGO}&alumnoId=12&materiaId=2&profesorId=3&formaPago=TRANSFERENCIA&page=2&pageSize=5`,
+    )
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      data: realizados.data,
+      meta: realizados.meta,
+      totales: { cobrado: 16000, porForma: { EFECTIVO: 0, TRANSFERENCIA: 16000, DEBITO: 0 } },
+    })
+    expect(repository.listarRealizados).toHaveBeenCalledExactlyOnceWith(
+      {
+        desde: '2026-10-01',
+        hasta: '2026-10-31',
+        alumnoId: 12,
+        materiaId: 2,
+        profesorId: 3,
+        formaPago: 'TRANSFERENCIA',
+      },
+      { page: 2, pageSize: 5 },
+    )
+  })
+
+  it.each([
+    ['sin desde', '?hasta=2026-10-31', 'desde'],
+    ['sin hasta', '?desde=2026-10-01', 'hasta'],
+  ])('%s → 400 VALIDACION en ese campo', async (_caso, query, campo) => {
+    const res = await pedir(query)
+
+    expect(res.status).toBe(400)
+    const { error } = await res.json()
+    expect(error.code).toBe('VALIDACION')
+    expect(error.details).toEqual([expect.objectContaining({ path: [campo] })])
+    expect(repository.listarRealizados).not.toHaveBeenCalled()
+  })
+
+  it('hasta anterior a desde → 400 VALIDACION en `hasta`, con el mensaje de Cuentas', async () => {
+    const res = await pedir('?desde=2026-10-31&hasta=2026-10-01')
+
+    expect(res.status).toBe(400)
+    const { error } = await res.json()
+    expect(error.code).toBe('VALIDACION')
+    expect(error.details).toEqual([
+      expect.objectContaining({
+        path: ['hasta'],
+        message: 'La fecha hasta no puede ser anterior a la fecha desde',
+      }),
+    ])
+    expect(repository.listarRealizados).not.toHaveBeenCalled()
+  })
+
+  it('el mismo día como desde y hasta es válido', async () => {
+    expect((await pedir('?desde=2026-10-01&hasta=2026-10-01')).status).toBe(200)
+  })
+
+  it.each([
+    ['alumnoId=0', 'alumnoId'],
+    ['materiaId=abc', 'materiaId'],
+    ['profesorId=1.5', 'profesorId'],
+    ['formaPago=CHEQUE', 'formaPago'],
+    ['formaPago=Efectivo', 'formaPago'],
+  ])('%s → 400 en `%s`', async (filtro, campo) => {
+    const res = await pedir(`${RANGO}&${filtro}`)
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.details).toEqual([expect.objectContaining({ path: [campo] })])
+  })
+})
+
+describe('GET /pagos/mis-pagos', () => {
+  it('200 con los pagos del alumno de la sesión; no cae en `/{id}`', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 12))
+
+    const res = await pedir('/mis-pagos?page=1&pageSize=10')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual(misPagos)
+    expect(repository.listarDelAlumno).toHaveBeenCalledExactlyOnceWith(12, {
+      page: 1,
+      pageSize: 10,
+    })
+    expect(repository.buscarComprobante).not.toHaveBeenCalled()
+  })
+
+  it('la respuesta no trae quién lo registró, el adjunto, el alumno, observaciones ni la anulación', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 12))
+
+    const { data } = await (await pedir('/mis-pagos')).json()
+
+    expect(Object.keys(data[0]).sort()).toEqual([
+      'cantidad',
+      'estado',
+      'fechaPago',
+      'formaPago',
+      'id',
+      'materias',
+      'numeroComprobante',
+      'total',
+    ])
+  })
+
+  it('no acepta un alumnoId: el alumno sale de la sesión', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 12))
+
+    await pedir('/mis-pagos?alumnoId=99')
+
+    expect(repository.listarDelAlumno).toHaveBeenCalledWith(12, expect.anything())
+  })
+
+  it('la mesa de entradas → 403', async () => {
+    expect((await pedir('/mis-pagos')).status).toBe(403)
+    expect(repository.listarDelAlumno).not.toHaveBeenCalled()
   })
 })
 
@@ -375,12 +583,42 @@ describe('POST /pagos', () => {
 })
 
 describe('GET /pagos/{id}', () => {
-  it('200 con el comprobante y el vuelto recalculado', async () => {
+  it('200 con el comprobante, el vuelto recalculado, la cantidad, el adjunto y las acciones', async () => {
     const res = await pedir('/31')
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual({ ...comprobante, vuelto: 2000 })
+    expect(await res.json()).toEqual({
+      ...comprobante,
+      vuelto: 2000,
+      cantidad: 0,
+      adjunto: null,
+      acciones: { anular: true, reemplazarAdjunto: false, quitarAdjunto: false },
+    })
     expect(repository.buscarComprobante).toHaveBeenCalledWith(31)
+    expect(repository.buscarAdjunto).toHaveBeenCalledWith(31)
+  })
+
+  it('el adjunto sin clave ni URL', async () => {
+    const adjunto = {
+      id: 18,
+      nombre: 'cupon.pdf',
+      tipo: 'application/pdf',
+      bytes: 1024,
+      adjuntadoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      adjuntadoEl: '2026-10-05T14:28:00.000Z',
+    }
+    repository.buscarComprobante.mockResolvedValue({
+      ...comprobante,
+      montoRecibido: null,
+      formaPago: { codigo: 'DEBITO', nombre: 'Tarjeta de débito' },
+      debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: null },
+    })
+    repository.buscarAdjunto.mockResolvedValue(adjunto)
+
+    const detalle = await (await pedir('/31')).json()
+
+    expect(detalle.adjunto).toEqual(adjunto)
+    expect(detalle.acciones).toEqual({ anular: true, reemplazarAdjunto: true, quitarAdjunto: true })
   })
 
   it('inexistente → 404 NO_ENCONTRADO', async () => {
@@ -411,8 +649,35 @@ describe('GET /pagos/{id}/pdf', { timeout: 30_000 }, () => {
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(contarPaginas(pdf)).toBe(1)
     expect(metadato(pdf, 'Title')).toBe('Comprobante de pago N° 1024')
-    // Los mismos datos que `GET /pagos/{id}`: una sola lectura, sin consultas nuevas.
+    // Los mismos datos que `GET /pagos/{id}`: una sola lectura, sin el adjunto.
     expect(repository.buscarComprobante).toHaveBeenCalledExactlyOnceWith(31)
+    expect(repository.buscarAdjunto).not.toHaveBeenCalled()
+  })
+
+  it('ALUMNO, un pago suyo → 200 con el mismo documento', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 12))
+
+    const res = await pedir('/31/pdf')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/pdf')
+  })
+
+  it('ALUMNO, un pago de otro alumno → 403 SIN_PERMISO, en JSON', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 99))
+
+    const res = await pedir('/31/pdf')
+
+    expect(res.status).toBe(403)
+    expect(res.headers.get('content-type')).toContain('application/json')
+    expect((await res.json()).error.code).toBe('SIN_PERMISO')
+  })
+
+  it('ALUMNO, un pago inexistente → 404', async () => {
+    getSession.mockResolvedValue(sesion('ALUMNO', 12))
+    repository.buscarComprobante.mockResolvedValue(null)
+
+    expect((await pedir('/99/pdf')).status).toBe(404)
   })
 
   it('inexistente → 404 NO_ENCONTRADO, en JSON', async () => {
@@ -448,6 +713,15 @@ describe('OpenAPI', () => {
       '404',
       '409',
     ])
+    expect(Object.keys(doc.paths?.['/api/v1/pagos']?.get?.responses ?? {}).sort()).toEqual([
+      '200',
+      '400',
+      '401',
+      '403',
+    ])
+    expect(
+      Object.keys(doc.paths?.['/api/v1/pagos/mis-pagos']?.get?.responses ?? {}).sort(),
+    ).toEqual(['200', '400', '401', '403'])
     expect(Object.keys(doc.paths?.['/api/v1/pagos/{id}']?.get?.responses ?? {}).sort()).toEqual([
       '200',
       '400',
