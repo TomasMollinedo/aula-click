@@ -99,6 +99,18 @@ enum ResultadoExamen {
   AUSENTE
 }
 
+// Liquidación cerrada (HU-44). Las abiertas no tienen fila: sus estados (EN_CURSO,
+// PENDIENTE_DE_PAGO, SALDO_A_DESCONTAR) los calcula la API al leer.
+enum EstadoLiquidacion {
+  PAGADA
+  DESCONTADA
+}
+
+enum TipoAjusteLiquidacion {
+  ANULACION
+  SALDO_ANTERIOR
+}
+
 // ---------- Usuarios y roles ----------
 
 // Catálogo que carga el seed. Sin auditoría.
@@ -190,6 +202,8 @@ model Usuario {
   anulacionesPagoCreadas           AnulacionPago[]           @relation("AnulacionPagoCreador")
   notasExamenCreadas               Examen[]                  @relation("ExamenNotaCreador")
   notasExamenModificadas           Examen[]                  @relation("ExamenNotaModificador")
+  porcentajesCentroCreados         PorcentajeCentro[]        @relation("PorcentajeCentroCreador")
+  liquidacionesCreadas             Liquidacion[]             @relation("LiquidacionCreador")
 
   @@index([apellido])
   @@index([busqueda])
@@ -280,8 +294,9 @@ model Profesor {
 
   usuario Usuario @relation(fields: [usuarioId], references: [id], onDelete: Restrict)
 
-  asignaciones AsignacionMateria[]
-  bloques      BloqueAgenda[]
+  asignaciones  AsignacionMateria[]
+  bloques       BloqueAgenda[]
+  liquidaciones Liquidacion[]
 
   @@map("profesor")
 }
@@ -734,16 +749,23 @@ model Pago {
 // varios pagos anulados y un solo pago vigente, sin índice parcial (decisión T-50). Reemplaza al
 // único simple (turnoId, fechaOcurrencia) que anticipaba la decisión T-49. Es la red contra el pago
 // doble. vigente nunca es false.
+//
+// porcentajeCentro (HU-43): snapshot del porcentaje del centro vigente al registrarse el pago;
+// cambiar el porcentaje no toca cobros anteriores. Las partes del centro y del profesor no se
+// guardan: salen siempre de importeAplicado y este porcentaje, con una sola regla (T-120).
 model PagoTurno {
-  id              Int      @id @default(autoincrement())
-  pagoId          Int      @map("pago_id")
-  turnoId         Int      @map("turno_id")
-  fechaOcurrencia DateTime @map("fecha_ocurrencia") @db.Date
-  importeAplicado Decimal  @map("importe_aplicado") @db.Decimal(10, 2)
-  vigente         Boolean? @default(true)
+  id               Int      @id @default(autoincrement())
+  pagoId           Int      @map("pago_id")
+  turnoId          Int      @map("turno_id")
+  fechaOcurrencia  DateTime @map("fecha_ocurrencia") @db.Date
+  importeAplicado  Decimal  @map("importe_aplicado") @db.Decimal(10, 2)
+  porcentajeCentro Decimal  @map("porcentaje_centro") @db.Decimal(5, 2)
+  vigente          Boolean? @default(true)
 
   pago  Pago  @relation(fields: [pagoId], references: [id], onDelete: Restrict)
   turno Turno @relation(fields: [turnoId], references: [id], onDelete: Restrict)
+
+  liquidacionTurno LiquidacionTurno?
 
   @@unique([turnoId, fechaOcurrencia, vigente])
   @@index([pagoId])
@@ -758,9 +780,13 @@ model PagoTurno {
 // desempate) y los anteriores quedan guardados (reemplazo). Quitar el adjunto de un pago con débito
 // es una baja lógica: pasa a INACTIVO con quién y cuándo (updatedById, updatedAt), sin borrar la
 // fila ni el archivo.
+//
+// También es el comprobante de la transferencia a un profesor (HU-44): un adjunto es de un pago
+// (pagoId) o de una liquidación (liquidacionId), nunca de los dos; lo valida la API (T-123).
 model ComprobanteAdjunto {
   id            Int    @id @default(autoincrement())
   pagoId        Int?   @map("pago_id")
+  liquidacionId Int?   @map("liquidacion_id")
   archivoKey    String @map("archivo_key")
   mimeType      String @map("mime_type")
   nombreArchivo String @map("nombre_archivo")
@@ -772,11 +798,13 @@ model ComprobanteAdjunto {
   createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
   updatedAt   DateTime @updatedAt @map("fecha_hora_modificacion")
 
-  pago      Pago?   @relation(fields: [pagoId], references: [id], onDelete: Restrict)
-  createdBy Usuario @relation("ComprobanteAdjuntoCreador", fields: [createdById], references: [id], onDelete: Restrict)
-  updatedBy Usuario @relation("ComprobanteAdjuntoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
+  pago        Pago?        @relation(fields: [pagoId], references: [id], onDelete: Restrict)
+  liquidacion Liquidacion? @relation(fields: [liquidacionId], references: [id], onDelete: Restrict)
+  createdBy   Usuario      @relation("ComprobanteAdjuntoCreador", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedBy   Usuario      @relation("ComprobanteAdjuntoModificador", fields: [updatedById], references: [id], onDelete: Restrict)
 
   @@index([pagoId])
+  @@index([liquidacionId])
   @@index([createdById])
   @@index([updatedById])
   @@map("comprobante_adjunto")
@@ -798,4 +826,111 @@ model AnulacionPago {
 
   @@index([createdById])
   @@map("anulacion_pago")
+}
+
+// ---------- Reparto y liquidaciones ----------
+
+// Porcentaje del centro (HU-43) como historial: cada cambio es una fila nueva y nada se pisa. El
+// vigente es el último (createdAt, con id como desempate); createdAt dice desde cuándo rige y
+// createdById quién lo cambió. Sin updated* ni estado: no se edita. porcentaje >= 0 y < 100 lo
+// valida la API (el CHECK en la base queda pendiente, decisión T-50).
+model PorcentajeCentro {
+  id         Int     @id @default(autoincrement())
+  porcentaje Decimal @db.Decimal(5, 2)
+
+  createdById String   @map("usuario_creador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+
+  createdBy Usuario @relation("PorcentajeCentroCreador", fields: [createdById], references: [id], onDelete: Restrict)
+
+  @@index([createdAt])
+  @@index([createdById])
+  @@map("porcentaje_centro")
+}
+
+// Liquidación CERRADA de un profesor en un mes (HU-44). Una liquidación abierta no tiene fila: la
+// calcula la API al leer (T-121). Al registrar el pago se guarda con sus turnos, ajustes e importes
+// congelados, que ya no se recalculan. mes es el día 1 del mes; un mes se cierra una sola vez.
+//
+// PAGADA: con los datos de la transferencia (obligatorios en la API, opcionales en la base).
+// DESCONTADA: cerrada sin pago porque su saldo (0 o negativo) lo absorbió otra liquidación,
+// descontadaEn. createdById y createdAt: quién registró el pago y cuándo. Sin updated*: no se edita.
+model Liquidacion {
+  id                 Int               @id @default(autoincrement())
+  profesorId         Int               @map("profesor_id")
+  mes                DateTime          @db.Date
+  estado             EstadoLiquidacion
+  totalCobrado       Decimal           @map("total_cobrado") @db.Decimal(10, 2)
+  parteCentro        Decimal           @map("parte_centro") @db.Decimal(10, 2)
+  parteProfesor      Decimal           @map("parte_profesor") @db.Decimal(10, 2)
+  totalAjustes       Decimal           @map("total_ajustes") @db.Decimal(10, 2)
+  total              Decimal           @db.Decimal(10, 2)
+  fechaTransferencia DateTime?         @map("fecha_transferencia") @db.Date
+  numeroOperacion    String?           @map("numero_operacion") @db.VarChar(50)
+  observaciones      String?           @db.VarChar(500)
+  descontadaEnId     Int?              @map("descontada_en_id")
+
+  createdById String   @map("usuario_creador_id")
+  createdAt   DateTime @default(now()) @map("fecha_hora_creacion")
+
+  profesor     Profesor     @relation(fields: [profesorId], references: [id], onDelete: Restrict)
+  descontadaEn Liquidacion? @relation("LiquidacionDescontadaEn", fields: [descontadaEnId], references: [id], onDelete: Restrict)
+  createdBy    Usuario      @relation("LiquidacionCreador", fields: [createdById], references: [id], onDelete: Restrict)
+
+  // Las DESCONTADA cuyo saldo absorbió esta.
+  descontadas          Liquidacion[]        @relation("LiquidacionDescontadaEn")
+  turnos               LiquidacionTurno[]
+  // Los ajustes aplicados en esta liquidación.
+  ajustesAplicados     AjusteLiquidacion[]  @relation("AjusteLiquidacionAplicado")
+  // En una DESCONTADA: el ajuste SALDO_ANTERIOR que absorbió su saldo.
+  ajusteDeSaldo        AjusteLiquidacion?   @relation("AjusteLiquidacionOrigen")
+  comprobantesAdjuntos ComprobanteAdjunto[]
+
+  // El único (profesor_id, mes) cubre también las búsquedas por profesor_id.
+  @@unique([profesorId, mes])
+  // Caja y tablero filtran por fecha de la transferencia.
+  @@index([fechaTransferencia])
+  @@index([descontadaEnId])
+  @@index([createdById])
+  @@map("liquidacion")
+}
+
+// Turno de una liquidación cerrada, con lo que se liquidó congelado. pagoTurnoId es único: un cobro
+// de un turno se liquida una sola vez (la red contra la liquidación doble).
+model LiquidacionTurno {
+  id               Int      @id @default(autoincrement())
+  liquidacionId    Int      @map("liquidacion_id")
+  pagoTurnoId      Int      @unique @map("pago_turno_id")
+  fechaDevengo     DateTime @map("fecha_devengo") @db.Date
+  importe          Decimal  @db.Decimal(10, 2)
+  porcentajeCentro Decimal  @map("porcentaje_centro") @db.Decimal(5, 2)
+  parteProfesor    Decimal  @map("parte_profesor") @db.Decimal(10, 2)
+
+  liquidacion Liquidacion @relation(fields: [liquidacionId], references: [id], onDelete: Restrict)
+  pagoTurno   PagoTurno   @relation(fields: [pagoTurnoId], references: [id], onDelete: Restrict)
+
+  ajuste AjusteLiquidacion?
+
+  @@index([liquidacionId])
+  @@map("liquidacion_turno")
+}
+
+// Ajuste aplicado en una liquidación cerrada (liquidacionId), con importe negativo o 0. Lleva una de
+// dos referencias, las dos únicas para que nada se descuente dos veces: liquidacionTurnoId
+// (ANULACION: el turno liquidado cuyo pago se anuló) o liquidacionOrigenId (SALDO_ANTERIOR: la
+// liquidación de saldo negativo que absorbió). Que haya exactamente una lo valida la API.
+model AjusteLiquidacion {
+  id                  Int                   @id @default(autoincrement())
+  liquidacionId       Int                   @map("liquidacion_id")
+  tipo                TipoAjusteLiquidacion
+  importe             Decimal               @db.Decimal(10, 2)
+  liquidacionTurnoId  Int?                  @unique @map("liquidacion_turno_id")
+  liquidacionOrigenId Int?                  @unique @map("liquidacion_origen_id")
+
+  liquidacion       Liquidacion       @relation("AjusteLiquidacionAplicado", fields: [liquidacionId], references: [id], onDelete: Restrict)
+  liquidacionTurno  LiquidacionTurno? @relation(fields: [liquidacionTurnoId], references: [id], onDelete: Restrict)
+  liquidacionOrigen Liquidacion?      @relation("AjusteLiquidacionOrigen", fields: [liquidacionOrigenId], references: [id], onDelete: Restrict)
+
+  @@index([liquidacionId])
+  @@map("ajuste_liquidacion")
 }

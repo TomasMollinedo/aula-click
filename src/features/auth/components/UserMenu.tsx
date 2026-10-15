@@ -1,10 +1,10 @@
 'use client'
 
 import { useQueryClient } from '@tanstack/react-query'
-import { LogOut, MoreHorizontal } from 'lucide-react'
+import { LogOut, MoreHorizontal, UserRound } from 'lucide-react'
 import { useRouter } from 'next/navigation'
 
-import { Avatar, AvatarFallback } from '@/components/ui/avatar'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,16 +13,24 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { authClient } from '@/features/auth/auth-client'
 import { rolLabel } from '@/features/auth/roles'
+import { useMiPerfil } from '@/features/alumnos/hooks/use-mi-perfil'
 import { getInitials } from '@/utils/initials'
 
 export function UserMenu() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { data: session } = authClient.useSession()
+  // El alumno ve su nombre y su foto (o un avatar genérico) de `GET /alumnos/mi-perfil` (HU-28);
+  // los demás roles, como siempre: el nombre de la sesión y sus iniciales.
+  const esAlumno = session?.user.role === 'ALUMNO'
+  const { data: perfil } = useMiPerfil({ habilitado: esAlumno })
 
   if (!session) return null
 
-  const nombre = [session.user.name, session.user.apellido].filter(Boolean).join(' ')
+  const nombre =
+    esAlumno && perfil
+      ? `${perfil.nombre} ${perfil.apellido}`
+      : [session.user.name, session.user.apellido].filter(Boolean).join(' ')
   const iniciales = getInitials(session.user.name, session.user.apellido)
 
   const cerrarSesion = async () => {
@@ -45,8 +53,9 @@ export function UserMenu() {
           className="flex w-full items-center gap-2 rounded-lg text-left transition-colors hover:bg-white/10"
         >
           <Avatar className="size-9 shrink-0">
+            {esAlumno && perfil?.fotoUrl && <AvatarImage src={perfil.fotoUrl} alt="" />}
             <AvatarFallback className="bg-luminoso text-cobalto text-xs font-semibold">
-              {iniciales}
+              {esAlumno ? <UserRound aria-hidden className="size-4" /> : iniciales}
             </AvatarFallback>
           </Avatar>
           <div className="sidebar-abierto:opacity-100 min-w-0 flex-1 opacity-0 transition-opacity duration-300">

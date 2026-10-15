@@ -1,10 +1,10 @@
-# Sprint 3 — Tareas (HU-22 a HU-37, HU-39 y HU-42)
+# Sprint 3 — Tareas (HU-22 a HU-37, HU-39, HU-42 y HU-43 a HU-47)
 
 Repositorio: `aula-click` · Sprint: Iteración 3 · Estado inicial de todas las tareas: **Todo**
 
 Estas tareas siguen `AGENTS.md` y `docs/`, y parten del estado de `testing` al cerrar el Sprint 2 (incluidos los FIX T-66 a T-71 y los documentos PDF del backend, decisión T-122). Si una tarea y un doc se contradicen, manda el doc y se avisa para corregir la tarea. Las HU salen de `docs/sprint-3/backlog-sprint3.md`.
 
-Numeración: continúa la del Sprint 2, cuyos últimos FIX llegaron a T-71: **43 tareas, de T-72 a T-114**. Las decisiones de `docs/decisiones.md` usan el mismo prefijo `T-` con otra numeración (la próxima libre es **T-131**): una "decisión T-xx" es una fila de ese archivo, no una tarea de este.
+Numeración: continúa la del Sprint 2, cuyos últimos FIX llegaron a T-71: **43 tareas, de T-72 a T-114**. Los FIX del sprint siguen desde T-115 (T-115 a T-117). La **ampliación del 15/10** (HU-43 a HU-47, ver "Ampliación del 15/10") suma **19 tareas, de T-118 a T-136**; los FIX que vengan después siguen desde T-137. Las decisiones de `docs/decisiones.md` usan el mismo prefijo `T-` con otra numeración (la próxima libre es **T-131**): una "decisión T-xx" es una fila de ese archivo, no una tarea de este.
 
 **Estimación:** puntos relativos entre las tareas de este sprint (1, 2, 3, 5, 8), para balancear los carriles. No son horas ni se comparan con los puntos de función de las HU.
 
@@ -1508,6 +1508,588 @@ Toca la validation de 16 features que tienen dueña en este sprint: avisar en su
 
 ---
 
+## Ampliación del 15/10: HU-43 a HU-47 (reparto, liquidaciones, caja y finanzas)
+
+Pedido de los clientes durante el sprint (decisiones de PO del 15/10, `backlog-sprint3.md`): el profesor cobra un **porcentaje** de lo que pagan sus alumnos, el gerente le liquida **por mes** y ve la **caja diaria** y el **margen del centro**. Son **19 tareas, de T-118 a T-136**, con las mismas reglas del resto del sprint (tareas aisladas, reuso primero, Definición de Hecho). La base de datos se resetea con la migración de T-118: no hay datos anteriores que completar.
+
+### Lectura de la ampliación
+
+- **Todo sale de lo que ya se registra.** Nadie carga un importe a mano: el reparto sale del porcentaje que guarda cada cobro (HU-43), lo que se le debe al profesor sale de los pagos y las asistencias (HU-44), y la caja y el tablero leen lo mismo. Lo único nuevo que se escribe es el porcentaje del centro y el pago de una liquidación.
+- **Una sola regla, un solo lugar.** El reparto de un turno (`repartoDeTurno`, T-120) y qué se le debe a un profesor y en qué mes (el motor de liquidaciones, T-121) se calculan una vez y lo leen liquidaciones, "Mis ingresos", la caja y el tablero. Es lo que garantiza el criterio de HU-45: "lo que ve el profesor coincide con lo que ve el gerente". T-136 lo verifica cruzando los números.
+- **Cadena crítica:** T-118 → T-121 (el motor), del que cuelgan HU-44, HU-45 y HU-47. Se toma el día 1 y las tareas que lo consumen arrancan contra las firmas de su alcance, con el motor mockeado.
+- **Dependencias con tareas del sprint que todavía no se mergearon:** T-122 espera a T-98 (dueña de `pagos/**`), T-128 a T-112 y T-135 a T-113 (dueñas de `tablero/**`), y el reparto en el detalle del pago (T-130) a T-99. El resto no depende de nada pendiente.
+
+### Vocabulario de la ampliación
+
+- **Porcentaje del centro:** lo que el centro retiene de cada turno cobrado. Uno solo para todo el centro; el vigente es el último registrado en `PorcentajeCentro` (historial: cada cambio es una fila, nada se pisa). Valor inicial: 15 %.
+- **Reparto de un turno cobrado:** cada `PagoTurno` guarda el `porcentajeCentro` vigente al registrarse el pago. **Parte del centro** = importe × porcentaje, redondeada a centavos (mitad hacia arriba, **en centavos enteros**, nunca con `number` flotante: `convenciones-backend.md` → Importes). **Parte del profesor** = importe − parte del centro. Las partes no se guardan: las calcula `repartoDeTurno` y dan siempre lo mismo.
+- **Turno que se le debe al profesor (devengado):** un `PagoTurno` **vigente** de una ocurrencia que tiene asistencia `PRESENTE` o `AUSENTE`. Le corresponde la parte del profesor de ese cobro.
+  - **Fecha de devengo:** la más tardía entre el **registro** del pago (`Pago.createdAt`) y el **registro** de la asistencia (`AsistenciaTurno.createdAt`), llevada a la fecha de Salta. Se usa el registro y no `Pago.fechaPago` porque la fecha de pago se puede cargar hacia atrás: así un turno nunca cae en un mes que ya se liquidó. Corregir la asistencia (de "Presente" a "Ausente") no cambia la fecha.
+  - **Profesor:** el del bloque del turno al leerlo. Como un turno con asistencia ya no se reprograma (T-83), el profesor no cambia después del devengo; si se reprogramó antes con otro profesor, le corresponde al nuevo (HU-43).
+  - **Cerrado sin registrar:** un turno cobrado cuyo plazo de asistencia venció sin registro (`SIN_REGISTRAR` vencido, T-74) **no se devenga**: el importe completo queda para el centro. No genera ninguna fila: se calcula al leer.
+- **Liquidación de un profesor en un mes:**
+  - **Turnos:** los devengados con fecha de devengo dentro del mes que no están en una liquidación cerrada.
+  - **Ajuste por anulación:** un turno de una liquidación **cerrada** cuyo pago se anuló después (su `PagoTurno` ya no está vigente) descuenta su parte del profesor, **la que quedó guardada en la liquidación**. Va a la **primera liquidación sin cerrar del profesor posterior a la que incluyó el turno** (decisión de PO del 15/10); si no hay ninguna con movimientos, a la del mes en curso. Se agrupa por comprobante: "Ajuste por anulación del comprobante N.º 123 (2 turnos)".
+  - **Saldo anterior:** si la liquidación de un mes terminado da 0 o menos, no se paga ("Saldo a descontar el mes próximo") y entra entera, como un ajuste, en la del mes siguiente: "Saldo de la liquidación de octubre de 2026". Puede encadenarse.
+  - **Total a pagar** = parte del profesor de los turnos + ajustes.
+  - **Estados:** `EN_CURSO` (el mes actual; se ve, no se paga), `PENDIENTE_DE_PAGO` (mes terminado, total mayor a 0), `SALDO_A_DESCONTAR` (mes terminado, total de 0 o menos), `PAGADA` y `DESCONTADA` (cerrada sin pago porque su saldo se descontó en la de otro mes). La UI: "En curso", "Pendiente de pago", "Saldo a descontar el mes próximo", "Pagada el 05/11" y "Descontada en la liquidación de noviembre".
+- **Liquidación abierta / cerrada:** mientras no se paga, una liquidación **no existe en la base**: se calcula al consultarla (si se anula un pago, su turno deja de figurar). Al registrar el pago se **cierra**: se guarda con sus turnos, ajustes e importes congelados (`Liquidacion`, `LiquidacionTurno`, `AjusteLiquidacion`), y en la misma transacción se cierran como `DESCONTADA` las de saldo negativo que absorbió.
+- **Mes:** `YYYY-MM` en la API (`mesISO`, T-119). "Último mes terminado" es el anterior al de `hoy()`.
+- **Movimiento de caja:** cobro (+, en su **fecha de pago**, con su hora de registro), anulación (−, en la **fecha en que se anuló**) y pago a un profesor (−, en la **fecha de la transferencia**). La caja no se guarda: se arma al consultar.
+
+### Orden y dependencias
+
+```
+Día 1 (en paralelo):
+  T-118 Modelo de datos + migración + seed ──┬──> T-120 Porcentaje del centro y repartoDeTurno (+ T-119) ──┬──> T-122 Cobros con porcentaje (+ T-98)
+                                             │                                                           ├──> T-127 Caja diaria API ──> T-134 Caja diaria UI (+ T-129)
+                                             │                                                           └──> T-130 Porcentaje UI (+ T-129; reparto del detalle: + T-122, T-99)
+                                             ├──> T-121 Motor de liquidaciones (+ T-119, firma de T-120)   [cadena crítica]
+                                             └──> T-123 Adjunto de la transferencia
+  T-119 Andamiaje back (routers vacíos, mesISO, fechaEnZona, secciones de docs)
+  T-129 Andamiaje front (menús, páginas, placeholders)
+
+Con T-121 mergeada:  T-124 Liquidaciones API (+ T-123) ──┬──> T-125 PDF de la liquidación (la plantilla puede empezar antes)
+                                                          ├──> T-126 Mis ingresos API ──> T-133 Mis ingresos UI (+ T-131)
+                                                          └──> T-131 Liquidaciones UI (+ T-129) ──> T-132 Registrar pago UI (+ T-78)
+                     T-128 Tablero "Finanzas" (+ T-112) ──> T-135 Pestaña "Finanzas" UI (+ T-113)
+Al final:            T-136 Verificación integrada del reparto (antes o junto con T-114)
+```
+
+- **T-118 y T-119 se mergean el día 1; T-120 y T-121, lo antes posible** (T-121 es la más grande de la ampliación: conviene que la tome alguien que conozca el motor de ocurrencias de T-74).
+- Las pantallas arrancan en paralelo con su API, contra el contrato escrito en cada tarea, como en el resto del sprint.
+- **Estimación de la ampliación:** 67 puntos (back 41, front 24, QA 2). El equipo reparte los carriles.
+
+### Mapa de archivos de la ampliación
+
+| Zona                                                                                                                                                                                                                                             | Tarea dueña                                       |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------- |
+| `prisma/schema.prisma`, `prisma/migrations/`, `prisma/seed*.ts`                                                                                                                                                                                  | T-118                                             |
+| `src/server/app.ts`, routers vacíos de `reparto`, `liquidaciones` y `caja`; `mesISO` en `shared/zod.ts` y `fechaEnZona` en `shared/fechas.ts` (+ tests)                                                                                          | T-119                                             |
+| `src/server/features/reparto/**`                                                                                                                                                                                                                 | T-120                                             |
+| `src/server/features/liquidaciones/liquidaciones.reglas.ts`, `liquidaciones.condiciones.ts` (+ tests)                                                                                                                                            | T-121                                             |
+| `src/server/features/liquidaciones/**` (salvo reglas, condiciones y PDF)                                                                                                                                                                         | T-124; después, T-126                             |
+| `liquidaciones.pdf.tsx`, `liquidaciones.documentos.ts`, `liquidaciones.formato.ts` y su ruta                                                                                                                                                     | T-125                                             |
+| `src/server/features/pagos/**`                                                                                                                                                                                                                   | T-122 (después de T-98)                           |
+| `src/server/features/adjuntos/**`                                                                                                                                                                                                                | T-123                                             |
+| `src/server/features/caja/**`                                                                                                                                                                                                                    | T-127                                             |
+| `src/server/features/tablero/**`                                                                                                                                                                                                                 | T-128 (después de T-112)                          |
+| `gerente-sidebar.tsx`, `profesor-sidebar.tsx`, `app/gerente/configuracion/**`, `app/gerente/liquidaciones/**`, `app/gerente/caja/**`, `app/profesor/ingresos/**`, placeholders de `features/reparto`, `features/liquidaciones` y `features/caja` | T-129 (después, cada placeholder pasa a su tarea) |
+| `src/features/reparto/**`                                                                                                                                                                                                                        | T-130                                             |
+| `src/features/liquidaciones/**` (salvo `RegistrarPagoLiquidacion*` y `MisIngresos*`)                                                                                                                                                             | T-131                                             |
+| `features/liquidaciones`: `RegistrarPagoLiquidacionDialog`, su schema, su api y su hook                                                                                                                                                          | T-132                                             |
+| `features/liquidaciones`: `MisIngresos*`, `api/mis-ingresos.api.ts` y sus hooks                                                                                                                                                                  | T-133                                             |
+| `src/features/caja/**`                                                                                                                                                                                                                           | T-134                                             |
+| `src/features/tablero/**`, `app/gerente/tablero/**`                                                                                                                                                                                              | T-135 (después de T-113)                          |
+
+---
+
+## T-118 · [Back] Modelo de datos del reparto y las liquidaciones: esquema, migración y seed
+
+- **HU:** Transversal (habilita HU-43, HU-44, HU-45, HU-46 y HU-47)
+- **Área:** Backend
+- **Rama:** `feat/modelo-datos-liquidaciones`
+- **Estimación:** 5
+- **Prioridad:** Bloqueante de la ampliación, se mergea el día 1
+
+**Descripción**
+Todo lo que la ampliación guarda, en **una sola migración generada por Prisma** (decisión T-50), para que ninguna otra tarea toque el modelo. Como la base se resetea, las columnas nuevas pueden ser obligatorias.
+
+**Alcance**
+
+1. **Porcentaje del centro (HU-43):** modelo `PorcentajeCentro` con `porcentaje` (`Decimal(5,2)`), `createdById` y `createdAt` (desde cuándo rige y quién lo cambió). Sin `updated*` ni estado: un cambio es una fila nueva y el vigente es el último (`createdAt`, `id` como desempate). Índice por `createdAt`. Que sea >= 0 y < 100 lo valida la API (el CHECK queda pendiente, como en la decisión T-50).
+2. **Snapshot en cada cobro (HU-43):** `PagoTurno.porcentajeCentro` (`Decimal(5,2)`, obligatorio), al lado de `importeAplicado`. Las partes **no** se guardan (ver Vocabulario de la ampliación).
+3. **Liquidación cerrada (HU-44):** modelo `Liquidacion`:
+   - `profesorId`, `mes` (`@db.Date`, el día 1 del mes) y `estado` (enum `EstadoLiquidacion`: `PAGADA`, `DESCONTADA`). `@@unique([profesorId, mes])`: un mes se cierra una sola vez.
+   - Importes congelados (`Decimal(10,2)`): `totalCobrado`, `parteCentro`, `parteProfesor`, `totalAjustes` y `total`.
+   - Datos de la transferencia, opcionales en la base (los exige la API sólo en `PAGADA`): `fechaTransferencia` (`@db.Date`), `numeroOperacion` (`VarChar(50)`) y `observaciones` (`VarChar(500)`).
+   - `descontadaEnId` (FK a `Liquidacion`, opcional): en una `DESCONTADA`, la liquidación que absorbió su saldo.
+   - `createdById` y `createdAt` (quién registró el pago y cuándo). Índices por `fechaTransferencia` (caja y tablero) y por `profesorId`.
+4. **`LiquidacionTurno`:** `liquidacionId`, `pagoTurnoId` (**único**: un cobro de un turno se liquida una sola vez; es la red contra la liquidación doble), y congelados `fechaDevengo` (`@db.Date`), `importe`, `porcentajeCentro` y `parteProfesor`.
+5. **`AjusteLiquidacion`:** `liquidacionId` (donde se aplicó), `tipo` (enum `TipoAjusteLiquidacion`: `ANULACION`, `SALDO_ANTERIOR`), `importe` (`Decimal(10,2)`, negativo o 0) y una de dos referencias, las dos **únicas** (la API valida que haya exactamente una): `liquidacionTurnoId` (el turno liquidado cuyo pago se anuló: se descuenta una sola vez) o `liquidacionOrigenId` (la liquidación de saldo negativo que se absorbió).
+6. **Comprobante de la transferencia (HU-44):** `ComprobanteAdjunto.liquidacionId` (`Int?`, FK a `Liquidacion`, índice). Un adjunto es de un pago **o** de una liquidación (lo valida la API, T-123). Reusa la tabla, el almacenamiento y las reglas de HU-24.
+7. Relaciones inversas de auditoría en `Usuario`. Comentarios del schema: el porcentaje como historial, el snapshot del cobro y por qué no se guardan las partes, que una liquidación abierta no tiene fila, la unicidad de `pagoTurnoId` y las dos referencias únicas del ajuste.
+8. **Seeds** (idempotentes). Todo pago que crean los seeds guarda su `porcentajeCentro`. Para la demo (con fechas relativas a hoy, como el resto del seed de demo):
+   - `PorcentajeCentro`: 12 % hace dos meses y 15 % desde el mes pasado, para que se vea el historial y cobros con porcentajes distintos.
+   - Para dos profesores: una liquidación del antepenúltimo mes `PAGADA` (con un comprobante adjunto de ejemplo, clave de prueba), la del mes pasado sin cerrar (queda "Pendiente de pago") y movimientos en el mes en curso.
+   - Un pago **anulado** que incluye un turno de la liquidación pagada (genera el ajuste) y un profesor cuyo ajuste deja una liquidación en "Saldo a descontar".
+   - Clases dadas sin cobrar, turnos cobrados sin asistencia dentro del plazo y uno cobrado y cerrado sin registrar (para "Mis ingresos" y el margen del centro).
+   - Cobros, una anulación y un pago a un profesor **en el día de hoy**, para la caja diaria.
+9. Documentación: `dominio.md` → Reparto y liquidaciones (modelo); `decisiones.md` (próximo ID libre, T-151 en adelante): el snapshot del porcentaje sin partes guardadas, la liquidación abierta calculada y la cerrada congelada, la unicidad de `pagoTurnoId` y el adjunto compartido entre pago y liquidación.
+10. La migración la genera y la aplica la persona con `pnpm db:migrate` sobre una base reseteada (`AGENTS.md`, regla 10), sin editar el SQL.
+
+**Criterios de aceptación**
+
+- Con la base vacía, migración y seed dejan las tablas nuevas y los datos de demo.
+- Un segundo `LiquidacionTurno` con el mismo `pagoTurnoId` falla en la base; un segundo `Liquidacion` para el mismo profesor y mes, también.
+- El seed sigue siendo idempotente. `pnpm db:generate` y `pnpm check` pasan.
+
+---
+
+## T-119 · [Back] Andamiaje de la ampliación: features nuevas, primitivas de mes y de fecha local, secciones de docs
+
+- **HU:** Transversal
+- **Área:** Backend
+- **Rama:** `feat/andamiaje-liquidaciones-api`
+- **Estimación:** 2
+- **Prioridad:** Bloqueante, se mergea el día 1 (es chica)
+
+**Alcance**
+
+1. `reparto.routes.ts`, `liquidaciones.routes.ts` y `caja.routes.ts` con `createRouter()` sin endpoints, registrados en `app.ts` (una línea cada uno).
+2. `shared/zod.ts`: `mesISO` (`YYYY-MM`, con mes de 01 a 12; mensaje "El mes debe tener el formato AAAA-MM") y sus helpers `primerDiaDelMes(mes)`, `ultimoDiaDelMes(mes)`, `mesDe(fecha)` y `mesAnterior(mes)`. Test con febrero bisiesto y el cambio de año.
+3. `shared/fechas.ts`: `fechaEnZona(instante: Date)` → la fecha `YYYY-MM-DD` de ese instante en `America/Argentina/Salta` (un pago registrado el 31/10 a las 22:00 de Salta es del 31/10, aunque en UTC sea 1/11). Test con ese caso.
+4. Verificar que `liquidaciones.condiciones.ts` y `reparto.condiciones.ts` quedan cubiertos por las reglas de ESLint de condiciones.
+5. Documentación, para que cada tarea escriba sólo en lo suyo: `contrato-api.md` (secciones vacías Reparto, Liquidaciones y Caja, "A completar por T-xx", y la fila de "Mis ingresos" en una sección de endpoints `mis-…` del profesor, si no existe); `dominio.md` (secciones Reparto, Liquidaciones y Caja diaria); `arquitectura-backend.md` (una línea por feature nueva); `convenciones-backend.md` → `shared/` (`mesISO`, `fechaEnZona`); `AGENTS.md` → Alcance del Sprint 3 (HU-43 a HU-47).
+
+**Coordinación**
+T-115 y T-117 (pendientes) también suman funciones a `shared/zod.ts`: si chocan, es un conflicto de líneas que se resuelve en el merge.
+
+**Criterios de aceptación**
+
+- `pnpm check` pasa y `/api/v1/docs` sigue funcionando.
+- Ninguna otra tarea de la ampliación necesita modificar `app.ts` ni `eslint.config.mjs`.
+
+---
+
+## T-120 · [Back] HU-43 · Porcentaje del centro y regla del reparto (feature `reparto`)
+
+- **HU:** HU-43 Porcentaje del centro sobre cada cobro
+- **Área:** Backend
+- **Rama:** `feat/reparto-api`
+- **Depende de:** T-118, T-119
+- **Estimación:** 3
+- **Prioridad:** Alta (la regla del reparto la usan T-121, T-122, T-127 y T-128)
+
+**Alcance**
+
+1. **Regla pura** en `reparto.reglas.ts` (con tests): `repartoDeTurno(importe, porcentaje)` → `{ importe, porcentaje, parteCentro, parteProfesor }`, en centavos enteros, con redondeo mitad hacia arriba. Tests: el ejemplo de la HU ($ 8.000 al 15 % → $ 1.200 y $ 6.800), 0 %, 99,99 %, un importe con centavos que redondea (por ejemplo $ 3.333,33 al 15 %) y que las dos partes **siempre suman el importe**. `sumarReparto(repartos)` para totales.
+2. **`reparto.condiciones.ts`** publica, para las otras features: `repartoDeTurno`, `sumarReparto` y `porcentajeVigente(client)` (el último `PorcentajeCentro`; si no hay ninguno es un error de configuración: 500 con log, no un 15 % inventado).
+3. **`GET /reparto/porcentaje`** (`GERENTE`): `{ vigente: { porcentaje, desde, cambiadoPor }, historial }`, el historial del más reciente al más antiguo, paginado (page/pageSize).
+4. **`PUT /reparto/porcentaje`** (`GERENTE`), `{ porcentaje }`:
+   - Número >= 0 y < 100 con hasta dos decimales; si no, 400 en `porcentaje` ("El porcentaje debe ser mayor o igual a 0 y menor que 100, con hasta dos decimales").
+   - Igual al vigente → 400 "El porcentaje ya es 15 %" (no genera una fila sin cambio).
+   - Crea una fila nueva de `PorcentajeCentro`; no modifica nada más. Responde el nuevo vigente.
+   - La confirmación ("Desde ahora, el centro retendrá…") la muestra la UI; la API no la necesita.
+5. Permisos: los demás roles reciben 403 en los dos endpoints (HU-43: "el sistema rechaza el cambio aunque se intente por fuera de las pantallas"). Tests de cada rol.
+6. Documentación: `contrato-api.md` → Reparto; `dominio.md` → Reparto (la fórmula y el redondeo); `decisiones.md` (el redondeo y el error sin porcentaje configurado).
+
+**Criterios de aceptación**
+
+- El gerente cambia el porcentaje de 15 a 18 y el historial muestra los dos, con quién y desde cuándo.
+- Mesa de entrada, profesor y alumno reciben 403 al leerlo y al cambiarlo.
+- La parte del centro y la del profesor suman siempre el importe del turno.
+
+---
+
+## T-121 · [Back] Reuso: motor de liquidaciones — devengo, ajustes por anulación y saldo a descontar
+
+- **HU:** HU-44 (la usan HU-45, HU-46 y HU-47)
+- **Área:** Backend
+- **Rama:** `feat/liquidaciones-motor`
+- **Depende de:** T-118, T-119, T-120 (`repartoDeTurno`; puede empezar contra su firma)
+- **Estimación:** 8
+- **Prioridad:** Bloqueante (cadena crítica de la ampliación)
+
+**Descripción**
+Liquidaciones, "Mis ingresos" y el tablero tienen que decir exactamente lo mismo: qué turnos se le deben a cada profesor, desde cuándo, en qué liquidación entran y qué ajustes arrastran. Como el motor de ocurrencias (T-30, T-74), se calcula **una sola vez** acá y las features lo leen de `liquidaciones.condiciones.ts`. Es la regla más delicada de la ampliación: los tests son la mitad de la tarea.
+
+**Alcance**
+
+1. **Reglas puras** en `liquidaciones.reglas.ts` (sin Prisma, con tests):
+   - `fechaDeDevengo({ pagoRegistradoEl, asistenciaRegistradaEl })`: la más tardía de las dos, como fecha de Salta (`fechaEnZona`).
+   - `estaDevengado({ pagoVigente, asistencia })`: pago vigente y asistencia `PRESENTE` o `AUSENTE`.
+   - `armarLiquidaciones({ devengados, liquidacionesCerradas, anulacionesPendientes, hoy })` → por profesor y mes: turnos, ajustes, totales (`totalCobrado`, `parteCentro`, `parteProfesor`, `totalAjustes`, `total`) y estado, con las reglas del Vocabulario de la ampliación:
+     - cada devengado no cerrado va al mes de su fecha de devengo;
+     - cada ajuste por anulación va a la primera liquidación sin cerrar del profesor posterior a la que incluyó el turno (o al mes en curso si no hay otra);
+     - una liquidación de un mes terminado con total de 0 o menos queda `SALDO_A_DESCONTAR` y entra como ajuste `SALDO_ANTERIOR` en la del mes siguiente, en cadena;
+     - el mes en curso es `EN_CURSO` aunque su total sea negativo; un mes terminado con total > 0 es `PENDIENTE_DE_PAGO`.
+   - `ESTADOS_LIQUIDACION` y los textos de los ajustes ("Ajuste por anulación del comprobante N.º 123 (2 turnos)", "Saldo de la liquidación de octubre de 2026").
+2. **`liquidaciones.condiciones.ts`**, con el cliente que le pasa el repository, sin N+1 (una consulta por tipo de dato, como `leerOcurrencias`):
+   - `leerDevengados(client, { profesorId?, hasta })`: los `PagoTurno` vigentes con asistencia `PRESENTE` o `AUSENTE` que no están en un `LiquidacionTurno`, con turno, fecha y horario de la ocurrencia, alumno, materia, profesor (del bloque), número de comprobante, importe, porcentaje y fecha de devengo.
+   - `leerAnulacionesPendientes(client, { profesorId? })`: los `LiquidacionTurno` cuyo `PagoTurno` ya no está vigente y que no tienen un `AjusteLiquidacion`, con su liquidación de origen, el comprobante y la parte del profesor congelada.
+   - `leerLiquidacionesCerradas(client, { profesorId?, desde?, hasta? })`.
+   - `liquidacionesDelMes(client, { mes, profesorId?, hoy })` y `liquidacionDe(client, { profesorId, mes, hoy })`: abiertas (calculadas) y cerradas (leídas, con sus importes congelados), con el mismo formato de salida. Una cerrada **no se recalcula**.
+   - `saldoAPagarPorProfesor(client, { hoy })`: lo que se le debe hoy a cada profesor (todas sus liquidaciones sin cerrar, incluida la del mes en curso), para el tablero (T-128).
+   - `cobrosConReparto(client, { desde, hasta })`: los `PagoTurno` vigentes con fecha de pago en el rango, con su reparto, el profesor y si la ocurrencia quedó **cerrada sin registrar** (con `plazoDeAsistencia` de `turnos.condiciones`, nunca recalculado): para el margen del centro (T-128).
+   - `cierreDeLiquidacion(client, { profesorId, mes, hoy })`: lo que hay que escribir para cerrar una liquidación (la `Liquidacion`, sus `LiquidacionTurno`, sus `AjusteLiquidacion` y las `DESCONTADA` que absorbe). La escritura la hace el repository de T-124 en su transacción; el cálculo es uno solo.
+3. Tests (reglas puras y motor a nivel repository, con reloj fijo), como mínimo:
+   - Clase dada en octubre y pagada en noviembre → noviembre. Pagada por adelantado en octubre y dada en noviembre → noviembre. "Ausente" pagado → se debe.
+   - Pago registrado el 3/11 con fecha de pago 28/10 y asistencia de octubre → noviembre (cuenta el registro).
+   - Asistencia registrada el 31/10 a las 22:00 de Salta → octubre.
+   - Cobrado y cerrado sin registrar → no se debe. Cancelado → no se cobra ni se debe. Cobrado sin asistencia dentro del plazo → no se debe todavía.
+   - Pago anulado de un turno de una liquidación abierta → el turno deja de figurar. De una liquidación cerrada → ajuste en la primera sin cerrar posterior; con un mes intermedio pendiente, va a ese mes; sin ninguna, al mes en curso.
+   - Saldo negativo en octubre → "Saldo a descontar" y ajuste en noviembre; dos meses negativos seguidos se encadenan.
+   - Una cerrada no cambia aunque después se anule un pago de sus turnos (sólo genera el ajuste).
+   - Reparto con dos porcentajes distintos en la misma liquidación.
+   - Turno reprogramado a otro profesor antes de la asistencia → se le debe al nuevo.
+4. Documentación: `convenciones-backend.md` → Liquidaciones (qué publica el motor y que nadie recalcula); `dominio.md` → Liquidaciones (devengo, ajustes, saldo y estados); `decisiones.md`: fecha de devengo por registro, ajuste a la primera liquidación sin cerrar, saldo de 0 o menos que se arrastra y el estado `DESCONTADA`.
+
+**Fuera de alcance**
+Endpoints (T-124, T-126, T-128) y la escritura del cierre (T-124).
+
+**Criterios de aceptación**
+
+- Cada caso de la lista de tests tiene su test y pasa.
+- Ninguna otra feature calcula devengo, ajustes o saldos: todas leen de `liquidaciones.condiciones.ts`.
+
+---
+
+## T-122 · [Back] HU-43 · Cobros con porcentaje y reparto en el detalle del pago
+
+- **HU:** HU-43 (al registrar el pago y en el detalle de HU-36)
+- **Área:** Backend
+- **Rama:** `feat/pagos-reparto-api`
+- **Depende de:** T-98 (dueña de `pagos/**` hasta mergearse), T-118, T-120
+- **Estimación:** 2
+
+**Alcance**
+
+1. **`POST /pagos`:** cada `PagoTurno` guarda `porcentajeCentro = porcentajeVigente(client)`, leído **dentro de la misma transacción** del pago (si el gerente cambia el porcentaje en ese momento, todo el pago queda con un mismo valor). Vale para los cobros de HU-15, HU-23 y HU-25 (es el mismo endpoint). Un turno que se vuelve a cobrar después de una anulación toma el porcentaje vigente en ese momento, sin código extra.
+2. **`GET /pagos/{id}`:** para el **`GERENTE`**, `reparto` por turno (`importe`, `porcentaje`, `parteCentro`, `parteProfesor` y el profesor) y sus totales, con `repartoDeTurno`. Para la mesa de entrada y el alumno el campo no viene (`undefined`, no `null`): un test de la respuesta lo fija. Un pago anulado muestra su reparto igual (lo que se cobró).
+3. **El comprobante de pago en PDF no cambia** (HU-43): un test verifica que no aparece el porcentaje.
+4. Tests: el porcentaje guardado es el vigente; cambiar el porcentaje no modifica pagos anteriores; reparto sólo para el gerente.
+5. Documentación: `contrato-api.md` → Pagos (`reparto` sólo para el gerente).
+
+**Criterios de aceptación**
+
+- Se cobra un turno de $ 8.000 al 15 %, el gerente cambia a 18 % y se cobra otro: el detalle del primero muestra 15 % y el del segundo, 18 %.
+- La mesa de entrada no recibe el reparto.
+
+---
+
+## T-123 · [Back] Reuso: comprobante adjunto de la transferencia a un profesor (`adjuntos`)
+
+- **HU:** HU-44 (comprobante de la transferencia, "con las mismas reglas de HU-24")
+- **Área:** Backend
+- **Rama:** `feat/adjuntos-liquidaciones`
+- **Depende de:** T-118
+- **Estimación:** 2
+
+**Alcance**
+
+1. `POST /adjuntos` suma el rol `GERENTE`, con las mismas validaciones (JPG, PNG o PDF de hasta 5 MB, firma del archivo; `shared/archivos.ts`).
+2. `adjuntos.condiciones.ts`: `vincularAdjuntoALiquidacion(client, { adjuntoId, liquidacionId, actor })`, con las mismas comprobaciones que `vincularAdjunto` (existe, no está vinculado, lo subió el mismo usuario; si no, `ADJUNTO_INVALIDO`). Un adjunto se vincula a un pago **o** a una liquidación: `vincularAdjunto` rechaza uno subido por el gerente y viceversa.
+3. `GET /adjuntos/liquidaciones/{liquidacionId}` (`GERENTE`): el adjunto activo con su URL prefirmada, como el de un pago. Un profesor no lo ve (HU-45: no ve comprobantes).
+4. `ultimoAdjuntoDeLiquidacion(client, liquidacionId)` en condiciones, para el detalle de T-124.
+5. Tests: subir como gerente; vincular a una liquidación; un adjunto de liquidación no se vincula a un pago ni al revés; profesor → 403.
+6. Documentación: `contrato-api.md` → Adjuntos; `dominio.md` → Comprobante adjunto.
+
+**Criterios de aceptación**
+
+- El gerente sube un PDF, lo vincula a una liquidación y lo vuelve a ver desde su detalle.
+
+---
+
+## T-124 · [Back] HU-44 · API de liquidaciones: listado del mes, detalle y registrar el pago
+
+- **HU:** HU-44 Liquidación mensual y pago a los profesores
+- **Área:** Backend
+- **Rama:** `feat/liquidaciones-api`
+- **Depende de:** T-121, T-123 (`vincularAdjuntoALiquidacion`; puede empezar contra su firma)
+- **Estimación:** 5
+
+**Alcance**
+
+1. **`GET /liquidaciones?mes&page&pageSize`** (`GERENTE`): `mes` opcional (por defecto el último mes terminado); un mes futuro → 400. Una fila por profesor **con turnos o ajustes en ese mes, aunque esté inactivo**: profesor, cantidad de turnos, total cobrado, parte del centro, parte del profesor, ajustes, total a pagar, estado y, si está pagada, la fecha de la transferencia. Más los `totales` del mes (de todo el listado, no de la página). Orden por apellido y nombre.
+2. **`GET /liquidaciones/profesores/{profesorId}/{mes}`** (`GERENTE`): el detalle con el mismo cálculo del listado: cada turno (fecha, horario, alumno, materia, número de comprobante del cobro, importe, porcentaje y parte del profesor), los ajustes con su texto y, si está cerrada, `liquidacionId`, los datos de la transferencia, el adjunto (`ultimoAdjuntoDeLiquidacion`, sin URL), quién registró el pago y cuándo. `acciones.registrarPago` lo decide la API (mes terminado, `PENDIENTE_DE_PAGO`, total > 0). Profesor inexistente → 404; profesor sin movimientos en el mes → 200 con la liquidación vacía.
+3. **`POST /liquidaciones/profesores/{profesorId}/{mes}/pago`** (`GERENTE`), `{ fechaTransferencia, numeroOperacion, comprobanteAdjuntoId?, observaciones?, totalConfirmado }`:
+   - `fechaTransferencia` obligatoria, no futura y no anterior al último día del mes liquidado; `numeroOperacion` obligatorio, hasta 50; `observaciones` hasta 500. Cada error en su campo.
+   - Mes en curso o futuro → 409 "La liquidación de noviembre todavía no se puede pagar: el mes no terminó". Ya pagada → 409. Total de 0 o menos → 409 "No hay importe a pagar".
+   - **Sin pagos parciales:** el monto es el total que calcula la API. El cliente manda el `totalConfirmado` que mostró; si el total cambió entre la consulta y la confirmación (por ejemplo, se anuló un pago), 409 `LIQUIDACION_MODIFICADA` "La liquidación cambió desde que la abriste. Revisala antes de pagar", sin registrar nada.
+   - En **una transacción**: recalcula con `cierreDeLiquidacion`, escribe la `Liquidacion` `PAGADA` con sus `LiquidacionTurno` y `AjusteLiquidacion`, cierra como `DESCONTADA` las de saldo negativo que absorbió y vincula el adjunto. Los únicos de T-118 traducen una carrera (dos pagos simultáneos) a 409.
+   - Responde lo necesario para el mensaje: "Pago registrado. La liquidación de octubre de Gómez, Ana quedó pagada".
+4. Tests del service: el listado sólo con profesores con movimientos (uno inactivo incluido); el mes por defecto; cada error del pago; el 409 por total modificado; pagar congela y una anulación posterior no cambia la cerrada; pagar un mes que absorbe un saldo negativo cierra los dos.
+5. Documentación: `contrato-api.md` → Liquidaciones; `dominio.md` → Liquidaciones (pagar).
+
+**Criterios de aceptación**
+
+- El gerente ve la liquidación de octubre de cada profesor y registra la transferencia de una: queda "Pagada" y sus turnos no aparecen en otra.
+- Si entre que la abre y confirma se anula un pago de uno de sus turnos, el pago se rechaza con 409 y no se guarda nada.
+
+---
+
+## T-125 · [Back] HU-44 / HU-45 · PDF de la liquidación
+
+- **HU:** HU-44 (PDF) y HU-45 (el mismo documento para el profesor)
+- **Área:** Backend
+- **Rama:** `feat/liquidaciones-pdf-api`
+- **Depende de:** T-124 (dueña de `liquidaciones.routes.ts` y del controller hasta mergearse; la plantilla puede empezar en paralelo)
+- **Estimación:** 3
+
+**Alcance**
+
+1. `GET /liquidaciones/profesores/{profesorId}/{mes}/pdf` (`GERENTE`; `PROFESOR` **sólo la suya**, 403 si no), con el contrato común de los PDF (decisiones T-122 y T-123) y el mismo cálculo del detalle, sin duplicar reglas.
+2. Contenido: encabezado oficial (`encabezadoDeDocumento`), profesor, mes y estado; detalle de turnos (fecha, horario, alumno, materia, comprobante, importe, porcentaje y parte del profesor); ajustes; totales; si está pagada, fecha y número de operación de la transferencia. **Sin** datos de la forma de pago de las familias ni el comprobante adjunto.
+3. Nombre del archivo: "liquidacion", el profesor y el mes, con la convención de la decisión T-123 (ver "Puntos a confirmar", punto 11).
+4. Archivos: `liquidaciones.pdf.tsx`, `liquidaciones.documentos.ts`, `liquidaciones.formato.ts`, la ruta y su handler. Tests como los del Sprint 2 (`%PDF-`, páginas y metadatos; la ruta con el service mockeado; profesor pidiendo la de otro → 403).
+5. `contrato-api.md` → Documentos PDF y Liquidaciones.
+
+**Criterios de aceptación**
+
+- El PDF de una liquidación pagada trae los turnos, los ajustes, los totales y la transferencia.
+- Un profesor descarga la suya y recibe 403 con la de otro.
+
+---
+
+## T-126 · [Back] HU-45 · Mis ingresos: endpoints del profesor
+
+- **HU:** HU-45 Mis ingresos
+- **Área:** Backend
+- **Rama:** `feat/mis-ingresos-api`
+- **Depende de:** T-121, T-124 (dueña de `liquidaciones/**` hasta mergearse; puede empezar en paralelo contra el motor)
+- **Estimación:** 3
+
+**Alcance**
+
+Todos con rol `PROFESOR`, con el profesor **de la sesión** (como `GET /alumnos/mis-alumnos`): ningún endpoint recibe un `profesorId`.
+
+1. **`GET /liquidaciones/mis-ingresos`:**
+   - `esteMes`: la liquidación del mes en curso del motor (turnos con fecha, horario, alumno, materia, importe, porcentaje y su parte; ajustes si los hay; total acumulado). Es el mismo cálculo que ve el gerente.
+   - `clasesSinCobrar`: ocurrencias del profesor con asistencia `PRESENTE` o `AUSENTE` y sin pago vigente, con fecha, horario, alumno y materia, de los últimos 366 días (el tope de los otros listados), de la más reciente a la más antigua.
+   - `clasesCobradasSinAsistencia`: ocurrencias del profesor de hoy o anteriores con pago vigente, sin asistencia y **dentro del plazo** (`plazoDeAsistencia`), con su `vence`.
+   - Leído del motor de ocurrencias y del de liquidaciones; nada se recalcula.
+2. **`GET /liquidaciones/mis-liquidaciones?page`:** una fila por mes con movimientos (sin el mes en curso, que está en `esteMes`): mes, total, estado y fecha de la transferencia si está pagada.
+3. **`GET /liquidaciones/mis-liquidaciones/{mes}`:** el detalle de una, con el mismo formato que el del gerente **sin** el adjunto, quién registró el pago ni las observaciones.
+4. **Nada de otros profesores ni del centro:** sin totales del centro, sin forma de pago ni comprobantes de las familias. Un test de la respuesta lo fija. Un usuario `PROFESOR` sin profesor vinculado → 403.
+5. Tests: cada sección con datos y vacía; lo que devuelve `esteMes` coincide con `GET /liquidaciones/profesores/{id}/{mes}` para el mismo profesor; otro rol → 403.
+6. Documentación: `contrato-api.md` → Liquidaciones (endpoints `mis-…` del profesor).
+
+**Criterios de aceptación**
+
+- El profesor ve su mes en curso, sus clases sin cobrar, las cobradas sin asistencia con su vencimiento y sus liquidaciones, y nada de otros profesores.
+
+---
+
+## T-127 · [Back] HU-46 · API de caja diaria y su PDF (feature `caja`)
+
+- **HU:** HU-46 Caja diaria
+- **Área:** Backend
+- **Rama:** `feat/caja-api`
+- **Depende de:** T-118, T-119, T-120 (`repartoDeTurno`)
+- **Estimación:** 5
+
+**Alcance**
+
+1. **`GET /caja?fecha&tipo?&formaPago?`** (`GERENTE`): `fecha` opcional (por defecto hoy); una fecha futura → 400.
+   - `movimientos`, ordenados por hora de registro:
+     - `COBRO` (+): los pagos con **fecha de pago** igual a `fecha` (también los que después se anularon: ese día fueron un cobro), con hora de registro, número de comprobante, alumno, forma de pago, importe y, si ya está anulado, la marca. Si el pago se registró otro día (fecha de pago cargada hacia atrás), la hora va con su fecha: "registrado el 16/10 09:12".
+     - `ANULACION` (−): las anulaciones registradas ese día, con comprobante, alumno, forma de pago, importe y motivo.
+     - `PAGO_PROFESOR` (−): las liquidaciones `PAGADA` con fecha de transferencia igual a `fecha`, con profesor, mes liquidado, número de operación e importe, y `liquidacion: { profesorId, mes }` para abrirla.
+     - Cobros y anulaciones llevan `pagoId` para abrir el detalle (HU-36).
+   - Filtros: `tipo` (`COBRO`, `ANULACION`, `PAGO_PROFESOR`) y `formaPago` (los pagos a profesores son transferencias: entran con `TRANSFERENCIA`).
+   - `resumen` **del día completo**, sin filtros: ingresos por forma de pago y total, ya descontadas las anulaciones del día; de esos ingresos, la parte del centro y la de los profesores con el porcentaje **guardado en cada cobro** (una anulación resta las partes del cobro que anula); egresos (pagado a profesores); saldo del día.
+   - Un día sin movimientos devuelve las listas vacías y el resumen en 0 (el texto "No hubo movimientos de caja el 15/10" es de la UI).
+2. **`GET /caja/pdf?fecha`** (`GERENTE`), con el contrato común de los PDF: encabezado oficial, fecha, resumen y **la lista completa** de movimientos (sin filtros). Nombre "caja" y la fecha (ver "Puntos a confirmar", punto 11). `caja.pdf.tsx`, `caja.formato.ts`.
+3. Reglas puras en `caja.reglas.ts` (armado del resumen y orden de los movimientos), sobre una lectura por tipo de movimiento en el repository. Importes en centavos.
+4. Tests: un cobro y su anulación el mismo día (se ven los dos y el neto es 0); una anulación de un cobro de otro día; un cobro con fecha de pago hacia atrás; las partes con dos porcentajes distintos; filtros; día vacío; fecha futura → 400; otros roles → 403; la plantilla PDF.
+5. Documentación: `contrato-api.md` → Caja; `dominio.md` → Caja diaria.
+
+**Criterios de aceptación**
+
+- La caja de hoy del seed muestra los cobros, la anulación y el pago al profesor, y el saldo es ingresos menos egresos.
+- La parte del centro más la de los profesores es igual a los ingresos del día.
+
+---
+
+## T-128 · [Back] HU-47 · Tablero: sección "Finanzas" y su PDF
+
+- **HU:** HU-47 Pestaña "Finanzas" del tablero
+- **Área:** Backend
+- **Rama:** `feat/tablero-finanzas-api`
+- **Depende de:** T-112 (dueña de `tablero/**` hasta mergearse), T-121
+- **Estimación:** 3
+
+**Alcance**
+
+1. **`GET /tablero/finanzas?desde&hasta&orden?&direccion?&page`** (`GERENTE`), con el período y las validaciones comunes del tablero:
+   - `resumen`: total cobrado (el mismo número que "General": `totalCobradoEntre`); margen del centro (parte del centro de esos cobros **más** el importe completo de los cerrados sin registrar, con `cobrosConReparto`) y su porcentaje sobre el total cobrado; `incluyeSinRegistrar` (el importe de los cerrados sin registrar, para el aviso); pagado a profesores (liquidaciones pagadas con fecha de transferencia en el período); saldo a pagar a profesores **a hoy** (`saldoAPagarPorProfesor`, no depende del período): la suma de los saldos positivos; un profesor con saldo negativo no lo resta (propuesta, punto 12).
+   - `profesores`, paginado de a 10: turnos cobrados en el período, total cobrado de sus turnos, parte del centro, parte del profesor, pagado en el período y saldo pendiente a hoy. `orden` y `direccion` por cualquier columna.
+   - `evolucion`: los últimos 6 meses hasta el fin del período, con total cobrado, margen del centro y pagado a profesores de cada mes.
+   - Pagos anulados fuera de todos los números. Reglas puras en `tablero.reglas.ts`.
+2. **PDF:** `GET /tablero/pdf?seccion=finanzas&desde&hasta`, con los números principales y **las dos tablas completas**.
+3. Tests: cada número con datos falsos; margen con cerrados sin registrar; porcentaje con base 0; orden de la tabla; anulados fuera; la plantilla.
+4. Documentación: `contrato-api.md` → Tablero; `dominio.md` → Tablero (Finanzas).
+
+**Criterios de aceptación**
+
+- El total cobrado de "Finanzas" es igual al de "General" para el mismo período.
+- "Saldo a pagar a profesores" es la suma de los saldos pendientes **positivos** de la tabla (ver "Puntos a confirmar", punto 12).
+
+---
+
+## T-129 · [Front] Andamiaje de la ampliación: menús, páginas y placeholders
+
+- **HU:** Transversal (HU-43 a HU-46)
+- **Área:** Frontend
+- **Rama:** `feat/andamiaje-liquidaciones-ui`
+- **Estimación:** 2
+- **Prioridad:** Bloqueante del front de la ampliación, se mergea el día 1
+
+**Alcance**
+
+1. Menú del gerente: "Liquidaciones", "Caja diaria" y "Configuración" (en ese orden, después de "Pagos"). Menú del profesor: "Mis ingresos".
+2. Páginas que componen los placeholders: `app/gerente/liquidaciones/page.tsx` (con `?mes=` en la URL) y `app/gerente/liquidaciones/[profesorId]/[mes]/page.tsx`; `app/gerente/caja/page.tsx` (con `?fecha=`); `app/gerente/configuracion/page.tsx`; `app/profesor/ingresos/page.tsx`. El permiso por rol, como el resto de los segmentos.
+3. Placeholders **con sus props definitivas** en la carpeta de cada feature (`PorcentajeCentro`, `LiquidacionesDelMes`, `LiquidacionDetalle`, `CajaDiaria`, `MisIngresos`), que muestran "Próximamente". Cada tarea después sólo completa su archivo.
+4. `src/types/` o `utils/`: el formato de porcentaje ("15 %", "15,5 %") si no existe uno, junto al de importes.
+
+**Criterios de aceptación**
+
+- Gerente y profesor ven sus opciones nuevas; cada página abre su placeholder y otro rol ve "No tiene permiso para acceder a esta sección".
+
+---
+
+## T-130 · [Front] HU-43 · Configuración → Porcentaje del centro, y reparto en el detalle del pago
+
+- **HU:** HU-43
+- **Área:** Frontend
+- **Rama:** `feat/reparto-ui`
+- **Depende de:** T-120, T-129; la parte del detalle del pago, T-122 y T-99
+- **Estimación:** 3
+
+**Alcance**
+
+1. `PorcentajeCentro`: el vigente, un campo para cambiarlo (número de 0 a 99,99, con hasta dos decimales) y el historial (porcentaje, desde qué fecha y hora rige, quién lo cambió), paginado.
+2. Al guardar, confirmación con el valor nuevo: "Desde ahora, el centro retendrá el 18 % de cada turno cobrado. Los cobros ya registrados conservan su porcentaje". Los 400 en el campo.
+3. `RepartoDelPago` (en `features/reparto`): una tabla por turno con importe, porcentaje, parte del centro y parte del profesor, y los totales, con los datos de `GET /pagos/{id}`. Se muestra sólo si la respuesta trae `reparto` (lo decide la API, no el rol en el cliente).
+4. Se monta en el detalle del pago del gerente con una prop de render de `PagoDetalle` (`arquitectura-frontend.md` → componente de otra feature), compuesta desde `app/gerente/pagos`. Si T-99 no se mergeó, se acuerda con su dueña agregar la prop.
+
+**Criterios de aceptación**
+
+- El gerente cambia el porcentaje con confirmación y lo ve en el historial.
+- El detalle de un pago muestra el reparto al gerente y no a la mesa de entrada.
+
+---
+
+## T-131 · [Front] HU-44 · Liquidaciones: listado del mes y detalle
+
+- **HU:** HU-44
+- **Área:** Frontend
+- **Rama:** `feat/liquidaciones-ui`
+- **Depende de:** T-124 (puede empezar en paralelo), T-129
+- **Estimación:** 5
+
+**Alcance**
+
+1. `LiquidacionesDelMes`: selector de mes en la URL (por defecto el que manda la API, el último terminado; el mes en curso se puede elegir y se ve "En curso"), totales del mes y la tabla por profesor (turnos, total cobrado, parte del centro, parte del profesor, ajustes, total a pagar y estado). Estados con su texto, incluido "Saldo a descontar el mes próximo" y "Descontada en la liquidación de…". Sin movimientos: "No hay liquidaciones en octubre de 2026".
+2. `LiquidacionDetalle({ profesorId, mes, vista })`: turnos, ajustes con su texto, totales y, si está pagada, la transferencia (fecha, operación, comprobante adjunto con "Ver" por la URL de T-123, observaciones, quién y cuándo). `vista: 'gerente' | 'profesor'` oculta lo que el profesor no ve (la reusa T-133). Botón "Generar PDF" (enlace, decisión T-123). El botón "Registrar pago" se muestra si `acciones.registrarPago`, y abre el diálogo de T-132 (slot).
+3. Tablas usables en tablet; en pantallas chicas se desplazan dentro de su contenedor.
+
+**Criterios de aceptación**
+
+- El gerente recorre los meses, abre la liquidación de un profesor y ve sus turnos y ajustes, igual que en el PDF.
+
+---
+
+## T-132 · [Front] HU-44 · Registrar el pago de una liquidación
+
+- **HU:** HU-44 (registrar el pago al profesor)
+- **Área:** Frontend
+- **Rama:** `feat/liquidaciones-pago-ui`
+- **Depende de:** T-124, T-123, T-131 (el slot del diálogo), T-78 (`CampoArchivo`)
+- **Estimación:** 3
+
+**Alcance**
+
+1. `RegistrarPagoLiquidacionDialog`: forma de pago fija "Transferencia" (informativa); fecha de la transferencia, número de operación, comprobante (opcional, `CampoArchivo`, subido a `POST /adjuntos` al elegirlo, como en T-97) y observaciones. El monto es el total de la liquidación y no se edita.
+2. Confirmación: "¿Registrar el pago de $ 245.000 a Gómez, Ana por la liquidación de octubre de 2026?". Se envía con `totalConfirmado`.
+3. Éxito: "Pago registrado. La liquidación de octubre de Gómez, Ana quedó pagada"; se invalidan el listado y el detalle.
+4. Errores: los 400 en su campo; el 409 `LIQUIDACION_MODIFICADA` cierra el diálogo, recarga el detalle y avisa "La liquidación cambió desde que la abriste. Revisala antes de pagar"; los otros 409, con su mensaje.
+
+**Criterios de aceptación**
+
+- Se registra el pago con y sin comprobante, y la liquidación pasa a "Pagada".
+- No se puede escribir el monto.
+
+---
+
+## T-133 · [Front] HU-45 · "Mis ingresos"
+
+- **HU:** HU-45
+- **Área:** Frontend
+- **Rama:** `feat/mis-ingresos-ui`
+- **Depende de:** T-126, T-129, T-131 (`LiquidacionDetalle` con `vista="profesor"`)
+- **Estimación:** 3
+
+**Alcance**
+
+1. `MisIngresos`, cuatro secciones: "Este mes" (turnos, su parte y el total acumulado, con "Se te paga a mes vencido, por transferencia"); "Clases dadas sin cobrar" ("Se suman a tu liquidación cuando el alumno las pague"); "Clases cobradas sin asistencia", con la fecha límite y un acceso a "Asistencia" ("Registrá la asistencia para que se sumen a tu liquidación. Si vence el plazo, no se te pagan"); "Mis liquidaciones" (mes, total, estado y "Generar PDF"), que abre el detalle con `LiquidacionDetalle` en vista de profesor.
+2. Cada sección vacía lo dice ("No tenés clases dadas sin cobrar", etc.). Sólo lectura.
+3. Usable desde el celular (el profesor lo consulta fuera del centro): verificado a 360 px.
+
+**Criterios de aceptación**
+
+- El total de "Este mes" coincide con el que ve el gerente para ese profesor en el mes en curso.
+
+---
+
+## T-134 · [Front] HU-46 · "Caja diaria"
+
+- **HU:** HU-46
+- **Área:** Frontend
+- **Rama:** `feat/caja-ui`
+- **Depende de:** T-127 (puede empezar en paralelo), T-129
+- **Estimación:** 5
+
+**Alcance**
+
+1. `CajaDiaria`: la fecha en la URL, con selector y "Día anterior" / "Día siguiente" (el siguiente, deshabilitado en hoy; no se eligen fechas futuras).
+2. Resumen: ingresos por forma de pago y total, parte del centro y de los profesores, egresos y saldo del día, como los manda la API.
+3. Movimientos, con signo y color por tipo, y filtros por tipo y por forma de pago. Cada cobro o anulación abre el detalle del pago (`EnlaceDetallePago`, hook de `features/pagos`); cada pago a profesor, su liquidación. Un cobro ya anulado lleva la marca.
+4. Sin movimientos: "No hubo movimientos de caja el 15/10". Botón "Generar PDF" (enlace) con la fecha que se ve.
+
+**Criterios de aceptación**
+
+- El gerente recorre los días con las flechas, filtra por tipo y forma de pago, y abre un cobro y un pago a profesor desde la lista.
+
+---
+
+## T-135 · [Front] HU-47 · Pestaña "Finanzas" del tablero
+
+- **HU:** HU-47
+- **Área:** Frontend
+- **Rama:** `feat/tablero-finanzas-ui`
+- **Depende de:** T-128, T-113 (dueña de `features/tablero/**` hasta mergearse)
+- **Estimación:** 3
+
+**Alcance**
+
+1. Pestaña "Finanzas" después de "Asistencia" (`?seccion=finanzas`), con el selector de período común.
+2. Hasta 4 números principales: total cobrado, margen del centro (con su porcentaje y el aviso "Incluye $ 13.600 de turnos sin asistencia registrada" si la API manda importe), pagado a profesores y saldo a pagar a profesores (con la aclaración "a hoy").
+3. Tablas: por profesor (ordenable por cualquier columna, paginada de a 10) y evolución de los últimos 6 meses.
+4. "Generar PDF" con `seccion=finanzas` y el período que se ve.
+
+**Criterios de aceptación**
+
+- Cambiar de pestaña conserva el período; la tabla se ordena; el PDF corresponde a la pestaña.
+
+---
+
+## T-136 · [QA] Verificación integrada del reparto: los mismos números en todas las vistas
+
+- **HU:** HU-43 a HU-47
+- **Área:** QA (coordina el SM)
+- **Rama:** — (no lleva código: lo que se encuentre se corrige con tareas FIX)
+- **Depende de:** lo mergeado a `testing` de la ampliación; se hace antes o junto con T-114
+- **Estimación:** 2
+
+**Alcance**
+
+1. Base reseteada, migración y seed.
+2. Recorrido con números a mano (una planilla con los turnos del seed):
+   - **Gerente:** cambia el porcentaje y cobra un turno nuevo (el reparto del detalle usa el nuevo; uno anterior conserva el suyo); abre la liquidación del mes pasado, la paga con comprobante y descarga el PDF; anula un pago de un turno de esa liquidación y ve el ajuste en la próxima sin cerrar; recorre la caja de hoy y la de ayer; revisa "Finanzas".
+   - **Profesor:** "Mis ingresos", con cada sección; registra la asistencia de una clase cobrada y la ve pasar a "Este mes"; descarga el PDF de una liquidación.
+   - **Mesa de entrada y alumno:** no ven el reparto en el detalle del pago ni en el comprobante.
+3. **Cruces que tienen que dar igual:** el total de "Este mes" del profesor y su fila en la liquidación en curso del gerente; la suma de las liquidaciones pagadas en un período y "Pagado a profesores" de "Finanzas"; los ingresos de la caja de los días de un período y el total cobrado del tablero menos las anulaciones; la parte del centro más la de los profesores y los ingresos de cada caja.
+4. **Permisos:** cada endpoint nuevo pedido con los otros roles → 403; un profesor pidiendo la liquidación o el PDF de otro → 403.
+5. Suma los recorridos de la ampliación al guion de la review de T-114.
+
+**Criterios de aceptación**
+
+- Cada cruce está verificado o tiene un FIX abierto.
+
+---
+
 ## Puntos a confirmar con las PO (no bloquean el inicio)
 
 Cada punto tiene una propuesta con la que las tareas pueden avanzar; si la respuesta es otra, se corrige la tarea abierta o se agrega un FIX, como en el Sprint 2. Conviene cerrarlos en la planning o, a más tardar, el día 2.
@@ -1522,3 +2104,8 @@ Cada punto tiene una propuesta con la que las tareas pueden avanzar; si la respu
 8. **"Sin registrar" en "Mis materias".** HU-33 sólo nombra "Realizado", "Ausente" y "Cancelado": un turno dado y todavía sin registrar no se le muestra al alumno hasta que el profesor lo registre. Confirmar. (T-108, T-111)
 9. **Nombre del PDF del historial.** HU-32 pide `historial-academico_perez-juan_2026-10.pdf`, pero la decisión T-123 reserva el `_` para separar las dos fechas de un rango. Propuesta: `historial-academico-perez-juan-2026-10.pdf`. (T-110)
 10. **Un alumno cuyo DNI ya tiene usuario** (por ejemplo, un profesor del centro que también toma clases). Cada persona tiene un solo usuario por DNI. Propuesta: el alta se rechaza con "Ya existe un usuario con ese DNI" hasta que las PO definan el caso. (T-88)
+11. **Nombre de los PDF de la ampliación.** HU-44 y HU-46 piden `liquidacion_gomez-ana_2026-10.pdf` y `caja_2026-10-15.pdf`, pero la decisión T-123 reserva el `_` para separar las dos fechas de un rango (igual que el punto 9). Propuesta: `liquidacion-gomez-ana-2026-10.pdf` y `caja-2026-10-15.pdf`. (T-125, T-127)
+12. **"Saldo a pagar a profesores" con un profesor en saldo negativo** (HU-47). Propuesta: el número principal suma sólo los saldos positivos (lo que de verdad hay que transferir); la tabla muestra el saldo de cada profesor, negativo incluido. (T-128, T-135)
+13. **El ajuste por anulación puede caer en un mes anterior a la anulación.** Con la regla elegida ("primera liquidación sin cerrar posterior a la que incluyó el turno"), si el profesor tiene septiembre sin pagar y se anula en noviembre un pago de un turno de agosto (ya pagado), el ajuste baja la liquidación de septiembre. Es lo esperado; queda anotado para explicarlo en la review. (T-121)
+14. **Aviso al anular un pago con turnos ya liquidados** (HU-42). La previa de la anulación podría avisar "Se descontarán $ 6.800 de la próxima liquidación de Gómez, Ana". La HU no lo pide: propuesta, no se agrega en este incremento. (T-104, T-121)
+15. **"Clases dadas sin cobrar" de "Mis ingresos"** (HU-45) no tiene un límite en la HU. Propuesta: los últimos 366 días, el tope de los otros listados. (T-126)

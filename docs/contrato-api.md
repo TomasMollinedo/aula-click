@@ -841,15 +841,17 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 ## Pagos
 
-HU-15 (T-51), con las formas de pago de HU-23 (T-96). Registrar el pago de una o varias ocurrencias de un alumno, en efectivo, por transferencia o con débito, y leer su comprobante. Reglas en `dominio.md` → Pagos. **Los importes, el total y el vuelto los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
+HU-15 (T-51), con las formas de pago de HU-23 (T-96), y los pagos realizados y "Mis pagos" de HU-36 y HU-37 (T-98). Registrar el pago de una o varias ocurrencias de un alumno, en efectivo, por transferencia o con débito, leer su comprobante y listar los pagos realizados. Reglas en `dominio.md` → Pagos. **Los importes, el total, el vuelto y los totales los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
 
-| Endpoint                     | Roles           | Qué hace                                                                                                   |
-| ---------------------------- | --------------- | ---------------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/pagos`         | `MESA_ENTRADAS` | Registra el pago, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409                    |
-| `GET /api/v1/pagos/{id}`     | `MESA_ENTRADAS` | Datos del comprobante. 404 si el pago no existe                                                            |
-| `GET /api/v1/pagos/{id}/pdf` | `MESA_ENTRADAS` | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 404 si el pago no existe |
+| Endpoint                      | Roles                                               | Qué hace                                                                                                        |
+| ----------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/pagos`          | `MESA_ENTRADAS`                                     | Registra el pago, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409                         |
+| `GET /api/v1/pagos`           | `MESA_ENTRADAS`, `GERENTE`                          | Pagos realizados del período, paginados, con lo cobrado por forma de pago. 400                                  |
+| `GET /api/v1/pagos/mis-pagos` | `ALUMNO`                                            | Los pagos del alumno de la sesión, paginados (portal). 403 si la cuenta no tiene alumno                         |
+| `GET /api/v1/pagos/{id}`      | `MESA_ENTRADAS`, `GERENTE`                          | Detalle del pago: el comprobante, el adjunto y las acciones. 404 si el pago no existe                           |
+| `GET /api/v1/pagos/{id}/pdf`  | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 403 si es de otro alumno; 404 |
 
-Cualquier otro rol recibe 403 `SIN_PERMISO`.
+Cualquier otro rol recibe 403 `SIN_PERMISO`. El gerente ve los pagos en sólo lectura: no registra (`POST /pagos` → 403) y en el detalle todas sus acciones van en `false`. El alumno sólo usa `GET /pagos/mis-pagos` y el PDF de sus propios pagos.
 
 **Body de `POST /pagos`:**
 
@@ -931,7 +933,7 @@ El mismo cobro por transferencia y con débito (sin `montoRecibido`):
 
 Cobrable es una ocurrencia que no está cancelada: `AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE` (un turno dado e impago se cobra igual, HU-22). Una ocurrencia de un pago anulado vuelve a estar pendiente y se cobra de nuevo; el único de `PagoTurno` sigue siendo la red contra el pago doble (409 `TURNOS_NO_COBRABLES` sin `details`).
 
-**Respuesta de `GET /pagos/{id}`:**
+**Respuesta de `GET /pagos/{id}`** (un pago con débito y comprobante adjunto, visto por la mesa de entradas):
 
 ```json
 {
@@ -948,14 +950,45 @@ Cobrable es una ocurrencia que no está cancelada: `AGENDADO`, `SIN_REGISTRAR`, 
       "materia": { "id": 2, "nombre": "Matemática" },
       "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
       "importe": 8000
+    },
+    {
+      "turnoId": 57,
+      "fecha": "2026-10-07",
+      "horaInicio": "17:00",
+      "horaFin": "18:00",
+      "materia": { "id": 7, "nombre": "Física" },
+      "profesor": { "id": 5, "nombre": "Juan", "apellido": "Ruiz" },
+      "importe": 8000
     }
   ],
-  "total": 17000,
+  "total": 16000,
   "montoRecibido": null,
   "vuelto": null,
-  "formaPago": { "codigo": "TRANSFERENCIA", "nombre": "Transferencia" },
-  "transferencia": { "operacion": "0004829137", "banco": "Banco Macro", "titular": "Marta López" },
-  "debito": null,
+  "formaPago": { "codigo": "DEBITO", "nombre": "Tarjeta de débito" },
+  "transferencia": null,
+  "debito": { "red": "VISA_DEBITO", "cupon": "000123", "ultimos4": "1234" },
+  "estado": "VIGENTE",
+  "anulacion": null,
+  "observaciones": null,
+  "registradoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+  "registradoEl": "2026-10-05T14:30:00.000Z",
+  "cantidad": 2,
+  "adjunto": {
+    "id": 18,
+    "nombre": "cupon-debito.pdf",
+    "tipo": "application/pdf",
+    "bytes": 184320,
+    "adjuntadoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+    "adjuntadoEl": "2026-10-05T14:28:00.000Z"
+  },
+  "acciones": { "anular": true, "reemplazarAdjunto": true, "quitarAdjunto": true }
+}
+```
+
+Un pago anulado trae `"estado": "ANULADO"` y su anulación:
+
+```json
+{
   "estado": "ANULADO",
   "anulacion": {
     "motivo": "FORMA_PAGO_EQUIVOCADA",
@@ -963,9 +996,7 @@ Cobrable es una ocurrencia que no está cancelada: `AGENDADO`, `SIN_REGISTRAR`, 
     "anuladoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
     "anuladoEl": "2026-10-06T12:00:00.000Z"
   },
-  "observaciones": null,
-  "registradoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
-  "registradoEl": "2026-10-05T14:30:00.000Z"
+  "acciones": { "anular": false, "reemplazarAdjunto": false, "quitarAdjunto": false }
 }
 ```
 
@@ -977,8 +1008,22 @@ Cobrable es una ocurrencia que no está cancelada: `AGENDADO`, `SIN_REGISTRAR`, 
 - `estado`: `VIGENTE` o `ANULADO`. `anulacion`: `{ motivo, detalle, anuladoPor, anuladoEl }` si está anulado (HU-42; `motivo`: `ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`), `null` si está vigente. Se lee en la misma consulta que el pago.
 - `registradoPor` es un `UsuarioAuditoria`; `registradoEl`, un instante ISO 8601 en UTC.
 - `numeroComprobante` es correlativo y único, pero puede tener huecos (decisión T-62).
+- `cantidad`: cuántos turnos incluye (el largo de `turnos`).
+- `adjunto`: el último comprobante adjunto **activo** (ver Adjuntos), `{ id, nombre, tipo, bytes, adjuntadoPor, adjuntadoEl }`; `tipo` es `image/jpeg`, `image/png` o `application/pdf`. **No trae URL** ni la clave del archivo: para verlo, `GET /adjuntos/pagos/{pagoId}` da la URL prefirmada. `null` si no tiene (nunca tuvo, se quitó o es en efectivo).
+- `acciones`: qué puede hacer quien pide el detalle sobre el pago (`PagoParaAcciones` del frontend). **Las decide la API** según el rol, el estado, la forma de pago y si tiene adjunto, con las mismas reglas que aplican `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (decisión T-154). Un botón se muestra si su acción es `true`:
 
-**`GET /pagos/{id}/pdf`**: el comprobante de pago como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismos roles, misma validación del `id` y mismo 404 que `GET /pagos/{id}`, y **los mismos datos**: los importes, el total y el vuelto son los de esa respuesta, sin recalcular (decisiones T-63 y T-80).
+  | Acción              | `true` sólo si…                                                                                                       |
+  | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
+  | `anular`            | quien pide es `MESA_ENTRADAS` y el pago está `VIGENTE`                                                                |
+  | `reemplazarAdjunto` | `MESA_ENTRADAS`, `VIGENTE` y con transferencia o débito (en un débito sin adjunto, es "adjuntar" uno)                 |
+  | `quitarAdjunto`     | `MESA_ENTRADAS`, `VIGENTE`, con débito y con adjunto (con transferencia el adjunto es obligatorio: sólo se reemplaza) |
+
+  El gerente las recibe todas en `false` (sólo lectura), y un pago anulado también, para cualquier rol: conserva todo como estaba.
+
+**`GET /pagos/{id}/pdf`**: el comprobante de pago como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Misma validación del `id` y mismo 404 que `GET /pagos/{id}`, y **los mismos datos** (sin `adjunto` ni `acciones`): los importes, el total y el vuelto son los de esa respuesta, sin recalcular (decisiones T-63 y T-80).
+
+- Roles: `MESA_ENTRADAS`, `GERENTE` y `ALUMNO`, este último **sólo con sus propios pagos** (HU-37). Es **el mismo documento para todos los roles**: el alumno descarga el mismo comprobante que le entrega la mesa, con "Registrado por" y, si está anulado, quién lo anuló (decisión T-153).
+- Errores del alumno, en este orden: cuenta sin alumno vinculado → 403 `SIN_PERMISO`; pago inexistente → 404 `NO_ENCONTRADO`; pago de otro alumno → 403 `SIN_PERMISO`.
 
 - Nombre del archivo: `comprobante-<numeroComprobante>.pdf` (sólo el número: `comprobante-1024.pdf`).
 - Contenido: número junto al título, alumno, DNI, fecha y forma de pago, la tabla de turnos (fecha, horario, materia, profesor e importe), el total con el monto recibido y el vuelto si los hay, las observaciones y el pie "Registrado por <nombre apellido> el dd/MM/yyyy HH:mm" (`registradoPor` y `registradoEl`, en la hora del negocio) con la leyenda "Comprobante interno de pago · No válido como factura" (decisión T-111). Además (T-96):
@@ -986,6 +1031,106 @@ Cobrable es una ocurrencia que no está cancelada: `AGENDADO`, `SIN_REGISTRAR`, 
   - con más de una materia, la tabla agrupada por materia (por nombre), con una fila "Subtotal <materia>" al final de cada una (HU-25);
   - si el pago está anulado, arriba de todo una franja **"ANULADO"** con el motivo (y el detalle) y "Anulado el dd/MM/yyyy HH:mm por <nombre apellido>" (HU-42).
 - El frontend no lo pide con `fetchJson`: lo enlaza con `<a href="/api/v1/pagos/{id}/pdf" target="_blank">` (`hrefComprobante`).
+
+### Pagos realizados (HU-36)
+
+**`GET /pagos?desde&hasta&alumnoId?&materiaId?&profesorId?&formaPago?&page&pageSize`** (`MESA_ENTRADAS`, `GERENTE`): los pagos con **fecha de pago** en el período, vigentes y anulados.
+
+- `desde` y `hasta`: `YYYY-MM-DD`, **obligatorios**, extremos incluidos y **sin tope de días** (la UI manda el mes en curso por defecto). `hasta` no puede ser anterior a `desde`.
+- `alumnoId`, `materiaId` y `profesorId` (opcionales): enteros positivos; `materiaId` es **una sola** materia. **La materia y el profesor se aplican a cada turno**, como en Cuentas: un pago aparece si tiene algún turno de esa materia o de ese profesor y, con los dos, si **un mismo turno** cumple los dos (decisión T-152). Un alumno, una materia o un profesor que no existen dan una lista vacía y los totales en 0: **no hay 404**.
+- `formaPago` (opcional): `EFECTIVO`, `TRANSFERENCIA` o `DEBITO`, por el código, nunca por el nombre.
+- `page` y `pageSize`: ver Listados paginados.
+- Orden: del más reciente al más antiguo (`fechaPago` y, con la misma fecha, `id` descendentes).
+
+Responde el formato de un listado paginado **más `totales`, junto a `data` y `meta`** (no dentro de `meta`, que no cambia), como `totalAdeudado` de `GET /cuentas/adeudados` (decisión T-151):
+
+```json
+{
+  "data": [
+    {
+      "id": 33,
+      "numeroComprobante": 1026,
+      "fechaPago": "2026-10-06",
+      "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Álvarez" },
+      "materias": [
+        { "id": 7, "nombre": "Física" },
+        { "id": 2, "nombre": "Matemática" }
+      ],
+      "cantidad": 4,
+      "total": 34000,
+      "formaPago": { "codigo": "TRANSFERENCIA", "nombre": "Transferencia" },
+      "registradoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+      "estado": "VIGENTE",
+      "anulacion": null
+    },
+    {
+      "id": 31,
+      "numeroComprobante": 1024,
+      "fechaPago": "2026-10-05",
+      "alumno": { "id": 14, "nombre": "Tomás", "apellido": "Pereyra" },
+      "materias": [{ "id": 2, "nombre": "Matemática" }],
+      "cantidad": 2,
+      "total": 16000,
+      "formaPago": { "codigo": "EFECTIVO", "nombre": "Efectivo" },
+      "registradoPor": { "id": "usr_mesa_01", "nombre": "Laura", "apellido": "Gómez" },
+      "estado": "ANULADO",
+      "anulacion": { "motivo": "FORMA_PAGO_EQUIVOCADA", "detalle": "Fue por transferencia" }
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 10, "total": 2, "totalPages": 1 },
+  "totales": {
+    "cobrado": 34000,
+    "porForma": { "EFECTIVO": 0, "TRANSFERENCIA": 34000, "DEBITO": 0 }
+  }
+}
+```
+
+- Cada pago (`PagoRealizado`): `materias` son las materias distintas de sus turnos, por nombre; `cantidad`, cuántos turnos incluye; `registradoPor`, un `UsuarioAuditoria`; `anulacion`, `{ motivo, detalle }` si está anulado y `null` si está vigente (quién lo anuló y cuándo están en el detalle).
+- **Un pago anulado se lista, marcado con su `estado`, pero no suma.**
+- `totales` es de **todo el filtro**, no sólo de la página, y **sólo de los pagos vigentes**: `porForma` tiene lo cobrado por cada forma de pago y `cobrado` es la suma de las tres. Con `formaPago`, las otras dos van en 0. Con `materiaId` o `profesorId`, cada pago listado suma su **total completo**, no sólo la parte de esa materia o profesor (decisión T-152). Es la misma definición de "cobrado" que el tablero.
+- Sin pagos en el filtro: `data: []`, `meta.total: 0` y `totales` en 0. La UI muestra "No hay pagos en este período".
+
+**Errores:** 400 `VALIDACION` si falta `desde` o `hasta` (en ese campo), si una fecha es inválida, si `hasta` es anterior a `desde` (en `["hasta"]`: "La fecha hasta no puede ser anterior a la fecha desde", el mismo mensaje que Cuentas), si un id no es un entero positivo, si `formaPago` no es uno de los tres códigos o si la paginación está fuera de rango; 401 sin sesión; 403 `SIN_PERMISO` con otro rol (también el alumno).
+
+### Mis pagos (HU-37)
+
+**`GET /pagos/mis-pagos?page&pageSize`** (`ALUMNO`, portal): los pagos del alumno de la sesión, vigentes y anulados, en el mismo orden que `GET /pagos` y paginados. **No recibe un `alumnoId`**: el alumno sale de la sesión, y un `alumnoId` en la query se ignora.
+
+```json
+{
+  "data": [
+    {
+      "id": 33,
+      "numeroComprobante": 1026,
+      "fechaPago": "2026-10-06",
+      "materias": [
+        { "id": 7, "nombre": "Física" },
+        { "id": 2, "nombre": "Matemática" }
+      ],
+      "cantidad": 4,
+      "total": 34000,
+      "formaPago": { "codigo": "TRANSFERENCIA", "nombre": "Transferencia" },
+      "estado": "VIGENTE"
+    },
+    {
+      "id": 30,
+      "numeroComprobante": 1023,
+      "fechaPago": "2026-09-28",
+      "materias": [{ "id": 2, "nombre": "Matemática" }],
+      "cantidad": 2,
+      "total": 16000,
+      "formaPago": { "codigo": "EFECTIVO", "nombre": "Efectivo" },
+      "estado": "ANULADO"
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 10, "total": 2, "totalPages": 1 }
+}
+```
+
+- Cada pago (`MiPago`): número de comprobante, fecha, materias, cantidad de turnos, total, forma de pago y `estado` (un anulado se ve marcado; sus turnos vuelven a figurar en `GET /cuentas/mi-cuenta`).
+- **No trae** quién lo registró, el comprobante adjunto, el alumno, las observaciones ni el motivo de la anulación.
+- No hay totales: lo pendiente está en `GET /cuentas/mi-cuenta`. El comprobante de cada pago se abre con `GET /pagos/{id}/pdf`.
+- **Errores:** 400 si la paginación es inválida; 401 sin sesión; 403 `SIN_PERMISO` si el rol no es `ALUMNO` o la cuenta no tiene alumno.
 
 ## Cuentas
 
@@ -1591,7 +1736,70 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante ad
 
 ## Anulaciones
 
-A completar por T-104 (HU-42).
+HU-42 (T-104). Anular un pago completo, nunca un turno suelto. Reglas en `dominio.md` → Anulación de pagos.
+
+| Endpoint                         | Roles           | Qué hace                                                                              |
+| -------------------------------- | --------------- | ------------------------------------------------------------------------------------- |
+| `GET /api/v1/anulaciones/previa` | `MESA_ENTRADAS` | El resumen para confirmar y sus avisos. No escribe. 200; 400; 404; 409 `PAGO_ANULADO` |
+| `POST /api/v1/anulaciones`       | `MESA_ENTRADAS` | Anula el pago. 201 con `{ pagoId, cantidad }`; 400; 404; 409 `PAGO_ANULADO`           |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**`GET /anulaciones/previa?pagoId=31`** (`pagoId`: entero positivo; si no, 400 `VALIDACION` en `["pagoId"]`):
+
+```json
+{
+  "pago": {
+    "id": 31,
+    "numeroComprobante": 123,
+    "alumno": { "id": 12, "nombre": "Juan", "apellido": "Pérez" },
+    "total": 32000,
+    "cantidad": 4
+  },
+  "avisos": {
+    "deuda": { "cantidad": 5, "total": 40000, "turnosDelPago": 4 },
+    "precios": [
+      { "materia": { "id": 2, "nombre": "Matemática" }, "cobrado": 8000, "vigente": 9000 }
+    ],
+    "transferenciaCompartida": {
+      "operacion": "0004829137",
+      "banco": "Banco Macro",
+      "pagos": [
+        {
+          "pagoId": 32,
+          "numeroComprobante": 124,
+          "alumno": { "id": 14, "nombre": "Lucía", "apellido": "Álvarez" }
+        }
+      ]
+    }
+  }
+}
+```
+
+- `pago`: lo que muestra la confirmación ("¿Anular el comprobante N.º 123 de Juan Pérez por $ 32.000 (4 turnos)?"). `total` en pesos; `cantidad`, los turnos del pago. El texto lo arma el cliente con estos datos.
+- Los avisos **informan, no bloquean**: anular se puede igual. Sin nada que avisar, `deuda` y `transferenciaCompartida` van `null` y `precios` va `[]`.
+- `avisos.deuda`: el alumno quedaría con **deuda vencida** (HU-29). `cantidad` y `total` son su deuda vencida de hoy más los turnos del pago con fecha de 30 días o más (`fecha <= hoy - 30`), que al anular dejan de estar pagos, a precio **vigente** (un turno de una materia sin precio cuenta en `cantidad` pero no suma al `total`). `turnosDelPago` es cuántos de esos turnos son de este pago (puede ser 0 si el alumno ya tenía deuda vencida). `null` si no quedaría con ninguna.
+- `avisos.precios`: una entrada por materia (y precio cobrado) cuyo precio por hora **vigente** es distinto del que se cobró en el pago, por nombre de materia: "Los turnos se volverán a cobrar a $ 9.000 por hora; en este pago se cobraron a $ 8.000". `vigente` es `null` si la materia ya no tiene precio.
+- `avisos.transferenciaCompartida`: sólo si el pago es una transferencia. Los **otros pagos vigentes** con la misma operación y banco (una transferencia puede cubrir a varios alumnos), por número de comprobante. **No se anulan con éste.** `null` si no hay otros.
+- Errores, en orden: 400 (`pagoId`); 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` si ya está anulado (no hay nada que confirmar).
+
+**Body de `POST /anulaciones`:**
+
+```json
+{ "pagoId": 31, "motivo": "ERROR_CARGA", "detalle": "Se cargó el alumno equivocado" }
+```
+
+- `pagoId`: entero positivo.
+- `motivo`: `ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`.
+- `detalle`: opcional, hasta 500 caracteres; `""`, espacios o `null` = sin detalle. **Obligatorio si `motivo = OTRO`**: 400 `VALIDACION` en `["detalle"]`.
+
+**Respuesta 201:** `{ "pagoId": 31, "cantidad": 4 }`: los turnos que volvieron a quedar pendientes de pago ("Pago anulado. Sus turnos volvieron a quedar pendientes de pago").
+
+**Errores, en orden:** 400 `VALIDACION`; 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` "Un pago anulado no se puede volver a activar" (sin `details`; también si dos anulaciones del mismo pago llegan a la vez: gana una).
+
+**Qué hace, en una transacción con el lock del alumno** (el mismo que pagar, cancelar y reprogramar, así que se serializan): `Pago.estado = ANULADO` (con `updatedById`/`updatedAt`), una `AnulacionPago` (motivo, detalle y quién la creó) y `vigente = null` en todos los `PagoTurno` del pago. **No se borra nada**: el pago conserva todos sus datos, su forma de pago y su comprobante adjunto, y su número no se reutiliza. Las ocurrencias vuelven a `PENDIENTE` en la siguiente lectura del motor (`Ocurrencia.pago`, `cuentas`, deuda) y se pueden cobrar de nuevo con `POST /pagos` **al precio vigente**. Si un pago nuevo de esas ocurrencias llega a la vez, el lock lo ordena: o entra después de la anulación, o recibe 409 `TURNOS_NO_COBRABLES` (`YA_PAGADO`).
+
+El pago anulado se sigue consultando con `GET /pagos/{id}` (`estado: "ANULADO"` y su `anulacion`) y su comprobante en PDF lleva la leyenda "ANULADO" (ver Pagos).
 
 ## Usuarios
 
@@ -1624,6 +1832,18 @@ Lo que vale para cualquier usuario sin importar su rol (HU-28, T-91).
 
 Errores comunes: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` en el `PATCH` para cualquier rol que no sea `ALUMNO`.
 
+## Reparto
+
+A completar por T-120 (HU-43).
+
+## Liquidaciones
+
+A completar por T-124 (HU-44). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+
+## Caja
+
+A completar por T-127 (HU-46).
+
 ## Portal del alumno
 
 El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: cada endpoint del alumno vive en la feature dueña del concepto (`pagos`, `ocurrencias`, `cuentas`…) y se documenta en la sección de esa feature, con las convenciones de [Formatos](#formatos), [Errores](#errores) y [Roles](#roles). Acá están la convención y el índice.
@@ -1632,10 +1852,10 @@ El portal (`/portal`) lo usa el rol `ALUMNO`. **No es una feature de la API**: c
 - **Rol:** `requireRole('ALUMNO')`. Un endpoint del personal no se abre al alumno por omisión: si un endpoint existente (por ejemplo, un PDF) también lo sirve, lo declara su sección y vale la misma regla de propiedad.
 - **El alumno sale de la sesión.** Ningún endpoint del portal recibe un `alumnoId` ni otro dato que identifique a un alumno: se toma del usuario que inició sesión (`actor.alumnoId`). Pedir un recurso de otro alumno (un turno, un pago, un PDF) responde 403 `SIN_PERMISO`; un usuario con rol `ALUMNO` sin alumno vinculado, también.
 - **Qué no se devuelve nunca al alumno:** las observaciones internas de su ficha ni las del turno, la prioridad del turno, la ocupación o los cupos de un bloque, la auditoría (quién cargó cada dato), el comprobante adjunto de un pago ni datos de otros alumnos.
+  - **Excepción: el comprobante de pago en PDF.** El alumno descarga el mismo comprobante que le entrega la mesa (`GET /pagos/{id}/pdf`, sólo de sus pagos), con "Registrado por" y, si está anulado, quién lo anuló (decisión T-153). Las respuestas JSON del portal no traen esa auditoría.
 - **Sólo lectura, salvo lo que su sección diga.** Cancelar, reprogramar y pagar son de mesa de entradas; el alumno saca turnos (`POST /turnos/mis-turnos`) y cambia su contraseña.
 
 Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuando los implementa:
-
 
 | Feature       | Endpoints del portal                                                                        | Tarea |
 | ------------- | ------------------------------------------------------------------------------------------- | ----- |
@@ -1643,22 +1863,36 @@ Endpoints del portal. Cada tarea reemplaza su fila con los endpoints reales cuan
 | `alumnos`     | `GET /alumnos/mi-perfil`                                                                    | T-88  |
 | `usuarios`    | `GET /usuarios/mi-usuario`, `PATCH /usuarios/mi-usuario/contrasena` ([Usuarios](#usuarios)) | T-91  |
 | `turnos`      | `/turnos/mis-turnos` (`POST`) y `/habilitacion`, `/materias`, `/disponibilidad`             | T-93  |
-| `pagos`       | A completar por T-98                                                                        | T-98  |
+| `pagos`       | `GET /pagos/mis-pagos` y `GET /pagos/{id}/pdf` (sólo sus pagos) ([Pagos](#mis-pagos-hu-37)) | T-98  |
 | `cuentas`     | `GET /cuentas/mi-cuenta` ([Cuentas](#cuentas))                                              | T-101 |
 | `examenes`    | `GET /examenes/mis-examenes?materiaId` ([Exámenes](#nota-del-examen-hu-34-t-106))           | T-106 |
 | `historiales` | `GET /historiales/mis-materias` y `/mis-materias/{materiaId}/{profesorId}?mes`              | T-108 |
+
+## Endpoints del profesor
+
+Como el portal, lo propio del profesor vive en la feature dueña del concepto y se documenta en su sección.
+
+- **Nombre:** la misma convención `mis-…` / `mi-…` del [Portal del alumno](#portal-del-alumno).
+- **Rol:** `requireRole('PROFESOR')`.
+- **El profesor sale de la sesión.** Ningún endpoint recibe un `profesorId`: uno en el query se ignora.
+
+| Feature         | Endpoints del profesor                                               | Tarea |
+| --------------- | -------------------------------------------------------------------- | ----- |
+| `alumnos`       | `GET /alumnos/mis-alumnos` ([Alumnos](#alumnos))                     | —     |
+| `agendas`       | `GET /agendas/propia` ([Agenda propia](#agenda-propia-del-profesor)) | T-25  |
+| `liquidaciones` | A completar por T-126                                                | T-126 |
 
 ## Documentos PDF
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
 
-| Documento             | Endpoint                                 | Roles                       |
-| --------------------- | ---------------------------------------- | --------------------------- |
-| Comprobante de pago   | `GET /pagos/{id}/pdf`                    | `MESA_ENTRADAS`             |
-| Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf` | `MESA_ENTRADAS`, `PROFESOR` |
-| Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`        | `MESA_ENTRADAS`             |
-| Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`   | `MESA_ENTRADAS`             |
-| Tablero del gerente   | `GET /tablero/pdf?desde&hasta`           | `GERENTE`                   |
+| Documento             | Endpoint                                 | Roles                                               |
+| --------------------- | ---------------------------------------- | --------------------------------------------------- |
+| Comprobante de pago   | `GET /pagos/{id}/pdf`                    | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
+| Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf` | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`        | `MESA_ENTRADAS`                                     |
+| Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`   | `MESA_ENTRADAS`                                     |
+| Tablero del gerente   | `GET /tablero/pdf?desde&hasta`           | `GERENTE`                                           |
 
 Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Agendas y Tablero.
 
@@ -1681,17 +1915,18 @@ Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su s
 
 Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 
-| Query                                | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `q`                                  | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras. En la agenda (decisión T-36) busca por nombre de alumno **o** de profesor, nunca mezclando palabras entre los dos; si además se manda `profesorId`, busca sólo por alumno (T-42)                                       |
-| `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `materiaId`                          | Filtra por materia. En Cuentas (T-101), una o más, repitiendo el parámetro: `?materiaId=2&materiaId=5`                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `profesorId`                         | Filtra por profesor. En la agenda (decisión T-42) es la vista personal de su agenda ese día                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                                                           |
-| `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos. `hasta` no puede ser anterior a `desde`. En las agendas (`/agendas/propia` y `/agendas/profesor`; en `/agendas/centro` son obligatorios): sin `desde`, hoy; sin `hasta`, el mismo día que `desde`; el rango no puede superar los 31 días. En cuentas (`/cuentas/...`): cada extremo es opcional y **no hay tope de días**; cada sección toma la parte del período que le toca (adeudados, lo anterior a hoy; próximos, de hoy al tope de cobro) y la que no tiene parte no aplica (ver Cuentas) |
-| `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| Query                                | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `q`                                  | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras. En la agenda (decisión T-36) busca por nombre de alumno **o** de profesor, nunca mezclando palabras entre los dos; si además se manda `profesorId`, busca sólo por alumno (T-42)                                                                                                                                |
+| `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `materiaId`                          | Filtra por materia. En Cuentas (T-101), una o más, repitiendo el parámetro: `?materiaId=2&materiaId=5`. En Pagos (`GET /pagos`), una sola                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `formaPago`                          | Filtra por forma de pago, por su código: `EFECTIVO`, `TRANSFERENCIA` o `DEBITO` (nunca por el nombre). En Pagos (`GET /pagos`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| `profesorId`                         | Filtra por profesor. En la agenda (decisión T-42) es la vista personal de su agenda ese día                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `aulaId`                             | Filtra por aula                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
+| `fecha`                              | Fecha `YYYY-MM-DD`. En la agenda diaria (`/agendas/diaria`) y sus selectores, el día a consultar (sin fecha, el de hoy, zona del negocio). En la disponibilidad de turnos, la fecha de la ocupación: hoy o posterior, y el día de la semana sale de ella (sin fecha, la próxima ocurrencia de cada día)                                                                                                                                                                                                                                                                                                                                    |
+| `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos. `hasta` no puede ser anterior a `desde`. En las agendas (`/agendas/propia` y `/agendas/profesor`; en `/agendas/centro` son obligatorios): sin `desde`, hoy; sin `hasta`, el mismo día que `desde`; el rango no puede superar los 31 días. En cuentas (`/cuentas/...`): cada extremo es opcional y **no hay tope de días**; cada sección toma la parte del período que le toca (adeudados, lo anterior a hoy; próximos, de hoy al tope de cobro) y la que no tiene parte no aplica (ver Cuentas). En pagos (`GET /pagos`): por fecha de pago, los dos **obligatorios** y sin tope de días |
+| `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 
 ## Recursos individuales
 
@@ -1769,7 +2004,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 | 409    | `TURNOS_NO_CANCELABLES`  | Cancelar turnos, si alguna ocurrencia no se puede cancelar (no se cancela ninguna): "Algunos turnos no se pueden cancelar". `details`: una entrada por cada ocurrencia que falla, `[{ "path": ["ocurrencias", <posición>], "message", "turnoId", "fecha", "motivo", "pagoId"? }]` (`pagoId` sólo con `PAGADO`); motivos: ver Cancelaciones. Si otra cancelación la registró al mismo tiempo (última red de la base), "Alguno de los turnos ya fue cancelado" sin `details`                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNOS_PAGADOS`         | Finalizar un turno recurrente, si hay turnos pagados desde `fechaDesde` (no se finaliza): "Hay turnos pagados desde esa fecha: elegí una fecha posterior al último turno pagado (DD/MM)" o, si llegan hasta el final de la serie, "Los turnos pagados llegan hasta el final de la serie (DD/MM): no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaPagada", "fechaDesdeMinima", "pagadas": [{ "fecha", "horaInicio", "horaFin", "importe" }] }`; `fechaDesdeMinima` es la primera fecha que se puede elegir, o `null` si no queda ninguna; `pagadas` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                |
 | 409    | `TURNOS_CON_ASISTENCIA`  | Finalizar un turno recurrente desde hoy, si el turno de hoy tiene asistencia registrada (no se finaliza, T-83): "El turno del DD/MM tiene asistencia registrada: elegí una fecha posterior" o, si es la última fecha de la serie, "El turno del DD/MM tiene asistencia registrada y es el último de la serie: no se puede finalizar". `details` es un **objeto**: `{ "ultimaFechaConAsistencia", "fechaDesdeMinima", "conAsistencia": [{ "fecha", "horaInicio", "horaFin", "estado" }] }`, como `TURNOS_PAGADOS`; `conAsistencia` tiene la misma forma que en la previa (ver Finalizaciones)                                                                                                                                                                                                                                                    |
-| 409    | `PAGO_ANULADO`           | "El pago está anulado: su comprobante adjunto se conserva como estaba", al reemplazar o quitar el comprobante adjunto de un pago anulado (`PUT`/`DELETE /adjuntos/pagos/{pagoId}`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
+| 409    | `PAGO_ANULADO`           | "El pago está anulado: su comprobante adjunto se conserva como estaba", al reemplazar o quitar el comprobante adjunto de un pago anulado (`PUT`/`DELETE /adjuntos/pagos/{pagoId}`); y "Un pago anulado no se puede volver a activar", al anular (o pedir la confirmación de anular) un pago que ya está anulado (`POST /anulaciones`, `GET /anulaciones/previa`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 | 409    | `ADJUNTO_OBLIGATORIO`    | "Un pago por transferencia no puede quedar sin comprobante: reemplazalo", al quitar el comprobante adjunto de un pago por transferencia (`DELETE /adjuntos/pagos/{pagoId}`). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
 | 409    | `TURNO_CON_ASISTENCIA`   | "El turno tiene asistencia registrada: no se puede reprogramar", al reprogramar una ocurrencia con asistencia ("Presente" o "Ausente"), aunque sea de hoy (T-83). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
 
@@ -1787,6 +2022,7 @@ Valores del campo `role` de la sesión: `MESA_ENTRADAS`, `PROFESOR`, `GERENTE` y
 | `ALUMNO`        | Alumno           |
 
 - `ALUMNO` está activo: ingresa con su usuario (ver [Autenticación](#autenticación)) y usa los endpoints del [Portal del alumno](#portal-del-alumno). Su cuenta lleva el alumno vinculado (`Usuario.alumnoId`), que la API toma de la sesión.
+- `PROFESOR` usa, además de los endpoints de su agenda y sus asistencias, los [Endpoints del profesor](#endpoints-del-profesor) (`mis-…` / `mi-…`), con el profesor de la sesión.
 - Base de datos: catálogo `rol` (lo carga el seed); `Usuario.role` es un FK a él.
 - Backend: `ROLES` en `src/server/shared/actor.ts`.
 - Frontend: el tipo `Role` de `src/types/index.ts`.

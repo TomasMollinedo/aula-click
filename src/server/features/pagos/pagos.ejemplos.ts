@@ -1,5 +1,12 @@
 import type { ErrorResponse } from '@/server/errors'
-import type { Comprobante, PagoRegistrado, RegistrarPago } from './pagos.validation'
+import type {
+  Comprobante,
+  DetallePago,
+  ListadoPagos,
+  MisPagos,
+  PagoRegistrado,
+  RegistrarPago,
+} from './pagos.validation'
 
 // Ejemplos del OpenAPI de pagos (Swagger en /api/v1/docs), usados en pagos.routes. Solo datos:
 // sin lógica. `satisfies` los mantiene alineados con los schemas.
@@ -118,6 +125,105 @@ export const ejemploErrorMonto = {
         path: ['montoRecibido'],
         message: 'El monto recibido ($ 30.000,00) es menor al total ($ 32.000,00)',
       },
+    ],
+  },
+} satisfies ErrorResponse
+
+/** Detalle de un pago con débito y comprobante adjunto, visto por la mesa de entradas (HU-36). */
+export const ejemploDetalle = {
+  ...ejemploComprobante,
+  montoRecibido: null,
+  vuelto: null,
+  formaPago: { codigo: 'DEBITO', nombre: 'Tarjeta de débito' },
+  debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+  cantidad: 2,
+  adjunto: {
+    id: 18,
+    nombre: 'cupon-debito.pdf',
+    tipo: 'application/pdf',
+    bytes: 184320,
+    adjuntadoPor: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+    adjuntadoEl: '2026-10-05T14:28:00.000Z',
+  },
+  acciones: { anular: true, reemplazarAdjunto: true, quitarAdjunto: true },
+} satisfies DetallePago
+
+/** Pagos realizados de octubre: uno vigente por transferencia y uno anulado, que no suma. */
+export const ejemploListado = {
+  data: [
+    {
+      id: 33,
+      numeroComprobante: 1026,
+      fechaPago: '2026-10-06',
+      alumno: { id: 12, nombre: 'Lucía', apellido: 'Álvarez' },
+      materias: [
+        { id: 7, nombre: 'Física' },
+        { id: 2, nombre: 'Matemática' },
+      ],
+      cantidad: 4,
+      total: 34000,
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      registradoPor: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+      estado: 'VIGENTE',
+      anulacion: null,
+    },
+    {
+      id: 31,
+      numeroComprobante: 1024,
+      fechaPago: '2026-10-05',
+      alumno: { id: 14, nombre: 'Tomás', apellido: 'Pereyra' },
+      materias: [{ id: 2, nombre: 'Matemática' }],
+      cantidad: 2,
+      total: 16000,
+      formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+      registradoPor: { id: 'usr_mesa_01', nombre: 'Laura', apellido: 'Gómez' },
+      estado: 'ANULADO',
+      anulacion: { motivo: 'FORMA_PAGO_EQUIVOCADA', detalle: 'Fue por transferencia' },
+    },
+  ],
+  meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
+  totales: {
+    cobrado: 34000,
+    porForma: { EFECTIVO: 0, TRANSFERENCIA: 34000, DEBITO: 0 },
+  },
+} satisfies ListadoPagos
+
+/** "Mis pagos" del alumno de la sesión: sin quién lo registró, el adjunto ni el alumno. */
+export const ejemploMisPagos = {
+  data: [
+    {
+      id: 33,
+      numeroComprobante: 1026,
+      fechaPago: '2026-10-06',
+      materias: [
+        { id: 7, nombre: 'Física' },
+        { id: 2, nombre: 'Matemática' },
+      ],
+      cantidad: 4,
+      total: 34000,
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      estado: 'VIGENTE',
+    },
+    {
+      id: 30,
+      numeroComprobante: 1023,
+      fechaPago: '2026-09-28',
+      materias: [{ id: 2, nombre: 'Matemática' }],
+      cantidad: 2,
+      total: 16000,
+      formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+      estado: 'ANULADO',
+    },
+  ],
+  meta: { page: 1, pageSize: 10, total: 2, totalPages: 1 },
+} satisfies MisPagos
+
+export const ejemploErrorRango = {
+  error: {
+    code: 'VALIDACION',
+    message: 'Datos de entrada inválidos',
+    details: [
+      { path: ['hasta'], message: 'La fecha hasta no puede ser anterior a la fecha desde' },
     ],
   },
 } satisfies ErrorResponse
