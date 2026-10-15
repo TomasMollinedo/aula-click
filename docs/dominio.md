@@ -267,7 +267,21 @@ A completar por T-81 (HU-22): quién la registra, plazo, campos, horas seguidas,
 
 ## Historial académico
 
-A completar por T-108 (HU-31, HU-33).
+HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios ni se guarda. Son las clases ya dadas del alumno, una por hora, con el estado, la asistencia y la cancelación que ya definen Asistencia y Turnos. Es de **sólo lectura**: la asistencia se registra y se corrige sólo desde HU-22.
+
+- **Dónde se ve:** mesa de entrada, en la ficha del alumno; el profesor, desde "Mis alumnos" (sólo los alumnos que tienen o tuvieron turnos con él, y de ellos ve el historial **completo**: también las clases de otras materias y de otros profesores, para entender su situación global); el alumno, en "Mis materias" del portal.
+- **Agrupado por materia y profesor** ("Matemática — Prof. Gómez"), porque un alumno puede cursar la misma materia con más de un profesor. Cada grupo tiene su propio resumen.
+- **Resumen de un grupo:** clases realizadas, ausencias y porcentaje de asistencia (realizadas sobre realizadas más ausencias, con un decimal). **Cada hora cuenta como un turno.** Los **cancelados**, los **sin registrar** y los **agendados no cuentan** para el porcentaje, que es 0 cuando no hay ninguna realizada ni ausente.
+- **Las horas seguidas se muestran juntas** (ajuste del 14/10, ver `decisiones.md`): un bloque por día con el estado de **cada** hora y "Qué se trabajó" e "Indicaciones para la próxima sesión" **una sola vez**; si una hora tiene otros textos (porque se corrigió sola), se muestran también los suyos. Una hora cancelada **corta** el bloque y se muestra sola, con su motivo (HU-13). Cada hora sigue contando por separado.
+- **Una clase cerrada por el sistema** (un "Sin registrar" con el plazo vencido, HU-22) se muestra con su observación, y se distingue de un "Sin registrar" que todavía está dentro del plazo.
+- **Sólo clases de hoy o anteriores:** los turnos futuros no son historial, están en los turnos del alumno. Una clase **de hoy** todavía sin asistencia se ve "Agendado" en la ficha, y **no se le muestra al alumno** (decisión T-148).
+- **Orden:** de la clase más reciente a la más antigua.
+- **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
+- **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
+- **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Tampoco las clases "Sin registrar" (decisión T-148, _pendiente de confirmación de las PO_: punto 8 de "Puntos a confirmar" del Sprint 3).
+- **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
+- El PDF mensual del historial es HU-32 (T-110).
 
 ## Portal del alumno
 
