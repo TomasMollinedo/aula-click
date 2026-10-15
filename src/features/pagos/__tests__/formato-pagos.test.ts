@@ -1,6 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
+import { formatoInstante } from '@/utils/auditoria'
+
 import {
+  datosDelMedio,
+  textoAdjuntadoPor,
+  textoAnuladoEl,
+  textoMotivoAnulacion,
+  textoRedDebito,
+  textoRegistradoPor,
+  textoTarjeta,
+  textoTituloComprobante,
   textoCantidad,
   textoConfirmacion,
   textoExito,
@@ -75,5 +85,98 @@ describe('textoVuelto', () => {
     expect(textoVuelto({ vuelto: 3000 })).toBe(`Vuelto: $${NBSP}3.000,00`)
     expect(textoVuelto({ vuelto: 0 })).toBe(`Vuelto: $${NBSP}0,00`)
     expect(textoVuelto({ vuelto: null })).toBeNull()
+  })
+})
+
+// Detalle de un pago (T-99): los mismos textos que el comprobante de pago en PDF de la API.
+describe('textos del detalle del pago', () => {
+  it('el título es el del comprobante de pago, con el número', () => {
+    expect(textoTituloComprobante(1024)).toBe('Comprobante de pago N° 1024')
+  })
+
+  it.each([
+    ['ERROR_CARGA', null, 'Error de carga'],
+    ['FORMA_PAGO_EQUIVOCADA', null, 'Forma de pago equivocada'],
+    ['OTRO', null, 'Otro motivo'],
+    ['ERROR_CARGA', 'Se cargó dos veces', 'Error de carga: Se cargó dos veces'],
+    ['OTRO', 'Pagó otro familiar', 'Otro motivo: Pagó otro familiar'],
+  ] as const)('motivo %s con detalle %s → %s', (motivo, detalle, texto) => {
+    expect(textoMotivoAnulacion({ motivo, detalle })).toBe(texto)
+  })
+
+  it.each([
+    ['VISA_DEBITO', 'Visa Débito'],
+    ['MASTERCARD_DEBITO', 'Mastercard Débito'],
+    ['MAESTRO', 'Maestro'],
+    ['CABAL_DEBITO', 'Cabal Débito'],
+    ['OTRA', 'Otra'],
+  ] as const)('red %s → %s', (red, texto) => {
+    expect(textoRedDebito(red)).toBe(texto)
+  })
+
+  it('la tarjeta, con el resto oculto', () => {
+    expect(textoTarjeta('1234')).toBe('**** 1234')
+  })
+
+  it('quién anuló, registró y adjuntó, con el instante en la hora local', () => {
+    const laura = { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' }
+    const instante = '2026-10-06T12:00:00.000Z'
+    const cuando = formatoInstante(instante)
+
+    expect(textoAnuladoEl({ anuladoPor: laura, anuladoEl: instante })).toBe(
+      `Anulado el ${cuando} por Laura Gómez`,
+    )
+    expect(textoRegistradoPor(laura, instante)).toBe(`Registrado por Laura Gómez · ${cuando}`)
+    expect(textoAdjuntadoPor(laura, instante)).toBe(`Adjuntado por Laura Gómez · ${cuando}`)
+  })
+})
+
+describe('datosDelMedio', () => {
+  const sinMedio = { montoRecibido: null, vuelto: null, transferencia: null, debito: null }
+
+  it('efectivo: monto recibido y vuelto, los de la API', () => {
+    expect(datosDelMedio({ ...sinMedio, montoRecibido: 20000, vuelto: 3000 })).toEqual([
+      { label: 'Monto recibido', valor: `$${NBSP}20.000,00` },
+      { label: 'Vuelto', valor: `$${NBSP}3.000,00` },
+    ])
+  })
+
+  it('efectivo con vuelto 0: se muestra (el monto era justo)', () => {
+    expect(datosDelMedio({ ...sinMedio, montoRecibido: 8000, vuelto: 0 })).toEqual([
+      { label: 'Monto recibido', valor: `$${NBSP}8.000,00` },
+      { label: 'Vuelto', valor: `$${NBSP}0,00` },
+    ])
+  })
+
+  it('un efectivo sin monto recibido (anterior a que fuera obligatorio): nada', () => {
+    expect(datosDelMedio(sinMedio)).toEqual([])
+  })
+
+  it('transferencia: operación, banco y titular; sin titular, no va', () => {
+    const transferencia = { operacion: '0004829137', banco: 'Banco Macro', titular: 'Marta López' }
+    expect(datosDelMedio({ ...sinMedio, transferencia })).toEqual([
+      { label: 'Operación', valor: '0004829137' },
+      { label: 'Banco', valor: 'Banco Macro' },
+      { label: 'Titular', valor: 'Marta López' },
+    ])
+    expect(
+      datosDelMedio({ ...sinMedio, transferencia: { ...transferencia, titular: null } }),
+    ).toEqual([
+      { label: 'Operación', valor: '0004829137' },
+      { label: 'Banco', valor: 'Banco Macro' },
+    ])
+  })
+
+  it('débito: red, cupón y la tarjeta; sin los últimos 4, no va', () => {
+    const debito = { red: 'VISA_DEBITO' as const, cupon: '000123', ultimos4: '1234' }
+    expect(datosDelMedio({ ...sinMedio, debito })).toEqual([
+      { label: 'Red', valor: 'Visa Débito' },
+      { label: 'Cupón', valor: '000123' },
+      { label: 'Tarjeta', valor: '**** 1234' },
+    ])
+    expect(datosDelMedio({ ...sinMedio, debito: { ...debito, ultimos4: null } })).toEqual([
+      { label: 'Red', valor: 'Visa Débito' },
+      { label: 'Cupón', valor: '000123' },
+    ])
   })
 })
