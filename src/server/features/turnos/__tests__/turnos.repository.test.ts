@@ -17,13 +17,26 @@ import {
 // reserva. Sin base: Prisma se reemplaza por un mock. `turno.findMany` consulta una tabla en
 // memoria que aplica el `where` (`turnos-en-memoria.ts`), así se prueban el prefiltro y la regla.
 
-const { findMany, findUnique, bloqueFindMany, tx, transaction, log } = vi.hoisted(() => {
+const {
+  findMany,
+  findUnique,
+  bloqueFindMany,
+  materiaFindMany,
+  deudaVencida,
+  tx,
+  transaction,
+  log,
+} = vi.hoisted(() => {
   const log: string[] = []
   return {
     log,
     findMany: vi.fn(),
     bloqueFindMany: vi.fn(),
     findUnique: vi.fn(),
+    materiaFindMany: vi.fn(),
+    // La deuda vencida es de `cuentas` (T-76, con sus propios tests): acá sólo importa con qué
+    // cliente y en qué momento se lee.
+    deudaVencida: vi.fn(),
     transaction: vi.fn(),
     tx: {
       $queryRaw: vi.fn((...args: unknown[]) => {
@@ -43,6 +56,7 @@ vi.mock('@/lib/prisma', () => ({
   prisma: {
     turno: { findMany, findUnique },
     bloqueAgenda: { findMany: bloqueFindMany },
+    materia: { findMany: materiaFindMany },
     // La interactiva (reservar) corre el callback con `tx`.
     $transaction: (arg: (cliente: typeof tx) => Promise<unknown>, opciones?: unknown) => {
       transaction(opciones)
@@ -50,6 +64,8 @@ vi.mock('@/lib/prisma', () => ({
     },
   },
 }))
+
+vi.mock('@/server/features/cuentas/cuentas.condiciones', () => ({ deudaVencida }))
 
 // HOY es martes 22/09/2026. Los lunes siguientes: 28/09, 05/10, 12/10, 19/10…
 const HOY = '2026-09-22'
@@ -564,6 +580,7 @@ describe('contarOcupacionPorBloque', () => {
 describe('reservar', () => {
   const actor: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
   const entrada: EntradaReserva = {
+    hoy: HOY,
     alumnoId: 12,
     profesorId: 4,
     materiaId: 3,
@@ -658,6 +675,7 @@ describe('reservar', () => {
     tx.turno.createManyAndReturn.mockImplementation(
       conLog('turno.createManyAndReturn', [{ id: 55 }, { id: 56 }]),
     )
+    deudaVencida.mockImplementation(conLog('deudaVencida', { cantidad: 2, total: 16000 }))
   })
 
   it('toma los tres locks con bloquearParaReserva (profesor, filas por id ordenadas, alumno) antes de leer o insertar', async () => {
@@ -743,10 +761,26 @@ describe('reservar', () => {
           materia: { id: 3, nombre: 'Materia3' },
         },
       ],
+      deudaVencida: { cantidad: 2, total: 16000 },
     })
     expect(tx.asignacionMateria.findUnique).toHaveBeenCalledWith(
       expect.objectContaining({ where: { profesorId_materiaId: { profesorId: 4, materiaId: 3 } } }),
     )
+  })
+
+  it('lee la deuda vencida del alumno con el tx, después de los locks y antes de planificar e insertar (HU-29)', async () => {
+    const planificar = vi.fn(() => {
+      log.push('planificar')
+      return plan
+    })
+
+    await turnosRepository.reservar(entrada, planificar, actor)
+
+    expect(deudaVencida).toHaveBeenCalledWith(tx, { alumnoId: 12, hoy: HOY })
+    const deuda = log.indexOf('deudaVencida')
+    expect(log.lastIndexOf('queryRaw')).toBeLessThan(deuda)
+    expect(deuda).toBeLessThan(log.indexOf('planificar'))
+    expect(log.indexOf('planificar')).toBeLessThan(log.indexOf('turno.createManyAndReturn'))
   })
 
   it('la transacción usa un timeout de 10 s (la espera de un lock no termina en 500)', async () => {
@@ -799,6 +833,43 @@ describe('reservar', () => {
       }),
     )
     expect(resultado).toEqual({ turnos: [], fechasSinTurno: plan.fechasSinTurno })
+  })
+})
+
+describe('deudaVencidaDe', () => {
+  it('la deuda vencida del alumno, con el cliente común (sin transacción)', async () => {
+    deudaVencida.mockResolvedValue({ cantidad: 3, total: 24000 })
+
+    expect(await turnosRepository.deudaVencidaDe(12, HOY)).toEqual({ cantidad: 3, total: 24000 })
+    const [cliente, filtro] = deudaVencida.mock.calls[0] as [unknown, unknown]
+    expect(cliente).not.toBe(tx)
+    expect(filtro).toEqual({ alumnoId: 12, hoy: HOY })
+  })
+})
+
+describe('listarMateriasOfertadas', () => {
+  it('materias activas con un profesor activo que la tenga asignada y tenga bloques activos, por nombre', async () => {
+    materiaFindMany.mockResolvedValue([{ id: 3, nombre: 'Matemática' }])
+
+    expect(await turnosRepository.listarMateriasOfertadas()).toEqual([
+      { id: 3, nombre: 'Matemática' },
+    ])
+    expect(materiaFindMany).toHaveBeenCalledWith({
+      where: {
+        estado: 'ACTIVO',
+        asignaciones: {
+          some: {
+            estado: 'ACTIVO',
+            profesor: {
+              usuario: { estado: 'ACTIVO' },
+              bloques: { some: { estado: 'ACTIVO' } },
+            },
+          },
+        },
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+    })
   })
 })
 

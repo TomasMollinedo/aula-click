@@ -9,6 +9,8 @@ import { renderizarTurnoPdf, renderizarTurnosDelAlumnoPdf } from './ocurrencias.
 import { ocurrenciasRepository } from './ocurrencias.repository'
 import type {
   listarOcurrenciasDelAlumnoRoute,
+  miTurnoRoute,
+  misTurnosRoute,
   obtenerOcurrenciaPdfRoute,
   obtenerOcurrenciaRoute,
   turnosDelAlumnoPdfRoute,
@@ -35,6 +37,15 @@ export const listarOcurrenciasDelAlumno: RouteHandler<
   typeof listarOcurrenciasDelAlumnoRoute,
   AppEnv
 > = async (c) => c.json(await ocurrenciasService.listarDelAlumno(c.req.valid('query')), 200)
+
+/** Portal (HU-30): el alumno sale del actor de la sesión. */
+export const misTurnos: RouteHandler<typeof misTurnosRoute, AppEnv> = async (c) =>
+  c.json(await ocurrenciasService.misTurnos(c.req.valid('query'), c.get('actor')), 200)
+
+export const miTurno: RouteHandler<typeof miTurnoRoute, AppEnv> = async (c) => {
+  const { turnoId, fecha } = c.req.valid('param')
+  return c.json(await ocurrenciasService.miTurno(turnoId, fecha, c.get('actor')), 200)
+}
 
 /** El detalle del turno en PDF: el mismo detalle, con el mismo actor (un profesor, sólo los suyos). */
 export const obtenerOcurrenciaPdf: RouteHandler<typeof obtenerOcurrenciaPdfRoute, AppEnv> = async (
