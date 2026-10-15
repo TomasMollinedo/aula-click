@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { leerPagoId, paramsConPago, paramsSinPago } from '../detalle-pago-url'
+import {
+  crearRegistroDeAperturas,
+  leerPagoId,
+  paramsConPago,
+  paramsSinPago,
+} from '../detalle-pago-url'
 
 describe('leerPagoId', () => {
   it('lee el id del pago', () => {
@@ -41,5 +46,47 @@ describe('paramsConPago y paramsSinPago', () => {
     const params = new URLSearchParams('tab=pagos')
     paramsConPago(params, 31)
     expect(params.toString()).toBe('tab=pagos')
+  })
+})
+
+// Lo comparten todas las instancias de `useDetallePagoEnUrl`: quien abre el detalle (el detalle del
+// turno, "Pagos realizados") no es quien lo cierra (el layout de mesa).
+describe('crearRegistroDeAperturas', () => {
+  it('un pago abierto con un clic se cierra volviendo atrás, una sola vez', () => {
+    const registro = crearRegistroDeAperturas()
+    registro.marcar(31)
+
+    expect(registro.cerrar(31)).toBe(true)
+    // Ya se cerró: si vuelve a aparecer en la URL sin un clic, se entró por URL.
+    expect(registro.cerrar(31)).toBe(false)
+  })
+
+  it('entrando por URL (sin clic) no se vuelve atrás', () => {
+    expect(crearRegistroDeAperturas().cerrar(31)).toBe(false)
+  })
+
+  it('si en la URL hay otro pago que el abierto con el clic, no se vuelve atrás', () => {
+    const registro = crearRegistroDeAperturas()
+    registro.marcar(31)
+
+    expect(registro.cerrar(40)).toBe(false)
+    expect(registro.cerrar(null)).toBe(false)
+  })
+
+  it('cerrado por otro camino (Atrás del navegador), se olvida', () => {
+    const registro = crearRegistroDeAperturas()
+    registro.marcar(31)
+    registro.olvidar()
+
+    expect(registro.cerrar(31)).toBe(false)
+  })
+
+  it('cada registro es independiente', () => {
+    const uno = crearRegistroDeAperturas()
+    const otro = crearRegistroDeAperturas()
+    uno.marcar(31)
+
+    expect(otro.cerrar(31)).toBe(false)
+    expect(uno.cerrar(31)).toBe(true)
   })
 })

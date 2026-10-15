@@ -25,3 +25,32 @@ export function paramsSinPago(params: URLSearchParams): URLSearchParams {
   nuevos.delete(PARAM_PAGO)
   return nuevos
 }
+
+/**
+ * Qué pago se abrió con un clic en esta pestaña (un `push`, así que cerrar es volver atrás). Lo
+ * comparten todas las instancias de `useDetallePagoEnUrl`: el que abre (el detalle del turno,
+ * "Pagos realizados") y el que cierra (el detalle montado en el layout) son instancias distintas.
+ * Recuerda un solo pago y por su id: si en la URL hay otro, se entró por URL y no se vuelve atrás.
+ */
+export function crearRegistroDeAperturas() {
+  let abiertoConClic: number | null = null
+  return {
+    /** El pago `pagoId` se abrió con un clic (`push`). */
+    marcar(pagoId: number) {
+      abiertoConClic = pagoId
+    },
+    /** El detalle se cerró por otro camino (Atrás del navegador, un enlace): no queda nada abierto. */
+    olvidar() {
+      abiertoConClic = null
+    },
+    /**
+     * Al cerrar `pagoId`: `true` si se abrió con un clic (hay que volver atrás) y `false` si se
+     * entró por URL. Después de responder lo olvida.
+     */
+    cerrar(pagoId: number | null): boolean {
+      const conClic = pagoId !== null && abiertoConClic === pagoId
+      abiertoConClic = null
+      return conClic
+    },
+  }
+}
