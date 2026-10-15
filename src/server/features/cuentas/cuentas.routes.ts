@@ -39,7 +39,7 @@ const errores = {
 }
 
 const FILTROS =
-  'Filtros opcionales: período (`desde`, `hasta`, extremos incluidos, sin tope de días), `materiaId` y `profesorId`; una materia o un profesor que no existen dan una respuesta vacía.'
+  'Filtros opcionales: período (`desde`, `hasta`, extremos incluidos, sin tope de días), `materiaId` (una o más materias, repitiendo el parámetro: `?materiaId=2&materiaId=5`) y `profesorId`; una materia o un profesor que no existen dan una respuesta vacía.'
 
 export const obtenerCuentaRoute = createRoute({
   method: 'get',

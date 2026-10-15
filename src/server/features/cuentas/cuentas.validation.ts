@@ -23,8 +23,26 @@ export const alumnoIdParamsSchema = z.object({
 export const MENSAJE_RANGO_INVERTIDO = 'La fecha hasta no puede ser anterior a la fecha desde'
 
 /**
+ * `materiaId` de una o más materias (HU-25, T-101), con el parámetro repetido
+ * (`?materiaId=2&materiaId=5`). Hono entrega texto si viene una vez y una lista si se repite:
+ * siempre sale como lista. Los repetidos los descarta el service.
+ */
+const materiaIdsQuery = z
+  .preprocess(
+    (valor) => (Array.isArray(valor) ? valor : [valor]),
+    z.array(idPositivoQuery('Id de una materia', 2)),
+  )
+  .optional()
+  .openapi({
+    param: { name: 'materiaId', in: 'query', style: 'form', explode: true },
+    description:
+      'Sólo las ocurrencias de estas materias: una o más, repitiendo el parámetro (`?materiaId=2&materiaId=5`). Sin `materiaId`, todas',
+    example: [2, 5],
+  })
+
+/**
  * Filtros comunes de los tres endpoints: período (cada extremo opcional, sin tope de días),
- * materia y profesor. Una materia o un profesor que no existen dan una respuesta vacía, sin 404.
+ * materias y profesor. Una materia o un profesor que no existen dan una respuesta vacía, sin 404.
  */
 const filtroCuenta = {
   desde: fechaISO.optional().openapi({
@@ -38,9 +56,7 @@ const filtroCuenta = {
     description: 'Último día del período, incluido (YYYY-MM-DD). No puede ser anterior a `desde`',
     example: '2026-09-30',
   }),
-  materiaId: idPositivoQuery('Sólo las ocurrencias de esta materia', 2)
-    .optional()
-    .openapi({ param: { name: 'materiaId', in: 'query' } }),
+  materiaId: materiaIdsQuery,
   profesorId: idPositivoQuery('Sólo las ocurrencias de este profesor (el del bloque)', 3)
     .optional()
     .openapi({ param: { name: 'profesorId', in: 'query' } }),

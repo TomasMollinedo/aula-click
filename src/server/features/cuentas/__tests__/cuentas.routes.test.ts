@@ -106,18 +106,19 @@ describe('período', () => {
 
   it.each(RUTAS)('%s con filtros inválidos → 400 VALIDACION en el campo', async (path) => {
     for (const [query, campo] of [
-      ['desde=2026-02-30', 'desde'],
-      ['hasta=30-09-2026', 'hasta'],
-      ['materiaId=abc', 'materiaId'],
-      ['profesorId=0', 'profesorId'],
-    ]) {
+      ['desde=2026-02-30', ['desde']],
+      ['hasta=30-09-2026', ['hasta']],
+      ['materiaId=abc', ['materiaId', 0]],
+      ['materiaId=2&materiaId=0', ['materiaId', 1]],
+      ['profesorId=0', ['profesorId']],
+    ] as const) {
       const res = await pedir(`${path}?${query}`)
 
       expect(res.status).toBe(400)
       const json = await res.json()
       expect(json.error.code).toBe('VALIDACION')
       expect(json.error.details).toEqual(
-        expect.arrayContaining([expect.objectContaining({ path: [campo] })]),
+        expect.arrayContaining([expect.objectContaining({ path: campo })]),
       )
     }
   })
@@ -333,6 +334,36 @@ describe('GET /cuentas/proximos', () => {
   })
 })
 
+describe('varias materias (HU-25, T-101)', () => {
+  it.each(RUTAS)('%s con `materiaId` repetido: una lectura por materia', async (path) => {
+    expect((await pedir(`${path}?materiaId=2&materiaId=5`)).status).toBe(200)
+
+    const leidas = [
+      ...repository.leerAdeudados.mock.calls,
+      ...repository.leerProximos.mock.calls,
+    ].map(([filtro]) => filtro.materiaId)
+    expect(new Set(leidas)).toEqual(new Set([2, 5]))
+  })
+
+  it.each(RUTAS)('%s con una sola materia: una lectura con ese id', async (path) => {
+    expect((await pedir(`${path}?materiaId=2`)).status).toBe(200)
+
+    const leidas = [
+      ...repository.leerAdeudados.mock.calls,
+      ...repository.leerProximos.mock.calls,
+    ].map(([filtro]) => filtro.materiaId)
+    expect(leidas.every((id) => id === 2)).toBe(true)
+  })
+
+  it('un id repetido no duplica: `?materiaId=2&materiaId=2` lee una vez', async () => {
+    const res = await pedir('/alumnos/12?materiaId=2&materiaId=2')
+
+    expect(res.status).toBe(200)
+    expect(repository.leerAdeudados).toHaveBeenCalledTimes(1)
+    expect((await res.json()).adeudados).toHaveLength(1)
+  })
+})
+
 describe('OpenAPI', () => {
   it('declara todos los status codes de cada endpoint', () => {
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
@@ -360,5 +391,21 @@ describe('OpenAPI', () => {
     expect(enQuery('/api/v1/cuentas/alumnos/{alumnoId}')).toEqual(filtros)
     expect(enQuery('/api/v1/cuentas/adeudados')).toEqual(listado)
     expect(enQuery('/api/v1/cuentas/proximos')).toEqual(listado)
+  })
+
+  it('`materiaId` es una lista de ids que se repite en el query (`form`, `explode`)', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    for (const path of ['/alumnos/{alumnoId}', '/adeudados', '/proximos']) {
+      const param = (doc.paths?.[`/api/v1/cuentas${path}`]?.get?.parameters ?? []).find(
+        (p) => 'name' in p && p.name === 'materiaId',
+      )
+      expect(param).toMatchObject({
+        in: 'query',
+        required: false,
+        style: 'form',
+        explode: true,
+        schema: { type: 'array', items: { type: 'integer' } },
+      })
+    }
   })
 })
