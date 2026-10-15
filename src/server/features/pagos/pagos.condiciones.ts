@@ -15,13 +15,21 @@ import type { CodigoFormaPago } from './pagos.validation'
 //   pagado, muestra los datos de su pago (`leerPagoDeOcurrencia`).
 // - `tablero` (T-61): el total cobrado en un período (`totalCobradoEntre`) y, por forma de pago,
 //   para los pagos realizados (T-98) y el tablero (T-112): `totalCobradoPorForma`.
+// - `cuentas` (T-101): la cuenta del portal agrupada por materia con el mismo agrupado que el
+//   comprobante (`agruparPorMateria`).
 // - `anulaciones` (T-104): el pago a anular con sus turnos (`leerPagoParaAnular`) y los otros pagos
 //   vigentes de la misma transferencia (`pagosConMismaTransferencia`), para la confirmación y sus
 //   avisos.
 //
-// El tope y la suma sólo se re-exportan: la implementación es la de `pagos.reglas.ts`.
+// El tope, la suma y el agrupado sólo se re-exportan: la implementación es la de `pagos.reglas.ts`.
 
-export { DIAS_MAXIMOS_COBRO, limiteDeCobro, sumarImportes } from './pagos.reglas'
+export {
+  agruparPorMateria,
+  DIAS_MAXIMOS_COBRO,
+  limiteDeCobro,
+  sumarImportes,
+  type GrupoDeMateria,
+} from './pagos.reglas'
 
 /**
  * Los datos del pago que muestra el detalle de una ocurrencia pagada. El importe no está acá: es el

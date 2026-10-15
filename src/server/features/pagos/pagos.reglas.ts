@@ -154,6 +154,42 @@ export function montoRecibidoDe(medio: MedioPago): number | null {
   return medio.formaPago === 'EFECTIVO' ? medio.montoRecibido : null
 }
 
+/** Los turnos de una materia, con su subtotal (HU-25). */
+export type GrupoDeMateria<T> = {
+  materia: { id: number; nombre: string }
+  turnos: T[]
+  /** La suma de los importes de esos turnos en centavos (`sumarImportes`); los `null` no suman. */
+  subtotal: number
+}
+
+/**
+ * Turnos agrupados por materia (HU-25): las materias por nombre (y por id si se repite) y, dentro
+ * de cada una, los turnos en el orden en que llegan. El subtotal es la suma de sus importes, sin
+ * recalcular nada: un importe `null` (una materia sin precio, en una cuenta) no suma. La única
+ * implementación: la usan el comprobante en PDF (lo cobrado) y la cuenta del portal (`cuentas`,
+ * por `pagos.condiciones`; lo que se debe).
+ */
+export function agruparPorMateria<
+  T extends { materia: { id: number; nombre: string }; importe: number | null },
+>(turnos: readonly T[]): GrupoDeMateria<T>[] {
+  const grupos = new Map<number, { materia: T['materia']; turnos: T[] }>()
+  for (const turno of turnos) {
+    const grupo = grupos.get(turno.materia.id) ?? { materia: turno.materia, turnos: [] as T[] }
+    grupo.turnos.push(turno)
+    grupos.set(turno.materia.id, grupo)
+  }
+  return [...grupos.values()]
+    .map(({ materia, turnos: deLaMateria }) => ({
+      materia: { id: materia.id, nombre: materia.nombre },
+      turnos: deLaMateria,
+      subtotal: sumarImportes(deLaMateria.flatMap((t) => (t.importe === null ? [] : [t.importe]))),
+    }))
+    .sort(
+      (a, b) =>
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
+    )
+}
+
 /**
  * Motivo por el que no se puede cobrar (el primero, en el orden de la tabla), o `null`. El estado
  * de asistencia no importa: un `REALIZADO` o un `AUSENTE` impago se cobra igual (HU-22), y una

@@ -20,8 +20,8 @@ import {
   textoMotivoAnulacion,
   textoNumero,
   textoRegistradoPor,
-  turnosPorMateria,
 } from './pagos.formato'
+import { agruparPorMateria } from './pagos.reglas'
 import type { Comprobante } from './pagos.validation'
 
 // El comprobante de pago en PDF (HU-15, T-111; formas de pago, HU-23, T-96). Solo presentación:
@@ -126,7 +126,7 @@ export function ComprobantePdf({
   const { alumno, turnos } = comprobante
   const medio = datosDelMedio(comprobante)
   // Con más de una materia, la tabla va agrupada por materia con el subtotal de cada una (HU-25).
-  const grupos = turnosPorMateria(turnos)
+  const grupos = agruparPorMateria(turnos)
   const filaDe = (turno: Turno) => (
     <FilaPdf key={`${turno.turnoId}|${turno.fecha}`}>
       <CeldaPdf>{fechaDocumento(turno.fecha)}</CeldaPdf>

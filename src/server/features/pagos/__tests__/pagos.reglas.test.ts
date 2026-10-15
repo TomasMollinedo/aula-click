@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import {
+  agruparPorMateria,
   errorFormasDePago,
   calcularVuelto,
   formatearPesos,
@@ -330,5 +331,53 @@ describe('errorFormasDePago', () => {
     expect(errorFormasDePago().message).toBe(
       'Hay una forma de pago sin código: corré `pnpm db:seed`',
     )
+  })
+})
+
+describe('agruparPorMateria', () => {
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const INGLES = { id: 5, nombre: 'Inglés' }
+  const turno = (fecha: string, materia: { id: number; nombre: string }, importe: number) => ({
+    fecha,
+    materia,
+    importe,
+  })
+
+  it('una materia: un solo grupo con todos sus turnos y el subtotal igual al total', () => {
+    const turnos = [turno('2026-09-21', MATEMATICA, 8000), turno('2026-09-28', MATEMATICA, 8000)]
+    expect(agruparPorMateria(turnos)).toEqual([{ materia: MATEMATICA, turnos, subtotal: 16000 }])
+  })
+
+  it('Inglés y Matemática: un grupo por materia, por nombre, con el subtotal de cada una', () => {
+    const turnos = [
+      turno('2026-09-21', MATEMATICA, 8000),
+      turno('2026-09-22', INGLES, 9000.5),
+      turno('2026-09-28', MATEMATICA, 8000),
+      turno('2026-09-29', INGLES, 9000.5),
+    ]
+
+    const grupos = agruparPorMateria(turnos)
+
+    expect(grupos.map((g) => [g.materia.nombre, g.subtotal])).toEqual([
+      ['Inglés', 18001],
+      ['Matemática', 16000],
+    ])
+    // Dentro de cada materia, en el orden del comprobante (fecha y hora).
+    expect(grupos[0]?.turnos.map((t) => t.fecha)).toEqual(['2026-09-22', '2026-09-29'])
+    expect(grupos[1]?.turnos.map((t) => t.fecha)).toEqual(['2026-09-21', '2026-09-28'])
+  })
+
+  it('un importe null (materia sin precio, en una cuenta) no suma al subtotal', () => {
+    const conNull = [
+      { fecha: '2026-09-21', materia: MATEMATICA, importe: 8000 },
+      { fecha: '2026-09-28', materia: MATEMATICA, importe: null },
+    ]
+    expect(agruparPorMateria(conNull)).toEqual([
+      { materia: MATEMATICA, turnos: conNull, subtotal: 8000 },
+    ])
+  })
+
+  it('sin turnos: sin grupos', () => {
+    expect(agruparPorMateria([])).toEqual([])
   })
 })

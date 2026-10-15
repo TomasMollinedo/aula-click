@@ -1,6 +1,6 @@
 import { NotFoundError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
-import { limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
+import { agruparPorMateria, limiteDeCobro } from '@/server/features/pagos/pagos.condiciones'
 import { type Actor, alumnoDeLaSesion } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
@@ -51,26 +51,15 @@ function aOcurrenciaDeCuenta({ ocurrencia, importe }: Adeudado): OcurrenciaDeCue
 }
 
 /**
- * Las ocurrencias agrupadas por materia (por nombre y, si se repite, por id), cada una con su
- * subtotal. Dentro de cada grupo conservan el orden en que llegan.
+ * Las ocurrencias agrupadas por materia, con su subtotal: el agrupado del comprobante
+ * (`agruparPorMateria`, de `pagos`), con las ocurrencias de cada grupo en el campo del contrato.
  */
-function agruparPorMateria(ocurrencias: readonly OcurrenciaDeCuenta[]): GrupoDeCuenta[] {
-  const grupos = new Map<number, GrupoDeCuenta>()
-  for (const ocurrencia of ocurrencias) {
-    const grupo = grupos.get(ocurrencia.materia.id) ?? {
-      materia: ocurrencia.materia,
-      subtotal: 0,
-      ocurrencias: [],
-    }
-    grupo.ocurrencias.push(ocurrencia)
-    grupos.set(ocurrencia.materia.id, grupo)
-  }
-  return [...grupos.values()]
-    .map((grupo) => ({ ...grupo, subtotal: totalDe(grupo.ocurrencias) }))
-    .sort(
-      (a, b) =>
-        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
-    )
+function gruposDeCuenta(ocurrencias: readonly OcurrenciaDeCuenta[]): GrupoDeCuenta[] {
+  return agruparPorMateria(ocurrencias).map(({ materia, subtotal, turnos }) => ({
+    materia,
+    subtotal,
+    ocurrencias: turnos,
+  }))
 }
 
 /** La fila de una vista global: la ocurrencia con su alumno y el DNI leído aparte. */
@@ -181,8 +170,8 @@ export function crearCuentasService({
       const cuenta = await leerCuenta(alumnoDeLaSesion(actor), {})
       return {
         totalAdeudado: cuenta.totalAdeudado,
-        adeudados: agruparPorMateria(cuenta.adeudados ?? []),
-        proximos: agruparPorMateria(cuenta.proximos ?? []),
+        adeudados: gruposDeCuenta(cuenta.adeudados ?? []),
+        proximos: gruposDeCuenta(cuenta.proximos ?? []),
         limiteCobro: cuenta.limiteCobro,
       }
     },

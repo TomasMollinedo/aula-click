@@ -8,7 +8,6 @@ import {
   textoRedDebito,
   textoRegistradoPor,
   textoTarjeta,
-  turnosPorMateria,
 } from '../pagos.formato'
 
 // Los mismos strings que `src/features/pagos/formato-pagos.ts` (frontend).
@@ -100,44 +99,6 @@ describe('textoRedDebito y textoTarjeta', () => {
 
   it('la tarjeta con los primeros números ocultos', () => {
     expect(textoTarjeta('1234')).toBe('**** 1234')
-  })
-})
-
-describe('turnosPorMateria', () => {
-  const MATEMATICA = { id: 2, nombre: 'Matemática' }
-  const INGLES = { id: 5, nombre: 'Inglés' }
-  const turno = (fecha: string, materia: { id: number; nombre: string }, importe: number) => ({
-    fecha,
-    materia,
-    importe,
-  })
-
-  it('una materia: un solo grupo con todos sus turnos y el subtotal igual al total', () => {
-    const turnos = [turno('2026-09-21', MATEMATICA, 8000), turno('2026-09-28', MATEMATICA, 8000)]
-    expect(turnosPorMateria(turnos)).toEqual([{ materia: MATEMATICA, turnos, subtotal: 16000 }])
-  })
-
-  it('Inglés y Matemática: un grupo por materia, por nombre, con el subtotal de cada una', () => {
-    const turnos = [
-      turno('2026-09-21', MATEMATICA, 8000),
-      turno('2026-09-22', INGLES, 9000.5),
-      turno('2026-09-28', MATEMATICA, 8000),
-      turno('2026-09-29', INGLES, 9000.5),
-    ]
-
-    const grupos = turnosPorMateria(turnos)
-
-    expect(grupos.map((g) => [g.materia.nombre, g.subtotal])).toEqual([
-      ['Inglés', 18001],
-      ['Matemática', 16000],
-    ])
-    // Dentro de cada materia, en el orden del comprobante (fecha y hora).
-    expect(grupos[0]?.turnos.map((t) => t.fecha)).toEqual(['2026-09-22', '2026-09-29'])
-    expect(grupos[1]?.turnos.map((t) => t.fecha)).toEqual(['2026-09-21', '2026-09-28'])
-  })
-
-  it('sin turnos: sin grupos', () => {
-    expect(turnosPorMateria([])).toEqual([])
   })
 })
 
