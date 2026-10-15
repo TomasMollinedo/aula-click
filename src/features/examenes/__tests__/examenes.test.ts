@@ -2,18 +2,29 @@ import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '@/utils/fetch-json'
 
-import { interpretarErrorExamen, mensajeErrorAccion } from '../errores-api'
+import { interpretarErrorExamen, interpretarErrorNota, mensajeErrorAccion } from '../errores-api'
 import {
   MENSAJE_FECHA_OBLIGATORIA,
   MENSAJE_MATERIA_OBLIGATORIA,
   MENSAJE_TIPO_OBLIGATORIO,
   OBSERVACIONES_MAX,
+  MENSAJE_NOTA_FORMATO,
+  MENSAJE_NOTA_OBLIGATORIA,
   aBodyCrear,
   aBodyEditar,
+  aBodyNota,
+  notaFormSchema,
+  valoresInicialesNota,
   examenFormSchema,
   valoresIniciales,
 } from '../examenes.schema'
 import type { ExamenItem } from '../examenes.types'
+import {
+  leerPaginaPasados,
+  paginar,
+  paramsConPaginaPasados,
+  textoMostrando,
+} from '../pagina-pasados'
 import {
   esFechaPasada,
   etiquetaTipo,
@@ -22,6 +33,11 @@ import {
   textoCargadoPor,
   textoDiasRestantes,
   textoModificadoPor,
+  textoNota,
+  textoNotaCargadaPor,
+  textoNotaModificadaPor,
+  textoRendidosSinNota,
+  tramoNota,
 } from '../formato-examenes'
 
 const examen: ExamenItem = {
@@ -37,6 +53,13 @@ const examen: ExamenItem = {
   updatedAt: '2026-09-22T13:45:00.000Z',
   createdBy: { id: 'usr_prof_01', nombre: 'Luis', apellido: 'Gómez', role: 'PROFESOR' },
   updatedBy: { id: 'usr_prof_01', nombre: 'Luis', apellido: 'Gómez', role: 'PROFESOR' },
+  cargarNota: false,
+  resultado: null,
+  nota: null,
+  notaCreatedAt: null,
+  notaUpdatedAt: null,
+  notaCreatedBy: null,
+  notaUpdatedBy: null,
 }
 
 describe('examenFormSchema', () => {
@@ -239,5 +262,140 @@ describe('interpretarErrorExamen', () => {
       mensaje: 'Examen no encontrado',
     })
     expect(mensajeErrorAccion(error)).toBe('Examen no encontrado')
+  })
+})
+
+describe('nota del examen (HU-34)', () => {
+  const profesor = {
+    id: 'usr_prof_01',
+    nombre: 'Luis',
+    apellido: 'Gómez',
+    role: 'PROFESOR',
+  } as const
+  const mesa = { id: 'usr_mesa', nombre: 'Ana', apellido: 'Pérez', role: 'MESA_ENTRADAS' } as const
+
+  it('el formulario acepta la nota con coma o punto y hasta dos decimales', () => {
+    for (const nota of ['7', '7,5', '7,25', '10', '7.5']) {
+      expect(notaFormSchema.safeParse({ resultado: 'CON_NOTA', nota }).success).toBe(true)
+    }
+    expect(notaFormSchema.safeParse({ resultado: 'AUSENTE', nota: '' }).success).toBe(true)
+  })
+
+  it('con nota, la exige y con formato: el rango lo valida la API', () => {
+    const mensaje = (nota: string) =>
+      notaFormSchema.safeParse({ resultado: 'CON_NOTA', nota }).error?.issues[0]?.message
+    expect(mensaje('')).toBe(MENSAJE_NOTA_OBLIGATORIA)
+    expect(mensaje('7,555')).toBe(MENSAJE_NOTA_FORMATO)
+    expect(mensaje('siete')).toBe(MENSAJE_NOTA_FORMATO)
+    // 11 tiene formato válido: el 400 del rango lo da la API.
+    expect(notaFormSchema.safeParse({ resultado: 'CON_NOTA', nota: '11' }).success).toBe(true)
+  })
+
+  it('el body: la nota con coma pasa a número; un ausente, sin nota', () => {
+    expect(aBodyNota({ resultado: 'CON_NOTA', nota: ' 7,5 ' })).toEqual({
+      resultado: 'CON_NOTA',
+      nota: 7.5,
+    })
+    expect(aBodyNota({ resultado: 'AUSENTE', nota: '8' })).toEqual({ resultado: 'AUSENTE' })
+  })
+
+  it('corregir abre con la nota que tiene, con coma', () => {
+    expect(valoresInicialesNota({ resultado: 'CON_NOTA', nota: 7.25 })).toEqual({
+      resultado: 'CON_NOTA',
+      nota: '7,25',
+    })
+    expect(valoresInicialesNota({ resultado: null, nota: null })).toEqual({
+      resultado: '',
+      nota: '',
+    })
+  })
+
+  it('la nota en la lista: la nota, "Ausente" o "Sin nota"', () => {
+    expect(textoNota({ resultado: 'CON_NOTA', nota: 7.5 })).toBe('7,5')
+    expect(textoNota({ resultado: 'AUSENTE', nota: null })).toBe('Ausente')
+    expect(textoNota({ resultado: null, nota: null })).toBe('Sin nota')
+  })
+
+  it('la trazabilidad de la nota con el rol', () => {
+    const conNota = {
+      notaCreatedBy: profesor,
+      notaCreatedAt: '2026-10-02T14:00:00.000Z',
+      notaUpdatedBy: mesa,
+      notaUpdatedAt: '2026-10-03T15:30:00.000Z',
+    }
+    expect(textoNotaCargadaPor(conNota)).toMatch(/^Nota cargada por Luis Gómez \(Profesor\) el /)
+    expect(textoNotaModificadaPor(conNota)).toMatch(
+      /^Nota modificada por Ana Pérez \(Mesa de entradas\) el /,
+    )
+    expect(textoNotaModificadaPor({ ...conNota, notaUpdatedAt: conNota.notaCreatedAt })).toBeNull()
+    expect(textoNotaCargadaPor({ notaCreatedBy: null, notaCreatedAt: null })).toBeNull()
+  })
+
+  it('el aviso de rendidos sin nota', () => {
+    expect(textoRendidosSinNota(2)).toBe('2 exámenes rendidos sin nota')
+    expect(textoRendidosSinNota(1)).toBe('1 examen rendido sin nota')
+    expect(textoRendidosSinNota(0)).toBeNull()
+  })
+
+  it('errores: el 400 del rango va en el campo; el 409 EXAMEN_FUTURO y el 403, como mensaje', () => {
+    const rango = new ApiError(400, 'VALIDACION', 'Datos inválidos', [
+      { path: ['nota'], message: 'La nota tiene que ser de 1 a 10, con hasta dos decimales' },
+    ])
+    expect(interpretarErrorNota(rango)).toEqual({
+      campos: [
+        { campo: 'nota', mensaje: 'La nota tiene que ser de 1 a 10, con hasta dos decimales' },
+      ],
+      mensaje: null,
+    })
+    expect(
+      interpretarErrorNota(new ApiError(409, 'EXAMEN_FUTURO', 'Un examen futuro no admite nota')),
+    ).toEqual({ campos: [], mensaje: 'Un examen futuro no admite nota' })
+    expect(interpretarErrorNota(new ApiError(403, 'SIN_PERMISO', 'x')).mensaje).toMatch(
+      /^No tenés permiso para cargar esta nota/,
+    )
+  })
+})
+
+describe('tramoNota (color del badge, propuesta pendiente de las PO)', () => {
+  it.each([
+    [10, 'alta'],
+    [7, 'alta'],
+    [6.99, 'media'],
+    [4, 'media'],
+    [3.99, 'baja'],
+    [1, 'baja'],
+  ])('%s → %s', (nota, tramo) => {
+    expect(tramoNota(nota)).toBe(tramo)
+  })
+})
+
+describe('paginación de los pasados', () => {
+  const lista = Array.from({ length: 23 }, (_, i) => i + 1)
+
+  it('de a 10, con el total de páginas', () => {
+    expect(paginar(lista, 1)).toEqual({ items: lista.slice(0, 10), page: 1, totalPages: 3 })
+    expect(paginar(lista, 3)).toEqual({ items: [21, 22, 23], page: 3, totalPages: 3 })
+  })
+
+  it('una página fuera de rango cae en la última; sin ítems, una sola página vacía', () => {
+    expect(paginar(lista, 9).page).toBe(3)
+    expect(paginar([], 2)).toEqual({ items: [], page: 1, totalPages: 1 })
+  })
+
+  it('la página en la URL: inválida es la 1, la 1 no se escribe y el tab se conserva', () => {
+    expect(leerPaginaPasados(new URLSearchParams('pagePasados=2'))).toBe(2)
+    expect(leerPaginaPasados(new URLSearchParams('pagePasados=0'))).toBe(1)
+    expect(leerPaginaPasados(new URLSearchParams('pagePasados=abc'))).toBe(1)
+    const params = new URLSearchParams('tab=examenes&pagePasados=3')
+    expect(paramsConPaginaPasados(params, 1).toString()).toBe('tab=examenes')
+    expect(paramsConPaginaPasados(params, 2).toString()).toBe('tab=examenes&pagePasados=2')
+  })
+})
+
+describe('pie de la paginación', () => {
+  it('"Mostrando 1–10 de 28 exámenes", como los otros listados', () => {
+    expect(textoMostrando(1, 28)).toBe('Mostrando 1–10 de 28 exámenes')
+    expect(textoMostrando(3, 28)).toBe('Mostrando 21–28 de 28 exámenes')
+    expect(textoMostrando(1, 1)).toBe('Mostrando 1–1 de 1 examen')
   })
 })

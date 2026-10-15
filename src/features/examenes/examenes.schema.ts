@@ -1,7 +1,14 @@
 import { isValid, parseISO } from 'date-fns'
 import { z } from 'zod'
 
-import type { ExamenCrear, ExamenEditar, ExamenItem, TipoExamen } from './examenes.types'
+import type {
+  ExamenCrear,
+  ExamenEditar,
+  ExamenItem,
+  NotaCargar,
+  ResultadoExamen,
+  TipoExamen,
+} from './examenes.types'
 
 // Schema del formulario de examen: solo formato (docs/arquitectura-frontend.md → Formularios). Que
 // la materia esté activa, que el profesor la dicte y que no haya otro examen pendiente de esa
@@ -86,4 +93,70 @@ export function aBodyEditar(examen: ExamenItem, valores: ExamenFormValues): Exam
   if (observaciones !== (examen.observaciones ?? '')) cambios.observaciones = observaciones
 
   return Object.keys(cambios).length > 0 ? cambios : null
+}
+
+// ---------- Nota del examen (HU-34) ----------
+
+/** Resultados en el orden del diálogo, con el texto que ve la persona. */
+export const RESULTADOS_NOTA: { valor: ResultadoExamen; etiqueta: string }[] = [
+  { valor: 'CON_NOTA', etiqueta: 'Con nota' },
+  { valor: 'AUSENTE', etiqueta: 'Ausente al examen' },
+]
+
+export const MENSAJE_RESULTADO_OBLIGATORIO = 'Elegí si tiene nota o estuvo ausente'
+export const MENSAJE_NOTA_OBLIGATORIA = 'Ingresá la nota'
+export const MENSAJE_NOTA_FORMATO = 'Ingresá un número con hasta dos decimales (por ejemplo 7,5)'
+
+/** Un número con coma (o punto) decimal y hasta dos decimales: `7`, `7,5`, `7,25`. */
+const FORMATO_NOTA = /^\d{1,2}([.,]\d{1,2})?$/
+
+/** Campos del formulario de la nota que puede marcar un error de la API. */
+export const NOTA_FORM_FIELDS = ['resultado', 'nota'] as const
+export type CampoNotaForm = (typeof NOTA_FORM_FIELDS)[number]
+
+/**
+ * Formulario de la nota: solo formato. La nota se escribe con coma decimal; el rango (de 1 a 10) lo
+ * valida la API, y su 400 se muestra en el campo.
+ */
+export const notaFormSchema = z
+  .object({
+    resultado: z.enum(['CON_NOTA', 'AUSENTE'], { error: MENSAJE_RESULTADO_OBLIGATORIO }),
+    nota: z.string(),
+  })
+  .superRefine((valores, ctx) => {
+    if (valores.resultado !== 'CON_NOTA') return
+    const nota = valores.nota.trim()
+    if (!nota) {
+      ctx.addIssue({ code: 'custom', path: ['nota'], message: MENSAJE_NOTA_OBLIGATORIA })
+    } else if (!FORMATO_NOTA.test(nota)) {
+      ctx.addIssue({ code: 'custom', path: ['nota'], message: MENSAJE_NOTA_FORMATO })
+    }
+  })
+
+export type NotaFormValues = z.infer<typeof notaFormSchema>
+
+/** Antes de elegir, el resultado arranca vacío. */
+export type NotaFormInicial = Omit<NotaFormValues, 'resultado'> & {
+  resultado: ResultadoExamen | ''
+}
+
+/** `7.5` → `'7,5'`: la nota como se escribe en el formulario y se muestra en la lista. */
+export function notaConComa(nota: number): string {
+  return String(nota).replace('.', ',')
+}
+
+/** El formulario con la nota que ya tiene (corregir) o vacío (cargar). */
+export function valoresInicialesNota(
+  examen: Pick<ExamenItem, 'resultado' | 'nota'>,
+): NotaFormInicial {
+  return {
+    resultado: examen.resultado ?? '',
+    nota: examen.nota === null ? '' : notaConComa(examen.nota),
+  }
+}
+
+/** Body de `PATCH /examenes/{id}/nota`: la nota como número; un ausente, sin nota. */
+export function aBodyNota(valores: NotaFormValues): NotaCargar {
+  if (valores.resultado === 'AUSENTE') return { resultado: 'AUSENTE' }
+  return { resultado: 'CON_NOTA', nota: Number(valores.nota.trim().replace(',', '.')) }
 }
