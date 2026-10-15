@@ -14,11 +14,12 @@ import {
 } from '@/server/shared/pdf/estilos'
 import { renderizarPdf } from '@/server/shared/pdf/renderizar'
 import { CeldaPdf, CierrePdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pdf/tabla'
-import { textoNumero, textoRegistradoPor } from './pagos.formato'
+import { datosDelMedio, textoNumero, textoRegistradoPor } from './pagos.formato'
 import type { Comprobante } from './pagos.validation'
 
-// El comprobante de pago en PDF (HU-15, T-111). Solo presentación: recibe el comprobante que
-// devuelve el service y no suma ni recalcula nada (importes, total y vuelto son los de la API).
+// El comprobante de pago en PDF (HU-15, T-111; formas de pago, HU-23, T-96). Solo presentación:
+// recibe el comprobante que devuelve el service y no suma ni recalcula nada (importes, total y
+// vuelto son los de la API). Los textos salen de `pagos.formato.ts`.
 
 export type DatosComprobantePdf = {
   comprobante: Comprobante
@@ -91,6 +92,7 @@ export function ComprobantePdf({
   fechaEmision,
 }: DatosComprobantePdf) {
   const { alumno, turnos } = comprobante
+  const medio = datosDelMedio(comprobante)
   return (
     <DocumentoOficialPdf
       titulo={TITULO}
@@ -109,6 +111,17 @@ export function ComprobantePdf({
             <CampoPdf label="Forma de pago" valor={comprobante.formaPago.nombre} />
           </CamposPdf>
         </SeccionPdf>
+
+        {/* Los datos de la transferencia o del débito; el efectivo los muestra con el total. */}
+        {medio.length > 0 ? (
+          <SeccionPdf>
+            <CamposPdf>
+              {medio.map(({ label, valor }) => (
+                <CampoPdf key={label} label={label} valor={valor} />
+              ))}
+            </CamposPdf>
+          </SeccionPdf>
+        ) : null}
 
         <TablaPdf columnas={COLUMNAS} cierre={<Cierre comprobante={comprobante} />}>
           {turnos.map((turno) => (

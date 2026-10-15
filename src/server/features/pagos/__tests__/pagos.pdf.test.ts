@@ -68,6 +68,29 @@ describe('renderizarComprobantePdf', { timeout: 60_000 }, () => {
     expect(contarPaginas(pdf)).toBeGreaterThan(1)
   })
 
+  it.each([
+    [
+      'transferencia',
+      {
+        formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+        transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: 'Marta López' },
+      },
+    ],
+    [
+      'débito',
+      {
+        formaPago: { codigo: 'DEBITO', nombre: 'Tarjeta de débito' },
+        debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+      },
+    ],
+  ] as const)(
+    'pago por %s: con los datos del medio, sin monto ni vuelto, en una hoja',
+    async (_, medio) => {
+      const pdf = await renderizar(comprobante(2, { ...medio, montoRecibido: null, vuelto: null }))
+      expect(contarPaginas(pdf)).toBe(1)
+    },
+  )
+
   it('con observaciones de varias líneas y sin monto recibido (pago anterior a T-112)', async () => {
     const pdf = await renderizar(
       comprobante(1, {
