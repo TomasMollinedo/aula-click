@@ -1,17 +1,10 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { useState } from 'react'
+import { Check } from 'lucide-react'
 
-import { claseControlFiltro } from '@/components/ui/barra-filtros'
-import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
-import { SearchInput } from '@/components/ui/search-input'
+import { DropdownMenuItem } from '@/components/ui/dropdown-menu'
+import { MenuConBuscador } from '@/components/ui/menu-con-buscador'
 import { useDebounce } from '@/hooks/use-debounce'
 import { cn } from '@/utils/cn'
 
@@ -71,13 +64,13 @@ type ComboboxBuscadorProps = {
 
 /**
  * Selector con buscador para filtrar por una entidad que no entra en una lista (alumnos,
- * profesores): un botón con lo elegido y un menú con el buscador y los resultados. Es solo la UI:
- * no pide nada; quien lo usa trae las opciones con el hook de su feature (o, si ya las tiene todas,
- * las filtra con `SelectBuscable`). El botón es el control compacto de una `BarraFiltros`.
+ * profesores): un botón con lo elegido y un menú con el buscador y los resultados
+ * (`MenuConBuscador`). Es solo la UI: no pide nada; quien lo usa trae las opciones con el hook de
+ * su feature (o, si ya las tiene todas, las filtra con `SelectBuscable`). El botón es el control
+ * compacto de una `BarraFiltros`.
  *
- * Teclado: Enter o Espacio abren y el foco va al buscador; se escribe; Enter elige el primer
- * resultado, o Flecha abajo pasa a la lista (flechas para recorrerla, Enter elige, y Flecha arriba
- * desde la primera opción vuelve al buscador); Escape cierra y devuelve el foco al botón.
+ * Teclado: el de `MenuConBuscador`, y además Enter en el buscador elige el primer resultado y en
+ * una opción la elige.
  */
 export function ComboboxBuscador({
   id,
@@ -96,16 +89,6 @@ export function ComboboxBuscador({
   'aria-describedby': ariaDescribedby,
 }: ComboboxBuscadorProps) {
   const { abierto, texto, q, setTexto, cambiarAbierto } = estado
-  const inputRef = useRef<HTMLInputElement>(null)
-  const listaRef = useRef<HTMLDivElement>(null)
-
-  // DropdownMenu no expone `onOpenAutoFocus` (a diferencia de Popover/Dialog): enfoca el primer
-  // ítem del menú por su cuenta. Se le gana el foco al buscador un frame después de abrir.
-  useEffect(() => {
-    if (!abierto) return
-    const frame = requestAnimationFrame(() => inputRef.current?.focus())
-    return () => cancelAnimationFrame(frame)
-  }, [abierto])
 
   const elegir = (nuevo: number | null) => {
     onElegir(nuevo)
@@ -113,89 +96,47 @@ export function ComboboxBuscador({
   }
 
   return (
-    <DropdownMenu open={abierto} onOpenChange={cambiarAbierto}>
-      <DropdownMenuTrigger asChild>
-        <Button
-          id={id}
-          type="button"
-          variant="outline"
-          role="combobox"
-          aria-expanded={abierto}
-          aria-invalid={ariaInvalid}
-          aria-describedby={ariaDescribedby}
-          className={cn(
-            'aria-invalid:border-destructive',
-            claseControlFiltro(valor === null),
-            className,
-          )}
-        >
-          <span className="truncate">{valor === null ? textoTodos : (textoValor ?? '…')}</span>
-          <ChevronsUpDown className="text-muted-foreground" aria-hidden />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent
-        className="w-[var(--radix-dropdown-menu-trigger-width)] min-w-64 p-2"
-        align="start"
-      >
-        <SearchInput
-          ref={inputRef}
-          value={texto}
-          onValueChange={setTexto}
-          placeholder={placeholderBusqueda}
-          aria-label={placeholderBusqueda}
-          className="mb-2"
-          onKeyDown={(e) => {
-            // Radix solo se queda con Escape (cierra el menú): el resto de las teclas las
-            // interceptaría para su typeahead, y sus flechas no salen de un campo de texto.
-            if (e.key !== 'Escape') e.stopPropagation()
-            if (e.key === 'ArrowDown') {
-              e.preventDefault()
-              listaRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
-            }
-            // Enter elige el primer resultado, si la lista ya es la de lo escrito.
-            const primera = opciones[0]
-            if (e.key === 'Enter' && primera && !buscando && !error && texto === q) {
-              e.preventDefault()
-              elegir(primera.id)
-            }
-          }}
-        />
-        <div ref={listaRef} className="max-h-64 overflow-y-auto">
-          <DropdownMenuItem
-            onSelect={() => elegir(null)}
-            onKeyDown={(e) => {
-              // Desde la primera opción, Flecha arriba vuelve al buscador.
-              if (e.key === 'ArrowUp') {
-                e.preventDefault()
-                e.stopPropagation()
-                inputRef.current?.focus()
-              }
-            }}
-          >
-            <Check className={cn('size-4', valor !== null && 'opacity-0')} />
-            {textoTodos}
+    <MenuConBuscador
+      id={id}
+      abierto={abierto}
+      onAbiertoChange={cambiarAbierto}
+      texto={texto}
+      onTextoChange={setTexto}
+      placeholderBusqueda={placeholderBusqueda}
+      textoBoton={valor === null ? textoTodos : (textoValor ?? '…')}
+      sinValor={valor === null}
+      // Enter elige el primer resultado, si la lista ya es la de lo escrito.
+      onEnterEnBuscador={() => {
+        const primera = opciones[0]
+        if (!primera || buscando || error || texto !== q) return false
+        elegir(primera.id)
+        return true
+      }}
+      className={className}
+      aria-invalid={ariaInvalid}
+      aria-describedby={ariaDescribedby}
+    >
+      <DropdownMenuItem onSelect={() => elegir(null)}>
+        <Check className={cn('size-4', valor !== null && 'opacity-0')} />
+        {textoTodos}
+      </DropdownMenuItem>
+      {error ? (
+        <p className="text-destructive px-2 py-3 text-sm">{error}</p>
+      ) : buscando ? (
+        <p className="text-muted-foreground px-2 py-3 text-sm">Buscando…</p>
+      ) : opciones.length === 0 ? (
+        <p className="text-muted-foreground px-2 py-3 text-sm">{textoSinResultados}</p>
+      ) : (
+        opciones.map((opcion) => (
+          <DropdownMenuItem key={opcion.id} onSelect={() => elegir(opcion.id)}>
+            <Check className={cn('size-4', valor !== opcion.id && 'opacity-0')} />
+            <span className="min-w-0 flex-1 truncate">{opcion.etiqueta}</span>
+            {opcion.detalle && (
+              <span className="text-muted-foreground text-xs tabular-nums">{opcion.detalle}</span>
+            )}
           </DropdownMenuItem>
-          {error ? (
-            <p className="text-destructive px-2 py-3 text-sm">{error}</p>
-          ) : buscando ? (
-            <p className="text-muted-foreground px-2 py-3 text-sm">Buscando…</p>
-          ) : opciones.length === 0 ? (
-            <p className="text-muted-foreground px-2 py-3 text-sm">{textoSinResultados}</p>
-          ) : (
-            opciones.map((opcion) => (
-              <DropdownMenuItem key={opcion.id} onSelect={() => elegir(opcion.id)}>
-                <Check className={cn('size-4', valor !== opcion.id && 'opacity-0')} />
-                <span className="min-w-0 flex-1 truncate">{opcion.etiqueta}</span>
-                {opcion.detalle && (
-                  <span className="text-muted-foreground text-xs tabular-nums">
-                    {opcion.detalle}
-                  </span>
-                )}
-              </DropdownMenuItem>
-            ))
-          )}
-        </div>
-      </DropdownMenuContent>
-    </DropdownMenu>
+        ))
+      )}
+    </MenuConBuscador>
   )
 }
