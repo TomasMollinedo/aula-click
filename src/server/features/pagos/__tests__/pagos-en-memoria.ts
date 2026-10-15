@@ -21,6 +21,13 @@ export type OcurrenciaEnBase = OcurrenciaCobro & {
   profesor: { id: number; nombre: string; apellido: string }
 }
 
+/** El nombre de cada forma de pago en el catálogo del seed. */
+const NOMBRE_FORMA = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+  DEBITO: 'Tarjeta de débito',
+} as const
+
 type PagoEnBase = { id: number; numeroComprobante: number; entrada: EntradaPago; plan: PlanPago }
 
 /** Un comprobante subido con `POST /adjuntos`: quién lo subió y a qué pago quedó vinculado. */
@@ -99,6 +106,7 @@ export function crearPagosEnMemoria(
     if (!pago) return null
     const hhmm = (m: number) =>
       `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`
+    const { medio } = pago.entrada
     const comprobante: ComprobanteGuardado = {
       id: pago.id,
       numeroComprobante: pago.numeroComprobante,
@@ -117,9 +125,18 @@ export function crearPagosEnMemoria(
         }
       }),
       total: pago.plan.total,
-      montoRecibido:
-        pago.entrada.medio.formaPago === 'EFECTIVO' ? pago.entrada.medio.montoRecibido : null,
-      formaPago: { id: 1, nombre: 'Efectivo' },
+      montoRecibido: medio.formaPago === 'EFECTIVO' ? medio.montoRecibido : null,
+      formaPago: { codigo: medio.formaPago, nombre: NOMBRE_FORMA[medio.formaPago] },
+      transferencia:
+        medio.formaPago === 'TRANSFERENCIA'
+          ? { ...medio.transferencia, titular: medio.transferencia.titular ?? null }
+          : null,
+      debito:
+        medio.formaPago === 'DEBITO'
+          ? { ...medio.debito, ultimos4: medio.debito.ultimos4 ?? null }
+          : null,
+      estado: 'VIGENTE',
+      anulacion: null,
       observaciones: pago.entrada.observaciones,
       registradoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
       registradoEl: '2026-10-05T15:00:00.000Z',

@@ -19,6 +19,7 @@ const {
   formaPagoFindFirst,
   pagoCreate,
   adjuntoUpdateMany,
+  pagoFindUnique,
   ErrorConocido,
 } = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -28,6 +29,7 @@ const {
   formaPagoFindFirst: vi.fn(),
   pagoCreate: vi.fn(),
   adjuntoUpdateMany: vi.fn(),
+  pagoFindUnique: vi.fn(),
   ErrorConocido: class extends Error {
     constructor(
       message: string,
@@ -43,7 +45,9 @@ const {
     }
   },
 }))
-vi.mock('@/lib/prisma', () => ({ prisma: { $transaction: transaction } }))
+vi.mock('@/lib/prisma', () => ({
+  prisma: { $transaction: transaction, pago: { findUnique: pagoFindUnique } },
+}))
 vi.mock('@/generated/prisma/client', () => ({
   Prisma: { PrismaClientKnownRequestError: ErrorConocido },
 }))
@@ -302,5 +306,125 @@ describe('registrar', () => {
     pagoCreate.mockRejectedValue(original)
 
     await expect(pagosRepository.registrar(entrada, () => plan, actor)).rejects.toBe(original)
+  })
+})
+
+// HU-23 y HU-42 (T-96): el comprobante con la forma de pago por su código, los datos de su medio y
+// la anulación, leídos junto con el pago.
+describe('buscarComprobante', () => {
+  const decimal = (n: number) => ({ toNumber: () => n })
+  const LAURA = { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' }
+
+  function fila(cambios: Record<string, unknown> = {}) {
+    return {
+      id: 31,
+      numeroComprobante: 1024,
+      fechaPago: new Date('2026-10-05T00:00:00.000Z'),
+      importeTotal: decimal(8000),
+      montoRecibido: null,
+      observaciones: null,
+      createdAt: new Date('2026-10-05T14:30:00.000Z'),
+      alumno: { id: 12, nombre: 'Lucía', apellido: 'Álvarez', dni: '52345678' },
+      formaPago: { tipoFormaPago: 'EFECTIVO', nombre: 'Efectivo' },
+      transferenciaOperacion: null,
+      transferenciaBanco: null,
+      transferenciaTitular: null,
+      debitoRed: null,
+      debitoCupon: null,
+      debitoUltimos4: null,
+      estado: 'VIGENTE',
+      anulacion: null,
+      createdBy: LAURA,
+      turnos: [],
+      ...cambios,
+    }
+  }
+
+  it('efectivo: la forma por su código, sin datos de transferencia ni de débito, vigente', async () => {
+    pagoFindUnique.mockResolvedValue(fila({ montoRecibido: decimal(10000) }))
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      montoRecibido: 10000,
+      formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+      transferencia: null,
+      debito: null,
+      estado: 'VIGENTE',
+      anulacion: null,
+    })
+  })
+
+  it('transferencia: operación, banco y titular (null si no se cargó)', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        formaPago: { tipoFormaPago: 'TRANSFERENCIA', nombre: 'Transferencia' },
+        transferenciaOperacion: '0004829137',
+        transferenciaBanco: 'Banco Macro',
+      }),
+    )
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      montoRecibido: null,
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
+      debito: null,
+    })
+  })
+
+  it('débito: red, cupón y últimos 4', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        formaPago: { tipoFormaPago: 'DEBITO', nombre: 'Tarjeta de débito' },
+        debitoRed: 'VISA_DEBITO',
+        debitoCupon: '000123',
+        debitoUltimos4: '1234',
+      }),
+    )
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      transferencia: null,
+      debito: { red: 'VISA_DEBITO', cupon: '000123', ultimos4: '1234' },
+    })
+  })
+
+  it('anulado: el estado y la anulación con motivo, detalle, quién y cuándo', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        estado: 'ANULADO',
+        anulacion: {
+          motivo: 'ERROR_CARGA',
+          detalle: 'Se cargó dos veces',
+          createdAt: new Date('2026-10-06T12:00:00.000Z'),
+          createdBy: LAURA,
+        },
+      }),
+    )
+
+    expect(await pagosRepository.buscarComprobante(31)).toMatchObject({
+      estado: 'ANULADO',
+      anulacion: {
+        motivo: 'ERROR_CARGA',
+        detalle: 'Se cargó dos veces',
+        anuladoPor: LAURA,
+        anuladoEl: '2026-10-06T12:00:00.000Z',
+      },
+    })
+    // La anulación sale de la misma consulta que el pago.
+    expect(pagoFindUnique).toHaveBeenCalledTimes(1)
+    expect(pagoFindUnique.mock.calls[0]?.[0].select.anulacion).toBeDefined()
+  })
+
+  it('una forma de pago sin código → 500 que pide correr el seed', async () => {
+    pagoFindUnique.mockResolvedValue(fila({ formaPago: { tipoFormaPago: null, nombre: 'Vieja' } }))
+
+    const error = await pagosRepository.buscarComprobante(31).catch((e) => e)
+
+    expect(error).toBeInstanceOf(AppError)
+    expect(error.statusCode).toBe(500)
+    expect(error.message).toMatch(/pnpm db:seed/)
+  })
+
+  it('inexistente → null', async () => {
+    pagoFindUnique.mockResolvedValue(null)
+    expect(await pagosRepository.buscarComprobante(99)).toBeNull()
   })
 })

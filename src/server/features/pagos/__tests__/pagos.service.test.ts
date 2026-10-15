@@ -566,7 +566,11 @@ describe('obtenerComprobante', () => {
       total: 17000,
       montoRecibido: 20000,
       vuelto: 3000,
-      formaPago: { id: 1, nombre: 'Efectivo' },
+      formaPago: { codigo: 'EFECTIVO', nombre: 'Efectivo' },
+      transferencia: null,
+      debito: null,
+      estado: 'VIGENTE',
+      anulacion: null,
     })
     expect(comprobante.turnos.map((t) => [t.turnoId, t.profesor.id, t.importe])).toEqual([
       [57, 5, 9000],
@@ -594,6 +598,28 @@ describe('obtenerComprobante', () => {
     const comprobante = await service.obtenerComprobante(pagoId)
     expect(comprobante.total).toBe(8000)
     expect(comprobante.turnos[0]?.importe).toBe(8000)
+  })
+
+  it('de una transferencia: la forma por su código, sus datos y sin monto ni vuelto', async () => {
+    await service.registrar(
+      pago({
+        formaPago: 'TRANSFERENCIA',
+        montoRecibido: undefined,
+        transferencia: { operacion: '0004829137', banco: 'Banco Macro' },
+        comprobanteAdjuntoId: 18,
+      }),
+      actor,
+    )
+
+    expect(await service.obtenerComprobante(31)).toMatchObject({
+      formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      transferencia: { operacion: '0004829137', banco: 'Banco Macro', titular: null },
+      debito: null,
+      montoRecibido: null,
+      vuelto: null,
+      estado: 'VIGENTE',
+      anulacion: null,
+    })
   })
 
   it('inexistente → 404', async () => {

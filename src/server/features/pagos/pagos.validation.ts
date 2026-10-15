@@ -28,6 +28,9 @@ export const REDES_DEBITO = [
 ] as const
 export type RedDebito = (typeof REDES_DEBITO)[number]
 
+/** Motivos de la anulación de un pago (`MotivoAnulacion` del modelo, HU-42). */
+export const MOTIVOS_ANULACION = ['ERROR_CARGA', 'FORMA_PAGO_EQUIVOCADA', 'OTRO'] as const
+
 /** Los mensajes de los datos de cada medio (un 400 en el campo que sobra o falta). */
 export const MENSAJES_FORMA_PAGO = {
   formaPagoObligatoria: 'La forma de pago es obligatoria',
@@ -282,6 +285,33 @@ export const turnoComprobanteSchema = z
   })
   .openapi('TurnoComprobante')
 
+/** Los datos de la transferencia de un pago, como se guardaron. */
+const transferenciaComprobanteSchema = z
+  .object({ operacion: z.string(), banco: z.string(), titular: z.string().nullable() })
+  .openapi('TransferenciaComprobante')
+
+/** Los datos del débito de un pago: nunca el número completo de la tarjeta. */
+const debitoComprobanteSchema = z
+  .object({
+    red: z.enum(REDES_DEBITO),
+    cupon: z.string(),
+    ultimos4: z.string().nullable().openapi({ description: '`null` si no se cargaron' }),
+  })
+  .openapi('DebitoComprobante')
+
+/** La anulación de un pago (HU-42): se lee junto con el pago, de sólo lectura (decisión T-120). */
+const anulacionComprobanteSchema = z
+  .object({
+    motivo: z.enum(MOTIVOS_ANULACION),
+    detalle: z.string().nullable(),
+    anuladoPor: usuarioAuditoriaSchema,
+    anuladoEl: z.iso.datetime().openapi({
+      description: 'Instante de la anulación, ISO 8601 en UTC',
+      example: '2026-10-06T12:00:00.000Z',
+    }),
+  })
+  .openapi('AnulacionComprobante')
+
 /** Respuesta de `GET /pagos/{id}`: los datos del comprobante. */
 export const comprobanteSchema = z
   .object({
@@ -294,13 +324,27 @@ export const comprobanteSchema = z
     }),
     total: z.number(),
     montoRecibido: z.number().nullable().openapi({
-      description: '`null` sólo en un pago anterior a que el monto recibido fuera obligatorio',
+      description:
+        'Sólo en efectivo; `null` con transferencia o débito, o en un pago anterior a que el monto recibido fuera obligatorio',
     }),
     vuelto: z.number().nullable().openapi({
       description:
         'Recalculado (`montoRecibido - total`), nunca leído de la base; `null` sin monto recibido',
     }),
-    formaPago: referencia,
+    formaPago: z
+      .object({ codigo: z.enum(FORMAS_PAGO), nombre: z.string() })
+      .openapi({ description: 'La forma de pago: su código fijo y su nombre para mostrar' }),
+    transferencia: transferenciaComprobanteSchema.nullable().openapi({
+      description: 'Los datos de la transferencia; `null` si el pago es de otra forma',
+    }),
+    debito: debitoComprobanteSchema.nullable().openapi({
+      description: 'Los datos del débito; `null` si el pago es de otra forma',
+    }),
+    estado: z.enum(['VIGENTE', 'ANULADO']),
+    anulacion: anulacionComprobanteSchema.nullable().openapi({
+      description:
+        'Motivo, detalle, quién y cuándo, si el pago está anulado; `null` si está vigente',
+    }),
     observaciones: z.string().nullable(),
     registradoPor: usuarioAuditoriaSchema,
     registradoEl: z.iso.datetime().openapi({

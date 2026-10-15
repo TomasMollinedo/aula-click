@@ -30,6 +30,9 @@ import type {
 // ocurrencias salen del motor de `turnos` (`ocurrencias.condiciones.ts`), nunca de una expansión
 // propia. Los importes salen como `number` (`toNumber()`), nunca como `Prisma.Decimal`.
 
+/** Una forma de pago sin código (`tipoFormaPago`): falta correr el seed (decisión T-134). */
+const MENSAJE_FORMA_SIN_CODIGO = 'La forma de pago del pago no tiene código: corré `pnpm db:seed`'
+
 /** La forma de pago del catálogo (`FormaPago.tipoFormaPago`, del seed) no está activa: falta el seed. */
 const mensajeSinFormaPago = (codigo: CodigoFormaPago) =>
   `Falta la forma de pago ${codigo} activa: corré \`pnpm db:seed\``
@@ -142,7 +145,22 @@ const SELECT_COMPROBANTE = {
   observaciones: true,
   createdAt: true,
   alumno: { select: { id: true, nombre: true, apellido: true, dni: true } },
-  formaPago: { select: { id: true, nombre: true } },
+  formaPago: { select: { tipoFormaPago: true, nombre: true } },
+  transferenciaOperacion: true,
+  transferenciaBanco: true,
+  transferenciaTitular: true,
+  debitoRed: true,
+  debitoCupon: true,
+  debitoUltimos4: true,
+  estado: true,
+  anulacion: {
+    select: {
+      motivo: true,
+      detalle: true,
+      createdAt: true,
+      createdBy: { select: SELECT_USUARIO_AUDITORIA },
+    },
+  },
   createdBy: { select: SELECT_USUARIO_AUDITORIA },
   turnos: {
     select: {
@@ -251,13 +269,16 @@ export const pagosRepository = {
 
   /**
    * Datos del comprobante (sin el vuelto, que calcula el service), o `null` si no existe. Una sola
-   * consulta. Los turnos llevan los datos **actuales** de su turno (fecha, horario, materia y
-   * profesor; decisión T-63) y el importe cobrado (`importeAplicado`), ordenados por fecha, hora
-   * de inicio y `turnoId`.
+   * consulta, con la forma de pago por su código, los datos de su medio, el estado y, si está
+   * anulado, la anulación (se lee junto con el pago, decisión T-120). Los turnos llevan los datos
+   * **actuales** de su turno (fecha, horario, materia y profesor; decisión T-63) y el importe
+   * cobrado (`importeAplicado`), ordenados por fecha, hora de inicio y `turnoId`.
    */
   async buscarComprobante(id: number): Promise<ComprobanteGuardado | null> {
     const fila = await prisma.pago.findUnique({ where: { id }, select: SELECT_COMPROBANTE })
     if (!fila) return null
+    const codigo = fila.formaPago.tipoFormaPago
+    if (codigo === null) throw new AppError(MENSAJE_FORMA_SIN_CODIGO, 500)
     const turnos = fila.turnos
       .map((pt) => ({
         turnoId: pt.turnoId,
@@ -287,7 +308,30 @@ export const pagosRepository = {
       turnos,
       total: fila.importeTotal.toNumber(),
       montoRecibido: fila.montoRecibido ? fila.montoRecibido.toNumber() : null,
-      formaPago: fila.formaPago,
+      formaPago: { codigo, nombre: fila.formaPago.nombre },
+      transferencia:
+        codigo === 'TRANSFERENCIA'
+          ? {
+              operacion: fila.transferenciaOperacion ?? '',
+              banco: fila.transferenciaBanco ?? '',
+              titular: fila.transferenciaTitular,
+            }
+          : null,
+      debito:
+        codigo === 'DEBITO' && fila.debitoRed !== null
+          ? { red: fila.debitoRed, cupon: fila.debitoCupon ?? '', ultimos4: fila.debitoUltimos4 }
+          : null,
+      estado: fila.estado,
+      anulacion: fila.anulacion && {
+        motivo: fila.anulacion.motivo,
+        detalle: fila.anulacion.detalle,
+        anuladoPor: {
+          id: fila.anulacion.createdBy.id,
+          nombre: fila.anulacion.createdBy.nombre,
+          apellido: fila.anulacion.createdBy.apellido,
+        },
+        anuladoEl: fila.anulacion.createdAt.toISOString(),
+      },
       observaciones: fila.observaciones,
       registradoPor: {
         id: fila.createdBy.id,
