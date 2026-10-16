@@ -4,8 +4,9 @@ import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
 import type { ResumenACobrar } from './a-cobrar'
-import type { DetallePago, MotivoAnulacion, RedDebito } from './pago-detalle.types'
-import type { CodigoFormaPago, PagoRegistrado } from './pagos.types'
+import type { CodigoFormaPago, DetallePago, MotivoAnulacion, RedDebito } from './pago-detalle.types'
+
+import type { PagoRegistrado } from './pagos.types'
 
 // Textos del registro de un pago (HU-15). Los importes del éxito y del vuelto son los que devolvió
 // la API, nunca los del resumen local.

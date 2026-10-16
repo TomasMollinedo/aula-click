@@ -50,7 +50,7 @@ Contiene solo código **sin significado de negocio**: paginación, primitivas de
 
 ## Filtros y respuestas
 
-- Nombres fijos de query: `q` (búsqueda), `estado`, `materiaId`, `profesorId`, `formaPago` (código de la forma de pago, en pagos), para un horario semanal `diaSemana`, `horaInicio`, `horaFin` y `excluirBloqueId` (con `diaSemanaQuery`, `horaHHmm` y `rangoHorasEnPunto` de `shared/zod.ts`), y `fecha` (`fechaISO`) para calcular algo en una fecha puntual (la ocupación en la disponibilidad de turnos) o `desde` y `hasta` para un rango de fechas (la agenda propia del profesor y la agenda de un profesor para mesa de entradas), y `mes` (`mesISO`) para un mes de calendario. Un filtro nuevo se agrega a esta lista y a `contrato-api.md`.
+- Nombres fijos de query: `q` (búsqueda), `estado`, `materiaId`, `profesorId`, `formaPago` (código de la forma de pago, en pagos), para un horario semanal `diaSemana`, `horaInicio`, `horaFin` y `excluirBloqueId` (con `diaSemanaQuery`, `horaHHmm` y `rangoHorasEnPunto` de `shared/zod.ts`), y `fecha` (`fechaISO`) para calcular algo en una fecha puntual (la ocupación en la disponibilidad de turnos) o `desde` y `hasta` para un rango de fechas (la agenda propia del profesor y la agenda de un profesor para mesa de entradas), y `mes` (`mesISO`) para un mes de calendario, e `id` en un buscador (`GET /pagos/alumnos`, `GET /pagos/profesores`) para traer sólo esa opción y mostrar el nombre del filtro elegido. Un filtro nuevo se agrega a esta lista y a `contrato-api.md`.
 - El recurso individual se devuelve directo, sin `{ data }`. Los errores usan siempre `ErrorResponseSchema`.
 - Idioma: el dominio en español (rutas, campos JSON, códigos de error, mensajes al usuario); la infraestructura y el código genérico en inglés.
 

@@ -67,10 +67,12 @@ Uno nuevo se agrega a esta tabla.
 
 Como un selector de catálogo (arreglo, sin paginar, salvo aclaración solo lo activo), pero la lista **depende de lo que el usuario eligió antes en el formulario**, así que sí acepta query. Si no hay ninguna opción, responde `200` con `[]`: no es un error, y la UI muestra su propio mensaje. Un query inválido da 400 `VALIDACION` como cualquier otro.
 
-| Ruta                                                                          | Devuelve                                                                                                                                                                                                                                                                                                                                                                                             |
-| ----------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `GET /api/v1/aulas/disponibles?diaSemana&horaInicio&horaFin&excluirBloqueId?` | Aulas activas libres **durante todo** el horario pedido ese día (ninguna de sus horas ocupada por un bloque activo de cualquier profesor): `[{ "id", "nombre", "capacidad" }]`, ordenadas por nombre. Mismo formato que el alta de bloques: `diaSemana` 1–7, horas `HH:mm` en punto y `horaFin` posterior a `horaInicio`. `excluirBloqueId` (opcional) es para la edición: esa fila no ocupa su aula |
-| `GET /api/v1/agendas/materias?fecha?` y `GET /api/v1/agendas/aulas?fecha?`    | Materias y aulas con turno en una fecha, para los filtros de la agenda. Ver Agendas                                                                                                                                                                                                                                                                                                                  |
+| Ruta                                                                                 | Devuelve                                                                                                                                                                                                                                                                                                                                                                                             |
+| ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/aulas/disponibles?diaSemana&horaInicio&horaFin&excluirBloqueId?`        | Aulas activas libres **durante todo** el horario pedido ese día (ninguna de sus horas ocupada por un bloque activo de cualquier profesor): `[{ "id", "nombre", "capacidad" }]`, ordenadas por nombre. Mismo formato que el alta de bloques: `diaSemana` 1–7, horas `HH:mm` en punto y `horaFin` posterior a `horaInicio`. `excluirBloqueId` (opcional) es para la edición: esa fila no ocupa su aula |
+| `GET /api/v1/agendas/materias?fecha?` y `GET /api/v1/agendas/aulas?fecha?`           | Materias y aulas con turno en una fecha, para los filtros de la agenda. Ver Agendas                                                                                                                                                                                                                                                                                                                  |
+| `GET /api/v1/pagos/alumnos?q?&id?` y `GET /api/v1/pagos/profesores?q?&id?&alumnoId?` | Alumnos con algún pago y profesores con algún turno pagado, para los filtros de los pagos realizados: `[{ "id", "nombre", "apellido" }]`, hasta 20, por apellido y nombre. **Incluyen lo dado de baja** (un pago de un profesor que ya no está se sigue filtrando). Con `alumnoId`, los profesores se acotan a los pagos de ese alumno. Ver Pagos → Buscadores de los filtros                        |
+| `GET /api/v1/pagos/materias?q?&id?&alumnoId?`                                        | Materias de algún turno pagado (de ese alumno, con `alumnoId`), para el filtro de materia de los pagos realizados: `[{ "id", "nombre" }]`, hasta 20, por nombre, **incluidas las dadas de baja**. Ver Pagos → Buscadores de los filtros                                                                                                                                                              |
 
 | `GET /api/v1/turnos/disponibilidad?materiaId&diaSemana?&profesorId?&fecha?` | Horas donde buscar un turno de esa materia: las filas activas de los profesores **activos** que la dictan (asignación activa), agrupadas como bloques (mismo profesor, día y aula, horas contiguas; dos tramos del mismo día son dos resultados), cada hora con su capacidad efectiva y su ocupación en `fecha`. Las horas llenas vienen igual, con `lleno: true`. Ver Turnos |
 
@@ -841,13 +843,16 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 HU-15 (T-51), con las formas de pago de HU-23 (T-96), y los pagos realizados y "Mis pagos" de HU-36 y HU-37 (T-98). Registrar el pago de una o varias ocurrencias de un alumno, en efectivo, por transferencia o con débito, leer su comprobante y listar los pagos realizados. Reglas en `dominio.md` → Pagos. **Los importes, el total, el vuelto y los totales los calcula la API**; el cliente sólo los muestra (con formato de pesos) y nunca los recalcula.
 
-| Endpoint                      | Roles                                               | Qué hace                                                                                                        |
-| ----------------------------- | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/pagos`          | `MESA_ENTRADAS`                                     | Registra el pago, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409                         |
-| `GET /api/v1/pagos`           | `MESA_ENTRADAS`, `GERENTE`                          | Pagos realizados del período, paginados, con lo cobrado por forma de pago. 400                                  |
-| `GET /api/v1/pagos/mis-pagos` | `ALUMNO`                                            | Los pagos del alumno de la sesión, paginados (portal). 403 si la cuenta no tiene alumno                         |
-| `GET /api/v1/pagos/{id}`      | `MESA_ENTRADAS`, `GERENTE`                          | Detalle del pago: el comprobante, el adjunto y las acciones. 404 si el pago no existe                           |
-| `GET /api/v1/pagos/{id}/pdf`  | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 403 si es de otro alumno; 404 |
+| Endpoint                       | Roles                                               | Qué hace                                                                                                        |
+| ------------------------------ | --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/pagos`           | `MESA_ENTRADAS`                                     | Registra el pago, todo o nada. 201 con el resumen; 400; 404 si el alumno no existe; 409                         |
+| `GET /api/v1/pagos`            | `MESA_ENTRADAS`, `GERENTE`                          | Pagos realizados del período, paginados, con lo cobrado por forma de pago. 400                                  |
+| `GET /api/v1/pagos/mis-pagos`  | `ALUMNO`                                            | Los pagos del alumno de la sesión, paginados (portal). 403 si la cuenta no tiene alumno                         |
+| `GET /api/v1/pagos/alumnos`    | `MESA_ENTRADAS`, `GERENTE`                          | Buscador de alumnos con pagos, para el filtro de los pagos realizados. 400                                      |
+| `GET /api/v1/pagos/profesores` | `MESA_ENTRADAS`, `GERENTE`                          | Buscador de profesores con turnos pagados, para el filtro de los pagos realizados. 400                          |
+| `GET /api/v1/pagos/materias`   | `MESA_ENTRADAS`, `GERENTE`                          | Buscador de materias con turnos pagados, para el filtro de los pagos realizados. 400                            |
+| `GET /api/v1/pagos/{id}`       | `MESA_ENTRADAS`, `GERENTE`                          | Detalle del pago: el comprobante, el adjunto y las acciones. 404 si el pago no existe                           |
+| `GET /api/v1/pagos/{id}/pdf`   | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 403 si es de otro alumno; 404 |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. El gerente ve los pagos en sólo lectura: no registra (`POST /pagos` → 403) y en el detalle todas sus acciones van en `false`. El alumno sólo usa `GET /pagos/mis-pagos` y el PDF de sus propios pagos.
 
@@ -1089,6 +1094,36 @@ Responde el formato de un listado paginado **más `totales`, junto a `data` y `m
 - Sin pagos en el filtro: `data: []`, `meta.total: 0` y `totales` en 0. La UI muestra "No hay pagos en este período".
 
 **Errores:** 400 `VALIDACION` si falta `desde` o `hasta` (en ese campo), si una fecha es inválida, si `hasta` es anterior a `desde` (en `["hasta"]`: "La fecha hasta no puede ser anterior a la fecha desde", el mismo mensaje que Cuentas), si un id no es un entero positivo, si `formaPago` no es uno de los tres códigos o si la paginación está fuera de rango; 401 sin sesión; 403 `SIN_PERMISO` con otro rol (también el alumno).
+
+### Buscadores de los filtros (HU-36)
+
+**`GET /pagos/alumnos?q?&id?`**, **`GET /pagos/profesores?q?&id?&alumnoId?`** y **`GET /pagos/materias?q?&id?&alumnoId?`** (`MESA_ENTRADAS`, `GERENTE`, selectores con filtros): las opciones de los filtros de alumno, profesor y materia de los pagos realizados. Son de `pagos` y no de `alumnos`, `profesores` ni `materias`, así el gerente filtra sin ver la ficha del alumno (decisión T-169).
+
+- `/alumnos`: los alumnos con al menos un pago, vigente o anulado.
+- `/profesores`: los profesores que dictan algún turno incluido en un pago, incluidos los dados de baja. Es el profesor **actual** del turno, con el mismo criterio que el filtro `profesorId` de `GET /pagos` y el comprobante (decisión T-63).
+- `/materias`: las materias de algún turno incluido en un pago, incluidas las dadas de baja, con el mismo criterio que el filtro `materiaId` de `GET /pagos`.
+- `q` (opcional): búsqueda por palabras, igual que `GET /alumnos` (ver Filtros): no distingue mayúsculas, tildes ni puntos. En alumnos también encuentra por DNI, aunque el DNI no se devuelve; en profesores busca sobre su usuario; en materias, sobre el nombre.
+- `id` (opcional): sólo esa opción si cumple la condición, o `[]`. Es para que la UI muestre el nombre del filtro que viene en la URL. Con `q`, se combinan.
+- `alumnoId` (opcional, sólo `/profesores` y `/materias`): sólo los de algún turno incluido en un pago de ese alumno (decisión T-170). La UI lo manda con el alumno de la ficha o el elegido en el filtro, en las opciones del menú; el nombre del elegido (`id`) se pide sin él.
+- Respuesta: un arreglo sin paginar de hasta 20; alumnos y profesores por apellido y nombre (y `id`), materias por nombre (y `id`). Sin opciones, `200` con `[]`.
+
+```json
+[
+  { "id": 12, "nombre": "Lucía", "apellido": "Álvarez" },
+  { "id": 27, "nombre": "Martín", "apellido": "Alvear" }
+]
+```
+
+- Cada opción de alumnos y profesores trae **sólo** `id`, `nombre` y `apellido`: ni DNI, ni foto, ni estado, ni auditoría. Las de materias, **sólo** `id` y `nombre`:
+
+```json
+[
+  { "id": 2, "nombre": "Matemática" },
+  { "id": 9, "nombre": "Matemática financiera" }
+]
+```
+
+- **Errores:** 400 `VALIDACION` si `q` supera los 100 caracteres o `id` o `alumnoId` no es un entero positivo (en ese campo); 401 sin sesión; 403 `SIN_PERMISO` con otro rol (también profesor y alumno).
 
 ### Mis pagos (HU-37)
 
@@ -2221,6 +2256,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | `diaSemana`, `horaInicio`, `horaFin` | Un horario semanal: día ISO (1 a 7) y rango de horas `HH:mm` en punto, con el fin posterior al inicio (aulas disponibles)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `desde`, `hasta`                     | Rango de fechas `YYYY-MM-DD`, extremos incluidos. `hasta` no puede ser anterior a `desde`. En las agendas (`/agendas/propia` y `/agendas/profesor`; en `/agendas/centro` son obligatorios): sin `desde`, hoy; sin `hasta`, el mismo día que `desde`; el rango no puede superar los 31 días. En cuentas (`/cuentas/...`): cada extremo es opcional y **no hay tope de días**; cada sección toma la parte del período que le toca (adeudados, lo anterior a hoy; próximos, de hoy al tope de cobro) y la que no tiene parte no aplica (ver Cuentas). En pagos (`GET /pagos`): por fecha de pago, los dos **obligatorios** y sin tope de días |
 | `excluirBloqueId`                    | Fila de bloque que no cuenta como ocupación (la que se está editando)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `id`                                 | En un buscador (`GET /pagos/alumnos`, `/pagos/profesores`, `/pagos/materias`), trae sólo esa opción, para mostrar el nombre del filtro elegido                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 
 ## Recursos individuales
 
