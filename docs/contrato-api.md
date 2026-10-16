@@ -2134,16 +2134,18 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 ## Liquidaciones
 
-HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF (T-125) está al final de la sección, en [La liquidación en PDF](#la-liquidación-en-pdf), y los endpoints del profesor (T-126), en [Mis ingresos del profesor](#mis-ingresos-del-profesor).
 
-| Endpoint                                                        | Roles      | Qué hace                                                                         |
-| --------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------- |
-| `GET /api/v1/liquidaciones`                                     | `GERENTE`  | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
-| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`  | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
-| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`  | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
-| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR` | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200        |
-| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR` | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                  |
-| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR` | Su liquidación de un mes. 200; 400                                               |
+| Endpoint                                                        | Roles                 | Qué hace                                                                         |
+| --------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                                     | `GERENTE`             | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`             | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`             | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
+| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR`            | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200        |
+| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR`            | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                  |
+| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR`            | Su liquidación de un mes. 200; 400                                               |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pdf`   | `GERENTE`, `PROFESOR` | La liquidación en PDF; el profesor, sólo la suya. 200; 400; 403; 404             |
+| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}/pdf`         | `PROFESOR`            | Su liquidación en PDF, sin el `profesorId`. 200; 400; 403                        |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de la sesión (HU-45, T-126): ver [Mis ingresos del profesor](#mis-ingresos-del-profesor).
 
@@ -2376,6 +2378,19 @@ HU-45 (T-126). Rol `PROFESOR`, con el **profesor de la sesión** (como `GET /alu
 
 **`GET /liquidaciones/mis-liquidaciones/{mes}`**: su liquidación de `mes`, con el formato de arriba. Cualquier mes **no futuro**, también el en curso (devuelve lo mismo que `esteMes`). Sin movimientos: la vacía. Un mes con formato inválido o futuro → 400 `VALIDACION` en `["mes"]`, como el detalle del gerente. En una cerrada, `cerrada` es `{ liquidacionId, fechaTransferencia, numeroOperacion, descontadaEnMes }`.
 
+### La liquidación en PDF
+
+HU-44 y HU-45 (T-125). El documento oficial de la liquidación de un profesor en un mes, con el contrato común de los PDF ([Documentos PDF](#documentos-pdf)) y **el mismo cálculo** que el detalle (el motor; nada se recalcula). Dos rutas que arman el mismo documento (decisión T-179):
+
+- **`GET /liquidaciones/profesores/{profesorId}/{mes}/pdf`**: `GERENTE`, la de cualquier profesor; `PROFESOR`, **sólo la suya** (403 `SIN_PERMISO` con la de otro o sin ficha de profesor).
+- **`GET /liquidaciones/mis-liquidaciones/{mes}/pdf`**: `PROFESOR`, la del profesor de la sesión, sin el `profesorId` (como los otros `mis-…`). Es la que enlaza "Mis ingresos".
+
+**Contenido**, en este orden: el encabezado oficial (`encabezadoDeDocumento`); el profesor, el mes, el estado ("Pagada el 05/10/2026", "Pendiente de pago"…) y, si está pagada, la fecha y el número de operación de la transferencia; los turnos (fecha y horario, alumno, materia, comprobante, importe, porcentaje del centro y parte del profesor); los ajustes, si hay; y los totales (cobrado, parte del centro, parte del profesor, ajustes y total a pagar). **Sin** la forma de pago de las familias, el comprobante adjunto, las observaciones del pago ni quién lo registró. El documento del **profesor** no lleva la columna del comprobante (decisión T-171). Un mes sin movimientos dice "Sin turnos en el mes".
+
+**Errores**, en JSON: 400 `VALIDACION` si `profesorId` o `mes` son inválidos o el mes es futuro; 403 (el permiso del profesor se resuelve antes que el mes); 404 `NO_ENCONTRADO` "Profesor no encontrado".
+
+**Nombre del archivo:** `liquidacion-<apellido>-<nombre>-<mes>.pdf` (`liquidacion-gomez-ana-2026-09.pdf`), con guiones entre las partes como el historial (decisión T-162). Metadatos: título "Liquidación Septiembre de 2026".
+
 ## Caja
 
 HU-46 (T-127, decisión T-175). La caja diaria del gerente: todo el dinero que entró y salió del centro en un día, por forma de pago, con la parte del centro y la de los profesores. **Sólo lectura:** no tiene tablas propias, se arma al consultar con los cobros, las anulaciones y los pagos a profesores ya registrados. Las reglas están en `dominio.md` → Caja diaria.
@@ -2507,16 +2522,17 @@ Como el portal, lo propio del profesor vive en la feature dueña del concepto y 
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
 
-| Documento                                                                                                                                       | Endpoint                                                     | Roles                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
-| Comprobante de pago                                                                                                                             | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
-| Detalle de un turno                                                                                                                             | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Turnos de un alumno                                                                                                                             | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
-| Historial académico                                                                                                                             | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Agenda de un profesor                                                                                                                           | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
-| Tablero del gerente                                                                                                                             | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
-| Caja diaria                                                                                                                                     | `GET /caja/pdf?fecha`                                        | `GERENTE`                                           |
-| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas, Tablero y Caja. |
+| Documento                                                                                                                                                      | Endpoint                                                                                                  | Roles                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Comprobante de pago                                                                                                                                            | `GET /pagos/{id}/pdf`                                                                                     | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
+| Detalle de un turno                                                                                                                                            | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                                                                  | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Turnos de un alumno                                                                                                                                            | `GET /ocurrencias/pdf?alumnoId&…`                                                                         | `MESA_ENTRADAS`                                     |
+| Historial académico                                                                                                                                            | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…`                                              | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Agenda de un profesor                                                                                                                                          | `GET /agendas/diaria/pdf?profesorId&…`                                                                    | `MESA_ENTRADAS`                                     |
+| Tablero del gerente                                                                                                                                            | `GET /tablero/pdf?desde&hasta`                                                                            | `GERENTE`                                           |
+| Caja diaria                                                                                                                                                    | `GET /caja/pdf?fecha`                                                                                     | `GERENTE`                                           |
+| Liquidación de un profesor                                                                                                                                     | `GET /liquidaciones/profesores/{profesorId}/{mes}/pdf` y `GET /liquidaciones/mis-liquidaciones/{mes}/pdf` | `GERENTE`; `PROFESOR`, sólo la suya                 |
+| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas, Tablero, Caja y Liquidaciones. |
 
 - **200** con el cuerpo binario del PDF y estos headers:
 
