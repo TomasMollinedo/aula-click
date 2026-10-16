@@ -1633,13 +1633,14 @@ Registro de la asistencia de los turnos por su profesor (HU-22, T-81). Rol: **s�
 
 ## Historiales
 
-Historial académico del alumno (HU-31, T-108) y "Mis materias" del portal (HU-33). Es **sólo lectura y sin tablas propias**: las clases son las ocurrencias pasadas del alumno, una por hora, con el estado, la asistencia y la cancelación que calcula el motor ([Ocurrencias](#ocurrencias)); la asistencia se registra y se corrige sólo desde [Asistencias](#asistencias) (HU-22). Reglas en `dominio.md` → Historial académico. El PDF del historial lo suma T-110 en [Documentos PDF](#documentos-pdf).
+Historial académico del alumno (HU-31, T-108) y "Mis materias" del portal (HU-33). Es **sólo lectura y sin tablas propias**: las clases son las ocurrencias pasadas del alumno, una por hora, con el estado, la asistencia y la cancelación que calcula el motor ([Ocurrencias](#ocurrencias)); la asistencia se registra y se corrige sólo desde [Asistencias](#asistencias) (HU-22). Reglas en `dominio.md` → Historial académico. El historial del período que se ve también se baja como PDF (HU-32, T-110), con el contrato común de [Documentos PDF](#documentos-pdf).
 
-| Endpoint                                                                      | Roles                       | Qué hace                                                  |
-| ----------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------- |
-| `GET /api/v1/historiales/alumnos/{alumnoId}?desde&hasta&materiaId&profesorId` | `MESA_ENTRADAS`, `PROFESOR` | El historial del alumno en el período. 200; 400; 403; 404 |
-| `GET /api/v1/historiales/mis-materias`                                        | `ALUMNO`                    | Mis materias con su próximo turno y mi porcentaje. 200    |
-| `GET /api/v1/historiales/mis-materias/{materiaId}/{profesorId}?mes`           | `ALUMNO`                    | Mi historial de esa materia, por mes. 200; 400; 404       |
+| Endpoint                                                                               | Roles                       | Qué hace                                                  |
+| -------------------------------------------------------------------------------------- | --------------------------- | --------------------------------------------------------- |
+| `GET /api/v1/historiales/alumnos/{alumnoId}?desde&hasta&materiaId&profesorId`          | `MESA_ENTRADAS`, `PROFESOR` | El historial del alumno en el período. 200; 400; 403; 404 |
+| `GET /api/v1/historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&materiaId&profesorId` | `MESA_ENTRADAS`, `PROFESOR` | El historial del período como PDF. 200; 400; 403; 404     |
+| `GET /api/v1/historiales/mis-materias`                                                 | `ALUMNO`                    | Mis materias con su próximo turno y mi porcentaje. 200    |
+| `GET /api/v1/historiales/mis-materias/{materiaId}/{profesorId}?mes`                    | `ALUMNO`                    | Mi historial de esa materia, por mes. 200; 400; 404       |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
@@ -1717,6 +1718,16 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
   }
 }
 ```
+
+**`GET /api/v1/historiales/alumnos/{alumnoId}/pdf?mes|desde&hasta&materiaId&profesorId`** (roles `MESA_ENTRADAS` y `PROFESOR`, HU-32): el historial académico del alumno **del período pedido** como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Sale del **mismo cálculo** que `GET /historiales/alumnos/{alumnoId}`: los grupos, su resumen y sus bloques de horas seguidas son los mismos que los de la pantalla.
+
+- **Período (decisión T-163):** un `mes` (`AAAA-MM`; otro formato es 400 `VALIDACION`) o un rango `desde`/`hasta`, el mismo que acepta el historial JSON. Si vienen **los dos**, manda el rango; el extremo que falte lo completa el mes, y sin `mes` ni fechas, el **mes en curso**. `hasta` anterior a `desde`, o un período de más de **366 días**, es 400 con `details` sobre `hasta`, igual que el JSON. Las clases llegan **hasta hoy**.
+- **Filtros:** `materiaId` y `profesorId`, los mismos del historial de la ficha. El de materia se aplica también a los exámenes; el de profesor no, porque un examen es del alumno y de la materia. El documento dice qué filtros se aplicaron.
+- **Contenido**, en este orden: el encabezado oficial; el alumno (apellido, nombre, DNI y nivel de escolaridad), el período (rotulado "Mes" si es un mes completo y "Período" si no) y los filtros; por cada **materia y profesor**, su resumen y sus clases en bloques de horas seguidas (fecha y horario del bloque, el estado de **cada** hora con su plazo o su cierre del sistema, y "Qué se trabajó" e indicaciones **una sola vez**, con los de la hora que los tenga distintos aparte); los **turnos cancelados** del período con fecha, horario, materia, profesor y motivo; y los **exámenes** del período con su tipo y su nota (`7,5`, `Ausente` o `Sin nota`). Un período sin clases lo dice. Los cancelados y los exámenes sólo se listan si hay.
+- **Sin observaciones internas:** no lleva las del alumno ni las de los turnos (tampoco la de una ausencia).
+- **Roles:** los mismos del historial JSON y con el mismo criterio (decisión T-163): `MESA_ENTRADAS`, y `PROFESOR` sólo si el alumno **tiene o tuvo** turnos con él (si no, 403 `SIN_PERMISO`); `GERENTE` y `ALUMNO`, 403.
+- **Errores:** 400 (`mes` o una fecha inválidos, período invertido o de más de 366 días, `alumnoId`, `materiaId` o `profesorId` inválidos), 401, 403 y 404 (el alumno no existe), en JSON. Mismo orden que el JSON: período, alumno y después el permiso del profesor.
+- **Nombre del archivo:** `historial-academico-<apellido>-<nombre>-<mes>.pdf` con un mes completo (`historial-academico-gonzalez-lucia-2026-10.pdf`) y `historial-academico-<apellido>-<nombre>-<desde>_<hasta>.pdf` con cualquier otro período (`…-2026-09-05_2026-10-12.pdf`). HU-32 lo pide con `_` entre todas las partes, que la decisión T-123 reserva para las dos fechas de un rango: entre las partes van guiones (decisión T-162, **pendiente de confirmación de las PO**).
 
 **`GET /api/v1/historiales/mis-materias`** (portal, HU-33): cada materia y profesor en los que el alumno de la sesión **tiene o tuvo** turnos, con su `proximoTurno` (`{ fecha, horaInicio, horaFin }`: la primera clase **no cancelada** de hoy en adelante, hasta **366 días**, decisión T-149; `null` si no tiene ninguna) y su `porcentaje` de asistencia sobre **todo** su historial en esa materia con ese profesor. Sin paginar, en el mismo orden que los grupos. Una materia y profesor cuyo primer turno todavía no pasó también aparece, con `porcentaje: 0`.
 
@@ -2172,15 +2183,17 @@ Como el portal, lo propio del profesor vive en la feature dueña del concepto y 
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
 
-| Documento             | Endpoint                                 | Roles                                               |
-| --------------------- | ---------------------------------------- | --------------------------------------------------- |
-| Comprobante de pago   | `GET /pagos/{id}/pdf`                    | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
-| Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf` | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`        | `MESA_ENTRADAS`                                     |
-| Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`   | `MESA_ENTRADAS`                                     |
-| Tablero del gerente   | `GET /tablero/pdf?desde&hasta&seccion`   | `GERENTE`                                           |
+| Documento             | Endpoint                                                     | Roles                                               |
+| --------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
+| Comprobante de pago   | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
+| Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
+| Historial académico   | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
+| Tablero del gerente   | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
 
-Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Agendas y Tablero.
+
+Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas y Tablero.
 
 - **200** con el cuerpo binario del PDF y estos headers:
 
