@@ -14,6 +14,8 @@ import {
   textoCantidad,
   textoConfirmacion,
   textoExito,
+  textoFechaPago,
+  textoMateriasDelPago,
   textoHorario,
   textoImporte,
   textoNumero,
@@ -178,5 +180,18 @@ describe('datosDelMedio', () => {
       { label: 'Red', valor: 'Visa Débito' },
       { label: 'Cupón', valor: '000123' },
     ])
+  })
+})
+
+describe('textos de Mis pagos (portal, HU-37)', () => {
+  it('la fecha del pago con el año', () => {
+    expect(textoFechaPago('2026-10-06')).toBe('06/10/2026')
+  })
+
+  it('las materias del pago, separadas por coma', () => {
+    expect(textoMateriasDelPago([{ nombre: 'Física' }, { nombre: 'Matemática' }])).toBe(
+      'Física, Matemática',
+    )
+    expect(textoMateriasDelPago([{ nombre: 'Inglés' }])).toBe('Inglés')
   })
 })
