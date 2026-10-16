@@ -14,9 +14,11 @@ import {
   ocupacion,
   ordenarProfesores,
   profesoresConMasTurnos,
+  profesoresConTurnosPorRegistrar,
   resumenDeAsistencia,
   soloQueNoRegistran,
   turnosPorEstado,
+  ventanaDeRegistro,
 } from './tablero.reglas'
 import type {
   Tablero,
@@ -59,11 +61,19 @@ export function crearTableroService({
     hasta,
   }: Pick<TableroQuery, 'desde' | 'hasta'>): Promise<TableroAsistenciaCompleta> {
     const fechaHoy = hoy(reloj)
-    const ocurrencias = await repository.ocurrenciasDelPeriodo({ desde, hasta }, reloj)
+    // Dos lecturas independientes: el período pedido y la ventana de registro que termina hoy
+    // (`profesoresSinRegistrar` no depende del período).
+    const [ocurrencias, deLaVentana] = await Promise.all([
+      repository.ocurrenciasDelPeriodo({ desde, hasta }, reloj),
+      repository.ocurrenciasDelPeriodo(ventanaDeRegistro(fechaHoy), reloj),
+    ])
     return {
       periodo: { desde, hasta },
       hoy: fechaHoy,
-      resumen: resumenDeAsistencia(ocurrencias),
+      resumen: {
+        ...resumenDeAsistencia(ocurrencias),
+        profesoresSinRegistrar: profesoresConTurnosPorRegistrar(deLaVentana),
+      },
       profesores: ordenarProfesores(filasDeProfesores(ocurrencias), ORDEN_PROFESORES_POR_DEFECTO),
       materias: filasDeMaterias(ocurrencias),
     }
@@ -130,9 +140,10 @@ export function crearTableroService({
 
     /**
      * La pestaña "Asistencia" del período, con las tablas de profesores y materias **paginadas**.
-     * Una sola lectura de ocurrencias (el mismo criterio que `obtener`, decisión T-114) y reglas
-     * puras sobre ella. El filtro y el orden valen sólo para la tabla de profesores; el resumen y
-     * la tabla de materias son siempre los del período entero.
+     * Lee las ocurrencias del período (el mismo criterio que `obtener`, decisión T-114) y las de la
+     * ventana de registro que termina hoy, y aplica reglas puras. El filtro y el orden valen sólo
+     * para la tabla de profesores; el resumen y la tabla de materias son siempre los del período
+     * entero, salvo `profesoresSinRegistrar`, que es de la ventana de hoy.
      */
     async obtenerAsistencia(query: TableroAsistenciaQuery): Promise<TableroAsistencia> {
       const {

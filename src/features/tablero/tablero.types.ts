@@ -77,11 +77,9 @@ export type PeriodoTablero = { desde: string; hasta: string }
 /** Columnas por las que la API ordena la tabla de profesores. */
 export const ORDENES_PROFESORES = [
   'profesor',
-  'clasesRealizadas',
-  'ausencias',
-  'porcentajeAsistencia',
+  'asistenciasRegistradas',
+  'porcentajeRegistrado',
   'cerradosSinRegistrar',
-  'dentroDelPlazo',
   'porcentajeSinRegistrar',
 ] as const
 
@@ -93,16 +91,12 @@ export type DireccionOrden = (typeof DIRECCIONES_ORDEN)[number]
 
 /** Las cifras de asistencia de una fila (un profesor o una materia) en el período. */
 export type CifrasDeAsistencia = {
-  /** Turnos con asistencia "Presente" (cada hora de un alumno cuenta como un turno). */
-  clasesRealizadas: number
-  /** Turnos con asistencia "Ausente". */
-  ausencias: number
-  /** Realizadas sobre realizadas más ausencias. */
-  porcentajeAsistencia: number
-  /** Turnos que cerró el sistema sin asistencia registrada. */
+  /** Turnos con la asistencia marcada, "Presente" o "Ausente" (cada hora de un alumno es un turno). */
+  asistenciasRegistradas: number
+  /** Registradas sobre registradas más cerradas: 100 si el profesor no dejó ninguna sin registrar. */
+  porcentajeRegistrado: number
+  /** Turnos que cerró el sistema sin asistencia registrada (pasaron los 7 días del plazo). */
   cerradosSinRegistrar: number
-  /** "Sin registrar" que todavía están en plazo. */
-  dentroDelPlazo: number
   /** Cerrados sin registrar sobre los turnos no cancelados de la fila. */
   porcentajeSinRegistrar: number
 }
@@ -117,15 +111,21 @@ export type FilaMateriaAsistencia = CifrasDeAsistencia & {
   materia: { id: number; nombre: string }
 }
 
-/** Los números principales de la sección, siempre del período entero. */
+/**
+ * Los números principales de la sección. La torta (`presentes`, `ausentes` y `sinRegistrar`) es del
+ * período entero, con el porcentaje de cada uno sobre los tres juntos; `profesoresSinRegistrar` no
+ * depende del período.
+ */
 export type ResumenAsistencia = {
-  /** Asistencia del centro: realizados sobre los que tienen asistencia registrada. */
-  porcentajeAsistencia: number
-  cerradosSinRegistrar: number
-  /** Profesores con al menos un turno cerrado sin registrar. */
+  presentes: Conteo
+  ausentes: Conteo
+  /** Turnos que cerró el sistema sin asistencia (pasaron los 7 días del plazo). */
+  sinRegistrar: Conteo
+  /**
+   * Profesores con clases de los últimos 7 días (hoy incluido) sin la asistencia marcada: los que
+   * todavía están a tiempo de registrarla. Siempre es la ventana que termina hoy.
+   */
   profesoresSinRegistrar: number
-  /** Cantidad de alumnos con menos de 75 % de asistencia. **Solo la cantidad.** */
-  alumnosBajoElUmbral: number
 }
 
 export type TableroAsistencia = {

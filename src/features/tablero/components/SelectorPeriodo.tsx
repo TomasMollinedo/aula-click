@@ -16,7 +16,7 @@ import {
 
 /**
  * El selector de período del tablero: "Hoy", "Esta semana", "Este mes" o "Personalizado" (dos
- * fechas). No guarda estado: muestra el de la URL y avisa cada cambio, que se aplica enseguida. No
+ * fechas, a la derecha de los botones, en la misma fila). No guarda estado: muestra el de la URL y avisa cada cambio, que se aplica enseguida. No
  * valida el rango: un "Hasta" anterior al "Desde" se manda igual y el error de la API sale junto al
  * campo (`errores`).
  */
@@ -36,7 +36,7 @@ export function SelectorPeriodo({
   const ids = { desde: `${id}-desde`, hasta: `${id}-hasta` }
 
   return (
-    <div className="space-y-3">
+    <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
       <div role="group" aria-label="Período" className="flex flex-wrap gap-2">
         {OPCIONES_PERIODO.map((opcion) => {
           const activa = periodo.opcion === opcion
@@ -57,7 +57,7 @@ export function SelectorPeriodo({
       </div>
 
       {periodo.opcion === 'rango' && (
-        <div className="grid gap-3 sm:max-w-md sm:grid-cols-2">
+        <div className="grid w-full grid-cols-2 gap-3 sm:w-auto sm:grid-cols-[11rem_11rem]">
           <Field label="Desde" htmlFor={ids.desde} error={errores.desde}>
             <CalendarioFecha
               id={ids.desde}

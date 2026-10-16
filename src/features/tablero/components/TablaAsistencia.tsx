@@ -43,13 +43,15 @@ import { EncabezadoOrdenable } from './EncabezadoOrdenable'
 
 /** Las columnas de cifras, iguales en las dos tablas. */
 const CIFRAS: { campo: keyof CifrasDeAsistencia; titulo: string; porcentaje?: boolean }[] = [
-  { campo: 'clasesRealizadas', titulo: 'Clases dadas' },
-  { campo: 'ausencias', titulo: 'Ausencias' },
-  { campo: 'porcentajeAsistencia', titulo: 'Asistencia', porcentaje: true },
+  { campo: 'asistenciasRegistradas', titulo: 'Asistencias registradas' },
+  { campo: 'porcentajeRegistrado', titulo: '% registrado', porcentaje: true },
   { campo: 'cerradosSinRegistrar', titulo: 'Cerrados sin registrar' },
-  { campo: 'dentroDelPlazo', titulo: 'En plazo' },
   { campo: 'porcentajeSinRegistrar', titulo: '% sin registrar', porcentaje: true },
 ]
+
+/** Qué es un turno "sin registrar": se dice en las dos tablas, bajo el título. */
+const ACLARACION_PLAZO =
+  'Un turno cuenta como «sin registrar» recién cuando pasan los 7 días que tiene el profesor para marcar la asistencia.'
 
 function celdaDeCifra(fila: CifrasDeAsistencia, campo: keyof CifrasDeAsistencia, pct = false) {
   return pct ? formatearPorcentaje(fila[campo]) : formatearCantidad(fila[campo])
@@ -156,7 +158,7 @@ export function TablaProfesoresAsistencia({
   return (
     <TarjetaDeTabla
       titulo="Asistencia por profesor"
-      descripcion="Clases dadas, ausencias y turnos sin registrar de cada profesor en el período."
+      descripcion={`Asistencias que marcó cada profesor y turnos que dejó sin registrar en el período. ${ACLARACION_PLAZO}`}
       nombres={{ singular: 'profesor', plural: 'profesores' }}
       textoVacio="No hay profesores con turnos en este período"
       acciones={filtro}
@@ -230,7 +232,7 @@ export function TablaMateriasAsistencia({
   return (
     <TarjetaDeTabla
       titulo="Asistencia por materia"
-      descripcion="Las mismas cifras agrupadas por materia, con los turnos sin registrar primero."
+      descripcion={`Las mismas cifras agrupadas por materia, con los turnos sin registrar primero. ${ACLARACION_PLAZO}`}
       nombres={{ singular: 'materia', plural: 'materias' }}
       textoVacio="No hay materias con turnos en este período"
       page={page}

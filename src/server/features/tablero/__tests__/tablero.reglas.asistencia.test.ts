@@ -1,14 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import {
   ORDEN_PROFESORES_POR_DEFECTO,
-  UMBRAL_ASISTENCIA_ALUMNO,
   alumnosAtendidos,
   conteosDeAsistencia,
   filasDeMaterias,
   filasDeProfesores,
   ordenarProfesores,
+  profesoresConTurnosPorRegistrar,
   resumenDeAsistencia,
   soloQueNoRegistran,
+  ventanaDeRegistro,
   type OcurrenciaAsistencia,
 } from '../tablero.reglas'
 
@@ -125,7 +126,7 @@ describe('alumnosAtendidos', () => {
 })
 
 describe('filasDeProfesores', () => {
-  it('clases realizadas, ausencias, cerrados, dentro del plazo y los dos porcentajes de cada uno', () => {
+  it('asistencias registradas, cerrados y los dos porcentajes de cada uno', () => {
     const filas = filasDeProfesores([
       ...repetir(3, () => ocurrencia('REALIZADO')),
       ocurrencia('AUSENTE'),
@@ -140,11 +141,11 @@ describe('filasDeProfesores', () => {
     expect(filas).toEqual([
       {
         profesor: { id: 1, nombre: 'Ana', apellido: 'Gómez' },
-        clasesRealizadas: 3,
-        ausencias: 1,
-        porcentajeAsistencia: 75,
+        // 3 presentes y 1 ausente: las dos cuentan como asistencia registrada.
+        asistenciasRegistradas: 4,
+        // 4 registradas sobre 4 + 1 cerrado; los pendientes dentro del plazo no están en la base.
+        porcentajeRegistrado: 80,
         cerradosSinRegistrar: 1,
-        dentroDelPlazo: 2,
         // 1 cerrado sobre 8 turnos no cancelados (3 + 1 + 1 + 2 + 1).
         porcentajeSinRegistrar: 12.5,
         noRegistraAsistencia: true,
@@ -174,15 +175,40 @@ describe('filasDeProfesores', () => {
     expect(filas.map((f) => f.profesor.id)).toEqual([2])
   })
 
-  it('profesor sin turnos con asistencia registrada → porcentaje de asistencia 0 (base 0)', () => {
+  it('un profesor que registró todo llega a 100 %, aunque sus alumnos hayan faltado', () => {
+    const [fila] = filasDeProfesores([
+      ocurrencia('REALIZADO'),
+      ocurrencia('AUSENTE'),
+      ocurrencia('AUSENTE'),
+      // Dentro del plazo todavía no es una falta del profesor.
+      ocurrencia('SIN_REGISTRAR'),
+    ])
+
+    expect(fila).toMatchObject({
+      asistenciasRegistradas: 3,
+      porcentajeRegistrado: 100,
+      cerradosSinRegistrar: 0,
+    })
+  })
+
+  it('profesor que no registró nada y todo cerrado → 0 % registrado', () => {
     const [fila] = filasDeProfesores([cerrado(), cerrado()])
 
     expect(fila).toMatchObject({
-      clasesRealizadas: 0,
-      ausencias: 0,
-      porcentajeAsistencia: 0,
+      asistenciasRegistradas: 0,
+      porcentajeRegistrado: 0,
       cerradosSinRegistrar: 2,
       porcentajeSinRegistrar: 100,
+    })
+  })
+
+  it('profesor sin nada registrado ni cerrado → porcentaje registrado 0 (base 0)', () => {
+    const [fila] = filasDeProfesores([ocurrencia('SIN_REGISTRAR'), ocurrencia('AGENDADO')])
+
+    expect(fila).toMatchObject({
+      asistenciasRegistradas: 0,
+      porcentajeRegistrado: 0,
+      cerradosSinRegistrar: 0,
     })
   })
 
@@ -190,12 +216,10 @@ describe('filasDeProfesores', () => {
     const [fila] = filasDeProfesores([ocurrencia('REALIZADO')])
 
     expect(Object.keys(fila ?? {}).sort()).toEqual([
-      'ausencias',
+      'asistenciasRegistradas',
       'cerradosSinRegistrar',
-      'clasesRealizadas',
-      'dentroDelPlazo',
       'noRegistraAsistencia',
-      'porcentajeAsistencia',
+      'porcentajeRegistrado',
       'porcentajeSinRegistrar',
       'profesor',
     ])
@@ -220,11 +244,11 @@ describe('filasDeMaterias', () => {
     expect(filas).toEqual([
       {
         materia: { id: 2, nombre: 'Matemática' },
-        clasesRealizadas: 1,
-        ausencias: 1,
-        porcentajeAsistencia: 50,
+        asistenciasRegistradas: 2,
+        // 2 registradas sobre 2 + 1 cerrado.
+        porcentajeRegistrado: 66.7,
         cerradosSinRegistrar: 1,
-        dentroDelPlazo: 1,
+        // 1 cerrado sobre 4 turnos no cancelados.
         porcentajeSinRegistrar: 25,
       },
     ])
@@ -244,7 +268,7 @@ describe('filasDeMaterias', () => {
 })
 
 describe('ordenarProfesores y soloQueNoRegistran', () => {
-  // Gómez: 5 cerrados, Pérez L.: 2, Pérez J.: 2, Álvarez: 0 (con más clases realizadas).
+  // Gómez: 5 cerrados, Pérez L.: 2, Pérez J.: 2, Álvarez: 0 (con más asistencias registradas).
   const filas = filasDeProfesores([
     ...repetir(5, () => cerrado({ profesorId: 1 })),
     ocurrencia('REALIZADO', { profesorId: 1 }),
@@ -272,12 +296,10 @@ describe('ordenarProfesores y soloQueNoRegistran', () => {
   })
 
   it.each([
-    ['clasesRealizadas', 'desc', 'Álvarez Marta'],
-    ['ausencias', 'desc', 'Álvarez Marta'],
-    ['porcentajeAsistencia', 'desc', 'Gómez Ana'],
-    ['porcentajeAsistencia', 'asc', 'Pérez Juan'],
+    ['asistenciasRegistradas', 'desc', 'Álvarez Marta'],
+    ['porcentajeRegistrado', 'desc', 'Álvarez Marta'],
+    ['porcentajeRegistrado', 'asc', 'Pérez Juan'],
     ['porcentajeSinRegistrar', 'desc', 'Pérez Juan'],
-    ['dentroDelPlazo', 'asc', 'Álvarez Marta'],
   ] as const)('por `%s` %s empieza con %s', (orden, direccion, primero) => {
     expect(apellidos(ordenarProfesores(filas, { orden, direccion }))[0]).toBe(primero)
   })
@@ -316,83 +338,83 @@ describe('ordenarProfesores y soloQueNoRegistran', () => {
 })
 
 describe('resumenDeAsistencia', () => {
-  it('porcentaje del centro, cerrados por el sistema y profesores que no registran', () => {
+  it('presentes, ausentes y cerrados sin registrar, cada uno sobre los tres juntos', () => {
     const resumen = resumenDeAsistencia([
       ...repetir(3, () => ocurrencia('REALIZADO', { profesorId: 1 })),
       ocurrencia('AUSENTE', { profesorId: 2 }),
       cerrado({ profesorId: 1 }),
       cerrado({ profesorId: 1 }),
-      cerrado({ profesorId: 2 }),
+      // Fuera de la base: todavía se puede registrar, no pasó o se canceló.
       ocurrencia('SIN_REGISTRAR', { profesorId: 3 }),
+      ocurrencia('AGENDADO', { profesorId: 3 }),
       ocurrencia('CANCELADO', { profesorId: 4 }),
     ])
 
-    expect(resumen).toMatchObject({
-      porcentajeAsistencia: 75,
-      cerradosSinRegistrar: 3,
-      profesoresSinRegistrar: 2,
+    expect(resumen).toEqual({
+      presentes: { cantidad: 3, porcentaje: 50 },
+      ausentes: { cantidad: 1, porcentaje: 16.7 },
+      sinRegistrar: { cantidad: 2, porcentaje: 33.3 },
     })
   })
 
-  it('base 0 → porcentaje 0 y todo en 0', () => {
+  it('base 0 → todo en 0, sin dividir por cero', () => {
+    const vacio = { cantidad: 0, porcentaje: 0 }
+
     expect(resumenDeAsistencia([])).toEqual({
-      porcentajeAsistencia: 0,
-      cerradosSinRegistrar: 0,
-      profesoresSinRegistrar: 0,
-      alumnosBajoElUmbral: 0,
+      presentes: vacio,
+      ausentes: vacio,
+      sinRegistrar: vacio,
+    })
+    expect(resumenDeAsistencia([ocurrencia('SIN_REGISTRAR'), ocurrencia('AGENDADO')])).toEqual({
+      presentes: vacio,
+      ausentes: vacio,
+      sinRegistrar: vacio,
     })
   })
 
-  describe('alumnos con menos de 75 % de asistencia', () => {
-    it('el umbral es 75', () => {
-      expect(UMBRAL_ASISTENCIA_ALUMNO).toBe(75)
-    })
+  it('no trae nada de los alumnos ni una cantidad de alumnos con baja asistencia', () => {
+    expect(Object.keys(resumenDeAsistencia([ocurrencia('REALIZADO')])).sort()).toEqual([
+      'ausentes',
+      'presentes',
+      'sinRegistrar',
+    ])
+  })
+})
 
-    it('cuenta los alumnos por debajo; exactamente 75 % no entra', () => {
-      const resumen = resumenDeAsistencia([
-        // Alumno 1: 3 de 4 = 75 % → no.
-        ...repetir(3, () => ocurrencia('REALIZADO', { alumnoId: 1 })),
-        ocurrencia('AUSENTE', { alumnoId: 1 }),
-        // Alumno 2: 1 de 2 = 50 % → sí.
-        ocurrencia('REALIZADO', { alumnoId: 2 }),
-        ocurrencia('AUSENTE', { alumnoId: 2 }),
-        // Alumno 3: 0 de 1 → sí.
-        ocurrencia('AUSENTE', { alumnoId: 3 }),
-        // Alumno 4: 100 % → no.
-        ocurrencia('REALIZADO', { alumnoId: 4 }),
-      ])
+describe('ventanaDeRegistro', () => {
+  it('va de 7 días atrás a hoy, el plazo que tiene el profesor para registrar', () => {
+    expect(ventanaDeRegistro('2026-10-15')).toEqual({ desde: '2026-10-08', hasta: '2026-10-15' })
+  })
 
-      expect(resumen.alumnosBajoElUmbral).toBe(2)
-    })
+  it('cruza el fin de mes y de año', () => {
+    expect(ventanaDeRegistro('2026-01-03')).toEqual({ desde: '2025-12-27', hasta: '2026-01-03' })
+  })
+})
 
-    it('un porcentaje con decimales por debajo del umbral cuenta (2 de 3 = 66,7 %)', () => {
-      const resumen = resumenDeAsistencia([
-        ...repetir(2, () => ocurrencia('REALIZADO', { alumnoId: 1 })),
-        ocurrencia('AUSENTE', { alumnoId: 1 }),
-      ])
+describe('profesoresConTurnosPorRegistrar', () => {
+  it('cuenta los profesores con al menos un turno sin registrar dentro del plazo, una vez cada uno', () => {
+    expect(
+      profesoresConTurnosPorRegistrar([
+        ocurrencia('SIN_REGISTRAR', { profesorId: 1 }),
+        ocurrencia('SIN_REGISTRAR', { profesorId: 1 }),
+        ocurrencia('SIN_REGISTRAR', { profesorId: 2 }),
+      ]),
+    ).toBe(2)
+  })
 
-      expect(resumen.alumnosBajoElUmbral).toBe(1)
-    })
+  it('los cerrados por el sistema, los registrados, los agendados y los cancelados no cuentan', () => {
+    expect(
+      profesoresConTurnosPorRegistrar([
+        cerrado({ profesorId: 1 }),
+        ocurrencia('REALIZADO', { profesorId: 2 }),
+        ocurrencia('AUSENTE', { profesorId: 3 }),
+        ocurrencia('AGENDADO', { profesorId: 4 }),
+        ocurrencia('CANCELADO', { profesorId: 5 }),
+      ]),
+    ).toBe(0)
+  })
 
-    it('los alumnos sin ningún turno con asistencia registrada no entran', () => {
-      const resumen = resumenDeAsistencia([
-        cerrado({ alumnoId: 1 }),
-        ocurrencia('SIN_REGISTRAR', { alumnoId: 2 }),
-        ocurrencia('AGENDADO', { alumnoId: 3 }),
-        ocurrencia('CANCELADO', { alumnoId: 4 }),
-      ])
-
-      expect(resumen.alumnosBajoElUmbral).toBe(0)
-    })
-
-    it('los cerrados y los pendientes de un alumno no bajan su porcentaje', () => {
-      const resumen = resumenDeAsistencia([
-        ocurrencia('REALIZADO', { alumnoId: 1 }),
-        cerrado({ alumnoId: 1 }),
-        cerrado({ alumnoId: 1 }),
-      ])
-
-      expect(resumen.alumnosBajoElUmbral).toBe(0)
-    })
+  it('sin ocurrencias → 0', () => {
+    expect(profesoresConTurnosPorRegistrar([])).toBe(0)
   })
 })

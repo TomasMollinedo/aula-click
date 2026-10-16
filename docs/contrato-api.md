@@ -1457,7 +1457,7 @@ HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicad
 
 - `desde`, `hasta`: el período común (arriba).
 - `paginaProfesores`, `paginaMaterias`: página de cada tabla (entero ≥ 1, por defecto `1`). Las dos tablas son **de a 10 filas** y no hay `pageSize`. Cada una tiene su página: cambiar la de profesores no mueve la de materias. Una página pasada del final devuelve `data: []` con su `meta`.
-- `orden`: columna por la que se ordena **la tabla de profesores**: `profesor` (apellido y nombre), `clasesRealizadas`, `ausencias`, `porcentajeAsistencia`, `cerradosSinRegistrar` (por defecto), `dentroDelPlazo` o `porcentajeSinRegistrar`. `direccion`: `asc` o `desc` (por defecto `desc`). En empate, siempre apellido, nombre e `id` ascendentes, así el orden es estable entre páginas. La tabla de materias no se reordena.
+- `orden`: columna por la que se ordena **la tabla de profesores**: `profesor` (apellido y nombre), `asistenciasRegistradas`, `porcentajeRegistrado`, `cerradosSinRegistrar` (por defecto) o `porcentajeSinRegistrar`. `direccion`: `asc` o `desc` (por defecto `desc`). En empate, siempre apellido, nombre e `id` ascendentes, así el orden es estable entre páginas. La tabla de materias no se reordena.
 - `soloSinRegistrar`: `true` o `false` (por defecto, `false`). Con `true`, la tabla de profesores trae sólo a los que tienen `noRegistraAsistencia`. **No cambia el resumen ni la tabla de materias**, que son siempre los del período entero.
 - 400 `VALIDACION` además por una página que no es un entero ≥ 1 y por un `orden`, una `direccion` o un `soloSinRegistrar` que no existen (`details` en su campo).
 
@@ -1466,20 +1466,18 @@ HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicad
   "periodo": { "desde": "2026-09-28", "hasta": "2026-10-04" },
   "hoy": "2026-10-02",
   "resumen": {
-    "porcentajeAsistencia": 85,
-    "cerradosSinRegistrar": 5,
-    "profesoresSinRegistrar": 2,
-    "alumnosBajoElUmbral": 3
+    "presentes": { "cantidad": 17, "porcentaje": 68 },
+    "ausentes": { "cantidad": 3, "porcentaje": 12 },
+    "sinRegistrar": { "cantidad": 5, "porcentaje": 20 },
+    "profesoresSinRegistrar": 2
   },
   "profesores": {
     "data": [
       {
         "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" },
-        "clasesRealizadas": 6,
-        "ausencias": 1,
-        "porcentajeAsistencia": 85.7,
+        "asistenciasRegistradas": 7,
+        "porcentajeRegistrado": 70,
         "cerradosSinRegistrar": 3,
-        "dentroDelPlazo": 1,
         "porcentajeSinRegistrar": 27.3,
         "noRegistraAsistencia": true
       }
@@ -1490,11 +1488,9 @@ HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicad
     "data": [
       {
         "materia": { "id": 2, "nombre": "Matemática" },
-        "clasesRealizadas": 8,
-        "ausencias": 1,
-        "porcentajeAsistencia": 88.9,
+        "asistenciasRegistradas": 9,
+        "porcentajeRegistrado": 75,
         "cerradosSinRegistrar": 3,
-        "dentroDelPlazo": 1,
         "porcentajeSinRegistrar": 23.1
       }
     ],
@@ -1503,13 +1499,11 @@ HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicad
 }
 ```
 
-- `hoy`: la fecha con la que se calculó la respuesta; separa los turnos cerrados de los que están dentro del plazo (plazo de 7 días, ver Asistencias).
-- `resumen` (los números principales):
-  - `porcentajeAsistencia`: asistencia del centro, los turnos `REALIZADO` sobre los que tienen asistencia registrada (`REALIZADO` + `AUSENTE`).
-  - `cerradosSinRegistrar`: turnos del período que cerró el sistema como "Sin registrar" (pasaron los 7 días sin que el profesor los registrara).
-  - `profesoresSinRegistrar`: profesores con al menos un turno cerrado sin registrar en el período (lo mismo que cuenta `noRegistraAsistencia`).
-  - `alumnosBajoElUmbral`: alumnos con **menos de 75 %** de asistencia, entre los que tienen algún turno con asistencia registrada en el período. **Sólo la cantidad:** el umbral es estricto (75 % justo no cuenta) y los alumnos sin ningún registro no entran.
-- `profesores`: un profesor por fila, sólo los que tienen turnos **no cancelados** en el período. `clasesRealizadas` son los turnos con asistencia "Presente" (cada hora de un alumno cuenta como un turno), `ausencias` los de "Ausente", `porcentajeAsistencia` las clases sobre ambos, `cerradosSinRegistrar` los que cerró el sistema, `dentroDelPlazo` los "Sin registrar" que todavía se pueden registrar y `porcentajeSinRegistrar` los cerrados sobre los turnos **no cancelados** del profesor en el período (los agendados están en la base). `noRegistraAsistencia` es `true` con al menos un cerrado: la UI muestra el distintivo "No registra asistencia". Orden por defecto: `cerradosSinRegistrar` de mayor a menor.
+- `hoy`: la fecha con la que se calculó la respuesta; separa los turnos cerrados de los que están dentro del plazo (plazo de 7 días, ver Asistencias) y fija la ventana de `profesoresSinRegistrar`.
+- `resumen` (los números principales, decisión T-169):
+  - `presentes`, `ausentes` y `sinRegistrar`: la torta del centro en el período. `presentes` son los turnos `REALIZADO`, `ausentes` los `AUSENTE` y `sinRegistrar` los que cerró el sistema (pasaron los 7 días sin que el profesor los registrara). Cada uno trae `cantidad` y `porcentaje` **sobre los tres juntos**. Los "Sin registrar" que todavía están dentro del plazo y los agendados no entran. Sin ninguno de los tres, todo en `0`.
+  - `profesoresSinRegistrar`: profesores con al menos un turno "Sin registrar" **dentro del plazo**, es decir, con clases de los últimos 7 días (de `hoy` menos 7 a `hoy`) sin la asistencia marcada. **No depende de `desde` ni de `hasta`:** es siempre la ventana que termina en `hoy`.
+- `profesores`: un profesor por fila, sólo los que tienen turnos **no cancelados** en el período. `asistenciasRegistradas` son los turnos con la asistencia marcada, "Presente" o "Ausente" (cada hora de un alumno cuenta como un turno); `porcentajeRegistrado`, las registradas sobre registradas más cerradas (**100 si el profesor no dejó ninguna sin registrar**, vengan o no sus alumnos; 0 si no hay base); `cerradosSinRegistrar`, los que cerró el sistema; y `porcentajeSinRegistrar`, los cerrados sobre los turnos **no cancelados** del profesor en el período (los agendados y los que todavía están dentro del plazo están en la base). `noRegistraAsistencia` es `true` con al menos un cerrado: la UI muestra el distintivo "No registra asistencia". Orden por defecto: `cerradosSinRegistrar` de mayor a menor.
 - `materias`: las mismas cifras agrupadas por materia (sin `noRegistraAsistencia`: no es una persona que registre). Orden fijo: `cerradosSinRegistrar` de mayor a menor y, en empate, nombre e `id`.
 - Los cancelados no cuentan en ninguna cifra. Con todo en 0 (por ejemplo, un período sin turnos), los porcentajes son `0` y las tablas, `[]`.
 

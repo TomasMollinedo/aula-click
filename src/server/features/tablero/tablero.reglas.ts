@@ -1,4 +1,7 @@
-import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import {
+  PLAZO_ASISTENCIA_DIAS,
+  type Ocurrencia,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 import { ZONA_HORARIA, fechaADate, sumarDias } from '@/server/shared/fechas'
 
 // Reglas puras del tablero del gerente (HU-21, T-61): el período que se puede pedir, los
@@ -176,9 +179,6 @@ export function profesoresConMasTurnos(
 // Asistencia (HU-39, T-112, decisión T-162)
 // ---------------------------------------------------------------------------------------------
 
-/** Debajo de este porcentaje de asistencia (estricto) un alumno cuenta en "alumnos con baja asistencia". */
-export const UMBRAL_ASISTENCIA_ALUMNO = 75
-
 /** Filas de cada tabla de la pestaña "Asistencia". */
 export const FILAS_POR_PAGINA_ASISTENCIA = 10
 
@@ -213,47 +213,43 @@ export function alumnosAtendidos(
 
 /** Las cifras de asistencia de un grupo de turnos (un profesor o una materia). */
 export type CifrasDeAsistencia = {
-  /** Turnos `REALIZADO` (asistencia "Presente"): cada hora de un alumno cuenta como un turno. */
-  clasesRealizadas: number
-  /** Turnos `AUSENTE`. */
-  ausencias: number
-  /** `clasesRealizadas` sobre los turnos con asistencia registrada (`clasesRealizadas + ausencias`). */
-  porcentajeAsistencia: number
+  /** Turnos con asistencia registrada (`REALIZADO` y `AUSENTE`): cada hora de un alumno cuenta como un turno. */
+  asistenciasRegistradas: number
+  /**
+   * `asistenciasRegistradas` sobre las registradas más los turnos cerrados sin registrar: mide si
+   * el profesor cumplió con su tarea, no si el alumno vino. 100 si no dejó ninguno sin registrar.
+   */
+  porcentajeRegistrado: number
   /** `SIN_REGISTRAR` con el plazo vencido: los que cerró el sistema. */
   cerradosSinRegistrar: number
-  /** `SIN_REGISTRAR` que todavía están dentro del plazo de registro. */
-  dentroDelPlazo: number
   /** `cerradosSinRegistrar` sobre los turnos **no cancelados** del grupo. */
   porcentajeSinRegistrar: number
 }
 
 /**
  * Las cifras de un grupo de turnos. Los cancelados no cuentan (no hay asistencia que registrar),
- * tampoco en la base de `porcentajeSinRegistrar`; los agendados sí están en esa base. Todos los
- * porcentajes salen en 0 si su base es 0.
+ * tampoco en la base de `porcentajeSinRegistrar`; los agendados y los que todavía están dentro del
+ * plazo sí están en esa base, pero no en la de `porcentajeRegistrado`. Todos los porcentajes salen
+ * en 0 si su base es 0.
  */
 function cifrasDeAsistencia(ocurrencias: readonly OcurrenciaAsistencia[]): CifrasDeAsistencia {
   let turnos = 0
-  let clasesRealizadas = 0
-  let ausencias = 0
+  let asistenciasRegistradas = 0
   let cerradosSinRegistrar = 0
-  let dentroDelPlazo = 0
   for (const { estado, plazoAsistencia } of ocurrencias) {
     if (estado === 'CANCELADO') continue
     turnos += 1
-    if (estado === 'REALIZADO') clasesRealizadas += 1
-    else if (estado === 'AUSENTE') ausencias += 1
-    else if (estado === 'SIN_REGISTRAR') {
-      if (plazoAsistencia?.vencido === true) cerradosSinRegistrar += 1
-      else dentroDelPlazo += 1
-    }
+    if (estado === 'REALIZADO' || estado === 'AUSENTE') asistenciasRegistradas += 1
+    else if (estado === 'SIN_REGISTRAR' && plazoAsistencia?.vencido === true)
+      cerradosSinRegistrar += 1
   }
   return {
-    clasesRealizadas,
-    ausencias,
-    porcentajeAsistencia: porcentaje(clasesRealizadas, clasesRealizadas + ausencias),
+    asistenciasRegistradas,
+    porcentajeRegistrado: porcentaje(
+      asistenciasRegistradas,
+      asistenciasRegistradas + cerradosSinRegistrar,
+    ),
     cerradosSinRegistrar,
-    dentroDelPlazo,
     porcentajeSinRegistrar: porcentaje(cerradosSinRegistrar, turnos),
   }
 }
@@ -328,11 +324,9 @@ export function filasDeMaterias(
 /** Columnas por las que se puede ordenar la tabla de profesores. */
 export const COLUMNAS_PROFESORES = [
   'profesor',
-  'clasesRealizadas',
-  'ausencias',
-  'porcentajeAsistencia',
+  'asistenciasRegistradas',
+  'porcentajeRegistrado',
   'cerradosSinRegistrar',
-  'dentroDelPlazo',
   'porcentajeSinRegistrar',
 ] as const
 export type ColumnaProfesores = (typeof COLUMNAS_PROFESORES)[number]
@@ -376,46 +370,60 @@ export function soloQueNoRegistran(
   return filas.filter((fila) => fila.noRegistraAsistencia)
 }
 
-/** Los números principales de la pestaña "Asistencia". */
+/** Los números de la torta de la pestaña "Asistencia", sobre el período pedido. */
 export type ResumenDeAsistencia = {
-  /** `REALIZADO` sobre los turnos con asistencia registrada de todo el centro. */
-  porcentajeAsistencia: number
-  /** Turnos cerrados "Sin registrar" por el sistema en el período. */
-  cerradosSinRegistrar: number
-  /** Profesores con al menos un turno cerrado sin registrar. */
-  profesoresSinRegistrar: number
-  /** Alumnos con algún registro y menos de `UMBRAL_ASISTENCIA_ALUMNO` % de asistencia: sólo la cantidad. */
-  alumnosBajoElUmbral: number
+  /** Turnos `REALIZADO`. */
+  presentes: Conteo
+  /** Turnos `AUSENTE`. */
+  ausentes: Conteo
+  /** Turnos cerrados "Sin registrar" por el sistema (pasaron los 7 días del plazo). */
+  sinRegistrar: Conteo
 }
 
 /**
- * El resumen del período. El porcentaje de asistencia de un alumno se compara **sin redondear**
- * (`realizadas × 100 < umbral × registradas`): 74,96 % no pasa por 75. Los alumnos sin ningún turno
- * con asistencia registrada no entran.
+ * El resumen del período: presentes, ausentes y cerrados sin registrar, cada uno con su porcentaje
+ * sobre los tres juntos. Los pendientes dentro del plazo y los agendados no entran: todavía se pueden
+ * registrar. Sin ningún turno de los tres, todo en 0.
  */
 export function resumenDeAsistencia(
   ocurrencias: readonly OcurrenciaAsistencia[],
 ): ResumenDeAsistencia {
-  const centro = cifrasDeAsistencia(ocurrencias)
-
-  const porAlumno = new Map<number, { realizadas: number; registradas: number }>()
-  for (const { alumnoId, estado } of ocurrencias) {
-    if (estado !== 'REALIZADO' && estado !== 'AUSENTE') continue
-    const cuenta = porAlumno.get(alumnoId) ?? { realizadas: 0, registradas: 0 }
-    cuenta.registradas += 1
-    if (estado === 'REALIZADO') cuenta.realizadas += 1
-    porAlumno.set(alumnoId, cuenta)
-  }
-  const alumnosBajoElUmbral = [...porAlumno.values()].filter(
-    ({ realizadas, registradas }) => realizadas * 100 < UMBRAL_ASISTENCIA_ALUMNO * registradas,
-  ).length
-
+  const presentes = ocurrencias.filter((o) => o.estado === 'REALIZADO').length
+  const ausentes = ocurrencias.filter((o) => o.estado === 'AUSENTE').length
+  const cerrados = cifrasDeAsistencia(ocurrencias).cerradosSinRegistrar
+  const base = presentes + ausentes + cerrados
+  const conteo = (cantidad: number): Conteo => ({
+    cantidad,
+    porcentaje: porcentaje(cantidad, base),
+  })
   return {
-    porcentajeAsistencia: centro.porcentajeAsistencia,
-    cerradosSinRegistrar: centro.cerradosSinRegistrar,
-    profesoresSinRegistrar: soloQueNoRegistran(filasDeProfesores(ocurrencias)).length,
-    alumnosBajoElUmbral,
+    presentes: conteo(presentes),
+    ausentes: conteo(ausentes),
+    sinRegistrar: conteo(cerrados),
   }
+}
+
+/**
+ * La ventana de registro que termina hoy: de `PLAZO_ASISTENCIA_DIAS` días atrás a hoy. Las clases de
+ * esas fechas son las que el profesor todavía puede registrar, así que no depende del período que
+ * se mira en el tablero.
+ */
+export function ventanaDeRegistro(fechaHoy: string): { desde: string; hasta: string } {
+  return { desde: sumarDias(fechaHoy, -PLAZO_ASISTENCIA_DIAS), hasta: fechaHoy }
+}
+
+/**
+ * Profesores con al menos un turno "Sin registrar" **dentro del plazo**: los que todavía deben
+ * marcar la asistencia de alguna clase. Se calcula sobre las ocurrencias de `ventanaDeRegistro`.
+ */
+export function profesoresConTurnosPorRegistrar(
+  ocurrencias: readonly Pick<OcurrenciaAsistencia, 'estado' | 'plazoAsistencia' | 'profesor'>[],
+): number {
+  return new Set(
+    ocurrencias
+      .filter((o) => o.estado === 'SIN_REGISTRAR' && o.plazoAsistencia?.vencido === false)
+      .map((o) => o.profesor.id),
+  ).size
 }
 
 // Se crea una sola vez. Las partes numéricas no dependen del formato del locale.

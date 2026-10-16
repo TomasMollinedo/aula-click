@@ -13,7 +13,7 @@ import {
 // ordenan y si un valor es válido lo decide la API: acá un valor que no existe es "sin filtro" y
 // cae en el por defecto, para que la URL nunca rompa la pantalla.
 //
-// URL: `?paginaProfesores=2&paginaMaterias=3&orden=ausencias&direccion=asc&soloSinRegistrar=true`.
+// URL: `?paginaProfesores=2&paginaMaterias=3&orden=asistenciasRegistradas&direccion=asc&soloSinRegistrar=true`.
 // Los valores por defecto no se escriben.
 
 export type FiltrosAsistencia = {

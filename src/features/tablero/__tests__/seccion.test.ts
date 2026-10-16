@@ -42,9 +42,9 @@ describe('paramsConSeccion', () => {
   })
 
   it('conserva el período y el estado de las tablas', () => {
-    expect(escribir('periodo=mes&paginaProfesores=3&orden=ausencias', 'asistencia')).toBe(
-      'periodo=mes&paginaProfesores=3&orden=ausencias&seccion=asistencia',
-    )
+    expect(
+      escribir('periodo=mes&paginaProfesores=3&orden=asistenciasRegistradas', 'asistencia'),
+    ).toBe('periodo=mes&paginaProfesores=3&orden=asistenciasRegistradas&seccion=asistencia')
     // Y al volver a "General" se van sólo la sección, no el resto.
     expect(
       escribir('periodo=rango&desde=2026-09-01&hasta=2026-09-15&seccion=asistencia', 'general'),

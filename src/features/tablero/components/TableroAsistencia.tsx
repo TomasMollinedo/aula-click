@@ -12,19 +12,26 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { ErrorTablero } from '../errores-tablero'
 import { mensajesDeAsistencia } from '../errores-tablero'
 import type { FiltrosAsistencia } from '../filtros-asistencia'
-import { formatearCantidad, formatearPorcentaje, rotuloDelPeriodo } from '../formato-tablero'
+import {
+  formatearCantidad,
+  formatearPorcentaje,
+  rotuloALaFecha,
+  rotuloDelPeriodo,
+} from '../formato-tablero'
 import type { OrdenProfesores, TableroAsistencia as Asistencia } from '../tablero.types'
+import { GraficoDona, ItemLeyenda } from './GraficoDona'
 import { TablaMateriasAsistencia, TablaProfesoresAsistencia } from './TablaAsistencia'
 import { TarjetaIndicador, ValorIndicador } from './TarjetaIndicador'
 
 /**
- * La sección "Asistencia" del tablero (HU-39): los números principales del período y, debajo, las
- * dos tablas (profesores y materias), cada una con su propia página. La de profesores se reordena
- * por cualquier columna y se puede filtrar a los que tienen turnos sin registrar; ese filtro **no**
+ * La sección "Asistencia" del tablero (HU-39): la torta de presentes, ausentes y sin registrar del
+ * período, los profesores que todavía tienen clases por registrar y, debajo, las dos tablas
+ * (profesores y materias), cada una con su propia página. La de profesores se reordena por
+ * cualquier columna y se puede filtrar a los que tienen turnos sin registrar; ese filtro **no**
  * cambia el resumen ni la tabla de materias, que son siempre del período entero.
  *
  * Todo lo que se ve lo calcula la API: acá no se suman cifras, no se ordenan filas ni se recorta
- * ninguna página. Nunca hay un nombre de alumno: `alumnosBajoElUmbral` es una cantidad.
+ * ninguna página. Nunca hay un nombre de alumno.
  */
 export function TableroAsistencia({
   asistencia,
@@ -79,9 +86,9 @@ export function TableroAsistencia({
         <div
           role="status"
           aria-label="Cargando el resumen de asistencia"
-          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+          className="grid gap-4 md:grid-cols-2"
         >
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1].map((i) => (
             <Card key={i} className="gap-3 p-5">
               <Skeleton className="h-4 w-28" />
               <Skeleton className="h-3 w-40" />
@@ -124,39 +131,77 @@ export function TableroAsistencia({
   )
 }
 
-/** Los números principales: siempre del período entero, sin el filtro de la tabla. */
+/**
+ * Los números principales: la torta es siempre del período entero, sin el filtro de la tabla. Los
+ * profesores sin registrar **no** dependen del período: son los que tienen clases de los últimos 7
+ * días sin marcar, a la fecha de la respuesta.
+ */
 function Resumen({ asistencia, enEspera }: { asistencia: Asistencia; enEspera: boolean }) {
   const { resumen } = asistencia
-  const delPeriodo = rotuloDelPeriodo(asistencia.periodo)
+  const { presentes, ausentes, sinRegistrar } = resumen
 
   return (
     <section
       aria-label="Resumen de asistencia"
       aria-busy={enEspera}
-      className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4"
+      className="grid gap-4 md:grid-cols-2"
     >
-      <TarjetaIndicador titulo="Asistencia del centro" rotulo={delPeriodo}>
-        <ValorIndicador destacado valor={formatearPorcentaje(resumen.porcentajeAsistencia)} />
-        <p className="text-muted-foreground -mt-2 text-xs">
-          Clases dadas sobre los turnos con asistencia registrada.
+      <TarjetaIndicador
+        titulo="Asistencia del centro"
+        rotulo={rotuloDelPeriodo(asistencia.periodo)}
+      >
+        <GraficoDona
+          descripcion={`${formatearCantidad(presentes.cantidad)} presentes, ${formatearCantidad(ausentes.cantidad)} ausentes y ${formatearCantidad(sinRegistrar.cantidad)} sin registrar`}
+          centro={{ valor: formatearPorcentaje(presentes.porcentaje), texto: 'presentes' }}
+          segmentos={[
+            {
+              etiqueta: 'Presentes',
+              valor: presentes.cantidad,
+              claseColor: 'stroke-estado-realizado',
+            },
+            {
+              etiqueta: 'Ausentes',
+              valor: ausentes.cantidad,
+              claseColor: 'stroke-estado-ausente',
+            },
+            {
+              etiqueta: 'Sin registrar',
+              valor: sinRegistrar.cantidad,
+              claseColor: 'stroke-estado-sin-registrar',
+            },
+          ]}
+        />
+        <ul className="space-y-2">
+          <ItemLeyenda
+            claseColor="bg-estado-realizado"
+            etiqueta="Presentes"
+            valor={formatearCantidad(presentes.cantidad)}
+            detalle={formatearPorcentaje(presentes.porcentaje)}
+          />
+          <ItemLeyenda
+            claseColor="bg-estado-ausente"
+            etiqueta="Ausentes"
+            valor={formatearCantidad(ausentes.cantidad)}
+            detalle={formatearPorcentaje(ausentes.porcentaje)}
+          />
+          <ItemLeyenda
+            claseColor="bg-estado-sin-registrar"
+            etiqueta="Sin registrar"
+            valor={formatearCantidad(sinRegistrar.cantidad)}
+            detalle={formatearPorcentaje(sinRegistrar.porcentaje)}
+          />
+        </ul>
+        <p className="text-muted-foreground text-xs">
+          «Sin registrar» son los turnos que cerró el sistema porque pasaron los 7 días que tiene el
+          profesor para marcar la asistencia.
         </p>
       </TarjetaIndicador>
-      <TarjetaIndicador titulo="Cerrados sin registrar" rotulo={delPeriodo}>
-        <ValorIndicador valor={formatearCantidad(resumen.cerradosSinRegistrar)} />
+
+      <TarjetaIndicador titulo="Profesores sin registrar" rotulo={rotuloALaFecha(asistencia.hoy)}>
+        <ValorIndicador destacado valor={formatearCantidad(resumen.profesoresSinRegistrar)} />
         <p className="text-muted-foreground -mt-2 text-xs">
-          Turnos que cerró el sistema a los 7 días, sin asistencia.
-        </p>
-      </TarjetaIndicador>
-      <TarjetaIndicador titulo="Profesores sin registrar" rotulo={delPeriodo}>
-        <ValorIndicador valor={formatearCantidad(resumen.profesoresSinRegistrar)} />
-        <p className="text-muted-foreground -mt-2 text-xs">
-          Con al menos un turno cerrado sin registrar.
-        </p>
-      </TarjetaIndicador>
-      <TarjetaIndicador titulo="Alumnos con baja asistencia" rotulo={delPeriodo}>
-        <ValorIndicador valor={formatearCantidad(resumen.alumnosBajoElUmbral)} />
-        <p className="text-muted-foreground -mt-2 text-xs">
-          Menos del 75 % de asistencia, entre los que tienen algún registro.
+          Profesores con clases de los últimos 7 días sin la asistencia marcada: todavía están a
+          tiempo de registrarla. No cambia con el período elegido.
         </p>
       </TarjetaIndicador>
     </section>

@@ -48,8 +48,8 @@ describe('leerFiltrosAsistencia', () => {
   })
 
   it('el orden y la dirección de la API', () => {
-    expect(leer('orden=porcentajeAsistencia&direccion=asc')).toMatchObject({
-      orden: 'porcentajeAsistencia',
+    expect(leer('orden=porcentajeRegistrado&direccion=asc')).toMatchObject({
+      orden: 'porcentajeRegistrado',
       direccion: 'asc',
     })
   })
@@ -73,7 +73,10 @@ describe('paramsConFiltrosAsistencia', () => {
   it('los valores por defecto no se escriben', () => {
     expect(escribir('', FILTROS_POR_DEFECTO)).toBe('')
     expect(
-      escribir('paginaProfesores=4&orden=ausencias&soloSinRegistrar=true', FILTROS_POR_DEFECTO),
+      escribir(
+        'paginaProfesores=4&orden=asistenciasRegistradas&soloSinRegistrar=true',
+        FILTROS_POR_DEFECTO,
+      ),
     ).toBe('')
   })
 
@@ -82,12 +85,12 @@ describe('paramsConFiltrosAsistencia', () => {
       escribir('seccion=asistencia&periodo=mes', {
         ...FILTROS_POR_DEFECTO,
         paginaProfesores: 2,
-        orden: 'ausencias',
+        orden: 'asistenciasRegistradas',
         direccion: 'asc',
         soloSinRegistrar: true,
       }),
     ).toBe(
-      'seccion=asistencia&periodo=mes&paginaProfesores=2&orden=ausencias&direccion=asc&soloSinRegistrar=true',
+      'seccion=asistencia&periodo=mes&paginaProfesores=2&orden=asistenciasRegistradas&direccion=asc&soloSinRegistrar=true',
     )
   })
 
@@ -107,8 +110,8 @@ describe('paramsConFiltrosAsistencia', () => {
 
 describe('filtrosConOrden', () => {
   it('una columna nueva ordena de mayor a menor, y el profesor de la A a la Z', () => {
-    expect(filtrosConOrden(FILTROS_POR_DEFECTO, 'ausencias')).toMatchObject({
-      orden: 'ausencias',
+    expect(filtrosConOrden(FILTROS_POR_DEFECTO, 'asistenciasRegistradas')).toMatchObject({
+      orden: 'asistenciasRegistradas',
       direccion: 'desc',
     })
     expect(filtrosConOrden(FILTROS_POR_DEFECTO, 'profesor')).toMatchObject({
@@ -118,17 +121,17 @@ describe('filtrosConOrden', () => {
   })
 
   it('la misma columna invierte la dirección', () => {
-    const porAusencias = filtrosConOrden(FILTROS_POR_DEFECTO, 'ausencias')
-    expect(filtrosConOrden(porAusencias, 'ausencias').direccion).toBe('asc')
-    expect(filtrosConOrden({ ...porAusencias, direccion: 'asc' }, 'ausencias').direccion).toBe(
-      'desc',
-    )
+    const porRegistradas = filtrosConOrden(FILTROS_POR_DEFECTO, 'asistenciasRegistradas')
+    expect(filtrosConOrden(porRegistradas, 'asistenciasRegistradas').direccion).toBe('asc')
+    expect(
+      filtrosConOrden({ ...porRegistradas, direccion: 'asc' }, 'asistenciasRegistradas').direccion,
+    ).toBe('desc')
   })
 
   it('vuelve a la primera página de profesores y no toca la de materias', () => {
     const resultado = filtrosConOrden(
       { ...FILTROS_POR_DEFECTO, paginaProfesores: 4, paginaMaterias: 3 },
-      'ausencias',
+      'asistenciasRegistradas',
     )
     expect(resultado.paginaProfesores).toBe(1)
     expect(resultado.paginaMaterias).toBe(3)
@@ -136,7 +139,7 @@ describe('filtrosConOrden', () => {
 
   it('conserva el filtro de sin registrar', () => {
     const conFiltro = { ...FILTROS_POR_DEFECTO, soloSinRegistrar: true }
-    expect(filtrosConOrden(conFiltro, 'dentroDelPlazo').soloSinRegistrar).toBe(true)
+    expect(filtrosConOrden(conFiltro, 'porcentajeSinRegistrar').soloSinRegistrar).toBe(true)
   })
 })
 
