@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { usuarioAuditoriaSchema } from '@/server/shared/auditoria'
+import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import {
   fechaISO,
@@ -555,6 +556,61 @@ export type MiPago = z.infer<typeof miPagoSchema>
 export const misPagosSchema = paginatedSchema(miPagoSchema)
 
 export type MisPagos = z.infer<typeof misPagosSchema>
+
+// --- Buscadores de los filtros de pagos realizados (HU-36, T-100) ---
+
+/**
+ * Query de `GET /pagos/alumnos` y `GET /pagos/profesores`: la búsqueda por palabras (`q`) y, para
+ * mostrar el nombre del filtro que viene en la URL, una sola opción por su `id`. Los dos juntos se
+ * combinan.
+ */
+export const buscadorPagosQuerySchema = z.object({
+  q: qBusqueda,
+  id: idQuery('id', 'Sólo esta opción, si tiene pagos (para mostrar el filtro elegido)', 12),
+})
+
+export type BuscadorPagosQuery = z.infer<typeof buscadorPagosQuerySchema>
+
+/**
+ * Query de `GET /pagos/profesores` y `GET /pagos/materias`: además, `alumnoId` acota las opciones a
+ * las de los pagos de ese alumno (el de la ficha o el del filtro, decisión T-170).
+ */
+export const buscadorAcotadoQuerySchema = buscadorPagosQuerySchema.extend({
+  alumnoId: idQuery('alumnoId', 'Sólo las opciones de los pagos de este alumno', 12),
+})
+
+export type BuscadorAcotadoQuery = z.infer<typeof buscadorAcotadoQuerySchema>
+
+/**
+ * Una opción de un buscador de pagos: sólo el id, el nombre y el apellido. Nunca el DNI, la foto,
+ * el estado ni la auditoría: el gerente no ve la ficha del alumno (HU-36).
+ */
+const personaDePagos = z.object({
+  id: z.number().int(),
+  nombre: z.string(),
+  apellido: z.string(),
+})
+
+export const alumnoDePagosSchema = personaDePagos.openapi('AlumnoDePagos')
+export const alumnosDePagosSchema = z.array(alumnoDePagosSchema)
+export type AlumnoDePagos = z.infer<typeof alumnoDePagosSchema>
+
+export const profesorDePagosSchema = personaDePagos.openapi('ProfesorDePagos')
+export const profesoresDePagosSchema = z.array(profesorDePagosSchema)
+export type ProfesorDePagos = z.infer<typeof profesorDePagosSchema>
+
+/** Una opción del buscador de materias: sólo el id y el nombre. */
+export const materiaDePagosSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('MateriaDePagos')
+export const materiasDePagosSchema = z.array(materiaDePagosSchema)
+export type MateriaDePagos = z.infer<typeof materiaDePagosSchema>
+
+/** Lo que el service le pasa al repository de un buscador: `q` ya partido en términos. */
+export type BusquedaDePagos = { terminos: string[]; id: number | undefined }
+
+/** Lo mismo, en los buscadores que se acotan a un alumno (profesores y materias, decisión T-170). */
+export type BusquedaAcotadaDePagos = BusquedaDePagos & { alumnoId: number | undefined }
 
 /** El medio de un pago, ya validado: cada forma de pago con sus datos y sólo con ellos (HU-23). */
 export type MedioPago =

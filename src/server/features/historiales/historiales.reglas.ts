@@ -291,7 +291,7 @@ export function opcionesDeLosGrupos(
 // ---------------------------------------------------------------------------------------------
 
 /**
- * Los estados que el alumno ve de una clase (decisión T-167): también los "Sin registrar", para que
+ * Los estados que el alumno ve de una clase (decisión T-169): también los "Sin registrar", para que
  * vea la hora que el profesor no registró (no cuenta para su porcentaje). Los agendados de hoy, no.
  */
 const ESTADOS_DEL_PORTAL: readonly ClaseDelHistorial['estado'][] = [
@@ -304,7 +304,7 @@ const ESTADOS_DEL_PORTAL: readonly ClaseDelHistorial['estado'][] = [
 /**
  * Los bloques del portal: los mismos bloques y los mismos textos, **sin** la observación interna,
  * el motivo de la cancelación, el plazo ni el cierre del sistema, y sin las clases agendadas (una de
- * hoy todavía sin registrar, decisión T-148). Las "Sin registrar" sí se muestran (decisión T-167).
+ * hoy todavía sin registrar, decisión T-148). Las "Sin registrar" sí se muestran (decisión T-169).
  * Un bloque que se queda sin clases no se muestra.
  */
 export function bloquesDelPortal(bloques: readonly BloqueDelHistorial[]): BloqueDelPortal[] {

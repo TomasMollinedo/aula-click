@@ -8,3 +8,11 @@
 export function hrefComprobante(pagoId: number): string {
   return `/api/v1/pagos/${pagoId}/pdf`
 }
+
+/**
+ * `/mesa/alumnos/12?tab=pagos&vista=realizados`: los pagos realizados en la ficha del alumno. Solo
+ * para mesa de entradas (el gerente no ve la ficha, HU-36).
+ */
+export function hrefPagosRealizadosDelAlumno(alumnoId: number): string {
+  return `/mesa/alumnos/${alumnoId}?tab=pagos&vista=realizados`
+}

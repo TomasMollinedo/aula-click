@@ -58,9 +58,13 @@ function presente(trabajado: string | null, indicaciones: string | null) {
 }
 
 /** El alumno 12, como lo devuelve `alumnosRepository.buscarPorId`. */
-const ALUMNO = { id: 12, nombre: 'Lucía', apellido: 'González', dni: '40123456' } as NonNullable<
-  Awaited<ReturnType<AlumnosRepository['buscarPorId']>>
->
+const ALUMNO = {
+  id: 12,
+  nombre: 'Lucía',
+  apellido: 'González',
+  dni: '40123456',
+  nivelEscolaridad: 'SECUNDARIO',
+} as NonNullable<Awaited<ReturnType<AlumnosRepository['buscarPorId']>>>
 
 const actorMesa: Actor = { userId: 'usr_mesa', role: 'MESA_ENTRADAS' }
 const actorProfesor: Actor = { userId: 'usr_ana', role: 'PROFESOR' }
@@ -73,6 +77,7 @@ function crearRepositories() {
       buscarFechaDelPrimerTurno: vi.fn<HistorialesRepository['buscarFechaDelPrimerTurno']>(),
       profesorTieneAlumno: vi.fn<HistorialesRepository['profesorTieneAlumno']>(),
       buscarUltimasIndicaciones: vi.fn<HistorialesRepository['buscarUltimasIndicaciones']>(),
+      leerExamenesDelPeriodo: vi.fn<HistorialesRepository['leerExamenesDelPeriodo']>(),
     },
     profesoresRepository: {
       buscarIdPorUsuario: vi.fn<ProfesoresRepository['buscarIdPorUsuario']>(),
@@ -91,6 +96,7 @@ beforeEach(() => {
   repos.repository.buscarFechaDelPrimerTurno.mockResolvedValue('2026-03-03')
   repos.repository.leerOcurrenciasDelAlumno.mockResolvedValue([])
   repos.repository.buscarUltimasIndicaciones.mockResolvedValue(null)
+  repos.repository.leerExamenesDelPeriodo.mockResolvedValue([])
   repos.profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
   repos.repository.profesorTieneAlumno.mockResolvedValue(true)
 })
@@ -624,5 +630,303 @@ describe('miMateria', () => {
     const error = await errorDe(service.miMateria(3, 4, {}, { userId: 'usr_x', role: 'ALUMNO' }))
     expect(error).toBeInstanceOf(ForbiddenError)
     expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// historialParaDocumento (PDF del historial, HU-32)
+// ---------------------------------------------------------------------------------------------
+
+describe('historialParaDocumento', () => {
+  /** Una hora cancelada, con su motivo (HU-13). */
+  function cancelada(datos: { turnoId: number; fecha: string; horaInicio?: number }): Ocurrencia {
+    const horaInicio = datos.horaInicio ?? 480
+    return ocurrencia({
+      turnoId: datos.turnoId,
+      fecha: datos.fecha,
+      horaInicio,
+      horaFin: horaInicio + 60,
+      estado: 'CANCELADO',
+      plazoAsistencia: null,
+      cancelacion: {
+        motivo: 'CANCELACION_ALUMNO',
+        detalle: 'Viaje familiar',
+        createdById: 'usr_mesa',
+        createdAt: '2026-10-10T12:00:00.000Z',
+      },
+    })
+  }
+
+  const EXAMEN = {
+    id: 7,
+    materiaId: 3,
+    materiaNombre: 'Matemática',
+    fecha: '2026-10-20',
+    tipo: 'PARCIAL' as const,
+    resultado: 'CON_NOTA' as const,
+    nota: 7.5,
+  }
+
+  const CANCELADO_DEL_13 = {
+    turnoId: 3,
+    fecha: '2026-10-13',
+    horaInicio: '10:00',
+    horaFin: '11:00',
+    materia: 'Matemática',
+    profesor: { nombre: 'Ana', apellido: 'Pérez' },
+    motivo: 'CANCELACION_ALUMNO',
+    detalle: 'Viaje familiar',
+  }
+
+  it('sin período, el mes en curso: el alumno con su nivel, el período y los grupos de siempre', async () => {
+    conOcurrencias(ocurrencia({ turnoId: 1, fecha: '2026-10-13' }))
+
+    const documento = await service.historialParaDocumento(12, {}, actorMesa)
+
+    expect(documento.mes).toBe('2026-10')
+    expect(documento.desde).toBe('2026-10-01')
+    expect(documento.hasta).toBe('2026-10-31')
+    expect(documento.alumno).toEqual({
+      nombre: 'Lucía',
+      apellido: 'González',
+      dni: '40123456',
+      nivelEscolaridad: 'SECUNDARIO',
+    })
+    expect(documento.filtros).toEqual({
+      materiaId: null,
+      profesorId: null,
+      materia: null,
+      profesor: null,
+    })
+    expect(documento.grupos).toHaveLength(1)
+    expect(documento.grupos[0].resumen).toEqual({ realizadas: 1, ausencias: 0, porcentaje: 100 })
+    // Las clases llegan hasta hoy, como en la pantalla.
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledWith(
+      {
+        alumnoId: 12,
+        desde: '2026-10-01',
+        hasta: HOY,
+        materiaId: undefined,
+        profesorId: undefined,
+      },
+      relojFijo,
+    )
+  })
+
+  it('con mes, el mes pedido completo (también uno pasado)', async () => {
+    conOcurrencias(ocurrencia({ turnoId: 1, fecha: '2026-09-15' }))
+
+    const documento = await service.historialParaDocumento(12, { mes: '2026-09' }, actorMesa)
+
+    expect([documento.mes, documento.desde, documento.hasta]).toEqual([
+      '2026-09',
+      '2026-09-01',
+      '2026-09-30',
+    ])
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledWith(
+      expect.objectContaining({ desde: '2026-09-01', hasta: '2026-09-30' }),
+      relojFijo,
+    )
+  })
+
+  it('los filtros se aplican y el documento trae sus nombres, del historial completo', async () => {
+    conOcurrencias(ocurrencia({ turnoId: 1, fecha: '2026-10-13' }))
+
+    const documento = await service.historialParaDocumento(
+      12,
+      { materiaId: 3, profesorId: 4 },
+      actorMesa,
+    )
+
+    expect(documento.filtros).toEqual({
+      materiaId: 3,
+      profesorId: 4,
+      materia: 'Matemática',
+      profesor: { nombre: 'Ana', apellido: 'Pérez' },
+    })
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledWith(
+      expect.objectContaining({ materiaId: 3, profesorId: 4 }),
+      relojFijo,
+    )
+    // El filtro de materia también se aplica a los exámenes; el de profesor, no (un examen es del
+    // alumno y de la materia).
+    expect(repos.repository.leerExamenesDelPeriodo).toHaveBeenCalledExactlyOnceWith({
+      alumnoId: 12,
+      desde: '2026-10-01',
+      hasta: '2026-10-31',
+      materiaIds: [3],
+    })
+  })
+
+  it('un filtro que no está en el historial del alumno deja el nombre en null', async () => {
+    conOcurrencias()
+
+    const documento = await service.historialParaDocumento(12, { materiaId: 99 }, actorMesa)
+
+    expect(documento.filtros).toEqual({
+      materiaId: 99,
+      profesorId: null,
+      materia: null,
+      profesor: null,
+    })
+  })
+
+  it('sin filtros no consulta el historial completo: una sola lectura del motor', async () => {
+    conOcurrencias(ocurrencia({ turnoId: 1, fecha: '2026-10-13' }))
+
+    await service.historialParaDocumento(12, {}, actorMesa)
+
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledOnce()
+    expect(repos.repository.buscarFechaDelPrimerTurno).not.toHaveBeenCalled()
+  })
+
+  it('los cancelados del mes salen de los mismos grupos, del más reciente al más antiguo', async () => {
+    conOcurrencias(
+      cancelada({ turnoId: 1, fecha: '2026-10-05' }),
+      ocurrencia({ turnoId: 2, fecha: '2026-10-13' }),
+      cancelada({ turnoId: 3, fecha: '2026-10-13', horaInicio: 600 }),
+    )
+
+    const { cancelados } = await service.historialParaDocumento(12, {}, actorMesa)
+
+    expect(cancelados).toEqual([
+      CANCELADO_DEL_13,
+      {
+        ...CANCELADO_DEL_13,
+        turnoId: 1,
+        fecha: '2026-10-05',
+        horaInicio: '08:00',
+        horaFin: '09:00',
+      },
+    ])
+    // No se vuelve a leer el motor para los cancelados.
+    expect(repos.repository.leerOcurrenciasDelAlumno).toHaveBeenCalledOnce()
+  })
+
+  it('los exámenes del mes vienen como los da examenes, con su nota', async () => {
+    conOcurrencias()
+    repos.repository.leerExamenesDelPeriodo.mockResolvedValue([EXAMEN])
+
+    const documento = await service.historialParaDocumento(12, {}, actorMesa)
+
+    expect(documento.examenes).toEqual([EXAMEN])
+    expect(repos.repository.leerExamenesDelPeriodo).toHaveBeenCalledExactlyOnceWith({
+      alumnoId: 12,
+      desde: '2026-10-01',
+      hasta: '2026-10-31',
+    })
+  })
+
+  it('un mes sin clases ni exámenes: grupos, cancelados y exámenes vacíos', async () => {
+    conOcurrencias()
+
+    const documento = await service.historialParaDocumento(12, { mes: '2026-08' }, actorMesa)
+
+    expect(documento.grupos).toEqual([])
+    expect(documento.cancelados).toEqual([])
+    expect(documento.examenes).toEqual([])
+  })
+
+  it('con un rango, el período es el pedido y el documento no tiene mes', async () => {
+    conOcurrencias(ocurrencia({ turnoId: 1, fecha: '2026-09-15' }))
+
+    const documento = await service.historialParaDocumento(
+      12,
+      { desde: '2026-09-05', hasta: '2026-10-12' },
+      actorMesa,
+    )
+
+    expect([documento.mes, documento.desde, documento.hasta]).toEqual([
+      null,
+      '2026-09-05',
+      '2026-10-12',
+    ])
+    expect(repos.repository.leerExamenesDelPeriodo).toHaveBeenCalledExactlyOnceWith({
+      alumnoId: 12,
+      desde: '2026-09-05',
+      hasta: '2026-10-12',
+    })
+  })
+
+  it('un rango que es un mes completo igual sale como mes (para el nombre del archivo)', async () => {
+    conOcurrencias()
+
+    const documento = await service.historialParaDocumento(
+      12,
+      { desde: '2026-09-01', hasta: '2026-09-30' },
+      actorMesa,
+    )
+
+    expect(documento.mes).toBe('2026-09')
+  })
+
+  it('el rango manda sobre el mes, y el extremo que falta lo completa el mes', async () => {
+    conOcurrencias()
+
+    const conLosDos = await service.historialParaDocumento(
+      12,
+      { mes: '2026-08', desde: '2026-09-05', hasta: '2026-10-12' },
+      actorMesa,
+    )
+    expect([conLosDos.desde, conLosDos.hasta]).toEqual(['2026-09-05', '2026-10-12'])
+
+    const soloDesde = await service.historialParaDocumento(
+      12,
+      { mes: '2026-08', desde: '2026-08-10' },
+      actorMesa,
+    )
+    expect([soloDesde.desde, soloDesde.hasta]).toEqual(['2026-08-10', '2026-08-31'])
+
+    // Sin `mes`, el extremo que falta sale del mes en curso.
+    const soloHasta = await service.historialParaDocumento(12, { hasta: '2026-10-12' }, actorMesa)
+    expect([soloHasta.desde, soloHasta.hasta]).toEqual(['2026-10-01', '2026-10-12'])
+  })
+
+  it('un rango invertido o de más de 366 días: 400 en `hasta`, sin leer nada', async () => {
+    const invertido = await errorDe(
+      service.historialParaDocumento(12, { desde: '2026-10-31', hasta: '2026-10-01' }, actorMesa),
+    )
+    expect(invertido).toBeInstanceOf(ValidationError)
+    expect(invertido.message).toBe(MENSAJE_RANGO_INVERTIDO)
+    expect(invertido.details).toEqual([{ path: ['hasta'], message: MENSAJE_RANGO_INVERTIDO }])
+
+    const largo = await errorDe(
+      service.historialParaDocumento(12, { desde: '2025-01-01', hasta: '2026-12-31' }, actorMesa),
+    )
+    expect(largo.message).toBe(MENSAJE_RANGO_MAXIMO)
+
+    expect(repos.alumnosRepository.buscarPorId).not.toHaveBeenCalled()
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+  })
+
+  it('el profesor saca el documento de su alumno, y recibe 403 con uno que no es suyo', async () => {
+    conOcurrencias(ocurrencia({ turnoId: 1, fecha: '2026-10-13' }))
+
+    expect((await service.historialParaDocumento(12, {}, actorProfesor)).grupos).toHaveLength(1)
+    expect(repos.repository.profesorTieneAlumno).toHaveBeenCalledWith(4, 12)
+
+    repos.repository.profesorTieneAlumno.mockResolvedValue(false)
+    const error = await errorDe(service.historialParaDocumento(12, {}, actorProfesor))
+    expect(error).toBeInstanceOf(ForbiddenError)
+    expect(error.message).toBe('El alumno no tiene turnos con usted')
+  })
+
+  it('mesa de entradas no pasa por el chequeo del profesor', async () => {
+    conOcurrencias()
+
+    await service.historialParaDocumento(12, {}, actorMesa)
+
+    expect(repos.repository.profesorTieneAlumno).not.toHaveBeenCalled()
+    expect(repos.profesoresRepository.buscarIdPorUsuario).not.toHaveBeenCalled()
+  })
+
+  it('un alumno que no existe: 404, sin leer el motor ni los exámenes', async () => {
+    repos.alumnosRepository.buscarPorId.mockResolvedValue(null)
+
+    const error = await errorDe(service.historialParaDocumento(99, {}, actorMesa))
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(error.message).toBe('Alumno no encontrado')
+    expect(repos.repository.leerOcurrenciasDelAlumno).not.toHaveBeenCalled()
+    expect(repos.repository.leerExamenesDelPeriodo).not.toHaveBeenCalled()
   })
 })

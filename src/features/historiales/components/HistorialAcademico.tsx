@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
-import type { Role } from '@/types'
 import { cn } from '@/utils/cn'
 
 import { interpretarErrorHistorial } from '../errores-historiales'
@@ -20,17 +19,13 @@ import type { OpcionesDelHistorial } from '../historiales.types'
 import { useFiltrosHistorial } from '../hooks/use-filtros-historial'
 import { useHistorialDelAlumno } from '../hooks/use-historial-del-alumno'
 import { BarraFiltrosHistorial } from './BarraFiltrosHistorial'
+import { BotonPdfHistorial } from './BotonPdfHistorial'
 import { GrupoHistorial } from './GrupoHistorial'
 
 const SIN_OPCIONES: OpcionesDelHistorial = { materias: [], profesores: [] }
 
 export type HistorialAcademicoProps = {
   alumnoId: number
-  /**
-   * Rol de quien mira. Hoy la pestaña es igual para mesa de entradas y profesor (sólo lectura en
-   * los dos, HU-31); lo usa T-110 para el botón "Generar PDF", que es de mesa de entradas (HU-32).
-   */
-  rol: Role
   /**
    * El detalle del turno, que compone `app/` (es de `features/ocurrencias`). **Opcional**: una
    * pantalla que ya monta su propio detalle único para todas sus pestañas (la ficha de mesa de
@@ -61,8 +56,7 @@ function HistorialCargando() {
  * Pestaña "Historial académico" de la ficha del alumno (HU-31): las clases del período agrupadas
  * por materia y profesor, cada grupo con su resumen y sus bloques de **horas seguidas**. Los
  * filtros (un mes —mes y año—, por defecto el actual, o un rango, más materia y profesor) viven en
- * la URL junto
- * al `?tab=` de la ficha.
+ * la URL junto al `?tab=` de la ficha.
  *
  * **La pantalla sólo pinta lo que manda la API** (T-108): el estado de cada hora, su plazo o su
  * cierre por el sistema, el porcentaje, qué textos van una sola vez y el orden de los grupos y de
@@ -71,6 +65,10 @@ function HistorialCargando() {
  *
  * El clic en una clase navega a `?detalle=&fecha=`; quién monta el modal lo decide `app/` con
  * `renderDetalle` (ver sus props).
+ *
+ * "Generar PDF" va en la fila de los filtros, a la derecha de "Limpiar filtros" (HU-32), con el
+ * período y los filtros que se están viendo. Lo ven los dos roles: al profesor el endpoint le deja
+ * el documento de los alumnos que tiene o tuvo (decisión T-163).
  */
 export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademicoProps) {
   const id = useId()
@@ -104,6 +102,8 @@ export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademi
           puedeLimpiar={hayFiltros(filtros, hoy)}
           errores={error?.tipo === 'filtros' ? error.campos : undefined}
           errorGeneral={error?.tipo === 'filtros' ? error.mensaje : null}
+          // "Generar PDF" va en la misma fila que "Limpiar filtros", a su derecha.
+          acciones={<BotonPdfHistorial alumnoId={alumnoId} filtros={filtros} />}
         />
       </Card>
 
