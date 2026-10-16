@@ -9,16 +9,20 @@ import {
   ejemploErrorSinSesion,
   ejemploTablero,
   ejemploTableroAsistencia,
+  ejemploTableroFinanzas,
 } from './tablero.ejemplos'
 import {
   tableroAsistenciaQuerySchema,
   tableroAsistenciaSchema,
+  tableroFinanzasQuerySchema,
+  tableroFinanzasSchema,
   tableroPdfQuerySchema,
   tableroQuerySchema,
   tableroSchema,
 } from './tablero.validation'
 
-// Contrato HTTP del tablero del gerente (HU-21, T-61; secciones y PDF por sección: HU-39, T-112): los
+// Contrato HTTP del tablero del gerente (HU-21, T-61; secciones y PDF por sección: HU-39, T-112;
+// "Finanzas": HU-47, T-128): los
 // endpoints se declaran con createRoute() y se registran acá. El router lo creó T-32 y ya está
 // registrado en `app.ts`.
 
@@ -83,13 +87,41 @@ export const obtenerTableroAsistenciaRoute = createRoute({
   },
 })
 
+export const obtenerTableroFinanzasRoute = createRoute({
+  method: 'get',
+  path: '/finanzas',
+  tags: ['Tablero'],
+  summary: 'Finanzas del centro en un período (sección "Finanzas")',
+  description:
+    'Sólo lectura y sólo agregados: nunca un alumno ni un pago puntual. Los pagos anulados no suman en ningún número. `resumen`: total cobrado (el mismo de `GET /tablero`), margen del centro (la parte del centro de los turnos cobrados en el período más el importe **completo** de los cobrados y cerrados sin registrar, con su porcentaje sobre el total cobrado; `incluyeSinRegistrar` informa ese importe), pagado a profesores (liquidaciones pagadas con fecha de transferencia en el período) y saldo a pagar a profesores **a hoy** (no depende del período; suma sólo los saldos positivos). `profesores`: tabla de a 10 filas (`page`), con turnos cobrados, total cobrado, parte del centro, parte del profesor, pagado en el período y saldo pendiente a hoy (puede ser negativo); se ordena con `orden` y `direccion` (por defecto, total cobrado de mayor a menor). `evolucion`: los últimos 6 meses hasta el de `hasta`, el último cortado en `hasta`. Mismo período y mismas validaciones que `GET /tablero`.',
+  middleware: [requireAuth(), requireRole('GERENTE')] as const,
+  request: { query: tableroFinanzasQuerySchema },
+  responses: {
+    200: {
+      description: 'Finanzas del período',
+      content: {
+        'application/json': { schema: tableroFinanzasSchema, example: ejemploTableroFinanzas },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): falta `desde` o `hasta`, una fecha inválida, `hasta` anterior a `desde`, un período de más de 366 días (`details` sobre `hasta`), una `page` que no es un entero >= 1, o un `orden` o una `direccion` que no existe',
+      ejemploErrorPeriodo,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)', ejemploErrorSinSesion),
+    403: respuestaError(
+      'El rol no es gerente o el usuario está inhabilitado',
+      ejemploErrorSinPermiso,
+    ),
+  },
+})
+
 export const obtenerTableroPdfRoute = createRoute({
   method: 'get',
   path: '/pdf',
   tags: ['Tablero'],
   summary: 'Una sección del tablero en un período, en PDF',
   description:
-    'Una sección del tablero como documento oficial en PDF (A4), con el mismo período y las mismas validaciones que `GET /tablero` (mismos errores 400). `seccion=general` (por defecto, así el enlace anterior a las secciones sigue funcionando) trae los indicadores de `GET /tablero`, con la asistencia y lo cobrado por forma de pago; `seccion=asistencia` trae el resumen y las tablas de profesores y materias **completas** (todas las filas, en el orden por defecto, sin filtro ni páginas). Se abre en el visor del navegador (`Content-Disposition: inline`, archivo `tablero-<desde>_<hasta>.pdf` o `tablero-asistencia-<desde>_<hasta>.pdf`) y no se guarda en caché (`Cache-Control: no-store`). "Emitido por" es el usuario de la sesión y la fecha de emisión, la del servidor en la hora del negocio. Los errores responden JSON, como el resto de la API.',
+    'Una sección del tablero como documento oficial en PDF (A4), con el mismo período y las mismas validaciones que `GET /tablero` (mismos errores 400). `seccion=general` (por defecto, así el enlace anterior a las secciones sigue funcionando) trae los indicadores de `GET /tablero`, con la asistencia y lo cobrado por forma de pago; `seccion=asistencia` trae el resumen y las tablas de profesores y materias **completas** (todas las filas, en el orden por defecto, sin filtro ni páginas); `seccion=finanzas`, los números principales, la tabla por profesor **completa** (en el orden por defecto) y la evolución mensual. Se abre en el visor del navegador (`Content-Disposition: inline`, archivo `tablero-<desde>_<hasta>.pdf`, `tablero-asistencia-<desde>_<hasta>.pdf` o `tablero-finanzas-<desde>_<hasta>.pdf`) y no se guarda en caché (`Cache-Control: no-store`). "Emitido por" es el usuario de la sesión y la fecha de emisión, la del servidor en la hora del negocio. Los errores responden JSON, como el resto de la API.',
   middleware: [requireAuth(), requireRole('GERENTE')] as const,
   request: { query: tableroPdfQuerySchema },
   responses: {
@@ -112,4 +144,5 @@ export const obtenerTableroPdfRoute = createRoute({
 export const tableroRoutes = createRouter()
   .openapi(obtenerTableroRoute, tableroController.obtenerTablero)
   .openapi(obtenerTableroAsistenciaRoute, tableroController.obtenerTableroAsistencia)
+  .openapi(obtenerTableroFinanzasRoute, tableroController.obtenerTableroFinanzas)
   .openapi(obtenerTableroPdfRoute, tableroController.obtenerTableroPdf)
