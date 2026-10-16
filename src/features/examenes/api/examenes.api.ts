@@ -6,6 +6,7 @@ import type {
   ExamenEditar,
   ExamenesListado,
   MateriaExamen,
+  MisExamenesDeMateria,
   NotaCargar,
 } from '../examenes.types'
 
@@ -52,4 +53,10 @@ export function cargarNota(id: number, datos: NotaCargar): Promise<ExamenDetalle
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(datos),
   })
+}
+
+/** Los exámenes del alumno de la sesión en una materia (portal, HU-35). */
+export function obtenerMisExamenes(materiaId: number): Promise<MisExamenesDeMateria> {
+  const params = new URLSearchParams({ materiaId: String(materiaId) })
+  return fetchJson<MisExamenesDeMateria>(`${BASE}/mis-examenes?${params.toString()}`)
 }
