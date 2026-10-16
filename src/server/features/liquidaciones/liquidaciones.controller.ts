@@ -4,6 +4,9 @@ import { liquidacionesRepository } from './liquidaciones.repository'
 import type {
   detalleLiquidacionRoute,
   listarLiquidacionesRoute,
+  miLiquidacionRoute,
+  misIngresosRoute,
+  misLiquidacionesRoute,
   pagarLiquidacionRoute,
 } from './liquidaciones.routes'
 import { crearLiquidacionesService } from './liquidaciones.service'
@@ -27,3 +30,12 @@ export const pagarLiquidacion: RouteHandler<typeof pagarLiquidacionRoute, AppEnv
     await liquidacionesService.pagar(c.req.valid('param'), c.req.valid('json'), c.get('actor')),
     201,
   )
+
+export const misIngresos: RouteHandler<typeof misIngresosRoute, AppEnv> = async (c) =>
+  c.json(await liquidacionesService.misIngresos(c.get('actor')), 200)
+
+export const misLiquidaciones: RouteHandler<typeof misLiquidacionesRoute, AppEnv> = async (c) =>
+  c.json(await liquidacionesService.misLiquidaciones(c.req.valid('query'), c.get('actor')), 200)
+
+export const miLiquidacion: RouteHandler<typeof miLiquidacionRoute, AppEnv> = async (c) =>
+  c.json(await liquidacionesService.miLiquidacion(c.req.valid('param'), c.get('actor')), 200)

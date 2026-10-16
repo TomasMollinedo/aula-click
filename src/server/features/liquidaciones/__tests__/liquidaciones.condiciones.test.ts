@@ -7,6 +7,7 @@ import {
   leerDevengados,
   liquidacionDe,
   liquidacionesDelMes,
+  liquidacionesDelProfesor,
   saldoAPagarPorProfesor,
   type ClienteLiquidaciones,
 } from '../liquidaciones.condiciones'
@@ -355,6 +356,35 @@ describe('liquidacionesDelMes', () => {
     expect(await liquidacionesDelMes(cliente, { mes: '2027-01', hoy: '2026-12-10' })).toEqual([])
     expect(pagoTurnoFindMany).not.toHaveBeenCalled()
     expect(liquidacionFindMany).not.toHaveBeenCalled()
+  })
+})
+
+describe('liquidacionesDelProfesor', () => {
+  it('las cerradas y las abiertas del profesor, una por mes, ordenadas por mes', async () => {
+    cerradas = [cerrada({ id: 1, mes: '2026-10' })]
+    pagoTurnoFindMany.mockResolvedValue([
+      cobro({ id: 2, fecha: '2026-11-05', registradoEl: '2026-11-01' }),
+    ])
+    asistenciaFindMany.mockResolvedValue([asistencia(2, '2026-11-05')])
+
+    const liquidaciones = await liquidacionesDelProfesor(cliente, {
+      profesorId: 1,
+      hoy: '2026-12-10',
+    })
+
+    expect(liquidaciones.map((l) => [l.mes, l.estado, l.cerrada?.id ?? null])).toEqual([
+      ['2026-10', 'PAGADA', 1],
+      ['2026-11', 'PENDIENTE_DE_PAGO', null],
+    ])
+    // Las cerradas, de ese profesor y de todos los meses.
+    const lecturaCerradas = liquidacionFindMany.mock.calls.find(([args]) => args.select.turnos)
+    expect(lecturaCerradas?.[0].where).toEqual({ profesorId: 1 })
+  })
+
+  it('sin movimientos → []', async () => {
+    expect(await liquidacionesDelProfesor(cliente, { profesorId: 1, hoy: '2026-12-10' })).toEqual(
+      [],
+    )
   })
 })
 

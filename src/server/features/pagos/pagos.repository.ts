@@ -34,12 +34,17 @@ import {
 } from './pagos.reglas'
 import type {
   AdjuntoDelPago,
+  AlumnoDePagos,
+  BusquedaAcotadaDePagos,
+  BusquedaDePagos,
   ComprobanteGuardado,
   EntradaPago,
+  MateriaDePagos,
   MedioPago,
   MiPago,
   OcurrenciaPedida,
   PagoRealizado,
+  ProfesorDePagos,
 } from './pagos.validation'
 
 // Único lugar de la feature que usa Prisma. Sin reglas de negocio: qué se puede cobrar y cuánto lo
@@ -261,6 +266,20 @@ function aPagoRealizado(
   }
 }
 
+/** Máximo de opciones de un buscador de los filtros de pagos realizados (sin paginar). */
+export const LIMITE_BUSCADOR = 20
+
+/** Un `contains` sobre `busqueda` por cada término, combinados con AND (`shared/busqueda.ts`). */
+const porTerminos = (terminos: string[]) => terminos.map((t) => ({ busqueda: { contains: t } }))
+
+/**
+ * Un turno "incluido en un pago" de los buscadores de profesores y materias: algún `PagoTurno` y,
+ * con `alumnoId`, de un pago de ese alumno (decisión T-170).
+ */
+const turnoPagado = (alumnoId: number | undefined) => ({
+  pagoTurnos: { some: alumnoId !== undefined ? { pago: { alumnoId } } : {} },
+})
+
 export const pagosRepository = {
   /**
    * Snapshot para el chequeo previo del service, **sin lock**: sólo sirve para dar errores claros
@@ -469,6 +488,78 @@ export const pagosRepository = {
       prisma.pago.count({ where }),
     ])
     return { data: filas.map(aMiPago), meta: armarMeta(paginacion, total) }
+  },
+
+  /**
+   * Buscador de alumnos del filtro de pagos realizados (HU-36, T-100): los que tienen al menos un
+   * pago, vigente o anulado, cuya `busqueda` (apellido, nombre y DNI) contiene **todos** los
+   * `terminos`, y con `id`, sólo ese. Por apellido y nombre (`busqueda`) e `id`, hasta
+   * `LIMITE_BUSCADOR`. Sólo lee id, nombre y apellido: ni el DNI ni la foto. Una consulta.
+   */
+  async buscarAlumnos({ terminos, id }: BusquedaDePagos): Promise<AlumnoDePagos[]> {
+    return prisma.alumno.findMany({
+      where: {
+        AND: [
+          { pagos: { some: {} } },
+          ...porTerminos(terminos),
+          ...(id !== undefined ? [{ id }] : []),
+        ],
+      },
+      select: { id: true, nombre: true, apellido: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+      take: LIMITE_BUSCADOR,
+    })
+  },
+
+  /**
+   * Buscador de profesores del filtro de pagos realizados (HU-36, T-100): los que dictan algún
+   * turno incluido en un pago (`PagoTurno` → `Turno` → `BloqueAgenda` → `Profesor`, el camino del
+   * filtro `profesorId` de `pagosDelFiltro`), incluidos los dados de baja, con la búsqueda sobre su
+   * `Usuario` y, con `id`, sólo ese; con `alumnoId`, sólo por los pagos de ese alumno (T-170).
+   * Mismo orden y límite que `buscarAlumnos`. Una consulta.
+   */
+  async buscarProfesores({
+    terminos,
+    id,
+    alumnoId,
+  }: BusquedaAcotadaDePagos): Promise<ProfesorDePagos[]> {
+    const filas = await prisma.profesor.findMany({
+      where: {
+        bloques: { some: { turnos: { some: turnoPagado(alumnoId) } } },
+        usuario: { AND: porTerminos(terminos) },
+        ...(id !== undefined ? { id } : {}),
+      },
+      select: { id: true, usuario: { select: { nombre: true, apellido: true } } },
+      orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
+      take: LIMITE_BUSCADOR,
+    })
+    return filas.map((p) => ({ id: p.id, nombre: p.usuario.nombre, apellido: p.usuario.apellido }))
+  },
+
+  /**
+   * Buscador de materias del filtro de pagos realizados (T-170): las de algún turno incluido en un
+   * pago (`PagoTurno` → `Turno` → `Materia`, el camino del filtro `materiaId`) y, con `alumnoId`,
+   * de un pago de ese alumno; incluidas las dadas de baja. La búsqueda va sobre su `busqueda` (el
+   * nombre normalizado) y, con `id`, sólo esa. Por nombre, hasta `LIMITE_BUSCADOR`. Sólo lee id y
+   * nombre. Una consulta.
+   */
+  async buscarMaterias({
+    terminos,
+    id,
+    alumnoId,
+  }: BusquedaAcotadaDePagos): Promise<MateriaDePagos[]> {
+    return prisma.materia.findMany({
+      where: {
+        AND: [
+          { turnos: { some: turnoPagado(alumnoId) } },
+          ...porTerminos(terminos),
+          ...(id !== undefined ? [{ id }] : []),
+        ],
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+      take: LIMITE_BUSCADOR,
+    })
   },
 
   /**

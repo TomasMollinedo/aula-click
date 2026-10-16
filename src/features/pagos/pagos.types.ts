@@ -78,3 +78,20 @@ export type DetalleNoCobrable = {
   /** Solo con `YA_PAGADO`: el pago que ya la cubre. */
   pagoId?: number
 }
+
+/**
+ * Un pago del alumno de la sesión (`GET /pagos/mis-pagos`, portal, HU-37): vigentes y anulados.
+ * No trae quién lo registró, el adjunto ni el motivo de la anulación.
+ */
+export type MiPago = {
+  id: number
+  numeroComprobante: number
+  fechaPago: string
+  /** Las materias de sus turnos, por nombre. */
+  materias: { id: number; nombre: string }[]
+  /** Cantidad de turnos. */
+  cantidad: number
+  total: number
+  formaPago: { codigo: CodigoFormaPago; nombre: string }
+  estado: 'VIGENTE' | 'ANULADO'
+}

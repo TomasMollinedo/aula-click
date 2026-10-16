@@ -98,9 +98,10 @@ src/
 │ │ ├── turnos/nuevo/page.tsx # SacarTurno (turnos, T-94)
 │ │ ├── materias/page.tsx # MisMaterias (historiales, T-111)
 │ │ ├── materias/[materiaId]/[profesorId]/page.tsx # MiMateria (historiales) + MisExamenes (examenes) (T-111)
-│ │ ├── pagos/page.tsx # MisPendientes (cuentas) + MisPagosRealizados (pagos) (T-103)
+│ │ ├── pagos/page.tsx # el aviso de dónde se paga y, en subpestañas (?vista=), MisPendientes (cuentas) y MisPagosRealizados (pagos), de sólo lectura (T-103)
 │ │ ├── configuracion/page.tsx # CambiarContrasena (usuarios, T-92)
-│ │ └── _componentes/detalle-turno.tsx # DetalleTurnoPortal: compone OcurrenciaDetallePortal (ocurrencias, T-85)
+│ │ └── _componentes/ # detalle-turno.tsx (DetalleTurnoPortal: compone OcurrenciaDetallePortal, de ocurrencias, T-85) y
+│ │ # mis-pagos-con-vistas.tsx (las subpestañas de Mis pagos)
 │ └── api/ # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
@@ -172,7 +173,7 @@ src/
 │ │ ├── AsistenciaDelTurno.tsx # la sección "Asistencia": la del detalle del personal y la del portal
 │ │ ├── SeccionDetalle.tsx # una sección del detalle (título con ícono)
 │ │ └── OcurrenciaDetallePortal.tsx # ({ turnoId, fecha, onCerrar }): el detalle de solo lectura del portal
-│ ├── pagos/ # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52; formas de pago y adjunto, HU-23/24, T-97); su detalle (HU-36, T-99)
+│ ├── pagos/ # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52); su detalle (HU-36, T-99); pagos realizados (HU-36, T-100)
 │ │ ├── pagos.types.ts, pagos.schema.ts # el body por forma de pago y AdjuntoSubido; schema del formulario (cada medio con sus campos), parsearMonto y armarRegistrarPago (solo los datos del medio elegido)
 │ │ ├── pago-detalle.types.ts # DetallePago (GET /pagos/{id}), AdjuntoDelPago y AdjuntoConUrl (GET y PUT /adjuntos/pagos/{pagoId})
 │ │ ├── pago-detalle.ts # pagoParaAcciones: el PagoParaAcciones del pie, armado de la respuesta (con test)
@@ -180,11 +181,17 @@ src/
 │ │ ├── a-cobrar.ts # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar (con el subtotal por materia)
 │ │ ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts # textos (confirmación y éxito con el medio, subtotal; también los del detalle: motivo, red, "**** 1234", datosDelMedio); errores del POST (los del medio y ADJUNTO_INVALIDO en su campo); URL del PDF
 │ │ ├── detalle-pago-url.ts # `?pago=<pagoId>`: el único archivo que conoce el parámetro, y el registro de aperturas (con test)
-│ │ ├── api/{pagos.api.ts, pagos.keys.ts, adjuntos.api.ts} # adjuntos: subir antes de registrar el pago, ver, reemplazar (multipart) y quitar el comprobante adjunto
-│ │ ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts,
+│ │ ├── pagos-realizados.types.ts # PagoRealizado, totales y query de GET /pagos; opciones de los buscadores (GET /pagos/alumnos y /profesores)
+│ │ ├── filtros-pagos-realizados.ts # los filtros y la página de "Pagos realizados" en la URL (ver Filtros del listado en la URL; con test)
+│ │ ├── errores-pagos-realizados.ts # error de GET /pagos: el 400 junto a cada filtro, 403 y genérico con reintentar
+│ │ ├── api/{pagos.api.ts, pagos.keys.ts, adjuntos.api.ts, mis-pagos.api.ts} # adjuntos: ver, reemplazar (multipart) y quitar el comprobante adjunto; mis-pagos: los del portal
+│ │ ├── api/pagos-realizados.api.ts # GET /pagos y los buscadores de sus filtros; sus keys cuelgan de pagosKeys.all
+│ │ ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts, use-mis-pagos.ts,
 │ │ │ use-subir-adjunto.ts, # el comprobante del cobro, que se sube al elegirlo (no invalida nada)
 │ │ │ use-pago.ts, use-adjunto-de-pago.ts, # el detalle; la URL prefirmada del adjunto (solo si tiene, se renueva cada 10 min)
-│ │ │ use-reemplazar-adjunto.ts, use-quitar-adjunto.ts} # invalidan el detalle al terminar y ante un 404 o 409
+│ │ │ use-reemplazar-adjunto.ts, use-quitar-adjunto.ts, # invalidan el detalle al terminar y ante un 404 o 409
+│ │ │ use-pagos-realizados.ts, use-filtros-pagos-realizados.ts, # la página del filtro (keepPreviousData); los filtros de la URL
+│ │ │ use-buscadores-de-pagos.ts} # useAlumnosDePagos, useProfesoresDePagos y useMateriasDePagos: con `q` (menú abierto) o con `id` (el nombre del filtro)
 │ │ └── components/
 │ │ ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar (o rechazo); al registrar, se cierra y abre el detalle del pago
 │ │ │ # (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
@@ -196,15 +203,19 @@ src/
 │ │ ├── ComprobanteAdjuntoDelPago.tsx # su sección "Comprobante adjunto": ver, y según `acciones`, reemplazar o adjuntar y quitar
 │ │ ├── ReemplazarAdjuntoDialog.tsx, QuitarAdjuntoDialog.tsx # CampoArchivo y confirmación; confirmación de la baja
 │ │ ├── EnlaceDetallePago.tsx # ({ pagoId }): "Ver pago", abre el detalle del pago desde el detalle de un turno pagado (T-99)
-│ │ └── PagosRealizados.tsx # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
+│ │ ├── PagosRealizados.tsx # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
+│ │ ├── TotalesPagosRealizados.tsx, PagosRealizadosTabla.tsx # lo cobrado del filtro por forma de pago; la tabla (anulados marcados)
+│ │ ├── FiltrosPagosRealizados.tsx # período, alumno (vista global), materia, profesor y forma de pago; el 400 junto al campo
+│ │ ├── FiltroPersonaDePagos.tsx, FiltroMateriaDePagos.tsx # alumno, profesor y materia con los buscadores de pagos
+│ │ └── MisPagosRealizados.tsx # portal (HU-37, T-103): una tarjeta por pago con "Ver comprobante" y "Anulado"; paginado
 │ ├── cuentas/ # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
 │ │ ├── cuentas.types.ts, a-cobrar.ts # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
 │ │ ├── filtros-cuenta.ts # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
 │ │ ├── seleccion.ts # la selección a cobrar (inmutable), "Seleccionar todo", su resumen con el subtotal por materia y el tope de 200 por pago
 │ │ ├── materias-del-filtro.ts # el filtro de varias materias: opciones, búsqueda, texto del botón y alternar (puro)
 │ │ ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts # textos (total, filtros activos, tope); errores de lectura y del período; ficha
-│ │ ├── api/{cuentas.api.ts, cuentas.keys.ts}
-│ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts,
+│ │ ├── api/{cuentas.api.ts, cuentas.keys.ts, mi-cuenta.api.ts} # mi-cuenta: la cuenta del alumno de la sesión (portal)
+│ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts, use-mi-cuenta.ts,
 │ │ │ use-filtros-cuenta.ts, # los filtros de la URL con router.replace
 │ │ │ use-materias-de-cuenta.ts, use-nombres-de-filtros.ts, # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
 │ │ │ use-todos-los-del-filtro.ts, # adeudados y próximos de un alumno con sus filtros, a pedido ("Seleccionar todo" de la vista global)
@@ -219,7 +230,8 @@ src/
 │ │ ├── SeccionOcurrencias.tsx # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
 │ │ ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx # filas con casilla y "Ver detalle"; el importe destacado
 │ │ ├── BarraSeleccion.tsx # "Seleccionar todo", cantidad, total y subtotal por materia; envuelve las listas y flota abajo cuando deja de verse
-│ │ └── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
+│ │ ├── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
+│ │ └── MisPendientes.tsx # portal (HU-37, T-103): total adeudado y adeudados y próximos en tarjetas por materia, con su subtotal (las de próximos, plegadas)
 │ ├── asistencias/ # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
 │ │ ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
 │ │ └── components/
@@ -319,7 +331,7 @@ src/
 │ ├── pago.ts # OcurrenciaACobrar, SolicitudRegistrarPago y PagoParaAcciones: lo que pagos, cuentas y anulaciones comparten
 │ └── agenda.ts # FiltrosAgenda (profesor, incluir cancelados y prioridad)
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts,
-moneda.ts, porcentaje.ts, vista-en-url.ts, busqueda.ts} # busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null) y subtotalesPorMateria (HU-25): lo usan pagos y cuentas; porcentaje: formatearPorcentaje (15 %, 15,5 %; hasta dos decimales)
+moneda.ts, porcentaje.ts, vista-en-url.ts, busqueda.ts, turnos.ts} # turnos: textoCantidadDeTurnos ('1 turno' / '8 turnos'); formato-fechas: fechaConAnio ('01/10/2026'); busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null) y subtotalesPorMateria (HU-25): lo usan pagos y cuentas; porcentaje: formatearPorcentaje (15 %, 15,5 %; hasta dos decimales)
 
 ## Anatomía de una feature de UI
 
@@ -462,7 +474,7 @@ Los filtros de un listado paginado (`q`, `page`) se guardan en la URL (`?q=…&p
 - Escribir en el buscador vuelve a la página 1.
 - El hook `use-buscador-<entidad>` acepta un estado controlado (`{ q, page, onCambio }`) para este caso, o estado interno para otros consumidores (por ejemplo, un selector de alumnos en el formulario de turnos que no necesita persistir en la URL).
 
-Los filtros que no son texto (un select, una fecha, un profesor elegido) siguen el mismo criterio, sin debounce, con un archivo puro que conoce los nombres de los parámetros y un hook que los lee y los escribe: `filtros-agenda.ts` + `use-filtros-agenda.ts` en las agendas, `filtros-cuenta.ts` + `use-filtros-cuenta.ts` en `cuentas` y `filtros-historial.ts` + `use-filtros-historial.ts` en `historiales` (ver Pestaña "Historial académico" de la ficha). Reglas comunes: un valor inválido de la URL se ignora (es "sin filtro"), un filtro vacío no se escribe, los demás parámetros de la URL se conservan y cambiar un filtro vuelve a la página 1.
+Los filtros que no son texto (un select, una fecha, un profesor elegido) siguen el mismo criterio, sin debounce, con un archivo puro que conoce los nombres de los parámetros y un hook que los lee y los escribe: `filtros-agenda.ts` + `use-filtros-agenda.ts` en las agendas, `filtros-cuenta.ts` + `use-filtros-cuenta.ts` en `cuentas`, `filtros-historial.ts` + `use-filtros-historial.ts` en `historiales` (ver Pestaña "Historial académico" de la ficha) y `filtros-pagos-realizados.ts` + `use-filtros-pagos-realizados.ts` en "Pagos realizados" (`pagos`). Reglas comunes: un valor inválido de la URL se ignora (es "sin filtro"), un filtro vacío no se escribe, los demás parámetros de la URL se conservan y cambiar un filtro vuelve a la página 1.
 
 Los filtros se ven igual en toda pantalla: van en una `BarraFiltros` de `components/ui/barra-filtros.tsx`, una grilla en la que cada filtro es un `Field` (label arriba) con un control compacto y, al final, el botón que los saca todos. La usan `FiltrosCuenta`, las agendas (`BarraFiltrosAgenda` en las listas y `CalendarioSemanal`) y la pestaña "Turnos" de la ficha del alumno (`TurnosDelAlumno`). Quien la usa le pasa las columnas de cada ancho (`className`), desde qué ancho el botón entra en la fila de los campos (`limpiarEnFila`), `hayFiltros` y `onLimpiar`, y opcionalmente `acciones`: lo que va **a la derecha de "Limpiar filtros"**, en su misma fila, cuando una acción trabaja con los filtros que se ven (hoy, el "Generar PDF" del historial). Los controles que no son un input toman sus clases de `claseControlFiltro(sinFiltro)` (sin nada elegido, el texto va atenuado y la opción se llama "Todos" o "Todas"): el trigger de un `Select`, y los selectores con buscador de `components/ui/`. Todos se arman sobre `MenuConBuscador` (el botón compacto, el menú con el buscador arriba, el foco al buscador al abrir y las flechas entre el buscador y la lista): `ComboboxBuscador` elige una opción (las trae quien lo usa, con el hook de su feature), `SelectBuscable` es un `ComboboxBuscador` con las opciones ya en el cliente (`coincideConBusqueda` de `utils/busqueda.ts`), y un selector de varias opciones pone sus casillas (`menuitemcheckbox`, que no cierran el menú) sobre el mismo `MenuConBuscador`, como `FiltroMaterias` de `cuentas`.
 
@@ -474,6 +486,8 @@ El botón es `LimpiarFiltros` de `components/ui/limpiar-filtros.tsx`, siempre vi
 - **Filtros dentro de un tab.** La pestaña "Pagos" de la ficha guarda sus filtros junto al tab (`?tab=pagos&desde=…&hasta=…&materiaId=…&profesorId=…`). `AlumnoDetalle` arma la URL de cero al cambiar de pestaña (`?tab=<valor>`), así que los filtros se van solos al salir de "Pagos": un tab con filtros propios no necesita limpiarlos ni que el detalle los conozca.
 - **Dos listados paginados en una pantalla.** La vista global tiene una página por tabla (`pageAdeudados`, `pageProximos`), no un `page` compartido. Cambiar un filtro las vuelve a las dos a la 1, y una página fuera de rango se corrige en cada tabla por separado.
 - **Lo que valida la API no se revalida en el cliente.** Un "Hasta" anterior al "Desde" se manda tal cual; el 400 vuelve con `details` sobre `hasta` y `errores-cuentas.ts` lo ubica junto al campo, con el `message` de la API. Qué parte del período le toca a cada sección tampoco se calcula: una sección que la API marca como que no aplica (`null`, `aplica: false`) no se muestra.
+
+**"Pagos realizados" (T-100).** El período por fecha de pago es obligatorio: la API exige `desde` y `hasta`, así que siempre se mandan y sus `CalendarioFecha` no tienen el botón de vaciar. Por defecto es el mes en curso, que no se escribe en la URL; un período a medias o con una fecha inválida también cae en el mes en curso, y cualquier otro se escribe con sus dos fechas. Alumno, profesor y materia usan los buscadores de `pagos` (`GET /pagos/alumnos`, `GET /pagos/profesores` y `GET /pagos/materias`, decisión T-169), los mismos para mesa de entradas y el gerente, y no `useAlumnos`, `useProfesores` ni `useMaterias` (al gerente le dan 403): con `q` traen las opciones del menú y con `id` el nombre del filtro de la URL (`[]` = "no encontrado"). En la ficha, y en la vista global con un alumno elegido, los filtros de profesor y materia se acotan a ese alumno: las opciones se piden con su `alumnoId` (`alumnoDeLosBuscadores`) y solo ofrecen los que aparecen en sus pagos; el nombre del elegido se pide sin él (decisión T-170).
 
 **Tablero (T-62).** El período del tablero del gerente es el único "filtro" de la pantalla y sigue el mismo criterio (`periodo.ts` + `use-periodo-en-url.ts`): `?periodo=hoy|mes` y `?periodo=rango&desde=&hasta=`; sin parámetros, "Esta semana" (lunes a domingo, como la semana ISO), y un valor inválido de la URL cae en ese período. "Hoy" sale del navegador, solo para proponer el período; el rango no se revalida (el 400 de la API sale junto a "Hasta"). Cada tarjeta se rotula con el `periodo` **de la respuesta**, no con el elegido, para que los números que quedan atenuados mientras llegan los nuevos (`keepPreviousData`) nunca se lean como del período nuevo; el total adeudado se rotula "A la fecha" porque no depende del período. El orden es el del interés del gerente: primero el dinero (cobrado y adeudado, con el número destacado), después los turnos y la ocupación, cada uno con su gráfico, y por último las materias. Los gráficos son SVG y CSS propios (`GraficoDona`, las barras de `TarjetaRanking`): no hay librería de gráficos, y agregar una se acuerda aparte (`AGENTS.md`, regla 8); solo dibujan lo que calculó la API y llevan siempre su leyenda con los números. La torta de turnos usa `ocupacion.turnos` (los no cancelados) junto a `turnos.cancelados`. **No se muestran** "Sin registrar", "Agendados", "Asistió", "No asistió" ni "Alumnos atendidos" (la API los sigue mandando y `tablero.types.ts` los declara). La ocupación se muestra como lugares ocupados y libres de las clases con turnos (`libres = capacidad - turnos`, sin bajar de 0; el aro se llena hasta 100 % pero el número del centro es el real). "Materias con más demanda" y "Profesores con más turnos" (`profesoresConMasTurnos`, decisión T-121) son la misma `TarjetaRanking`, con el profesor escrito "Apellido, Nombre". Sin enlaces a fichas ni agendas; el único enlace es "Generar PDF", que abre `GET /api/v1/tablero/pdf` con el período que se ve (ver Documentos PDF).
 

@@ -1,5 +1,12 @@
+import type {
+  CobroConReparto,
+  ProfesorRef,
+} from '@/server/features/liquidaciones/liquidaciones.condiciones'
+import { sumarImportes } from '@/server/features/pagos/pagos.condiciones'
+import { sumarReparto, type TotalReparto } from '@/server/features/reparto/reparto.condiciones'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import { ZONA_HORARIA, fechaADate, sumarDias } from '@/server/shared/fechas'
+import { mesAnterior, mesDe } from '@/server/shared/zod'
 
 // Reglas puras del tablero del gerente (HU-21, T-61): el período que se puede pedir, los
 // porcentajes, los turnos por estado, las clases y la ocupación, el top de materias y los instantes
@@ -345,7 +352,9 @@ export const ORDEN_PROFESORES_POR_DEFECTO: { orden: ColumnaProfesores; direccion
   direccion: 'desc',
 }
 
-function compararNombres(a: FilaProfesorAsistencia, b: FilaProfesorAsistencia): number {
+type ConProfesor = { profesor: { id: number; nombre: string; apellido: string } }
+
+function compararNombres(a: ConProfesor, b: ConProfesor): number {
   return (
     a.profesor.apellido.localeCompare(b.profesor.apellido, 'es') ||
     a.profesor.nombre.localeCompare(b.profesor.nombre, 'es') ||
@@ -416,6 +425,238 @@ export function resumenDeAsistencia(
     profesoresSinRegistrar: soloQueNoRegistran(filasDeProfesores(ocurrencias)).length,
     alumnosBajoElUmbral,
   }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Finanzas (HU-47, T-128)
+// ---------------------------------------------------------------------------------------------
+
+/** Lo que las reglas de finanzas miran de un cobro (un `CobroConReparto` del motor lo cumple). */
+export type CobroTablero = Pick<CobroConReparto, 'fechaPago' | 'cerradaSinRegistrar'> & {
+  profesor: ProfesorRef
+  reparto: TotalReparto
+}
+
+/** Una liquidación pagada: el `total` que se le transfirió al profesor, tal como se guardó. */
+export type LiquidacionPagada = {
+  profesor: ProfesorRef
+  /** `YYYY-MM-DD`. */
+  fechaTransferencia: string
+  total: number
+}
+
+/** Lo que se le debe a `hoy` a un profesor (`saldoAPagarPorProfesor`); puede ser negativo. */
+export type SaldoDeProfesor = { profesor: ProfesorRef; saldo: number }
+
+/** Cuántos meses trae la evolución mensual. */
+export const MESES_EVOLUCION = 6
+
+/**
+ * El reparto con el que el tablero cuenta un cobro. Un turno cerrado sin registrar no se le debe
+ * al profesor (HU-44): su importe completo va al centro. Si no, el reparto del cobro tal cual. Es
+ * la única regla del reparto del tablero: la usan el resumen, la tabla y la evolución, así la parte
+ * del centro de la tabla suma el margen y las dos partes suman lo cobrado.
+ */
+export function repartoParaElTablero(
+  cobro: Pick<CobroTablero, 'cerradaSinRegistrar' | 'reparto'>,
+): TotalReparto {
+  const { importe, parteCentro, parteProfesor } = cobro.reparto
+  return cobro.cerradaSinRegistrar
+    ? { importe, parteCentro: importe, parteProfesor: 0 }
+    : { importe, parteCentro, parteProfesor }
+}
+
+/** Las partes de varios cobros sumadas en centavos, con la regla de `repartoParaElTablero`. */
+function sumarCobros(cobros: readonly CobroTablero[]): TotalReparto {
+  return sumarReparto(cobros.map(repartoParaElTablero))
+}
+
+/** Los números principales de la pestaña "Finanzas". */
+export type ResumenDeFinanzas = {
+  totalCobrado: number
+  margenCentro: { importe: number; porcentaje: number }
+  incluyeSinRegistrar: number
+  pagadoAProfesores: number
+  saldoAPagarAProfesores: number
+}
+
+/**
+ * El resumen del período. `totalCobrado` es el de `totalCobradoEntre` (el mismo de "General");
+ * `cobros` y `pagadas` son los del período. El margen es la parte del centro de los cobros más el
+ * importe completo de los cerrados sin registrar (`repartoParaElTablero`), con su porcentaje sobre
+ * `totalCobrado`; `incluyeSinRegistrar`, el importe de esos cerrados. El saldo es a hoy y suma sólo
+ * los positivos: un profesor con saldo negativo no lo resta (punto 12, decisión T-169).
+ */
+export function resumenDeFinanzas({
+  totalCobrado,
+  cobros,
+  pagadas,
+  saldos,
+}: {
+  totalCobrado: number
+  cobros: readonly CobroTablero[]
+  pagadas: readonly LiquidacionPagada[]
+  saldos: readonly SaldoDeProfesor[]
+}): ResumenDeFinanzas {
+  const margen = sumarCobros(cobros).parteCentro
+  return {
+    totalCobrado,
+    margenCentro: { importe: margen, porcentaje: porcentaje(margen, totalCobrado) },
+    incluyeSinRegistrar: sumarImportes(
+      cobros.filter((c) => c.cerradaSinRegistrar).map((c) => c.reparto.importe),
+    ),
+    pagadoAProfesores: sumarImportes(pagadas.map((p) => p.total)),
+    saldoAPagarAProfesores: sumarImportes(saldos.map((s) => s.saldo).filter((saldo) => saldo > 0)),
+  }
+}
+
+export type FilaFinanzasProfesor = {
+  profesor: ProfesorRef
+  turnosCobrados: number
+  totalCobrado: number
+  parteCentro: number
+  parteProfesor: number
+  pagado: number
+  /** El de `saldoAPagarPorProfesor`, a hoy: puede ser negativo. */
+  saldoPendiente: number
+}
+
+/**
+ * Una fila por profesor con alguna cifra distinta de 0 (cobros o pagado en el período, o saldo a
+ * hoy), activo o inactivo, **sin orden**: `ordenarFinanzas` lo decide. Las partes, con
+ * `repartoParaElTablero`: un cerrado sin registrar va entero a la parte del centro.
+ */
+export function filasDeFinanzasPorProfesor({
+  cobros,
+  pagadas,
+  saldos,
+}: {
+  cobros: readonly CobroTablero[]
+  pagadas: readonly LiquidacionPagada[]
+  saldos: readonly SaldoDeProfesor[]
+}): FilaFinanzasProfesor[] {
+  type Grupo = {
+    profesor: ProfesorRef
+    cobros: CobroTablero[]
+    pagadas: number[]
+    saldo: number
+  }
+  const grupos = new Map<number, Grupo>()
+  const grupoDe = (profesor: ProfesorRef): Grupo => {
+    let grupo = grupos.get(profesor.id)
+    if (!grupo) {
+      grupo = {
+        profesor: { id: profesor.id, nombre: profesor.nombre, apellido: profesor.apellido },
+        cobros: [],
+        pagadas: [],
+        saldo: 0,
+      }
+      grupos.set(profesor.id, grupo)
+    }
+    return grupo
+  }
+  for (const cobro of cobros) grupoDe(cobro.profesor).cobros.push(cobro)
+  for (const pagada of pagadas) grupoDe(pagada.profesor).pagadas.push(pagada.total)
+  for (const { profesor, saldo } of saldos) grupoDe(profesor).saldo = saldo
+
+  return [...grupos.values()].flatMap((grupo): FilaFinanzasProfesor[] => {
+    const partes = sumarCobros(grupo.cobros)
+    const pagado = sumarImportes(grupo.pagadas)
+    if (grupo.cobros.length === 0 && pagado === 0 && grupo.saldo === 0) return []
+    return [
+      {
+        profesor: grupo.profesor,
+        turnosCobrados: grupo.cobros.length,
+        totalCobrado: partes.importe,
+        parteCentro: partes.parteCentro,
+        parteProfesor: partes.parteProfesor,
+        pagado,
+        saldoPendiente: grupo.saldo,
+      },
+    ]
+  })
+}
+
+/** Columnas por las que se puede ordenar la tabla de finanzas por profesor. */
+export const COLUMNAS_FINANZAS = [
+  'profesor',
+  'turnosCobrados',
+  'totalCobrado',
+  'parteCentro',
+  'parteProfesor',
+  'pagado',
+  'saldoPendiente',
+] as const
+export type ColumnaFinanzas = (typeof COLUMNAS_FINANZAS)[number]
+
+/** Orden por defecto de la tabla de finanzas: los que más cobraron primero. */
+export const ORDEN_FINANZAS_POR_DEFECTO: { orden: ColumnaFinanzas; direccion: Direccion } = {
+  orden: 'totalCobrado',
+  direccion: 'desc',
+}
+
+/**
+ * Las filas de finanzas ordenadas por `orden` en `direccion` (copia, no toca la entrada), con el
+ * mismo criterio que `ordenarProfesores`: en empate, apellido, nombre e `id` ascendentes; `profesor`
+ * ordena por apellido y nombre.
+ */
+export function ordenarFinanzas(
+  filas: readonly FilaFinanzasProfesor[],
+  { orden, direccion }: { orden: ColumnaFinanzas; direccion: Direccion },
+): FilaFinanzasProfesor[] {
+  const signo = direccion === 'asc' ? 1 : -1
+  return [...filas].sort((a, b) => {
+    const principal = orden === 'profesor' ? compararNombres(a, b) : a[orden] - b[orden]
+    return signo * principal || compararNombres(a, b)
+  })
+}
+
+/**
+ * Los `MESES_EVOLUCION` meses `YYYY-MM` que terminan en el de `hasta`, del más viejo al más nuevo
+ * (cruzan el cambio de año: `'2027-02-10'` → `2026-09` … `2027-02`).
+ */
+export function mesesDeEvolucion(hasta: string): string[] {
+  const meses = [mesDe(hasta)]
+  while (meses.length < MESES_EVOLUCION) meses.unshift(mesAnterior(meses[0] as string))
+  return meses
+}
+
+export type MesDeEvolucion = {
+  mes: string
+  totalCobrado: number
+  margenCentro: number
+  pagadoAProfesores: number
+}
+
+/**
+ * Por cada mes de `meses`: lo cobrado (por `fechaPago`), el margen del centro (con
+ * `repartoParaElTablero`) y lo pagado a los profesores (por `fechaTransferencia`). Los meses
+ * anteriores son completos; el último llega hasta `hasta` (el fin del período). Un mes sin
+ * movimientos va en 0: siempre una fila por mes.
+ */
+export function evolucionMensual({
+  meses,
+  hasta,
+  cobros,
+  pagadas,
+}: {
+  meses: readonly string[]
+  hasta: string
+  cobros: readonly CobroTablero[]
+  pagadas: readonly LiquidacionPagada[]
+}): MesDeEvolucion[] {
+  const delMes = (mes: string, fecha: string) => fecha <= hasta && mesDe(fecha) === mes
+  return meses.map((mes) => {
+    const partes = sumarCobros(cobros.filter((c) => delMes(mes, c.fechaPago)))
+    return {
+      mes,
+      totalCobrado: partes.importe,
+      margenCentro: partes.parteCentro,
+      pagadoAProfesores: sumarImportes(
+        pagadas.filter((p) => delMes(mes, p.fechaTransferencia)).map((p) => p.total),
+      ),
+    }
+  })
 }
 
 // Se crea una sola vez. Las partes numéricas no dependen del formato del locale.

@@ -33,7 +33,8 @@ import {
 // - `liquidaciones` (T-124): el listado del mes (`liquidacionesDelMes`), el detalle
 //   (`liquidacionDe`) y lo que se escribe al pagar (`cierreDeLiquidacion`), dentro de su `tx`.
 // - `liquidaciones` (T-125): la liquidación del PDF (`liquidacionDe`).
-// - "Mis ingresos" (T-126): las liquidaciones del profesor (`liquidacionDe`) y su saldo.
+// - "Mis ingresos" (T-126): el mes en curso del profesor (`liquidacionDe`) y todas sus
+//   liquidaciones (`liquidacionesDelProfesor`).
 // - `tablero` (T-128): el saldo a pagar a cada profesor (`saldoAPagarPorProfesor`) y el margen del
 //   centro (`cobrosConReparto`).
 //
@@ -417,6 +418,25 @@ export async function liquidacionDe(
 ): Promise<Liquidacion | null> {
   const [liquidacion] = await liquidacionesDelMes(client, { mes, profesorId, hoy })
   return liquidacion ?? null
+}
+
+/**
+ * Todas las liquidaciones de `profesorId` hasta el mes de `hoy`, una por mes con movimientos: la
+ * cerrada si la hay (congelada), si no la abierta; nunca las dos. Ordenadas por mes. Las lee "Mis
+ * liquidaciones" del profesor (T-126), con el mismo cálculo que el detalle del gerente.
+ */
+export async function liquidacionesDelProfesor(
+  client: ClienteLiquidaciones,
+  { profesorId, hoy }: { profesorId: number; hoy: string },
+): Promise<Liquidacion[]> {
+  const [cerradas, abiertas] = await Promise.all([
+    leerLiquidacionesCerradas(client, { profesorId }),
+    calcularAbiertas(client, { profesorId, hoy }),
+  ])
+  const mesesCerrados = new Set(cerradas.map((l) => l.mes))
+  return [...cerradas, ...abiertas.filter((l) => !mesesCerrados.has(l.mes))].sort((a, b) =>
+    a.mes.localeCompare(b.mes),
+  )
 }
 
 /**

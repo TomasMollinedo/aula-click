@@ -244,7 +244,7 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 
 ## Tablero
 
-HU-21 (T-61) y HU-39 (T-112). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días), en dos secciones con el mismo período: **General** y **Asistencia**. Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
+HU-21 (T-61), HU-39 (T-112) y HU-47 (T-128). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días), en tres secciones con el mismo período: **General**, **Asistencia** y **Finanzas**. Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
 
 ### General
 
@@ -271,6 +271,17 @@ HU-39 (T-112, decisión T-162). La pestaña para ver **qué profesores no regist
 - **Alumnos con baja asistencia:** los alumnos con **menos de 75 %** de asistencia en el período, entre los que tienen algún turno con asistencia registrada (75 % justo no cuenta). Se informa sólo la cantidad.
 - **Tabla de profesores:** un profesor por fila, con sus turnos realizados, ausencias, porcentaje de asistencia de sus alumnos, turnos cerrados sin registrar, turnos dentro del plazo y porcentaje sin registrar. Por defecto, primero los que más turnos cerrados sin registrar tienen; se puede reordenar por cualquier columna y filtrar para ver sólo a los que no registran. **Tabla de materias:** las mismas cifras por materia, siempre ordenadas por turnos cerrados sin registrar.
 - Cada tabla se ve de a 10 filas, pero el **PDF** de la sección trae las tablas completas.
+
+### Finanzas
+
+HU-47 (T-128, decisión T-169). Cuánto se cobró, cuánto le queda al centro y cuánto se les pagó y se les debe a los profesores. Sólo agregados por centro, por profesor y por mes. El reparto de cada cobro, qué se le debe a cada profesor y su saldo son los de [Reparto](#reparto) y [Liquidaciones](#liquidaciones): el tablero no los calcula de nuevo. **Los pagos anulados no suman en ningún número.**
+
+- **Total cobrado:** el mismo número de General: los pagos vigentes con fecha de pago dentro del período.
+- **Margen del centro:** la parte del centro de los turnos cobrados en el período (cada uno con el porcentaje que guardó su cobro), con su porcentaje sobre el total cobrado. Un turno cobrado que el sistema cerró "Sin registrar" no se le debe al profesor: entra **entero** en el margen (una sola vez, no su parte del centro más el resto). Ese importe se informa aparte: "Incluye $ 13.600 de turnos sin asistencia registrada".
+- **Pagado a profesores:** el total de las liquidaciones pagadas con **fecha de transferencia** dentro del período. Una liquidación descontada no es una transferencia y no suma.
+- **Saldo a pagar a profesores:** lo que se les debe **a hoy**, sin período (como el total adeudado de General): la suma de los saldos **positivos**. Un profesor con saldo negativo (un saldo a descontar el mes próximo) no lo resta.
+- **Tabla por profesor:** un profesor por fila (activo o no) con algo en el período o un saldo a hoy: turnos cobrados en el período, total cobrado de esos turnos, parte del centro y parte del profesor (un turno cerrado sin registrar va entero a la del centro, así la columna suma el margen), pagado en el período y saldo pendiente a hoy, **negativo incluido**. Por defecto, primero los que más cobraron; se puede reordenar por cualquier columna. Se ve de a 10 filas; el PDF la trae completa.
+- **Evolución mensual:** los 6 meses que terminan en el del fin del período, con el total cobrado y el margen del centro (por fecha de pago) y lo pagado a profesores (por fecha de transferencia) de cada mes. El último mes llega hasta el fin del período, no hasta fin de mes; un mes sin movimientos va en 0.
 
 ## Exámenes
 
