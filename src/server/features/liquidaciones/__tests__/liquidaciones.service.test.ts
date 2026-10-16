@@ -99,6 +99,10 @@ const repository = {
   leerProfesor: vi.fn(),
   ultimoAdjunto: vi.fn(),
   pagar: vi.fn(),
+  // Los del profesor (T-126): se prueban en `liquidaciones.mis-ingresos.test.ts`.
+  profesorIdDeUsuario: vi.fn(),
+  todasDelProfesor: vi.fn(),
+  clasesDelProfesor: vi.fn(),
 }
 const service = crearLiquidacionesService({ repository, reloj })
 

@@ -1,29 +1,45 @@
-import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
+import { ConflictError, ForbiddenError, NotFoundError, ValidationError } from '@/server/errors'
 import type { UltimoAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
 import type { Actor } from '@/server/shared/actor'
-import { hoy, type Reloj } from '@/server/shared/fechas'
+import { hoy, sumarDias, type Reloj } from '@/server/shared/fechas'
 import { fechaDocumento } from '@/server/shared/formato'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { mesAnterior, mesDe, minutosAHora, ultimoDiaDelMes } from '@/server/shared/zod'
 import type { Liquidacion, ProfesorRef } from './liquidaciones.condiciones'
-import type { LiquidacionesRepository } from './liquidaciones.repository'
+import type { ClaseLeida, LiquidacionesRepository } from './liquidaciones.repository'
 import {
   MENSAJE_MES_FUTURO,
   MENSAJE_TRANSFERENCIA_FUTURA,
   mensajeMesNoTerminado,
+  type ClaseCobradaSinAsistencia,
+  type ClaseDelProfesor,
   type FilaLiquidacion,
+  type FilaMiLiquidacion,
   type LiquidacionDetalle,
   type LiquidacionPagada,
   type LiquidacionesDelMes,
   type LiquidacionesQuery,
   type LiquidacionParams,
+  type MiLiquidacion,
+  type MiLiquidacionParams,
+  type MisIngresos,
+  type MisLiquidaciones,
+  type MisLiquidacionesQuery,
   type PagarLiquidacion,
   type TotalesLiquidacion,
 } from './liquidaciones.validation'
 
-// Liquidaciones del gerente (HU-44, T-124): el listado del mes, el detalle y el pago. No conoce HTTP ni
-// Prisma: lanza AppError o sus subclases. No calcula importes: todo sale de la `Liquidacion` del
-// motor (`liquidaciones.condiciones.ts`), que congela las cerradas (decisión T-156).
+// Liquidaciones del gerente (HU-44, T-124): el listado del mes, el detalle y el pago; y "Mis
+// ingresos" del profesor (HU-45, T-126): su mes en curso, sus clases sin cobrar o sin asistencia y sus
+// liquidaciones. No conoce HTTP ni Prisma: lanza AppError o sus subclases. No calcula importes: todo
+// sale de la `Liquidacion` del motor (`liquidaciones.condiciones.ts`), que congela las cerradas
+// (decisión T-156), y el estado de cada clase, del motor de ocurrencias.
+
+/** Cuántos días para atrás mira "clases sin cobrar": el tope de los otros listados (366 días). */
+const DIAS_CLASES_SIN_COBRAR = 366
+
+/** El plazo de asistencia es de 7 días: una clase anterior ya no puede estar dentro del plazo. */
+const DIAS_PLAZO_ASISTENCIA = 7
 
 const aCentavos = (importe: number) => Math.round(importe * 100)
 
@@ -123,6 +139,77 @@ function detalleVacio(profesor: ProfesorRef, mes: string): LiquidacionDetalle {
 }
 
 /**
+ * La liquidación del profesor ("Mis ingresos"): la del gerente sin lo que no es suyo (decisiones
+ * de T-126): ni el número de comprobante de las familias, ni el adjunto, ni quién registró el pago,
+ * ni las observaciones, ni las acciones. Los totales son los de su liquidación, no los del centro.
+ */
+function aMiLiquidacion(liquidacion: Liquidacion): MiLiquidacion {
+  const { cerrada } = liquidacion
+  return {
+    mes: liquidacion.mes,
+    estado: liquidacion.estado,
+    turnos: liquidacion.turnos.map((turno) => ({
+      fecha: turno.fecha,
+      horaInicio: minutosAHora(turno.horaInicio),
+      horaFin: minutosAHora(turno.horaFin),
+      alumno: turno.alumno,
+      materia: turno.materia,
+      importe: turno.importe,
+      porcentaje: turno.porcentaje,
+      parteProfesor: turno.parteProfesor,
+    })),
+    ajustes: liquidacion.ajustes.map(({ tipo, texto, importe }) => ({ tipo, texto, importe })),
+    ...totalesDe(liquidacion),
+    cerrada: cerrada && {
+      liquidacionId: cerrada.id,
+      fechaTransferencia: cerrada.fechaTransferencia,
+      numeroOperacion: cerrada.numeroOperacion,
+      descontadaEnMes: cerrada.descontadaEnMes,
+    },
+  }
+}
+
+/** La liquidación del profesor en un mes sin movimientos. */
+function miLiquidacionVacia(mes: string): MiLiquidacion {
+  return { mes, estado: null, turnos: [], ajustes: [], ...sumarTotales([]), cerrada: null }
+}
+
+function aClase(clase: ClaseLeida): ClaseDelProfesor {
+  return {
+    turnoId: clase.turnoId,
+    fecha: clase.fecha,
+    horaInicio: minutosAHora(clase.horaInicio),
+    horaFin: minutosAHora(clase.horaFin),
+    alumno: clase.alumno,
+    materia: clase.materia,
+  }
+}
+
+/**
+ * Clase sin cobrar: con asistencia (`REALIZADO` es presente; `AUSENTE`, ausente) y sin pago
+ * vigente. Una cancelada no cuenta aunque tenga asistencia.
+ */
+function esSinCobrar(clase: ClaseLeida): boolean {
+  return (clase.estado === 'REALIZADO' || clase.estado === 'AUSENTE') && clase.pago === 'PENDIENTE'
+}
+
+/**
+ * Clase cobrada sin asistencia: con pago vigente, sin asistencia, no cancelada y dentro del plazo
+ * para registrarla (`plazoAsistencia` del motor, también una de hoy, que todavía es `AGENDADO`).
+ */
+function esCobradaSinAsistencia(
+  clase: ClaseLeida,
+): clase is ClaseLeida & { plazoAsistencia: { vence: string; vencido: false } } {
+  return (
+    clase.pago === 'PAGADO' &&
+    !clase.conAsistencia &&
+    clase.estado !== 'CANCELADO' &&
+    clase.plazoAsistencia !== null &&
+    !clase.plazoAsistencia.vencido
+  )
+}
+
+/**
  * Crea el service con sus dependencias. El controller arma la instancia con el repository real;
  * los tests, con uno falso y un reloj fijo (`reloj` opcional; por defecto el del sistema, vía
  * `hoy(reloj)`). Lo importa sólo como tipo, así el service no carga Prisma ni `@/config/env`.
@@ -133,10 +220,27 @@ export function crearLiquidacionesService({
 }: {
   repository: Pick<
     LiquidacionesRepository,
-    'delMes' | 'deProfesor' | 'leerProfesor' | 'ultimoAdjunto' | 'pagar'
+    | 'delMes'
+    | 'deProfesor'
+    | 'leerProfesor'
+    | 'ultimoAdjunto'
+    | 'pagar'
+    | 'profesorIdDeUsuario'
+    | 'todasDelProfesor'
+    | 'clasesDelProfesor'
   >
   reloj?: Reloj
 }) {
+  /**
+   * El profesor de la sesión: sale del `Actor`, nunca de un parámetro (como `mis-alumnos`). Un
+   * usuario sin ficha de profesor → 403 (lo pide T-126).
+   */
+  async function profesorDeLaSesion(actor: Actor): Promise<number> {
+    const profesorId = await repository.profesorIdDeUsuario(actor.userId)
+    if (profesorId === null) throw new ForbiddenError('No tenés permiso para esta operación')
+    return profesorId
+  }
+
   /** 400 en `mes` si es posterior al mes de `fechaHoy`. El mes en curso se puede pedir. */
   function exigirMesNoFuturo(mes: string, fechaHoy: string): void {
     if (mes > mesDe(fechaHoy)) {
@@ -235,6 +339,80 @@ export function crearLiquidacionesService({
         actor,
       )
       return { liquidacionId, profesor, mes, total, fechaTransferencia: datos.fechaTransferencia }
+    },
+
+    // ---------- "Mis ingresos" del profesor (HU-45, T-126) ----------
+
+    /**
+     * El mes en curso del profesor de la sesión (el mismo cálculo que ve el gerente), sus clases sin
+     * cobrar de los últimos 366 días y las cobradas sin asistencia dentro del plazo, de la más
+     * reciente a la más antigua. Una sola lectura de ocurrencias para las dos listas.
+     */
+    async misIngresos(actor: Actor): Promise<MisIngresos> {
+      const fechaHoy = hoy(reloj)
+      const profesorId = await profesorDeLaSesion(actor)
+      const mes = mesDe(fechaHoy)
+      const [liquidacion, clases] = await Promise.all([
+        repository.deProfesor({ profesorId, mes, hoy: fechaHoy }),
+        repository.clasesDelProfesor(
+          {
+            profesorId,
+            desde: sumarDias(fechaHoy, -(DIAS_CLASES_SIN_COBRAR - 1)),
+            hasta: fechaHoy,
+          },
+          reloj,
+        ),
+      ])
+      // El motor las ordena de la más antigua a la más reciente.
+      const recientesPrimero = [...clases].reverse()
+      const desdePlazo = sumarDias(fechaHoy, -DIAS_PLAZO_ASISTENCIA)
+      return {
+        esteMes: liquidacion ? aMiLiquidacion(liquidacion) : miLiquidacionVacia(mes),
+        clasesSinCobrar: recientesPrimero.filter(esSinCobrar).map(aClase),
+        clasesCobradasSinAsistencia: recientesPrimero
+          .filter((clase) => clase.fecha >= desdePlazo)
+          .filter(esCobradaSinAsistencia)
+          .map((clase): ClaseCobradaSinAsistencia => ({
+            ...aClase(clase),
+            vence: clase.plazoAsistencia.vence,
+          })),
+      }
+    },
+
+    /**
+     * Las liquidaciones del profesor de la sesión, una fila por mes con movimientos, sin el mes en
+     * curso (está en `misIngresos`), del más reciente al más antiguo, paginadas en memoria.
+     */
+    async misLiquidaciones(query: MisLiquidacionesQuery, actor: Actor): Promise<MisLiquidaciones> {
+      const fechaHoy = hoy(reloj)
+      const profesorId = await profesorDeLaSesion(actor)
+      const mesEnCurso = mesDe(fechaHoy)
+      const filas = (await repository.todasDelProfesor({ profesorId, hoy: fechaHoy }))
+        .filter((liquidacion) => liquidacion.mes !== mesEnCurso)
+        .reverse()
+        .map((liquidacion): FilaMiLiquidacion => ({
+          mes: liquidacion.mes,
+          estado: liquidacion.estado,
+          total: liquidacion.total,
+          fechaTransferencia:
+            liquidacion.estado === 'PAGADA'
+              ? (liquidacion.cerrada?.fechaTransferencia ?? null)
+              : null,
+        }))
+      const { skip, take } = calcularSkipTake(query)
+      return { data: filas.slice(skip, skip + take), meta: armarMeta(query, filas.length) }
+    },
+
+    /**
+     * Una liquidación del profesor de la sesión (cualquier mes no futuro, también el en curso).
+     * Sin movimientos en el mes: la liquidación vacía.
+     */
+    async miLiquidacion({ mes }: MiLiquidacionParams, actor: Actor): Promise<MiLiquidacion> {
+      const fechaHoy = hoy(reloj)
+      const profesorId = await profesorDeLaSesion(actor)
+      exigirMesNoFuturo(mes, fechaHoy)
+      const liquidacion = await repository.deProfesor({ profesorId, mes, hoy: fechaHoy })
+      return liquidacion ? aMiLiquidacion(liquidacion) : miLiquidacionVacia(mes)
     },
   }
 }

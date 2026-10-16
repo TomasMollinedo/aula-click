@@ -3,6 +3,9 @@ import type {
   LiquidacionDetalle,
   LiquidacionesDelMes,
   LiquidacionPagada,
+  MiLiquidacion,
+  MisIngresos,
+  MisLiquidaciones,
   PagarLiquidacion,
 } from './liquidaciones.validation'
 
@@ -172,3 +175,77 @@ export const ejemploErrorLiquidacionModificada = {
     message: 'La liquidación cambió desde que la abriste. Revisala antes de pagar',
   },
 } satisfies ErrorResponse
+
+// ---------- "Mis ingresos" del profesor (T-126) ----------
+
+const alumnaPerez = { id: 12, nombre: 'Lucía', apellido: 'Pérez' }
+const matematica = { id: 3, nombre: 'Matemática' }
+
+export const ejemploMiLiquidacion = {
+  mes: '2026-09',
+  estado: 'PAGADA',
+  turnos: [
+    {
+      fecha: '2026-09-07',
+      horaInicio: '16:00',
+      horaFin: '17:00',
+      alumno: alumnaPerez,
+      materia: matematica,
+      importe: 8000,
+      porcentaje: 15,
+      parteProfesor: 6800,
+    },
+  ],
+  ajustes: [],
+  cantidadTurnos: 1,
+  totalCobrado: 8000,
+  parteCentro: 1200,
+  parteProfesor: 6800,
+  totalAjustes: 0,
+  total: 6800,
+  cerrada: {
+    liquidacionId: 31,
+    fechaTransferencia: '2026-10-05',
+    numeroOperacion: '0004829137',
+    descontadaEnMes: null,
+  },
+} satisfies MiLiquidacion
+
+export const ejemploMisIngresos = {
+  esteMes: {
+    ...ejemploMiLiquidacion,
+    mes: '2026-10',
+    estado: 'EN_CURSO',
+    turnos: [{ ...ejemploMiLiquidacion.turnos[0], fecha: '2026-10-05' }],
+    cerrada: null,
+  },
+  clasesSinCobrar: [
+    {
+      turnoId: 41,
+      fecha: '2026-10-12',
+      horaInicio: '16:00',
+      horaFin: '17:00',
+      alumno: alumnaPerez,
+      materia: matematica,
+    },
+  ],
+  clasesCobradasSinAsistencia: [
+    {
+      turnoId: 44,
+      fecha: '2026-10-14',
+      horaInicio: '17:00',
+      horaFin: '18:00',
+      alumno: { id: 15, nombre: 'Tomás', apellido: 'Aguirre' },
+      materia: matematica,
+      vence: '2026-10-21',
+    },
+  ],
+} satisfies MisIngresos
+
+export const ejemploMisLiquidaciones = {
+  data: [
+    { mes: '2026-09', estado: 'PAGADA', total: 81600, fechaTransferencia: '2026-10-05' },
+    { mes: '2026-08', estado: 'PAGADA', total: 74800, fechaTransferencia: '2026-09-04' },
+  ],
+  meta: { page: 1, pageSize: 20, total: 2, totalPages: 1 },
+} satisfies MisLiquidaciones

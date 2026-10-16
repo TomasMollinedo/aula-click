@@ -2082,13 +2082,16 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
 
-| Endpoint                                                        | Roles     | Qué hace                                                                         |
-| --------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
-| `GET /api/v1/liquidaciones`                                     | `GERENTE` | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
-| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE` | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
-| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE` | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
+| Endpoint                                                        | Roles      | Qué hace                                                                         |
+| --------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                                     | `GERENTE`  | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`  | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`  | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
+| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR` | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200        |
+| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR` | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                  |
+| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR` | Su liquidación de un mes. 200; 400                                               |
 
-Cualquier otro rol recibe 403 `SIN_PERMISO`.
+Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de la sesión (HU-45, T-126): ver [Mis ingresos del profesor](#mis-ingresos-del-profesor).
 
 **El mes** (`AAAA-MM`, en el query del listado y en la ruta del detalle y del pago): formato inválido (`2026-13`, `2026-9`) → 400 `VALIDACION` en `["mes"]` "El mes debe tener el formato AAAA-MM". Un mes **posterior al de hoy** → 400 `VALIDACION` en `["mes"]` "El mes no puede ser futuro" en los dos `GET` (en el pago, un mes futuro es 409, ver abajo). El **mes en curso sí se puede pedir**: sus liquidaciones salen `EN_CURSO`.
 
@@ -2242,6 +2245,82 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 6. 409 `CONFLICTO` "No hay importe a pagar": sin movimientos, `SALDO_A_DESCONTAR` o `DESCONTADA`.
 7. 409 `LIQUIDACION_MODIFICADA` "La liquidación cambió desde que la abriste. Revisala antes de pagar": el total calculado no es `totalConfirmado` (por ejemplo, se anuló un pago de uno de sus turnos), o otro pago de la misma liquidación ganó la carrera. No se guarda nada; el front recarga el detalle (T-132).
 8. 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]` "El comprobante de la transferencia no existe o ya se usó: volvé a subirlo" (ver [Adjuntos](#adjuntos)); no se guarda nada.
+
+### Mis ingresos del profesor
+
+HU-45 (T-126). Rol `PROFESOR`, con el **profesor de la sesión** (como `GET /alumnos/mis-alumnos`): ningún endpoint recibe un `profesorId`. Un usuario `PROFESOR` sin ficha de profesor → 403 `SIN_PERMISO`. **Nada de otros profesores ni del centro:** ni totales del centro, ni forma de pago, ni el número de comprobante de las familias (decisión T-171). Todo sale del motor de liquidaciones y del de ocurrencias: nada se recalcula.
+
+**Su liquidación** (`esteMes` y el detalle de un mes) tiene el formato del detalle del gerente **sin** `profesor`, `numeroComprobante` en los turnos, `acciones` ni, en `cerrada`, `observaciones`, `comprobanteAdjunto`, `registradaPor` y `registradaEl`. Los totales son los de **su** liquidación (cobrado, parte del centro, su parte, ajustes y total), con el mismo cálculo que ve el gerente.
+
+**`GET /liquidaciones/mis-ingresos`**:
+
+- `esteMes`: la liquidación del mes en curso (`EN_CURSO`), o la vacía (`estado: null`) sin movimientos.
+- `clasesSinCobrar`: sus clases con asistencia (`REALIZADO` o `AUSENTE`, no canceladas) y **sin pago vigente**, de los últimos **366 días** (el tope de los otros listados), de la más reciente a la más antigua: `{ turnoId, fecha, horaInicio, horaFin, alumno, materia }`.
+- `clasesCobradasSinAsistencia`: de **hoy o anteriores**, con pago vigente, **sin asistencia**, no canceladas y **dentro del plazo** (`plazoDeAsistencia`; una de hoy todavía es `AGENDADO`), con su `vence`, de la más reciente a la más antigua.
+
+```json
+{
+  "esteMes": {
+    "mes": "2026-10",
+    "estado": "EN_CURSO",
+    "turnos": [
+      {
+        "fecha": "2026-10-05",
+        "horaInicio": "16:00",
+        "horaFin": "17:00",
+        "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Pérez" },
+        "materia": { "id": 3, "nombre": "Matemática" },
+        "importe": 8000,
+        "porcentaje": 15,
+        "parteProfesor": 6800
+      }
+    ],
+    "ajustes": [],
+    "cantidadTurnos": 1,
+    "totalCobrado": 8000,
+    "parteCentro": 1200,
+    "parteProfesor": 6800,
+    "totalAjustes": 0,
+    "total": 6800,
+    "cerrada": null
+  },
+  "clasesSinCobrar": [
+    {
+      "turnoId": 41,
+      "fecha": "2026-10-12",
+      "horaInicio": "16:00",
+      "horaFin": "17:00",
+      "alumno": { "id": 12, "nombre": "Lucía", "apellido": "Pérez" },
+      "materia": { "id": 3, "nombre": "Matemática" }
+    }
+  ],
+  "clasesCobradasSinAsistencia": [
+    {
+      "turnoId": 44,
+      "fecha": "2026-10-14",
+      "horaInicio": "17:00",
+      "horaFin": "18:00",
+      "alumno": { "id": 15, "nombre": "Tomás", "apellido": "Aguirre" },
+      "materia": { "id": 3, "nombre": "Matemática" },
+      "vence": "2026-10-21"
+    }
+  ]
+}
+```
+
+**`GET /liquidaciones/mis-liquidaciones?page=1&pageSize=20`** (paginación de [Listados paginados](#listados-paginados)): una fila por mes **con movimientos**, **sin el mes en curso** (está en `esteMes`), del **más reciente al más antiguo**: `{ mes, estado, total, fechaTransferencia }`; `fechaTransferencia` sólo en una `PAGADA`.
+
+```json
+{
+  "data": [
+    { "mes": "2026-09", "estado": "PAGADA", "total": 81600, "fechaTransferencia": "2026-10-05" },
+    { "mes": "2026-08", "estado": "PAGADA", "total": 74800, "fechaTransferencia": "2026-09-04" }
+  ],
+  "meta": { "page": 1, "pageSize": 20, "total": 2, "totalPages": 1 }
+}
+```
+
+**`GET /liquidaciones/mis-liquidaciones/{mes}`**: su liquidación de `mes`, con el formato de arriba. Cualquier mes **no futuro**, también el en curso (devuelve lo mismo que `esteMes`). Sin movimientos: la vacía. Un mes con formato inválido o futuro → 400 `VALIDACION` en `["mes"]`, como el detalle del gerente. En una cerrada, `cerrada` es `{ liquidacionId, fechaTransferencia, numeroOperacion, descontadaEnMes }`.
 
 ## Caja
 
