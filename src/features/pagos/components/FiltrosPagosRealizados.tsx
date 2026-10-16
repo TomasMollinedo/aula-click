@@ -16,8 +16,11 @@ import {
 } from '@/components/ui/select'
 
 import type { CampoFiltroPagos } from '../errores-pagos-realizados'
+import type { EstadoPagoRegistrado } from '@/types/pago'
+
 import {
   alumnoDeLosBuscadores,
+  ESTADOS_PAGO,
   FORMAS_PAGO,
   type FiltrosPagosRealizados,
 } from '../filtros-pagos-realizados'
@@ -28,6 +31,23 @@ import { FiltroAlumnoDePagos, FiltroProfesorDePagos } from './FiltroPersonaDePag
 
 // Radix Select no admite un valor vacío: "sin filtro" es este valor y se traduce a `null`.
 const TODAS = 'TODAS'
+const TODOS = 'TODOS'
+
+const NOMBRE_ESTADO: Record<EstadoPagoRegistrado, string> = {
+  VIGENTE: 'Vigentes',
+  ANULADO: 'Anulados',
+}
+
+// Desde `2xl` van todos los filtros y "Limpiar filtros" en una sola fila. Los buscadores (alumno,
+// materia y profesor) se reparten lo que sobra y cortan el nombre con "…" (entero en el `title`);
+// las fechas y los dos Select tienen el ancho justo de su contenido. En `xl` (1280 px) con el menú
+// lateral abierto no entran: los buscadores quedaban en ~60 px. Antes de `2xl`, en filas de 2 a 4.
+const COLUMNAS = {
+  conAlumno:
+    'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-[minmax(0,1fr)_repeat(2,8rem)_repeat(2,minmax(0,1fr))_10rem_7.5rem_auto]',
+  sinAlumno:
+    'sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-[repeat(2,8rem)_repeat(2,minmax(0,1fr))_10rem_7.5rem_auto]',
+}
 
 type FiltrosPagosRealizadosProps = {
   filtros: FiltrosPagosRealizados
@@ -46,7 +66,7 @@ type FiltrosPagosRealizadosProps = {
 
 /**
  * Los filtros de "Pagos realizados" (HU-36): alumno (solo en la vista global), período por fecha
- * de pago, materia, profesor y forma de pago. Con un alumno (el de la ficha o el elegido), materia
+ * de pago, materia, profesor, forma de pago y estado ("Todos", "Vigentes" o "Anulados"). Con un alumno (el de la ficha o el elegido), materia
  * y profesor solo ofrecen los de sus pagos (decisión T-170). No guarda estado: muestra los de la URL y avisa cada
  * cambio, que se aplica enseguida. Las dos fechas son obligatorias (no se pueden vaciar) y no se
  * validan: un "Hasta" anterior al "Desde" se manda igual y el error de la API sale junto al campo.
@@ -70,6 +90,7 @@ export function FiltrosPagosRealizados({
     materia: `${id}-materia`,
     profesor: `${id}-profesor`,
     formaPago: `${id}-forma-pago`,
+    estado: `${id}-estado`,
   }
   const aria = (campo: CampoFiltroPagos, idCampo: string) =>
     errores[campo]
@@ -81,12 +102,8 @@ export function FiltrosPagosRealizados({
       <BarraFiltros
         hayFiltros={puedeLimpiar}
         onLimpiar={onLimpiar}
-        limpiarEnFila="xl"
-        className={
-          conAlumno
-            ? 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[minmax(0,1.4fr)_repeat(5,minmax(0,1fr))_auto]'
-            : 'sm:grid-cols-2 lg:grid-cols-5 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]'
-        }
+        limpiarEnFila="2xl"
+        className={conAlumno ? COLUMNAS.conAlumno : COLUMNAS.sinAlumno}
       >
         {conAlumno && (
           <Field label="Alumno" htmlFor={ids.alumno} error={errores.alumnoId}>
@@ -149,6 +166,7 @@ export function FiltrosPagosRealizados({
             <SelectTrigger
               id={ids.formaPago}
               className={claseControlFiltro(filtros.formaPago === null)}
+              title={filtros.formaPago ? textoFormaPago(filtros.formaPago) : undefined}
               {...aria('formaPago', ids.formaPago)}
             >
               <SelectValue />
@@ -158,6 +176,31 @@ export function FiltrosPagosRealizados({
               {FORMAS_PAGO.map((codigo) => (
                 <SelectItem key={codigo} value={codigo}>
                   {textoFormaPago(codigo)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </Field>
+
+        <Field label="Estado" htmlFor={ids.estado} error={errores.estado}>
+          <Select
+            value={filtros.estado ?? TODOS}
+            onValueChange={(valor) =>
+              onCambiar({ estado: valor === TODOS ? null : (valor as EstadoPagoRegistrado) })
+            }
+          >
+            <SelectTrigger
+              id={ids.estado}
+              className={claseControlFiltro(filtros.estado === null)}
+              {...aria('estado', ids.estado)}
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={TODOS}>Todos</SelectItem>
+              {ESTADOS_PAGO.map((estado) => (
+                <SelectItem key={estado} value={estado}>
+                  {NOMBRE_ESTADO[estado]}
                 </SelectItem>
               ))}
             </SelectContent>

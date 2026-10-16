@@ -24,6 +24,7 @@ const {
   pagoFindMany,
   pagoCount,
   pagoGroupBy,
+  pagoAggregate,
   formaPagoFindMany,
   adjuntoFindFirst,
   porcentajeFindFirst,
@@ -47,6 +48,7 @@ const {
   pagoFindMany: vi.fn(),
   pagoCount: vi.fn(),
   pagoGroupBy: vi.fn(),
+  pagoAggregate: vi.fn(),
   formaPagoFindMany: vi.fn(),
   adjuntoFindFirst: vi.fn(),
   porcentajeFindFirst: vi.fn(),
@@ -73,6 +75,7 @@ vi.mock('@/lib/prisma', () => ({
       findMany: pagoFindMany,
       count: pagoCount,
       groupBy: pagoGroupBy,
+      aggregate: pagoAggregate,
     },
     formaPago: { findMany: formaPagoFindMany },
     comprobanteAdjunto: { findFirst: adjuntoFindFirst },
@@ -590,6 +593,7 @@ describe('pagos realizados', () => {
     pagoCount.mockResolvedValue(21)
     pagoGroupBy.mockResolvedValue([{ formaPagoId: 2, _sum: { importeTotal: decimal(34000) } }])
     formaPagoFindMany.mockResolvedValue([{ id: 2, tipoFormaPago: 'TRANSFERENCIA' }])
+    pagoAggregate.mockResolvedValue({ _sum: { importeTotal: decimal(16000) } })
   })
 
   describe('listarRealizados', () => {
@@ -623,7 +627,40 @@ describe('pagos realizados', () => {
       expect(res.porForma).toEqual({ EFECTIVO: 0, TRANSFERENCIA: 34000, DEBITO: 0 })
     })
 
-    it('cantidad fija de consultas: la página, el count, la suma por forma y las formas', async () => {
+    it('lo anulado: el mismo filtro más `estado: ANULADO`, de todo el filtro', async () => {
+      const res = await pagosRepository.listarRealizados(FILTRO, { page: 3, pageSize: 10 })
+
+      expect(pagoAggregate).toHaveBeenCalledExactlyOnceWith({
+        where: { ...WHERE_LISTADO, estado: 'ANULADO' },
+        _sum: { importeTotal: true },
+      })
+      expect(res.anulado).toBe(16000)
+    })
+
+    it('con `estado`, la lista lo filtra; los totales del otro estado no coinciden con ninguno', async () => {
+      await pagosRepository.listarRealizados(
+        { ...FILTRO, estado: 'VIGENTE' },
+        { page: 1, pageSize: 10 },
+      )
+
+      expect(pagoFindMany.mock.calls[0]?.[0].where).toStrictEqual({
+        ...WHERE_LISTADO,
+        estado: 'VIGENTE',
+      })
+      expect(pagoCount).toHaveBeenCalledExactlyOnceWith({
+        where: { ...WHERE_LISTADO, estado: 'VIGENTE' },
+      })
+      expect(pagoGroupBy.mock.calls[0]?.[0].where).toStrictEqual({
+        ...WHERE_LISTADO,
+        estado: 'VIGENTE',
+      })
+      expect(pagoAggregate.mock.calls[0]?.[0].where).toStrictEqual({
+        ...WHERE_LISTADO,
+        estado: { in: [] },
+      })
+    })
+
+    it('cantidad fija de consultas: la página, el count, la suma por forma, las formas y lo anulado', async () => {
       pagoFindMany.mockResolvedValue([fila(), fila({ id: 32 }), fila({ id: 31 })])
 
       await pagosRepository.listarRealizados(FILTRO, { page: 1, pageSize: 10 })
@@ -632,6 +669,7 @@ describe('pagos realizados', () => {
       expect(pagoCount).toHaveBeenCalledTimes(1)
       expect(pagoGroupBy).toHaveBeenCalledTimes(1)
       expect(formaPagoFindMany).toHaveBeenCalledTimes(1)
+      expect(pagoAggregate).toHaveBeenCalledTimes(1)
       expect(pagoFindUnique).not.toHaveBeenCalled()
       expect(adjuntoFindFirst).not.toHaveBeenCalled()
     })
@@ -750,7 +788,7 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
     turnos: { materiaId: number; profesorId: number }[]
   }
   type Where = {
-    estado?: string
+    estado?: string | { in: string[] }
     fechaPago?: { gte: Date; lte: Date }
     alumnoId?: number
     turnos?: { some: { turno: { materiaId?: number; bloqueAgenda?: { profesorId: number } } } }
@@ -823,7 +861,8 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
   const decimal = (n: number) => ({ toNumber: () => n })
 
   function cumple(pago: PagoEnBase, where: Where): boolean {
-    if (where.estado !== undefined && pago.estado !== where.estado) return false
+    if (typeof where.estado === 'string' && pago.estado !== where.estado) return false
+    if (typeof where.estado === 'object' && !where.estado.in.includes(pago.estado)) return false
     if (where.fechaPago) {
       const f = fecha(pago.fechaPago)
       if (f < where.fechaPago.gte || f > where.fechaPago.lte) return false
@@ -869,7 +908,13 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
     repository: pagosRepository,
     alumnosRepository: { buscarPorId: vi.fn() },
   })
-  const OCTUBRE = { desde: '2026-10-01', hasta: '2026-10-31', page: 1, pageSize: 10 }
+  const OCTUBRE = {
+    desde: '2026-10-01',
+    hasta: '2026-10-31',
+    estado: 'TODOS' as const,
+    page: 1,
+    pageSize: 10,
+  }
 
   beforeEach(() => {
     transaction.mockImplementation((consultas: Promise<unknown>[]) => Promise.all(consultas))
@@ -893,6 +938,11 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
     formaPagoFindMany.mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) =>
       FORMAS.filter((f) => where.id.in.includes(f.id)),
     )
+    pagoAggregate.mockImplementation(async ({ where }: { where: Where }) => {
+      const pagos = filtrar(where)
+      const total = pagos.reduce((s, p) => s + p.total, 0)
+      return { _sum: { importeTotal: pagos.length === 0 ? null : decimal(total) } }
+    })
   })
 
   /** La suma de los totales de los pagos vigentes de la lista, en centavos. */
@@ -908,8 +958,33 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
     expect(totales).toEqual({
       cobrado: 31000.5,
       porForma: { EFECTIVO: 8000, TRANSFERENCIA: 17000.5, DEBITO: 6000 },
+      anulado: 9000,
     })
     expect(totales.cobrado).toBe(sumaVigentes(data))
+  })
+
+  it('el filtro por estado: Vigentes lista sólo vigentes y anulado da 0; Anulados, al revés', async () => {
+    const vigentes = await service.listar({ ...OCTUBRE, estado: 'VIGENTE' })
+    expect(vigentes.data.map((p) => p.id)).toEqual([5, 2, 1])
+    expect(vigentes.meta.total).toBe(3)
+    expect(vigentes.totales).toEqual({
+      cobrado: 31000.5,
+      porForma: { EFECTIVO: 8000, TRANSFERENCIA: 17000.5, DEBITO: 6000 },
+      anulado: 0,
+    })
+
+    const anulados = await service.listar({ ...OCTUBRE, estado: 'ANULADO' })
+    expect(anulados.data.map((p) => p.id)).toEqual([3])
+    expect(anulados.totales).toEqual({
+      cobrado: 0,
+      porForma: { EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 },
+      anulado: 9000,
+    })
+  })
+
+  it('lo anulado respeta los demás filtros', async () => {
+    expect((await service.listar({ ...OCTUBRE, materiaId: 7 })).totales.anulado).toBe(0)
+    expect((await service.listar({ ...OCTUBRE, alumnoId: 14 })).totales.anulado).toBe(9000)
   })
 
   it('un pago anulado se lista marcado y no suma', async () => {
@@ -930,6 +1005,7 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
     expect(soloDebito.totales).toEqual({
       cobrado: 6000,
       porForma: { EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 6000 },
+      anulado: 9000,
     })
   })
 
@@ -946,6 +1022,7 @@ describe('criterios de aceptación: lo cobrado y los anulados', () => {
     expect(conAna.totales).toEqual({
       cobrado: 8000,
       porForma: { EFECTIVO: 8000, TRANSFERENCIA: 0, DEBITO: 0 },
+      anulado: 9000,
     })
   })
 })

@@ -1,5 +1,7 @@
 import { endOfMonth, format, isValid, parseISO, startOfMonth } from 'date-fns'
 
+import type { EstadoPagoRegistrado } from '@/types/pago'
+
 import type { CodigoFormaPago } from './pago-detalle.types'
 import type { ListarPagosRealizadosParams } from './pagos-realizados.types'
 
@@ -8,8 +10,9 @@ import type { ListarPagosRealizadosParams } from './pagos-realizados.types'
 // "hoy" se recibe, y solo sirve para proponer el mes en curso (docs/arquitectura-frontend.md →
 // Fechas y horas).
 //
-// - Ficha del alumno: `?tab=pagos&vista=realizados&desde=&hasta=&materiaId=&profesorId=&formaPago=&page=`.
+// - Ficha del alumno: `?tab=pagos&vista=realizados&desde=&hasta=&materiaId=&profesorId=&formaPago=&estado=&page=`.
 //   El alumno es el de la ficha: un `alumnoId` de la URL no se lee.
+// - `estado` es `VIGENTE` o `ANULADO`; "Todos" (el valor por defecto) no se escribe ni se manda.
 // - Vista global (`/mesa/pagos?vista=realizados`, `/gerente/pagos`): además, `alumnoId`.
 // - Sin `desde` y `hasta` (o con uno solo, o alguno inválido), el período es el mes en curso, que
 //   tampoco se escribe. A la API se mandan siempre los dos: son obligatorios.
@@ -26,6 +29,12 @@ export const FORMAS_PAGO = [
   'DEBITO',
 ] as const satisfies readonly CodigoFormaPago[]
 
+/** Los estados por los que se filtra, en el orden en que se muestran ("Todos" es `null`). */
+export const ESTADOS_PAGO = [
+  'VIGENTE',
+  'ANULADO',
+] as const satisfies readonly EstadoPagoRegistrado[]
+
 export type FiltrosPagosRealizados = {
   desde: string
   hasta: string
@@ -34,13 +43,23 @@ export type FiltrosPagosRealizados = {
   materiaId: number | null
   profesorId: number | null
   formaPago: CodigoFormaPago | null
+  /** `null` = "Todos": vigentes y anulados. */
+  estado: EstadoPagoRegistrado | null
 }
 
 /** Si la pantalla filtra por alumno: la vista global sí, la ficha (que ya es de un alumno) no. */
 export type OpcionesFiltros = { conAlumno: boolean }
 
 const FORMATO_FECHA = 'yyyy-MM-dd'
-const PARAMETROS = ['desde', 'hasta', 'alumnoId', 'materiaId', 'profesorId', 'formaPago'] as const
+const PARAMETROS = [
+  'desde',
+  'hasta',
+  'alumnoId',
+  'materiaId',
+  'profesorId',
+  'formaPago',
+  'estado',
+] as const
 
 /** El primer y el último día del mes de `hoy`: el período por defecto. */
 export function mesEnCurso(hoy: string): { desde: string; hasta: string } {
@@ -69,7 +88,11 @@ function formaPago(valor: string | null): CodigoFormaPago | null {
   return FORMAS_PAGO.find((codigo) => codigo === valor) ?? null
 }
 
-/** Sin filtros: el mes en curso y nada más. Es lo que deja "Limpiar filtros". */
+function estadoPago(valor: string | null): EstadoPagoRegistrado | null {
+  return ESTADOS_PAGO.find((estado) => estado === valor) ?? null
+}
+
+/** Sin filtros: el mes en curso, todos los estados y nada más. Es lo que deja "Limpiar filtros". */
 export function filtrosPorDefecto(hoy: string): FiltrosPagosRealizados {
   return {
     ...mesEnCurso(hoy),
@@ -77,6 +100,7 @@ export function filtrosPorDefecto(hoy: string): FiltrosPagosRealizados {
     materiaId: null,
     profesorId: null,
     formaPago: null,
+    estado: null,
   }
 }
 
@@ -97,6 +121,7 @@ export function leerFiltros(
     materiaId: enteroPositivo(params.get('materiaId')),
     profesorId: enteroPositivo(params.get('profesorId')),
     formaPago: formaPago(params.get('formaPago')),
+    estado: estadoPago(params.get('estado')),
   }
 }
 
@@ -128,11 +153,12 @@ export function paramsConFiltros(
     nuevos.set('desde', filtros.desde)
     nuevos.set('hasta', filtros.hasta)
   }
-  const { alumnoId, materiaId, profesorId, formaPago: forma } = filtros
+  const { alumnoId, materiaId, profesorId, formaPago: forma, estado } = filtros
   if (alumnoId !== null) nuevos.set('alumnoId', String(alumnoId))
   if (materiaId !== null) nuevos.set('materiaId', String(materiaId))
   if (profesorId !== null) nuevos.set('profesorId', String(profesorId))
   if (forma !== null) nuevos.set('formaPago', forma)
+  if (estado !== null) nuevos.set('estado', estado)
   return nuevos
 }
 
@@ -144,7 +170,7 @@ export function paramsConPagina(params: URLSearchParams, page: number): URLSearc
   return nuevos
 }
 
-/** "Limpiar filtros": vuelve al mes en curso y saca el resto; lo demás se conserva. */
+/** "Limpiar filtros": vuelve al mes en curso y a "Todos", y saca el resto; lo demás se conserva. */
 export function paramsSinFiltros(params: URLSearchParams, hoy: string): URLSearchParams {
   return paramsConFiltros(params, filtrosPorDefecto(hoy), hoy)
 }
@@ -156,7 +182,8 @@ export function hayFiltros(filtros: FiltrosPagosRealizados, hoy: string): boolea
     filtros.alumnoId !== null ||
     filtros.materiaId !== null ||
     filtros.profesorId !== null ||
-    filtros.formaPago !== null
+    filtros.formaPago !== null ||
+    filtros.estado !== null
   )
 }
 
@@ -194,6 +221,7 @@ export function aParams(
     ...(filtros.materiaId !== null && { materiaId: filtros.materiaId }),
     ...(filtros.profesorId !== null && { profesorId: filtros.profesorId }),
     ...(filtros.formaPago !== null && { formaPago: filtros.formaPago }),
+    ...(filtros.estado !== null && { estado: filtros.estado }),
     page,
   }
 }

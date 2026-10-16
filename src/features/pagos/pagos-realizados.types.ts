@@ -26,12 +26,14 @@ export type PagoRealizado = {
 }
 
 /**
- * Lo cobrado de **todo** el filtro (no de la página), solo con los pagos vigentes: `cobrado` es la
- * suma de `porForma`, que la hace la API.
+ * Los totales de **todo** el filtro (no de la página), que suma la API. `cobrado` y `porForma`, solo
+ * con los pagos vigentes (`cobrado` es la suma de `porForma`); `anulado`, la suma de los anulados,
+ * que no suman al cobrado. Con el filtro "Vigentes", `anulado` es 0; con "Anulados", los otros.
  */
 export type TotalesPagosRealizados = {
   cobrado: number
   porForma: Record<CodigoFormaPago, number>
+  anulado: number
 }
 
 /** Respuesta de `GET /pagos`: el listado paginado más `totales`, junto a `data` y `meta`. */
@@ -47,6 +49,8 @@ export type ListarPagosRealizadosParams = {
   materiaId?: number
   profesorId?: number
   formaPago?: CodigoFormaPago
+  /** Sin él, la API toma `TODOS` (vigentes y anulados). */
+  estado?: EstadoPagoRegistrado
   page: number
 }
 

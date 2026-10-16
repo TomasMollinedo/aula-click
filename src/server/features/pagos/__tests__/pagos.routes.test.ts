@@ -115,6 +115,7 @@ const realizados = {
   ],
   meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
   porForma: { EFECTIVO: 0, TRANSFERENCIA: 16000, DEBITO: 0 },
+  anulado: 9000,
 }
 
 const misPagos = {
@@ -233,14 +234,18 @@ describe('GET /pagos (pagos realizados)', () => {
 
   it('200 con la página y los totales del filtro, junto a `data` y `meta`', async () => {
     const res = await pedir(
-      `${RANGO}&alumnoId=12&materiaId=2&profesorId=3&formaPago=TRANSFERENCIA&page=2&pageSize=5`,
+      `${RANGO}&alumnoId=12&materiaId=2&profesorId=3&formaPago=TRANSFERENCIA&estado=ANULADO&page=2&pageSize=5`,
     )
 
     expect(res.status).toBe(200)
     expect(await res.json()).toEqual({
       data: realizados.data,
       meta: realizados.meta,
-      totales: { cobrado: 16000, porForma: { EFECTIVO: 0, TRANSFERENCIA: 16000, DEBITO: 0 } },
+      totales: {
+        cobrado: 16000,
+        porForma: { EFECTIVO: 0, TRANSFERENCIA: 16000, DEBITO: 0 },
+        anulado: 9000,
+      },
     })
     expect(repository.listarRealizados).toHaveBeenCalledExactlyOnceWith(
       {
@@ -250,8 +255,17 @@ describe('GET /pagos (pagos realizados)', () => {
         materiaId: 2,
         profesorId: 3,
         formaPago: 'TRANSFERENCIA',
+        estado: 'ANULADO',
       },
       { page: 2, pageSize: 5 },
+    )
+  })
+
+  it('sin `estado`, por defecto `TODOS`', async () => {
+    expect((await pedir(RANGO)).status).toBe(200)
+    expect(repository.listarRealizados).toHaveBeenCalledExactlyOnceWith(
+      { desde: '2026-10-01', hasta: '2026-10-31', estado: 'TODOS' },
+      { page: 1, pageSize: 10 },
     )
   })
 
@@ -293,6 +307,9 @@ describe('GET /pagos (pagos realizados)', () => {
     ['profesorId=1.5', 'profesorId'],
     ['formaPago=CHEQUE', 'formaPago'],
     ['formaPago=Efectivo', 'formaPago'],
+    ['estado=OTRO', 'estado'],
+    ['estado=vigente', 'estado'],
+    ['estado=ACTIVO', 'estado'],
   ])('%s → 400 en `%s`', async (filtro, campo) => {
     const res = await pedir(`${RANGO}&${filtro}`)
 

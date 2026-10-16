@@ -34,6 +34,10 @@ export type RedDebito = (typeof REDES_DEBITO)[number]
 export const MOTIVOS_ANULACION = ['ERROR_CARGA', 'FORMA_PAGO_EQUIVOCADA', 'OTRO'] as const
 export type MotivoAnulacion = (typeof MOTIVOS_ANULACION)[number]
 
+/** Valores del filtro `estado` de `GET /pagos`: los estados del pago más `TODOS` (sin filtrar). */
+export const ESTADOS_FILTRO_PAGO = ['VIGENTE', 'ANULADO', 'TODOS'] as const
+export type EstadoFiltroPago = (typeof ESTADOS_FILTRO_PAGO)[number]
+
 /** Los mensajes de los datos de cada medio (un 400 en el campo que sobra o falta). */
 export const MENSAJES_FORMA_PAGO = {
   formaPagoObligatoria: 'La forma de pago es obligatoria',
@@ -483,7 +487,7 @@ function periodoEnOrden(datos: { desde: string; hasta: string }, ctx: z.Refineme
 
 /**
  * Query de `GET /pagos`: período por fecha de pago (obligatorio, sin tope de días), filtros
- * opcionales y paginación. Un alumno, una materia o un profesor que no existen dan una lista vacía,
+ * opcionales (`estado`, por defecto `TODOS`) y paginación. Un alumno, una materia o un profesor que no existen dan una lista vacía,
  * sin 404.
  */
 export const listarPagosQuerySchema = paginacionQuerySchema
@@ -515,6 +519,16 @@ export const listarPagosQuerySchema = paginacionQuerySchema
         param: { name: 'formaPago', in: 'query' },
         description: 'Sólo los pagos de esta forma de pago, por su código',
         example: 'TRANSFERENCIA',
+      }),
+    estado: z
+      .enum(ESTADOS_FILTRO_PAGO, {
+        error: `Estado inválido: debe ser ${ESTADOS_FILTRO_PAGO.join(', ')}`,
+      })
+      .default('TODOS')
+      .openapi({
+        param: { name: 'estado', in: 'query' },
+        description: 'Filtro por estado del pago. `TODOS` (por defecto) trae vigentes y anulados',
+        example: 'VIGENTE',
       }),
   })
   .superRefine(periodoEnOrden)
@@ -562,11 +576,19 @@ const porFormaSchema = z
   .openapi('CobradoPorForma')
 
 /**
- * Totales de **todo** el filtro, no de la página, y sólo de los pagos vigentes: un anulado se
- * lista pero no suma. `cobrado` es la suma de las tres formas.
+ * Totales de **todo** el filtro, no de la página. `cobrado` y `porForma` son sólo de los pagos
+ * vigentes (`cobrado` es la suma de las tres formas); `anulado`, la suma de los anulados, que no
+ * suman al cobrado. Con `estado=VIGENTE`, `anulado` da 0; con `estado=ANULADO`, los otros dan 0.
  */
 export const totalesPagosSchema = z
-  .object({ cobrado: z.number(), porForma: porFormaSchema })
+  .object({
+    cobrado: z.number(),
+    porForma: porFormaSchema,
+    anulado: z.number().openapi({
+      description: 'Suma del total de los pagos anulados del filtro, en pesos',
+      example: 16000,
+    }),
+  })
   .openapi('TotalesPagos')
 
 export type TotalesPagos = z.infer<typeof totalesPagosSchema>
