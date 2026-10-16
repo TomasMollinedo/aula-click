@@ -1965,14 +1965,15 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
 
-| Endpoint                                                  | Roles     | Qué hace                                                                         |
-| --------------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
-| `GET /api/v1/liquidaciones`                               | `GERENTE` | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
-| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}` | `GERENTE` | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+| Endpoint                                                        | Roles     | Qué hace                                                                         |
+| --------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                                     | `GERENTE` | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE` | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE` | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
-**El mes** (`AAAA-MM`, en el query del listado y en la ruta del detalle): formato inválido (`2026-13`, `2026-9`) → 400 `VALIDACION` en `["mes"]` "El mes debe tener el formato AAAA-MM". Un mes **posterior al de hoy** → 400 `VALIDACION` en `["mes"]` "El mes no puede ser futuro". El **mes en curso sí se puede pedir**: sus liquidaciones salen `EN_CURSO`.
+**El mes** (`AAAA-MM`, en el query del listado y en la ruta del detalle y del pago): formato inválido (`2026-13`, `2026-9`) → 400 `VALIDACION` en `["mes"]` "El mes debe tener el formato AAAA-MM". Un mes **posterior al de hoy** → 400 `VALIDACION` en `["mes"]` "El mes no puede ser futuro" en los dos `GET` (en el pago, un mes futuro es 409, ver abajo). El **mes en curso sí se puede pedir**: sus liquidaciones salen `EN_CURSO`.
 
 **Estados:** `EN_CURSO` (mes en curso), `PENDIENTE_DE_PAGO` (mes terminado con total > 0), `SALDO_A_DESCONTAR` (mes terminado con total de 0 o menos: pasa al mes siguiente como ajuste), `PAGADA` y `DESCONTADA` (su saldo lo absorbió la liquidación de `descontadaEnMes`). **Una liquidación cerrada (`PAGADA` o `DESCONTADA`) se muestra congelada**, con los importes guardados al pagarla, aunque después se anule un pago de sus turnos: eso genera un ajuste en otra liquidación (decisiones T-156 y T-163).
 
@@ -2081,6 +2082,49 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 - `acciones.registrarPago`: lo decide la API; `true` sólo en `PENDIENTE_DE_PAGO` (mes terminado y total > 0).
 - **Profesor sin movimientos en el mes** → 200 con la liquidación vacía: `estado: null`, `turnos: []`, `ajustes: []`, totales en 0, `cerrada: null` y `registrarPago: false`.
 - Errores, en orden: 400 `VALIDACION` si `profesorId` no es un entero positivo (`abc`, `0`) o el mes es inválido o futuro; 404 `NO_ENCONTRADO` "Profesor no encontrado" (un profesor inactivo sí se muestra).
+
+**`POST /liquidaciones/profesores/{profesorId}/{mes}/pago`**: registra la transferencia al profesor y cierra la liquidación. Sólo se paga una `PENDIENTE_DE_PAGO` (mes terminado y total > 0), **por el total que calcula la API: sin pagos parciales**. El comprobante (opcional) se sube antes con `POST /adjuntos` y acá se manda su `id` (ver [Adjuntos](#adjuntos)).
+
+```json
+{
+  "fechaTransferencia": "2026-10-05",
+  "numeroOperacion": "0004829137",
+  "comprobanteAdjuntoId": 44,
+  "observaciones": null,
+  "totalConfirmado": 81600
+}
+```
+
+- `fechaTransferencia`: `AAAA-MM-DD`, obligatoria.
+- `numeroOperacion`: obligatorio, hasta 50 caracteres.
+- `comprobanteAdjuntoId`: opcional (`null` u omitido = sin comprobante).
+- `observaciones`: opcional, hasta 500 caracteres; `""` o espacios = sin observaciones.
+- `totalConfirmado`: el `total` que mostró el detalle, mayor a 0. **El monto no se manda**: es un control de que la liquidación no cambió entre que se abrió y se confirmó.
+
+**Respuesta 201**, lo justo para "Pago registrado. La liquidación de septiembre de Gómez, Ana quedó pagada" (el front invalida el listado y el detalle):
+
+```json
+{
+  "liquidacionId": 31,
+  "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+  "mes": "2026-09",
+  "total": 81600,
+  "fechaTransferencia": "2026-10-05"
+}
+```
+
+**Qué hace, en una transacción:** recalcula la liquidación con el motor, la guarda `PAGADA` con sus turnos, ajustes e importes congelados, la transferencia y quién la registró; cierra como `DESCONTADA` las de saldo negativo que absorbió (`descontadaEnMes` = este mes) y vincula el comprobante. Si algo falla, no se guarda nada. Desde ahí sus turnos no aparecen en otra liquidación, y una anulación posterior de uno de sus pagos no la cambia: se descuenta como ajuste en la siguiente (decisión T-163).
+
+**Errores, en orden:**
+
+1. 400 `VALIDACION` del body o de los parámetros, cada uno en su campo.
+2. 404 `NO_ENCONTRADO` "Profesor no encontrado".
+3. 409 `CONFLICTO` si el mes es el en curso o futuro: "La liquidación de noviembre de 2026 todavía no se puede pagar: el mes no terminó".
+4. 400 `VALIDACION` en `["fechaTransferencia"]`: "La fecha de la transferencia no puede ser futura" o "La transferencia no puede ser anterior al 31/10/2026" (el último día del mes liquidado sí vale).
+5. 409 `LIQUIDACION_PAGADA` "La liquidación de octubre de 2026 de Gómez, Ana ya está pagada".
+6. 409 `CONFLICTO` "No hay importe a pagar": sin movimientos, `SALDO_A_DESCONTAR` o `DESCONTADA`.
+7. 409 `LIQUIDACION_MODIFICADA` "La liquidación cambió desde que la abriste. Revisala antes de pagar": el total calculado no es `totalConfirmado` (por ejemplo, se anuló un pago de uno de sus turnos), o otro pago de la misma liquidación ganó la carrera. No se guarda nada; el front recarga el detalle (T-132).
+8. 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]` "El comprobante de la transferencia no existe o ya se usó: volvé a subirlo" (ver [Adjuntos](#adjuntos)); no se guarda nada.
 
 ## Caja
 

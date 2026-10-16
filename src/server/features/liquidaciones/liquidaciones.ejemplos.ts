@@ -1,5 +1,10 @@
 import type { ErrorResponse } from '@/server/errors'
-import type { LiquidacionDetalle, LiquidacionesDelMes } from './liquidaciones.validation'
+import type {
+  LiquidacionDetalle,
+  LiquidacionesDelMes,
+  LiquidacionPagada,
+  PagarLiquidacion,
+} from './liquidaciones.validation'
 
 // Ejemplos del OpenAPI de liquidaciones (Swagger en /api/v1/docs), usados en liquidaciones.routes.
 // Solo datos: sin lógica. `satisfies` los mantiene alineados con los schemas.
@@ -112,4 +117,58 @@ export const ejemploErrorMesFuturo = {
 
 export const ejemploErrorProfesorNoEncontrado = {
   error: { code: 'NO_ENCONTRADO', message: 'Profesor no encontrado' },
+} satisfies ErrorResponse
+
+export const ejemploPagarLiquidacion = {
+  fechaTransferencia: '2026-10-05',
+  numeroOperacion: '0004829137',
+  comprobanteAdjuntoId: 44,
+  observaciones: null,
+  totalConfirmado: 81600,
+} satisfies PagarLiquidacion
+
+export const ejemploLiquidacionPagada = {
+  liquidacionId: 31,
+  profesor: gomez,
+  mes: '2026-09',
+  total: 81600,
+  fechaTransferencia: '2026-10-05',
+} satisfies LiquidacionPagada
+
+export const ejemploErrorFechaTransferencia = {
+  error: {
+    code: 'VALIDACION',
+    message: 'Datos de entrada inválidos',
+    details: [
+      {
+        path: ['fechaTransferencia'],
+        message: 'La transferencia no puede ser anterior al 30/09/2026',
+      },
+    ],
+  },
+} satisfies ErrorResponse
+
+export const ejemploErrorMesNoTerminado = {
+  error: {
+    code: 'CONFLICTO',
+    message: 'La liquidación de octubre de 2026 todavía no se puede pagar: el mes no terminó',
+  },
+} satisfies ErrorResponse
+
+export const ejemploErrorSinImporte = {
+  error: { code: 'CONFLICTO', message: 'No hay importe a pagar' },
+} satisfies ErrorResponse
+
+export const ejemploErrorLiquidacionPagada = {
+  error: {
+    code: 'LIQUIDACION_PAGADA',
+    message: 'La liquidación de septiembre de 2026 de Gómez, Ana ya está pagada',
+  },
+} satisfies ErrorResponse
+
+export const ejemploErrorLiquidacionModificada = {
+  error: {
+    code: 'LIQUIDACION_MODIFICADA',
+    message: 'La liquidación cambió desde que la abriste. Revisala antes de pagar',
+  },
 } satisfies ErrorResponse

@@ -1,14 +1,37 @@
 import { z } from '@hono/zod-openapi'
 import { usuarioAuditoriaSchema } from '@/server/shared/auditoria'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
-import { fechaISO, horaHHmm, mesISO } from '@/server/shared/zod'
-import { ESTADOS_LIQUIDACION } from './liquidaciones.reglas'
+import {
+  fechaISO,
+  horaHHmm,
+  importe,
+  mesISO,
+  textoOpcional,
+  textoRequerido,
+} from '@/server/shared/zod'
+import { ESTADOS_LIQUIDACION, textoMes, type ProfesorRef } from './liquidaciones.reglas'
 
 // Schemas Zod de entrada y salida de liquidaciones (HU-44, T-124). Son la fuente del OpenAPI. Sin
-// reglas de negocio: el cálculo es del motor (`liquidaciones.condiciones.ts`) y el mes por defecto
-// y "no futuro" los decide el service.
+// reglas de negocio: el cálculo es del motor (`liquidaciones.condiciones.ts`) y el mes por defecto,
+// "no futuro" y cuándo se puede pagar los deciden el service y el repository.
 
 export const MENSAJE_MES_FUTURO = 'El mes no puede ser futuro'
+export const MENSAJE_TRANSFERENCIA_FUTURA = 'La fecha de la transferencia no puede ser futura'
+
+// Los 409 del pago (`POST …/pago`).
+export const CODIGO_LIQUIDACION_PAGADA = 'LIQUIDACION_PAGADA'
+export const CODIGO_LIQUIDACION_MODIFICADA = 'LIQUIDACION_MODIFICADA'
+export const MENSAJE_SIN_IMPORTE = 'No hay importe a pagar'
+export const MENSAJE_LIQUIDACION_MODIFICADA =
+  'La liquidación cambió desde que la abriste. Revisala antes de pagar'
+
+/** "La liquidación de noviembre de 2026 todavía no se puede pagar: el mes no terminó". */
+export const mensajeMesNoTerminado = (mes: string) =>
+  `La liquidación de ${textoMes(mes)} todavía no se puede pagar: el mes no terminó`
+
+/** "La liquidación de octubre de 2026 de Gómez, Ana ya está pagada". */
+export const mensajeYaPagada = (mes: string, profesor: ProfesorRef) =>
+  `La liquidación de ${textoMes(mes)} de ${profesor.apellido}, ${profesor.nombre} ya está pagada`
 
 const idPositivo = (description: string, example: number) =>
   z.coerce
@@ -174,3 +197,48 @@ export const liquidacionDetalleSchema = totalesSchema
   .openapi('LiquidacionDetalle')
 
 export type LiquidacionDetalle = z.infer<typeof liquidacionDetalleSchema>
+
+// ---------- Pago ----------
+
+/** Body de `POST /liquidaciones/profesores/{profesorId}/{mes}/pago`. El monto no se manda. */
+export const pagarLiquidacionSchema = z
+  .object({
+    fechaTransferencia: fechaISO.openapi({
+      description: 'No futura y no anterior al último día del mes liquidado',
+      example: '2026-10-05',
+    }),
+    numeroOperacion: textoRequerido(50).openapi({
+      description: 'Número de operación de la transferencia, hasta 50 caracteres',
+      example: '0004829137',
+    }),
+    comprobanteAdjuntoId: idPositivo(
+      'Id del comprobante de la transferencia subido antes con `POST /adjuntos` (opcional)',
+      44,
+    ).nullish(),
+    observaciones: textoOpcional(
+      500,
+      'Observaciones de la transferencia, hasta 500 caracteres',
+      'Transferencia a la cuenta del Banco Macro',
+    ),
+    totalConfirmado: importe('El total confirmado').openapi({
+      description:
+        'El `total` que mostró el detalle: control de que la liquidación no cambió (sin pagos parciales)',
+      example: 81600,
+    }),
+  })
+  .openapi('PagarLiquidacion')
+
+export type PagarLiquidacion = z.infer<typeof pagarLiquidacionSchema>
+
+/** Respuesta 201 del pago: lo justo para "Pago registrado. La liquidación de … quedó pagada". */
+export const liquidacionPagadaSchema = z
+  .object({
+    liquidacionId: z.number().int().openapi({ example: 31 }),
+    profesor: profesorLiquidacionSchema,
+    mes: mesISO,
+    total: pesos('Lo pagado: el total calculado', 81600),
+    fechaTransferencia: fechaISO,
+  })
+  .openapi('LiquidacionPagada')
+
+export type LiquidacionPagada = z.infer<typeof liquidacionPagadaSchema>
