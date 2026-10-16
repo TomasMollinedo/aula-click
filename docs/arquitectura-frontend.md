@@ -98,7 +98,7 @@ src/
 │ │ ├── turnos/nuevo/page.tsx # SacarTurno (turnos, T-94)
 │ │ ├── materias/page.tsx # MisMaterias (historiales, T-111)
 │ │ ├── materias/[materiaId]/[profesorId]/page.tsx # MiMateria (historiales) + MisExamenes (examenes) (T-111)
-│ │ ├── pagos/page.tsx # MisPendientes (cuentas) + MisPagosRealizados (pagos) (T-103)
+│ │ ├── pagos/page.tsx # el aviso de dónde se paga, MisPendientes (cuentas) y MisPagosRealizados (pagos), de sólo lectura (T-103)
 │ │ ├── configuracion/page.tsx # CambiarContrasena (usuarios, T-92)
 │ │ └── _componentes/detalle-turno.tsx # DetalleTurnoPortal: compone OcurrenciaDetallePortal (ocurrencias, T-85)
 │ └── api/ # BACKEND (adaptadores); no se toca desde el frontend
@@ -180,8 +180,8 @@ src/
 │ │ ├── a-cobrar.ts # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar
 │ │ ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts # textos (también los del detalle: motivo, red, "**** 1234", datosDelMedio); errores del POST; URL del PDF
 │ │ ├── detalle-pago-url.ts # `?pago=<pagoId>`: el único archivo que conoce el parámetro, y el registro de aperturas (con test)
-│ │ ├── api/{pagos.api.ts, pagos.keys.ts, adjuntos.api.ts} # adjuntos: ver, reemplazar (multipart) y quitar el comprobante adjunto
-│ │ ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts,
+│ │ ├── api/{pagos.api.ts, pagos.keys.ts, adjuntos.api.ts, mis-pagos.api.ts} # adjuntos: ver, reemplazar (multipart) y quitar el comprobante adjunto; mis-pagos: los del portal
+│ │ ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts, use-mis-pagos.ts,
 │ │ │ use-pago.ts, use-adjunto-de-pago.ts, # el detalle; la URL prefirmada del adjunto (solo si tiene, se renueva cada 10 min)
 │ │ │ use-reemplazar-adjunto.ts, use-quitar-adjunto.ts} # invalidan el detalle al terminar y ante un 404 o 409
 │ │ └── components/
@@ -193,15 +193,16 @@ src/
 │ │ ├── ComprobanteAdjuntoDelPago.tsx # su sección "Comprobante adjunto": ver, y según `acciones`, reemplazar o adjuntar y quitar
 │ │ ├── ReemplazarAdjuntoDialog.tsx, QuitarAdjuntoDialog.tsx # CampoArchivo y confirmación; confirmación de la baja
 │ │ ├── EnlaceDetallePago.tsx # ({ pagoId }): "Ver pago", abre el detalle del pago desde el detalle de un turno pagado (T-99)
-│ │ └── PagosRealizados.tsx # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
+│ │ ├── PagosRealizados.tsx # ({ alumnoId?, soloLectura?, onAbrirPago }): subpestaña "Pagos realizados" (T-100)
+│ │ └── MisPagosRealizados.tsx # portal (HU-37, T-103): una tarjeta por pago con "Ver comprobante" y "Anulado"; paginado
 │ ├── cuentas/ # turnos adeudados y próximos del alumno y vista global "Pagos" (HU-16, T-54)
 │ │ ├── cuentas.types.ts, a-cobrar.ts # aCobrar (la fila como OcurrenciaACobrar) y claveOcurrencia ((turnoId, fecha))
 │ │ ├── filtros-cuenta.ts # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
 │ │ ├── seleccion.ts # la selección a cobrar (inmutable), "Seleccionar todo", su resumen con el subtotal por materia y el tope de 200 por pago
 │ │ ├── materias-del-filtro.ts # el filtro de varias materias: opciones, búsqueda, texto del botón y alternar (puro)
 │ │ ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts # textos (total, filtros activos, tope); errores de lectura y del período; ficha
-│ │ ├── api/{cuentas.api.ts, cuentas.keys.ts}
-│ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts,
+│ │ ├── api/{cuentas.api.ts, cuentas.keys.ts, mi-cuenta.api.ts} # mi-cuenta: la cuenta del alumno de la sesión (portal)
+│ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts, use-mi-cuenta.ts,
 │ │ │ use-filtros-cuenta.ts, # los filtros de la URL con router.replace
 │ │ │ use-materias-de-cuenta.ts, use-nombres-de-filtros.ts, # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
 │ │ │ use-todos-los-del-filtro.ts, # adeudados y próximos de un alumno con sus filtros, a pedido ("Seleccionar todo" de la vista global)
@@ -216,7 +217,8 @@ src/
 │ │ ├── SeccionOcurrencias.tsx # "Turnos adeudados" / "Próximos turnos": título, aviso del tope y vacío
 │ │ ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx # filas con casilla y "Ver detalle"; el importe destacado
 │ │ ├── BarraSeleccion.tsx # "Seleccionar todo", cantidad, total y subtotal por materia; envuelve las listas y flota abajo cuando deja de verse
-│ │ └── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
+│ │ ├── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
+│ │ └── MisPendientes.tsx # portal (HU-37, T-103): total adeudado y adeudados y próximos en tarjetas por materia, con su subtotal
 │ ├── asistencias/ # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
 │ │ ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
 │ │ └── components/

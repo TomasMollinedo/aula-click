@@ -100,9 +100,10 @@ function SeccionPendiente({
   return (
     <section aria-labelledby={id} className="space-y-3">
       <div>
-        <h2 id={id} className="text-base font-semibold">
+        {/* `h3`: la página pone el `h2` de la sección ("Pendiente de pago"). */}
+        <h3 id={id} className="text-base font-semibold">
           {titulo}
-        </h2>
+        </h3>
         {descripcion && <p className="text-muted-foreground text-sm">{descripcion}</p>}
       </div>
       <ul className="space-y-3">
