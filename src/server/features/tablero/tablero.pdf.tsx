@@ -375,7 +375,7 @@ export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsi
                 },
                 {
                   color: COLOR_CERRADO,
-                  etiqueta: 'Cerrados por el sistema',
+                  etiqueta: 'Cerrados',
                   valor: formatearCantidad(resumen.cerrados.cantidad),
                   detalle: formatearPorcentaje(resumen.cerrados.porcentaje),
                 },

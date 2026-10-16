@@ -208,6 +208,9 @@ type PartesDeLaTorta = {
 /** El ancho que se reserva a cada lado de la torta para sus rótulos, en píxeles. */
 const SEPARACION_ROTULO = 108
 
+/** Lo que mide la torta (`size-44`), en píxeles, más un margen. */
+const ALTO_TORTA = 192
+
 /**
  * La torta con cada rótulo (el badge del estado, el porcentaje y la cantidad) pegado a su porción,
  * unido por una línea, para saber de un vistazo cuál es cuál. En pantallas chicas, donde no hay
@@ -240,7 +243,10 @@ function TortaDeAsistencia({ resumen }: { resumen: ResumenAsistencia }) {
       conteo: resumen.cerrados,
     },
   ]
-  const { rotulos, alto } = rotulosDeTorta(partes.map(({ conteo }) => conteo.cantidad))
+  const { rotulos, alto: altoRotulos } = rotulosDeTorta(partes.map(({ conteo }) => conteo.cantidad))
+  // Sin turnos no hay rótulos y `altoRotulos` es el de uno solo: el contenedor tiene que alcanzar al
+  // menos para la torta, o se superpone con la lista de partes sin porción.
+  const alto = Math.max(altoRotulos, ALTO_TORTA)
   const sinPorcion = partes.filter(({ conteo }) => conteo.cantidad === 0)
 
   const torta = (
