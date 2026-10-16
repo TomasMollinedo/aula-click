@@ -338,16 +338,35 @@ function TablaLiquidaciones({
   )
 }
 
-/** Las columnas de turnos e importes, iguales en cada fila y en el total del mes. */
+/**
+ * Las columnas de turnos e importes, iguales en cada fila y en el total del mes. Cada importe se
+ * ve según lo que le importa al gerente: el total a pagar (lo que transfiere) es lo más grande y
+ * pasa a rojo si no hay nada a favor del profesor; la parte del centro (lo que gana) va en verde;
+ * los ajustes son una alerta, en rojo si descuentan y apagados si son $ 0; y el total cobrado y la
+ * parte del profesor son contexto, sin énfasis.
+ */
 function Importes({ totales }: { totales: TotalesLiquidacion }) {
   return (
     <>
       <TableCell className={IMPORTE}>{totales.cantidadTurnos}</TableCell>
-      <TableCell className={IMPORTE}>{formatearPesos(totales.totalCobrado)}</TableCell>
-      <TableCell className={IMPORTE}>{formatearPesos(totales.parteCentro)}</TableCell>
+      <TableCell className={cn(IMPORTE, 'text-muted-foreground')}>
+        {formatearPesos(totales.totalCobrado)}
+      </TableCell>
+      <TableCell className={cn(IMPORTE, 'text-confirmado font-semibold')}>
+        {formatearPesos(totales.parteCentro)}
+      </TableCell>
       <TableCell className={IMPORTE}>{formatearPesos(totales.parteProfesor)}</TableCell>
-      <TableCell className={IMPORTE}>{formatearPesos(totales.totalAjustes)}</TableCell>
-      <TableCell className={cn(IMPORTE, 'font-semibold')}>
+      <TableCell
+        className={cn(
+          IMPORTE,
+          totales.totalAjustes < 0 ? 'text-cancelado font-semibold' : 'text-muted-foreground/60',
+        )}
+      >
+        {formatearPesos(totales.totalAjustes)}
+      </TableCell>
+      <TableCell
+        className={cn(IMPORTE, 'text-base font-bold', totales.total <= 0 && 'text-cancelado')}
+      >
         {formatearPesos(totales.total)}
       </TableCell>
     </>
