@@ -105,13 +105,27 @@ describe('GET /liquidaciones', () => {
     expect(await res.json()).toMatchObject({ mes: '2026-09', data: [], meta: { total: 0 } })
   })
 
-  it.each(['?mes=2026-13', '?mes=2026-9', '?pageSize=101'])('%s → 400', async (query) => {
-    const res = await listar(query)
+  it('?profesorId=4 → se lo pasa al repository', async () => {
+    const res = await listar('?mes=2026-09&profesorId=4')
 
-    expect(res.status).toBe(400)
-    expect((await res.json()).error.code).toBe('VALIDACION')
-    expect(repository.delMes).not.toHaveBeenCalled()
+    expect(res.status).toBe(200)
+    expect(repository.delMes).toHaveBeenCalledWith({
+      mes: '2026-09',
+      profesorId: 4,
+      hoy: '2026-10-15',
+    })
   })
+
+  it.each(['?mes=2026-13', '?mes=2026-9', '?pageSize=101', '?profesorId=0', '?profesorId=abc'])(
+    '%s → 400',
+    async (query) => {
+      const res = await listar(query)
+
+      expect(res.status).toBe(400)
+      expect((await res.json()).error.code).toBe('VALIDACION')
+      expect(repository.delMes).not.toHaveBeenCalled()
+    },
+  )
 
   it('mes futuro → 400 en mes', async () => {
     const res = await listar('?mes=2026-11')

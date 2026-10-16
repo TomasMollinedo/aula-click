@@ -280,7 +280,7 @@ src/
 │ │ # TableroPantalla: el período, las pestañas y el PDF; GraficoDona: torta/anillo en SVG, sin librería; EncabezadoOrdenable: la única tabla ordenable del proyecto
 │ ├── liquidaciones/ # HU-44 (T-131): liquidaciones del mes y su detalle; "Mis ingresos" del profesor (HU-45, T-133)
 │ │ ├── liquidaciones.types.ts # el listado del mes, el detalle, MiLiquidacionDetalle (Omit del detalle) y AdjuntoDeLiquidacion (con URL)
-│ │ ├── mes-liquidacion.ts # `?mes=` y `?page=` del listado, mes anterior y siguiente, último día del mes (con test)
+│ │ ├── mes-liquidacion.ts # `?mes=`, `?profesorId=` y `?page=` del listado, mes anterior y siguiente, último día del mes (con test)
 │ │ ├── formato-liquidaciones.ts, rutas-liquidaciones.ts # texto y badge de cada estado, quién registró y adjuntó, textos del pago; URL del PDF (con test)
 │ │ ├── pago-liquidacion.schema.ts, errores-pago-liquidacion.ts # formulario y body del pago (T-132); sus errores y los de la subida del comprobante (con test)
 │ │ ├── api/{liquidaciones.api.ts, liquidaciones.keys.ts} # todo cuelga de `all`: el pago (T-132) invalida listado y detalle
@@ -289,7 +289,7 @@ src/
 │ │ │ use-comprobante-transferencia.ts, # la URL prefirmada del comprobante, como useAdjuntoDePago
 │ │ │ use-registrar-pago-liquidacion.ts} # el POST del pago; invalida `all` al terminar y con cualquier 409
 │ │ └── components/
-│ │ ├── LiquidacionesDelMes.tsx # ({ rutaBase }): selector de mes, tabla por profesor y total del mes
+│ │ ├── LiquidacionesDelMes.tsx # ({ rutaBase }): selector de mes, filtro por profesor (FiltroProfesorDeLiquidaciones), tabla por profesor y total
 │ │ ├── LiquidacionDetalle.tsx # ({ vista, … }): turnos, ajustes, totales y cierre; la vista del profesor oculta lo que no ve
 │ │ ├── EstadoLiquidacionBadge.tsx, ComprobanteTransferencia.tsx # el estado; "Ver comprobante" de una pagada (solo gerente)
 │ │ ├── RegistrarPagoLiquidacionDialog.tsx # ({ liquidacion, onCerrar }): formulario → confirmar (T-132)
@@ -507,7 +507,7 @@ El selector tiene "Hoy", "Esta semana", "Este mes" y "Personalizado", y las dos 
 
 **Liquidaciones (HU-44, T-131).**
 
-- **El mes en la URL** (`mes-liquidacion.ts` + `use-mes-liquidacion-en-url.ts`): `?mes=AAAA-MM` y `?page=`, con `router.replace`. Sin `mes` (o con uno que no sea `AAAA-MM` válido) no se manda y la API devuelve el último terminado; un mes futuro se manda igual y su 400 se muestra con "Ver el último mes terminado". Las flechas recorren los meses; "Mes siguiente" se deshabilita en el mes en curso, que sale del navegador solo para eso. El rótulo, el vacío y los enlaces usan el `mes` de la respuesta; los totales del pie son de todo el mes, no de la página.
+- **El mes en la URL** (`mes-liquidacion.ts` + `use-mes-liquidacion-en-url.ts`): `?mes=AAAA-MM` y `?page=`, con `router.replace`. Sin `mes` (o con uno que no sea `AAAA-MM` válido) no se manda y la API devuelve el último terminado; un mes futuro se manda igual y su 400 se muestra con "Ver el último mes terminado". Las flechas recorren los meses; "Mes siguiente" se deshabilita en el mes en curso, que sale del navegador solo para eso. El rótulo, el vacío y los enlaces usan el `mes` de la respuesta; los totales del pie son de todo el listado (del profesor, si hay filtro), no de la página. **Filtro por profesor** (`?profesorId=`): un `ComboboxBuscador` (`FiltroProfesorDeLiquidaciones`) que busca con `useProfesoresDePagos` de `features/pagos` (el gerente no puede usar `GET /profesores`) y pide el nombre del elegido con `?id=`; cambiarlo vuelve a la página 1 y "Limpiar filtros" lo saca.
 - **Estados** (`formato-liquidaciones.ts`, `EstadoLiquidacionBadge`): "En curso", "Pendiente de pago", "Saldo a descontar el mes próximo", "Pagada el 05/10/2026" y "Descontada en la liquidación de noviembre de 2026", a partir de `{ estado, fechaTransferencia, descontadaEnMes }`, así sirven para la fila y para el detalle.
 - **Dos vistas de `LiquidacionDetalle`**, cada una con su hook (`useLiquidacion` / `useMiLiquidacion`) y el mismo contenido, en el orden del PDF: encabezado, turnos, ajustes (el texto es el de la API), totales y el cierre según el estado. La del profesor oculta **por `vista`**, no solo porque el dato no venga: "Volver", "Registrar pago", el comprobante de la transferencia, las observaciones y quién registró el pago.
 - **El comprobante de la transferencia** (`ComprobanteTransferencia`, solo el gerente, en una `PAGADA`) sigue el patrón del comprobante adjunto del pago: la URL de `GET /adjuntos/liquidaciones/{liquidacionId}` se pide solo si hay comprobante, se renueva cada 10 minutos y no se guarda (`gcTime: 0`). Se ve y no se cambia.

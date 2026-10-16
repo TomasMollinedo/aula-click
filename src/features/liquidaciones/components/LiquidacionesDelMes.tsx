@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useRef } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import Link from 'next/link'
 import { AlertCircle, ChevronLeft, ChevronRight, HandCoins, RotateCw } from 'lucide-react'
 
@@ -8,6 +8,8 @@ import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
+import { Field } from '@/components/ui/field'
+import { LimpiarFiltros } from '@/components/ui/limpiar-filtros'
 import { PaginationControls } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
@@ -30,6 +32,7 @@ import { useMesLiquidacionEnUrl } from '../hooks/use-mes-liquidacion-en-url'
 import type { LiquidacionesDelMes as Listado, TotalesLiquidacion } from '../liquidaciones.types'
 import { mesAnterior, mesSiguiente } from '../mes-liquidacion'
 import { EstadoLiquidacionBadge } from './EstadoLiquidacionBadge'
+import { FiltroProfesorDeLiquidaciones } from './FiltroProfesorDeLiquidaciones'
 
 export type LiquidacionesDelMesProps = {
   /**
@@ -48,11 +51,14 @@ const IMPORTE = 'text-right tabular-nums whitespace-nowrap'
  * Listado de liquidaciones del mes (HU-44), en `/gerente/liquidaciones`: el mes va en la URL
  * (`?mes=`; sin él, el último terminado, que decide la API) y se recorre con las flechas. Todo se
  * rotula con el `mes` de la respuesta, no con el pedido: mientras llega el mes nuevo se ve el
- * anterior atenuado. Los totales son de todo el mes, no de la página.
+ * anterior atenuado. Se puede filtrar por profesor (`?profesorId=`, con un buscador). Los totales
+ * son de todo lo que devuelve el filtro, no de la página.
  */
 export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
-  const { mes, page, mesEnCurso, elegirMes, cambiarPagina } = useMesLiquidacionEnUrl()
-  const query = useLiquidacionesDelMes({ mes, page })
+  const { mes, profesorId, page, mesEnCurso, elegirMes, elegirProfesor, cambiarPagina } =
+    useMesLiquidacionEnUrl()
+  const idProfesor = useId()
+  const query = useLiquidacionesDelMes({ mes, profesorId, page })
   const { data } = query
 
   // Página fuera de rango (una URL vieja): pasa a la última que exista.
@@ -73,12 +79,29 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
   return (
     <div className="space-y-6">
       {!query.isError && (
-        <SelectorMes
-          mes={data?.mes}
-          enCurso={data?.mes === mesEnCurso}
-          onAnterior={base ? () => elegirMes(mesAnterior(base)) : undefined}
-          onSiguiente={base && base < mesEnCurso ? () => elegirMes(mesSiguiente(base)) : undefined}
-        />
+        <div className="flex flex-wrap items-end justify-between gap-4">
+          <SelectorMes
+            mes={data?.mes}
+            enCurso={data?.mes === mesEnCurso}
+            onAnterior={base ? () => elegirMes(mesAnterior(base)) : undefined}
+            onSiguiente={
+              base && base < mesEnCurso ? () => elegirMes(mesSiguiente(base)) : undefined
+            }
+          />
+          <div className="flex items-end gap-3">
+            <Field label="Profesor" htmlFor={idProfesor} className="w-64">
+              <FiltroProfesorDeLiquidaciones
+                id={idProfesor}
+                value={profesorId ?? null}
+                onChange={elegirProfesor}
+              />
+            </Field>
+            <LimpiarFiltros
+              hayFiltros={profesorId !== undefined}
+              onClick={() => elegirProfesor(null)}
+            />
+          </div>
+        </div>
       )}
 
       {query.isError ? (
@@ -95,7 +118,12 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
             query.isPlaceholderData && 'pointer-events-none opacity-50',
           )}
         >
-          <TablaLiquidaciones listado={data} rutaBase={rutaBase} onPageChange={cambiarPagina} />
+          <TablaLiquidaciones
+            listado={data}
+            rutaBase={rutaBase}
+            conFiltro={profesorId !== undefined}
+            onPageChange={cambiarPagina}
+          />
         </div>
       ) : (
         <Card className="p-6" role="status" aria-label="Cargando las liquidaciones">
@@ -162,10 +190,13 @@ function SelectorMes({
 function TablaLiquidaciones({
   listado,
   rutaBase,
+  conFiltro,
   onPageChange,
 }: {
   listado: Listado
   rutaBase: string
+  /** Si el listado está filtrado por profesor: cambia el vacío y el rótulo del total. */
+  conFiltro: boolean
   onPageChange: (page: number) => void
 }) {
   const { mes, data: filas, totales, meta } = listado
@@ -173,7 +204,11 @@ function TablaLiquidaciones({
   if (meta.total === 0) {
     return (
       <Card className="p-0">
-        <EmptyState icon={HandCoins} title={`No hay liquidaciones en ${textoMes(mes)}`} />
+        <EmptyState
+          icon={HandCoins}
+          title={`No hay liquidaciones en ${textoMes(mes)}`}
+          description={conFiltro ? 'Ese profesor no tiene movimientos en el mes.' : undefined}
+        />
       </Card>
     )
   }
@@ -213,7 +248,9 @@ function TablaLiquidaciones({
         </TableBody>
         <TableFooter>
           <TableRow className="hover:bg-transparent">
-            <TableCell className="font-semibold whitespace-nowrap">Total del mes</TableCell>
+            <TableCell className="font-semibold whitespace-nowrap">
+              {conFiltro ? 'Total del profesor' : 'Total del mes'}
+            </TableCell>
             <Importes totales={totales} />
             <TableCell />
           </TableRow>

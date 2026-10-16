@@ -1,17 +1,20 @@
 import { sumarDias, sumarMeses } from '@/utils/calendario'
 
-// El mes y la página del listado de liquidaciones en la URL. Funciones puras: este es el único
-// lugar que conoce los nombres de los parámetros. Sin `?mes=` (o con uno que no sea `AAAA-MM`
+// El mes, el profesor y la página del listado de liquidaciones en la URL. Funciones puras: este es
+// el único lugar que conoce los nombres de los parámetros. Sin `?mes=` (o con uno que no sea `AAAA-MM`
 // válido) no se manda mes y la API devuelve el último terminado; un mes futuro se manda igual y lo
 // rechaza la API.
 
 const PARAMETRO_MES = 'mes'
+const PARAMETRO_PROFESOR = 'profesorId'
 const PARAMETRO_PAGINA = 'page'
 
 /** Lo que se pide a la API. */
 export type MesLiquidacion = {
   /** `YYYY-MM`, o sin mes. */
   mes: string | undefined
+  /** El filtro por profesor; sin él, las liquidaciones de todos. */
+  profesorId: number | undefined
   page: number
 }
 
@@ -19,11 +22,19 @@ function mesValido(valor: string | null): string | undefined {
   return valor !== null && /^\d{4}-(0[1-9]|1[0-2])$/.test(valor) ? valor : undefined
 }
 
-/** El mes y la página de la URL; una `page` que no sea un entero >= 1 es la 1. */
+/**
+ * El mes, el profesor y la página de la URL; una `page` que no sea un entero >= 1 es la 1 y un
+ * `profesorId` que no sea un entero >= 1 es sin filtro.
+ */
 export function leerMesLiquidacion(params: URLSearchParams): MesLiquidacion {
   const page = Number(params.get(PARAMETRO_PAGINA))
+  const profesorId = Number(params.get(PARAMETRO_PROFESOR))
   return {
     mes: mesValido(params.get(PARAMETRO_MES)),
+    profesorId:
+      params.get(PARAMETRO_PROFESOR) !== null && Number.isInteger(profesorId) && profesorId >= 1
+        ? profesorId
+        : undefined,
     page: Number.isInteger(page) && page >= 1 ? page : 1,
   }
 }
@@ -32,6 +43,18 @@ export function leerMesLiquidacion(params: URLSearchParams): MesLiquidacion {
 export function paramsConMes(params: URLSearchParams, mes: string): URLSearchParams {
   const nuevos = new URLSearchParams(params)
   nuevos.set(PARAMETRO_MES, mes)
+  nuevos.delete(PARAMETRO_PAGINA)
+  return nuevos
+}
+
+/** Copia de `params` con ese profesor (`null` saca el filtro): la página vuelve a la 1. */
+export function paramsConProfesor(
+  params: URLSearchParams,
+  profesorId: number | null,
+): URLSearchParams {
+  const nuevos = new URLSearchParams(params)
+  if (profesorId === null) nuevos.delete(PARAMETRO_PROFESOR)
+  else nuevos.set(PARAMETRO_PROFESOR, String(profesorId))
   nuevos.delete(PARAMETRO_PAGINA)
   return nuevos
 }

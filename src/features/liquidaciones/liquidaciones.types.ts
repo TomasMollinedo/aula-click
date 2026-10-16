@@ -42,6 +42,8 @@ export type LiquidacionesDelMes = PaginatedResponse<FilaLiquidacion> & {
 export type ListarLiquidacionesDelMesParams = {
   /** `YYYY-MM`; sin mes, el por defecto de la API. */
   mes?: string
+  /** Sólo las liquidaciones de este profesor; sin él, las de todos. */
+  profesorId?: number
   page: number
 }
 

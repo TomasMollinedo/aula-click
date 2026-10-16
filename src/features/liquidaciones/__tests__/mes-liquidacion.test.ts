@@ -6,6 +6,7 @@ import {
   mesSiguiente,
   paramsConMes,
   paramsConPagina,
+  paramsConProfesor,
   ultimoDiaDelMes,
 } from '../mes-liquidacion'
 
@@ -34,6 +35,28 @@ describe('leerMesLiquidacion', () => {
   it.each(['0', '-1', '1.5', 'abc'])('una página inválida (%s) es la 1', (page) => {
     expect(leer(`page=${page}`).page).toBe(1)
   })
+
+  it('el profesor de la URL', () => {
+    expect(leer('mes=2026-09&profesorId=4')).toEqual({ mes: '2026-09', profesorId: 4, page: 1 })
+  })
+
+  it.each(['', '0', '-3', '1.5', 'abc'])('un profesorId inválido (%s) es sin filtro', (id) => {
+    expect(leer(`profesorId=${id}`).profesorId).toBeUndefined()
+  })
+})
+
+describe('paramsConProfesor', () => {
+  it('escribe el profesor, conserva el mes y vuelve a la página 1', () => {
+    const params = paramsConProfesor(new URLSearchParams('mes=2026-09&page=3'), 4)
+    expect(params.get('profesorId')).toBe('4')
+    expect(params.get('mes')).toBe('2026-09')
+    expect(params.has('page')).toBe(false)
+  })
+
+  it('null saca el filtro y conserva el mes', () => {
+    const params = paramsConProfesor(new URLSearchParams('mes=2026-09&profesorId=4&page=2'), null)
+    expect(params.toString()).toBe('mes=2026-09')
+  })
 })
 
 describe('paramsConMes', () => {
@@ -42,6 +65,10 @@ describe('paramsConMes', () => {
     expect(params.get('mes')).toBe('2026-08')
     expect(params.get('otro')).toBe('x')
     expect(params.has('page')).toBe(false)
+  })
+
+  it('conserva el profesor elegido', () => {
+    expect(paramsConMes(new URLSearchParams('profesorId=4'), '2026-08').get('profesorId')).toBe('4')
   })
 
   it('no muta los parámetros recibidos', () => {
