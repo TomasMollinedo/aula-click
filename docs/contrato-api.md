@@ -2346,7 +2346,92 @@ HU-45 (T-126). Rol `PROFESOR`, con el **profesor de la sesión** (como `GET /alu
 
 ## Caja
 
-A completar por T-127 (HU-46).
+HU-46 (T-127, decisión T-175). La caja diaria del gerente: todo el dinero que entró y salió del centro en un día, por forma de pago, con la parte del centro y la de los profesores. **Sólo lectura:** no tiene tablas propias, se arma al consultar con los cobros, las anulaciones y los pagos a profesores ya registrados. Las reglas están en `dominio.md` → Caja diaria.
+
+| Endpoint                                | Roles     | Qué hace                                                        |
+| --------------------------------------- | --------- | --------------------------------------------------------------- |
+| `GET /api/v1/caja?fecha&tipo&formaPago` | `GERENTE` | Los movimientos del día y el resumen del día completo. 200; 400 |
+| `GET /api/v1/caja/pdf?fecha`            | `GERENTE` | La caja del día en PDF, con la lista completa. 200; 400         |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`, y sin sesión 401 `NO_AUTENTICADO`.
+
+**Query de `GET /caja`:**
+
+| Parámetro   | Obligatorio | Qué hace                                                                                                                                                                                                   |
+| ----------- | ----------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fecha`     | No          | El día (`YYYY-MM-DD`). Sin `fecha`, hoy en la zona del negocio. Hoy sí se puede pedir; una fecha **posterior a hoy** → 400 `VALIDACION` en `["fecha"]` "No se puede consultar la caja de una fecha futura" |
+| `tipo`      | No          | `COBRO`, `ANULACION` o `PAGO_PROFESOR`: sólo los movimientos de ese tipo                                                                                                                                   |
+| `formaPago` | No          | `EFECTIVO`, `TRANSFERENCIA` o `DEBITO` (por el código, nunca por el nombre): sólo los movimientos de esa forma. Un pago a un profesor es una transferencia                                                 |
+
+Un valor que no existe (`tipo`, `formaPago`) o una fecha mal formada o inexistente → 400 `VALIDACION` en ese campo. **Los filtros recortan `movimientos` y nunca el `resumen`**, que es siempre el del día completo.
+
+**`GET /caja?fecha=2026-10-15`:**
+
+```json
+{
+  "fecha": "2026-10-15",
+  "movimientos": [
+    {
+      "tipo": "COBRO",
+      "registradoEl": "2026-10-15T12:10:00.000Z",
+      "pagoId": 31,
+      "numeroComprobante": 1024,
+      "alumno": { "id": 12, "nombre": "Juan", "apellido": "Pérez" },
+      "formaPago": { "codigo": "EFECTIVO", "nombre": "Efectivo" },
+      "importe": 16000,
+      "estado": "ANULADO"
+    },
+    {
+      "tipo": "ANULACION",
+      "registradoEl": "2026-10-15T14:20:00.000Z",
+      "pagoId": 31,
+      "numeroComprobante": 1024,
+      "alumno": { "id": 12, "nombre": "Juan", "apellido": "Pérez" },
+      "formaPago": { "codigo": "EFECTIVO", "nombre": "Efectivo" },
+      "importe": 16000,
+      "motivo": "ERROR_CARGA",
+      "detalle": "Se cargó dos veces"
+    },
+    {
+      "tipo": "PAGO_PROFESOR",
+      "registradoEl": "2026-10-15T15:05:00.000Z",
+      "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+      "mes": "2026-09",
+      "numeroOperacion": "0048213",
+      "formaPago": { "codigo": "TRANSFERENCIA", "nombre": "Transferencia" },
+      "importe": 6800,
+      "liquidacion": { "profesorId": 4, "mes": "2026-09" }
+    }
+  ],
+  "resumen": {
+    "ingresos": {
+      "porForma": { "EFECTIVO": 0, "TRANSFERENCIA": 0, "DEBITO": 0 },
+      "total": 0,
+      "parteCentro": 0,
+      "parteProfesores": 0
+    },
+    "egresos": 6800,
+    "saldo": -6800
+  }
+}
+```
+
+**Movimientos.** Una unión por `tipo`; todos llevan `registradoEl` (instante ISO 8601 en UTC), `formaPago` (`{ codigo, nombre }`) e `importe` en pesos, **siempre positivo**: el signo lo da el `tipo` (`COBRO` suma; `ANULACION` y `PAGO_PROFESOR` restan). Van **por hora de registro**; con la misma hora, cobros, después anulaciones, después pagos a profesores.
+
+- **`COBRO`**: los pagos con **fecha de pago** igual a `fecha`, también los que después se anularon (ese día fueron un cobro): `estado` es `ANULADO` y el cobro igual figura. `pagoId` abre el detalle del pago (HU-36). Si el pago se registró otro día (la fecha de pago se cargó hacia atrás), su `registradoEl` es de otro día y la UI lo muestra con su fecha: "registrado el 16/10 09:12". `importe` es el total del pago.
+- **`ANULACION`**: las anulaciones **registradas** ese día (la fecha de Salta del instante de la anulación), aunque el pago sea de otro día. `pagoId`, `numeroComprobante`, `alumno`, `formaPago` e `importe` son los del pago anulado; `registradoEl`, el de la anulación; `motivo` (`ERROR_CARGA`, `FORMA_PAGO_EQUIVOCADA` u `OTRO`) y `detalle` (o `null`). Un cobro y su anulación del mismo día figuran los dos.
+- **`PAGO_PROFESOR`**: las liquidaciones `PAGADA` con **fecha de transferencia** igual a `fecha` (las `DESCONTADA` no son transferencias y no entran). `registradoEl` es el del registro del pago; `importe`, el total guardado al pagar; `mes`, el mes liquidado (`YYYY-MM`); `numeroOperacion`, el de la transferencia; `formaPago`, siempre `TRANSFERENCIA`. `liquidacion` (`{ profesorId, mes }`) identifica la liquidación para abrirla en [Liquidaciones](#liquidaciones).
+
+**Resumen del día completo**, en pesos, sumado en centavos:
+
+- `ingresos.porForma` y `ingresos.total`: los cobros menos las anulaciones del día, por forma de pago. **Puede ser negativo** (la anulación de un cobro de otro día resta en el día en que se anula). Un cobro anulado el mismo día cuenta +importe y −importe: neto 0.
+- `ingresos.parteCentro` y `ingresos.parteProfesores`: el reparto de esos ingresos con el porcentaje **guardado en cada cobro** (nunca el vigente), turno por turno (`dominio.md` → Reparto). Una anulación resta las partes del cobro que anula. Siempre `parteCentro + parteProfesores = total`.
+- `egresos`: lo pagado a profesores en el día.
+- `saldo`: `ingresos.total − egresos`.
+
+Un día sin movimientos devuelve `movimientos: []` y todo el resumen en 0 (200, no 404). El texto "No hubo movimientos de caja el 15/10" lo pone la UI.
+
+**`GET /caja/pdf?fecha`**: el documento oficial de la caja de `fecha` (hoy si falta), con el contrato común de [Documentos PDF](#documentos-pdf): encabezado del centro, el título "Caja diaria" con la fecha (`Caja diaria 15/10/2026`, también el título del PDF), el resumen del día y la **lista completa** de movimientos, sin filtros (`tipo` y `formaPago` se ignoran) y con los mismos números que `GET /caja`. Archivo `caja-2026-10-15.pdf`. Fecha futura o inválida → 400 en JSON.
 
 ## Portal del alumno
 
@@ -2390,15 +2475,16 @@ Como el portal, lo propio del profesor vive en la feature dueña del concepto y 
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
 
-| Documento                                                                                                                                 | Endpoint                                                     | Roles                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
-| Comprobante de pago                                                                                                                       | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
-| Detalle de un turno                                                                                                                       | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Turnos de un alumno                                                                                                                       | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
-| Historial académico                                                                                                                       | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Agenda de un profesor                                                                                                                     | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
-| Tablero del gerente                                                                                                                       | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
-| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas y Tablero. |
+| Documento                                                                                                                                       | Endpoint                                                     | Roles                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
+| Comprobante de pago                                                                                                                             | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
+| Detalle de un turno                                                                                                                             | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Turnos de un alumno                                                                                                                             | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
+| Historial académico                                                                                                                             | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Agenda de un profesor                                                                                                                           | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
+| Tablero del gerente                                                                                                                             | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
+| Caja diaria                                                                                                                                     | `GET /caja/pdf?fecha`                                        | `GERENTE`                                           |
+| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas, Tablero y Caja. |
 
 - **200** con el cuerpo binario del PDF y estos headers:
 

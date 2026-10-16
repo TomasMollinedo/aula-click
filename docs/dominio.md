@@ -423,7 +423,15 @@ HU-44 (tarea T-121). Los términos y los textos son los del [Vocabulario de la a
 
 ## Caja diaria
 
-A completar por T-127 (HU-46).
+HU-46 (tarea T-127, decisión T-175). Todo el dinero que entró y salió del centro en un día, para el gerente. **No se guarda:** se arma al consultar con lo que ya registra el sistema.
+
+- **Cobro (+):** un pago con **fecha de pago** igual al día, vigente o anulado después (ese día fue un cobro; la lista lo marca anulado). Se ordena por la hora en que se **registró**: un pago cargado con fecha de pago hacia atrás figura en el día de su fecha de pago, con su hora y su fecha de registro.
+- **Anulación (−):** el pago que se anula, en el día en que se **registra la anulación** (en la hora del negocio), con el importe, la forma de pago y los turnos del pago original, aunque se haya cobrado otro día. Un cobro y su anulación del mismo día figuran los dos y se compensan.
+- **Pago a un profesor (−):** una liquidación `PAGADA`, en el día de su **fecha de transferencia**, por el total guardado al pagarla. A efectos del filtro por forma de pago es una transferencia. Las liquidaciones `DESCONTADA` no mueven dinero.
+- **Resumen:** ingresos = cobros − anulaciones, por forma de pago y total (puede ser negativo); de ese total, la parte del centro y la de los profesores se calculan **turno por turno** con `repartoDeTurno` y el porcentaje guardado en cada cobro (una anulación resta las partes del cobro que anula), así que `parteCentro + parteProfesores = ingresos`; egresos = pagado a profesores; saldo = ingresos − egresos. El resumen es siempre el del día completo, sin los filtros de la lista.
+- **Distinto del tablero** (Finanzas): la caja no mira la asistencia, así que no manda al centro el importe de un turno cobrado y cerrado sin registrar. Reparte cada cobro con su porcentaje y nada más.
+- **Fechas:** se puede ver hoy o un día pasado; un día futuro no existe todavía.
+- **Sólo el gerente** la ve, y es de sólo lectura.
 
 ## Auditoría
 
