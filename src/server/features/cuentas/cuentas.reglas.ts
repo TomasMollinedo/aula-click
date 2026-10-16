@@ -1,7 +1,9 @@
 import { limiteDeCobro, sumarImportes } from '@/server/features/pagos/pagos.condiciones'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import type { Estado } from '@/server/shared/estado'
 import { sumarDias } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake, type MetaPaginacion } from '@/server/shared/paginacion'
+import type { OpcionesDeCuenta } from './cuentas.validation'
 
 // Reglas puras de la cuenta del alumno (HU-16, T-53; con asistencia y deuda vencida, T-76): qué
 // ocurrencia adeuda, cuál es próxima, cuál es deuda vencida, qué parte de un período le toca a cada
@@ -111,6 +113,55 @@ export function rangosDelPeriodo({ desde, hasta }: Periodo, hoy: string): Rangos
             desde: desde !== undefined && desde > hoy ? desde : hoy,
             hasta: hasta !== undefined && hasta < tope ? hasta : tope,
           },
+  }
+}
+
+/** Lo que `opcionesDeLaCuenta` mira de cada ocurrencia por cobrar. */
+type OcurrenciaConOpciones = {
+  ocurrencia: Pick<Ocurrencia, 'materia'> & {
+    profesor: Pick<Ocurrencia['profesor'], 'id' | 'nombre' | 'apellido'>
+  }
+}
+
+/**
+ * Materias y profesores de lo que el alumno tiene por cobrar (adeudados y próximos), para los
+ * filtros de "Por cobrar" (decisión T-177): sin repetir, las materias por nombre y los profesores
+ * por apellido y nombre, como `opcionesDeLosGrupos` del historial. El estado de cada materia lo
+ * pasa quien llama (la ocurrencia no lo trae).
+ */
+export function opcionesDeLaCuenta(
+  items: readonly OcurrenciaConOpciones[],
+  estados: ReadonlyMap<number, Estado>,
+): OpcionesDeCuenta {
+  const materias = new Map<number, OpcionesDeCuenta['materias'][number]>()
+  const profesores = new Map<number, OpcionesDeCuenta['profesores'][number]>()
+  for (const { ocurrencia } of items) {
+    const { materia, profesor } = ocurrencia
+    if (!materias.has(materia.id)) {
+      materias.set(materia.id, {
+        id: materia.id,
+        nombre: materia.nombre,
+        estado: estados.get(materia.id) ?? 'ACTIVO',
+      })
+    }
+    if (!profesores.has(profesor.id)) {
+      profesores.set(profesor.id, {
+        id: profesor.id,
+        nombre: profesor.nombre,
+        apellido: profesor.apellido,
+      })
+    }
+  }
+  return {
+    materias: [...materias.values()].sort(
+      (a, b) => a.nombre.localeCompare(b.nombre, 'es') || a.id - b.id,
+    ),
+    profesores: [...profesores.values()].sort(
+      (a, b) =>
+        a.apellido.localeCompare(b.apellido, 'es') ||
+        a.nombre.localeCompare(b.nombre, 'es') ||
+        a.id - b.id,
+    ),
   }
 }
 

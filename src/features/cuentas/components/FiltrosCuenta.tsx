@@ -16,6 +16,11 @@ import { FiltroProfesor } from './FiltroProfesor'
 
 type FiltrosCuentaProps = {
   filtros: Filtros
+  /**
+   * El alumno de la cuenta: el de la ficha o, en la vista global, el elegido en el filtro (`null`
+   * sin él). Con alumno, materias y profesor ofrecen solo los de lo que tiene por cobrar (T-177).
+   */
+  alumnoId: number | null
   /** Los nombres de lo filtrado: el profesor elegido y cada materia elegida (también fuera de la lista). */
   nombres: Pick<NombresDeFiltros, 'materias' | 'profesor'>
   onCambiar: (cambios: Partial<Filtros>) => void
@@ -41,6 +46,7 @@ type FiltrosCuentaProps = {
  */
 export function FiltrosCuenta({
   filtros,
+  alumnoId,
   nombres,
   onCambiar,
   onLimpiar,
@@ -105,6 +111,7 @@ export function FiltrosCuenta({
         <Field label="Materias" htmlFor={ids.materia} error={errores.materiaId}>
           <FiltroMaterias
             id={ids.materia}
+            alumnoId={alumnoId}
             value={filtros.materiaIds}
             elegidas={nombres.materias}
             onChange={(materiaIds) => onCambiar({ materiaIds })}
@@ -116,6 +123,7 @@ export function FiltrosCuenta({
         <Field label="Profesor" htmlFor={ids.profesor} error={errores.profesorId}>
           <FiltroProfesor
             id={ids.profesor}
+            alumnoId={alumnoId}
             value={filtros.profesorId}
             nombre={nombres.profesor}
             onChange={(profesorId) => onCambiar({ profesorId })}

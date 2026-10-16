@@ -213,11 +213,13 @@ src/
 │ │ ├── filtros-cuenta.ts # los filtros y las páginas en la URL (ver Filtros del listado en la URL)
 │ │ ├── seleccion.ts # la selección a cobrar (inmutable), "Seleccionar todo", su resumen con el subtotal por materia y el tope de 200 por pago
 │ │ ├── materias-del-filtro.ts # el filtro de varias materias: opciones, búsqueda, texto del botón y alternar (puro)
+│ │ ├── opciones-de-cuenta.ts # de dónde salen las materias y los profesores de los filtros, con o sin alumno (puro, T-177)
 │ │ ├── formato-cuentas.ts, errores-cuentas.ts, rutas-cuentas.ts # textos (total, filtros activos, tope); errores de lectura y del período; ficha
 │ │ ├── api/{cuentas.api.ts, cuentas.keys.ts, mi-cuenta.api.ts} # mi-cuenta: la cuenta del alumno de la sesión (portal)
 │ │ ├── hooks/{use-cuenta-del-alumno.ts, use-adeudados.ts, use-proximos.ts, use-invalidar-cuentas.ts, use-mi-cuenta.ts,
 │ │ │ use-filtros-cuenta.ts, # los filtros de la URL con router.replace
 │ │ │ use-materias-de-cuenta.ts, use-nombres-de-filtros.ts, # las materias del filtro y el nombre de lo filtrado (hooks de otras features)
+│ │ │ use-opciones-de-cuenta.ts, # las materias y los profesores de lo que el alumno tiene por cobrar (T-177)
 │ │ │ use-todos-los-del-filtro.ts, # adeudados y próximos de un alumno con sus filtros, a pedido ("Seleccionar todo" de la vista global)
 │ │ │ use-dialogo-de-pago.ts, # el diálogo de cobro de la selección: copia al abrir, ajuste de la selección y foco al cerrar
 │ │ │ use-detalle-de-cuenta.ts} # "Ver detalle" de una fila: abre el detalle del turno en la URL; ajuste y foco al cerrar
@@ -282,7 +284,8 @@ src/
 │ │ └── components/{TableroPantalla, TableroGeneral, TableroAsistencia, TablaAsistencia, TableroFinanzas, TablaFinanzas, TarjetaDeTabla, SelectorPeriodo, TarjetaIndicador, TarjetaRanking, GraficoDona, GraficoBarras, BotonPdfTablero}.tsx
 │ │ # TableroPantalla: el período, las pestañas y el PDF; GraficoDona y GraficoBarras: torta/anillo y columnas agrupadas en SVG, sin librería (su geometría pura, en torta-rotulos.ts y escala-grafico.ts); TarjetaDeTabla: la tarjeta de una tabla paginada (carga, vacío, paginador), compartida por las tablas de "Asistencia" y "Finanzas"
 │ ├── liquidaciones/ # HU-44 (T-131): liquidaciones del mes y su detalle; "Mis ingresos" del profesor (HU-45, T-133)
-│ │ ├── liquidaciones.types.ts # el listado del mes, el detalle, MiLiquidacionDetalle (Omit del detalle) y AdjuntoDeLiquidacion (con URL)
+│ │ ├── liquidaciones.types.ts # el listado del mes, el detalle, MiLiquidacionDetalle (sin profesor, comprobante ni acciones), MisIngresos, MisLiquidaciones y AdjuntoDeLiquidacion (con URL)
+│ │ ├── mis-ingresos.ts # "Mis ingresos": `?liquidacion=` abierta y el enlace a "Asistencia" del día (con test)
 │ │ ├── mes-liquidacion.ts # `?mes=` y `?page=` del listado, mes anterior y siguiente, último día del mes (con test)
 │ │ ├── formato-liquidaciones.ts, rutas-liquidaciones.ts # texto y badge de cada estado, quién registró y adjuntó, textos del pago; URL del PDF (con test)
 │ │ ├── pago-liquidacion.schema.ts, errores-pago-liquidacion.ts # formulario y body del pago (T-132); sus errores y los de la subida del comprobante (con test)
@@ -290,7 +293,8 @@ src/
 │ │ ├── hooks/{use-liquidaciones-del-mes.ts, use-mes-liquidacion-en-url.ts, # keepPreviousData; el mes en la URL con router.replace
 │ │ │ use-liquidacion.ts, use-mi-liquidacion.ts, # el detalle del gerente y el del profesor, sin reintentos en 4xx
 │ │ │ use-comprobante-transferencia.ts, # la URL prefirmada del comprobante, como useAdjuntoDePago
-│ │ │ use-registrar-pago-liquidacion.ts} # el POST del pago; invalida `all` al terminar y con cualquier 409
+│ │ │ use-registrar-pago-liquidacion.ts, # el POST del pago; invalida `all` al terminar y con cualquier 409
+│ │ │ use-mis-ingresos.ts, use-mis-liquidaciones.ts, use-mis-ingresos-en-url.ts} # "Mis ingresos" (T-133)
 │ │ └── components/
 │ │ ├── LiquidacionesDelMes.tsx # ({ rutaBase }): selector de mes, tabla por profesor y total del mes
 │ │ ├── LiquidacionDetalle.tsx # ({ vista, … }): turnos, ajustes, totales y cierre; la vista del profesor oculta lo que no ve
@@ -320,7 +324,7 @@ src/
 │ ├── AccesoPortalAlta.tsx, AccesoPortalFicha.tsx # "Acceso al portal" del alta ({ nombre, apellido, dni }) y de la ficha ({ alumno, puedeEditar }) (T-90)
 │ ├── AlumnoNuevo.tsx, AlumnoEditar.tsx # alta y edición en un <Panel> (modal)
 │ ├── FotoAlumnoCampo.tsx # la foto en el alta y la edición (CampoArchivo), espejo de FotoProfesorCampo
-│ ├── MisAlumnosListado.tsx, MisAlumnosTable.tsx # "Mis alumnos" del profesor: sigue siendo tabla, con la foto en el avatar
+│ ├── MisAlumnosListado.tsx # "Mis alumnos" del profesor: la misma grilla de tarjetas que mesa (AlumnosGrid), sin lápiz y con las materias en la tarjeta
 │ └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
 ├── components/
@@ -405,7 +409,7 @@ Los documentos oficiales (el comprobante de pago, el detalle de un turno, los tu
   - `features/documentos/rutas-documentos.ts`: `hrefPdfTurno`, `hrefPdfTurnosAlumno` y `hrefPdfAgenda` (este devuelve `null` sin profesor elegido: la agenda de todo el centro no tiene PDF);
   - `features/pagos/rutas-pagos.ts`: `hrefComprobante(pagoId)`, con el id del pago y no con el número de comprobante;
   - `features/tablero/rutas-tablero.ts`: `hrefPdfTablero({ desde, hasta, seccion })`, con el período y la pestaña que se ven;
-  - `features/liquidaciones/rutas-liquidaciones.ts`: `hrefPdfLiquidacion({ profesorId, mes })`, con el profesor y el mes de la respuesta (no los de la URL); sirve para las dos vistas.
+  - `features/liquidaciones/rutas-liquidaciones.ts`: `hrefPdfLiquidacion({ profesorId, mes })` para el gerente, con el profesor y el mes de la respuesta (no los de la URL), y `hrefPdfMiLiquidacion(mes)` para el profesor, que no conoce su `profesorId` (`/liquidaciones/mis-liquidaciones/{mes}/pdf`; la ruta la suma T-125 en la API).
   - `features/historiales/rutas-historiales.ts`: `hrefPdfHistorial({ alumnoId, periodo, materiaId, profesorId })`, con el **período que se ve** (`?mes=` o `?desde=&hasta=`) y los filtros puestos.
 - **Los enlaces.** `features/documentos/components/` tiene `AccionPdfTurno` (encabezado del detalle del turno, en mesa de entradas y en el profesor), `AccionPdfTurnosAlumno` (ficha del alumno) y `BotonPdfAgenda` (agenda diaria); el tablero tiene el suyo en su feature, `features/tablero/components/BotonPdfTablero` ("Generar PDF", junto al selector de período, con la sección que se ve y deshabilitado si la API rechazó el período), y el historial el suyo, `features/historiales/components/BotonPdfHistorial` ("Generar PDF", en la fila de los filtros de la pestaña, a la derecha de "Limpiar filtros", para mesa de entradas y para el profesor). El comprobante lo enlazan `EnlaceComprobante` (detalle de un turno pagado), el diálogo de cobro (`RegistrarPagoDialog`, "Ver comprobante") y `TurnosRechazados` (el pago que ya cubría un turno).
 - **Lo que manda cada enlace es lo que se ve.** El PDF tiene que coincidir con la pantalla desde la que se pide: la ficha del alumno manda el mismo rango y el mismo estado que la lista, o `seleccion` si hay turnos tildados (la selección tiene prioridad sobre el estado); la agenda manda el día, el profesor y los filtros puestos; el historial manda el período que se ve (un mes o un rango) y sus filtros de materia y profesor. La API decide el resto: el frontend no calcula nada del documento.
@@ -491,11 +495,12 @@ Los filtros se ven igual en toda pantalla: van en una `BarraFiltros` de `compone
 
 El botón es `LimpiarFiltros` de `components/ui/limpiar-filtros.tsx`, siempre visible: recibe `hayFiltros` (sin filtros queda deshabilitado; con filtros va en rojo y con el contorno marcado) y el `onClick` de quien lo usa, que decide qué es limpiar (qué parámetros se sacan o a qué valor por defecto se vuelve: en "Turnos", al mes en curso). Tiene la altura de un control compacto, para ir en la misma fila que los filtros.
 
-`cuentas` (decisiones T-97, T-98 y T-147) suma cuatro casos:
+`cuentas` (decisiones T-97, T-98, T-147 y T-177) suma cinco casos:
 
 - **Un filtro que se repite.** Las materias son una o más: `materiaId` se repite en la URL (`?materiaId=2&materiaId=5`), igual que en el query de la API, siempre sin repetidos y de menor a mayor (`normalizarIds`), así la misma elección es siempre la misma URL y la misma clave de selección. "Limpiar filtros" las saca todas.
 - **Filtros dentro de un tab.** La pestaña "Pagos" de la ficha guarda sus filtros junto al tab (`?tab=pagos&desde=…&hasta=…&materiaId=…&profesorId=…`). `AlumnoDetalle` arma la URL de cero al cambiar de pestaña (`?tab=<valor>`), así que los filtros se van solos al salir de "Pagos": un tab con filtros propios no necesita limpiarlos ni que el detalle los conozca.
 - **Dos listados paginados en una pantalla.** La vista global tiene una página por tabla (`pageAdeudados`, `pageProximos`), no un `page` compartido. Cambiar un filtro las vuelve a las dos a la 1, y una página fuera de rango se corrige en cada tabla por separado.
+- **Con alumno, los filtros se acotan a sus opciones.** En la ficha, y en la vista global con un alumno elegido, materias y profesor ofrecen solo los de lo que tiene por cobrar (`useOpcionesDeCuenta`, `GET /cuentas/alumnos/{alumnoId}/opciones`; `opciones-de-cuenta.ts` elige de dónde salen) y lo escrito filtra esa lista en el cliente; sin alumno, todas las materias y la búsqueda de profesores. El nombre de lo elegido sigue saliendo de `useNombresDeFiltros` (decisión T-177).
 - **Lo que valida la API no se revalida en el cliente.** Un "Hasta" anterior al "Desde" se manda tal cual; el 400 vuelve con `details` sobre `hasta` y `errores-cuentas.ts` lo ubica junto al campo, con el `message` de la API. Qué parte del período le toca a cada sección tampoco se calcula: una sección que la API marca como que no aplica (`null`, `aplica: false`) no se muestra.
 
 **"Pagos realizados" (T-100).** El período por fecha de pago es obligatorio: la API exige `desde` y `hasta`, así que siempre se mandan y sus `CalendarioFecha` no tienen el botón de vaciar. Por defecto es el mes en curso, que no se escribe en la URL; un período a medias o con una fecha inválida también cae en el mes en curso, y cualquier otro se escribe con sus dos fechas. Alumno, profesor y materia usan los buscadores de `pagos` (`GET /pagos/alumnos`, `GET /pagos/profesores` y `GET /pagos/materias`, decisión T-169), los mismos para mesa de entradas y el gerente, y no `useAlumnos`, `useProfesores` ni `useMaterias` (al gerente le dan 403): con `q` traen las opciones del menú y con `id` el nombre del filtro de la URL (`[]` = "no encontrado"). En la ficha, y en la vista global con un alumno elegido, los filtros de profesor y materia se acotan a ese alumno: las opciones se piden con su `alumnoId` (`alumnoDeLosBuscadores`) y solo ofrecen los que aparecen en sus pagos; el nombre del elegido se pide sin él (decisión T-170).
@@ -520,6 +525,14 @@ El selector tiene "Hoy", "Esta semana", "Este mes" y "Personalizado", y las dos 
   - El diálogo (T-132) sigue el patrón de `RegistrarPagoDialog`: pasos formulario → confirmar, sin cerrarse mientras envía ni con un clic afuera. La forma de pago ("Transferencia") y **el monto no se editan**: el monto es el `total` de la copia que guardó el detalle y viaja como `totalConfirmado` (`armarPagoLiquidacion`). La fecha de la transferencia propone el "hoy" del navegador, con `max` = hoy y `min` = último día del mes liquidado solo como ayuda (la regla y su 400 son de la API); el número de operación es obligatorio y las observaciones opcionales.
   - El comprobante, opcional, **se sube al elegirlo** (`CampoComprobanteTransferencia`, como el de pagos en T-97) reusando `useSubirAdjunto` de `pagos` (un hook: lo permite la regla de imports); mientras sube no se puede continuar. Los tipos, el tamaño y los mensajes se copian, no se importan.
   - Errores (`interpretarErrorPagoLiquidacion`): un 400 (`VALIDACION` o `ADJUNTO_INVALIDO`) vuelve al formulario con cada error en su campo; el 409 `LIQUIDACION_MODIFICADA` se avisa con un toast de advertencia, el diálogo se cierra y el detalle se recarga con el total nuevo; los otros 409 (`LIQUIDACION_PAGADA`, mes no terminado, sin importe) y el 404 quedan en el diálogo con solo "Cerrar". El hook invalida `liquidacionesKeys.all` (listado, detalle, "Mis ingresos" y comprobante) al terminar bien y ante cualquier 409.
+
+**"Mis ingresos" del profesor (HU-45, T-133).** `MisIngresos({ hrefAsistencia })`, en `/profesor/ingresos`, de sólo lectura y pensada para el celular (listas en vez de tablas anchas). Cuatro **pestañas** en la URL (`?tab=`: `este-mes`, que no se escribe, `sin-cobrar`, `sin-asistencia` y `liquidaciones`; con `router.replace`, como la ficha del alumno), para que no quede todo en un solo scroll; cada una con su texto cuando está vacía. Las tres primeras leen `mis-ingresos` una sola vez (la caché la comparten); "Liquidaciones" pide su listado recién al abrirla. **10 registros por página** en cada una (`REGISTROS_POR_PAGINA`, `?page=`, que vuelve a la 1 al cambiar de pestaña): las tres primeras paginan en la pantalla (`paginar`, la API las manda enteras) y "Liquidaciones" en la API (`pageSize=10`); el total acumulado de "Este mes" es el del mes entero:
+
+- **"Este mes"** (`GET /liquidaciones/mis-ingresos` → `esteMes`): arriba, debajo del título, el **total acumulado** (el `total` de la API, el mismo que ve el gerente); debajo, los turnos con su parte. Sin el texto "Se te paga a mes vencido, por transferencia" que pedía la tarea (lo sacó el equipo).
+- **"Clases dadas sin cobrar"** y **"Clases cobradas sin asistencia"** (`clasesSinCobrar` y `clasesCobradasSinAsistencia`): fecha, horario, alumno y materia; las segundas con "Vence el …" y "Ir a Asistencia" en el día de la clase (`hrefAsistenciaDelDia`, `?fecha=`).
+- **"Mis liquidaciones"** (`GET /liquidaciones/mis-liquidaciones?page`): el mes con su estado debajo a la izquierda, y el total, "Ver detalle" (el ojo azul de las tablas) y "Generar PDF" (`accent`, como en el detalle) a la derecha (en el celular los botones bajan), paginadas (`?page=`). "Ver detalle" abre `LiquidacionDetalle` en vista de profesor en la misma página (`?liquidacion=AAAA-MM`, que Atrás cierra) con "Volver a mis ingresos".
+
+En la vista de profesor, `LiquidacionDetalle` no tiene el nombre del profesor (el título es "Liquidación de …"), ni la columna del comprobante (la API no manda `numeroComprobante`, decisión T-171), y su "Generar PDF" usa `hrefPdfMiLiquidacion`.
 
 **Datos de un filtro anterior (`isPlaceholderData`).** Con `keepPreviousData` la lista anterior sigue en pantalla mientras llega la del filtro nuevo. Si sobre esas filas se puede actuar (tildar, cobrar), mientras son de placeholder se atenúan y sus acciones se deshabilitan, y lo que dependa de "lo que se ve" (podar una selección) espera a los datos reales. Si la query es de un recurso (`useCuentaDelAlumno`), los datos anteriores se conservan solo si son del mismo recurso: `placeholderData` como función que compara el id de la query anterior.
 

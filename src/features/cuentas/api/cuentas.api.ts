@@ -5,6 +5,7 @@ import type {
   CuentaDelAlumno,
   FiltrosCuentaParams,
   ListarGlobalParams,
+  OpcionesDeCuenta,
   ProximosGlobal,
 } from '../cuentas.types'
 
@@ -32,6 +33,11 @@ export function obtenerCuentaDelAlumno(
 ): Promise<CuentaDelAlumno> {
   const qs = conFiltros(new URLSearchParams(), filtros).toString()
   return fetchJson<CuentaDelAlumno>(`${BASE}/alumnos/${alumnoId}${qs ? `?${qs}` : ''}`)
+}
+
+/** Materias y profesores de lo que el alumno tiene por cobrar, para los filtros (T-177). */
+export function obtenerOpcionesDeCuenta(alumnoId: number): Promise<OpcionesDeCuenta> {
+  return fetchJson<OpcionesDeCuenta>(`${BASE}/alumnos/${alumnoId}/opciones`)
 }
 
 /** Adeudados de todos los alumnos, o solo de `alumnoId` si viene. */

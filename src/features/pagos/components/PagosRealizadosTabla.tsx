@@ -15,7 +15,7 @@ import { cn } from '@/utils/cn'
 import { fechaCorta } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
 
-import { textoMotivoAnulacion, textoNumero } from '../formato-pagos'
+import { textoNumero } from '../formato-pagos'
 import type { PagoRealizado } from '../pagos-realizados.types'
 import { hrefPagosRealizadosDelAlumno } from '../rutas-pagos'
 
@@ -37,9 +37,9 @@ type PagosRealizadosTablaProps = {
 }
 
 /**
- * La tabla de "Pagos realizados" (HU-36). Un pago anulado se lista marcado "Anulado", con el
- * motivo, y su total tachado y atenuado: no suma al total cobrado. "Ver detalle" abre el detalle
- * del pago (`onAbrirPago`).
+ * La tabla de "Pagos realizados" (HU-36). Un pago anulado se lista marcado "Anulado" y con su
+ * total tachado y atenuado: no suma al total cobrado. El motivo de la anulación se ve solo en el
+ * detalle del pago, que abre "Ver detalle" (`onAbrirPago`).
  */
 export function PagosRealizadosTabla({
   pagos,
@@ -100,11 +100,6 @@ export function PagosRealizadosTabla({
               )}
               <TableCell className={cn(CELDA, 'whitespace-normal')}>
                 {pago.materias.map((materia) => materia.nombre).join(', ')}
-                {pago.anulacion && (
-                  <p className="text-cancelado mt-1 text-xs">
-                    Motivo: {textoMotivoAnulacion(pago.anulacion)}
-                  </p>
-                )}
               </TableCell>
               <TableCell className={cn(CELDA, 'text-right tabular-nums')}>
                 {pago.cantidad}

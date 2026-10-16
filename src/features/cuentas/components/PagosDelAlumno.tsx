@@ -131,6 +131,7 @@ export function PagosDelAlumno({ alumnoId, renderRegistrarPago }: PagosDelAlumno
       <Card>
         <FiltrosCuenta
           filtros={filtros}
+          alumnoId={alumnoId}
           nombres={nombres}
           onCambiar={cambiar}
           onLimpiar={limpiar}

@@ -5,6 +5,7 @@ import {
   esDeudaVencida,
   esProximo,
   importeVigente,
+  opcionesDeLaCuenta,
   paginarEnMemoria,
   rangosDelPeriodo,
   totalDe,
@@ -228,5 +229,41 @@ describe('paginarEnMemoria', () => {
       total: 0,
       totalPages: 0,
     })
+  })
+})
+
+describe('opcionesDeLaCuenta (decisión T-177)', () => {
+  const item = (
+    materia: { id: number; nombre: string },
+    profesor: { id: number; nombre: string; apellido: string },
+  ) => ({ ocurrencia: { materia, profesor } })
+
+  it('sin repetir: materias por nombre y profesores por apellido y nombre, con el estado pasado', () => {
+    const opciones = opcionesDeLaCuenta(
+      [
+        item({ id: 2, nombre: 'Matemática' }, { id: 3, nombre: 'Ana', apellido: 'Gómez' }),
+        item({ id: 7, nombre: 'Física' }, { id: 5, nombre: 'Juan', apellido: 'Ruiz' }),
+        item({ id: 2, nombre: 'Matemática' }, { id: 9, nombre: 'Bruno', apellido: 'Gómez' }),
+        item({ id: 5, nombre: 'Álgebra' }, { id: 3, nombre: 'Ana', apellido: 'Gómez' }),
+      ],
+      new Map([[2, 'INACTIVO' as const]]),
+    )
+
+    expect(opciones).toEqual({
+      materias: [
+        { id: 5, nombre: 'Álgebra', estado: 'ACTIVO' },
+        { id: 7, nombre: 'Física', estado: 'ACTIVO' },
+        { id: 2, nombre: 'Matemática', estado: 'INACTIVO' },
+      ],
+      profesores: [
+        { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+        { id: 9, nombre: 'Bruno', apellido: 'Gómez' },
+        { id: 5, nombre: 'Juan', apellido: 'Ruiz' },
+      ],
+    })
+  })
+
+  it('sin ocurrencias: las dos listas vacías', () => {
+    expect(opcionesDeLaCuenta([], new Map())).toEqual({ materias: [], profesores: [] })
   })
 })
