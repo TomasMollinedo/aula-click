@@ -307,8 +307,8 @@ async function crear(azar: Azar) {
   )
   console.log(
     `  tablero (${desde} a ${fechaHoy}): ${resumen.presentes.porcentaje} % presentes, ` +
-      `${resumen.ausentes.porcentaje} % ausentes, ${resumen.sinRegistrar.cantidad} turnos cerrados ` +
-      `sin registrar (${resumen.sinRegistrar.porcentaje} %)`,
+      `${resumen.ausentes.porcentaje} % ausentes, ${resumen.sinRegistrar.cantidad} sin registrar ` +
+      `(dentro del plazo), ${resumen.cerrados.cantidad} cerrados por el sistema`,
   )
   console.log(
     `  profesores con clases de los últimos 7 días sin registrar: ` +

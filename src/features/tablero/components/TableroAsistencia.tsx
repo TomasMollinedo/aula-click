@@ -4,10 +4,12 @@ import { useEffect, useId, useRef } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/utils/cn'
 
 import type { ErrorTablero } from '../errores-tablero'
 import { mensajesDeAsistencia } from '../errores-tablero'
@@ -17,9 +19,16 @@ import {
   formatearPorcentaje,
   rotuloALaFecha,
   rotuloDelPeriodo,
+  textoClasesCerradas,
 } from '../formato-tablero'
-import type { OrdenProfesores, TableroAsistencia as Asistencia } from '../tablero.types'
-import { GraficoDona, ItemLeyenda } from './GraficoDona'
+import type {
+  Conteo,
+  OrdenProfesores,
+  ResumenAsistencia,
+  TableroAsistencia as Asistencia,
+} from '../tablero.types'
+import { rotulosDeTorta } from '../torta-rotulos'
+import { GraficoDona } from './GraficoDona'
 import { TablaMateriasAsistencia, TablaProfesoresAsistencia } from './TablaAsistencia'
 import { TarjetaIndicador, ValorIndicador } from './TarjetaIndicador'
 
@@ -86,9 +95,9 @@ export function TableroAsistencia({
         <div
           role="status"
           aria-label="Cargando el resumen de asistencia"
-          className="grid gap-4 md:grid-cols-2"
+          className="grid gap-4 lg:grid-cols-[3fr_2fr]"
         >
-          {[0, 1].map((i) => (
+          {[0, 1, 2].map((i) => (
             <Card key={i} className="gap-3 p-5">
               <Skeleton className="h-4 w-28" />
               <Skeleton className="h-3 w-40" />
@@ -132,69 +141,50 @@ export function TableroAsistencia({
 }
 
 /**
- * Los números principales: la torta es siempre del período entero, sin el filtro de la tabla. Los
- * profesores sin registrar **no** dependen del período: son los que tienen clases de los últimos 7
- * días sin marcar, a la fecha de la respuesta.
+ * Los números principales. La torta y los turnos cerrados por el sistema son del período entero,
+ * sin el filtro de la tabla; los profesores sin registrar **no** dependen del período: son los que
+ * tienen clases de los últimos 7 días sin marcar, a la fecha de la respuesta. Los colores y los
+ * rótulos de la torta son los de los badges de estado del turno.
  */
 function Resumen({ asistencia, enEspera }: { asistencia: Asistencia; enEspera: boolean }) {
   const { resumen } = asistencia
-  const { presentes, ausentes, sinRegistrar } = resumen
+  const { cerrados, total, clasesCerradas } = resumen
+  const delPeriodo = rotuloDelPeriodo(asistencia.periodo)
 
   return (
     <section
       aria-label="Resumen de asistencia"
       aria-busy={enEspera}
-      className="grid gap-4 md:grid-cols-2"
+      className="grid gap-4 lg:grid-cols-[2fr_1fr]"
     >
       <TarjetaIndicador
         titulo="Asistencia del centro"
-        rotulo={rotuloDelPeriodo(asistencia.periodo)}
+        rotulo={delPeriodo}
+        className="lg:row-span-2"
       >
-        <GraficoDona
-          descripcion={`${formatearCantidad(presentes.cantidad)} presentes, ${formatearCantidad(ausentes.cantidad)} ausentes y ${formatearCantidad(sinRegistrar.cantidad)} sin registrar`}
-          centro={{ valor: formatearPorcentaje(presentes.porcentaje), texto: 'presentes' }}
-          segmentos={[
-            {
-              etiqueta: 'Presentes',
-              valor: presentes.cantidad,
-              claseColor: 'stroke-estado-realizado',
-            },
-            {
-              etiqueta: 'Ausentes',
-              valor: ausentes.cantidad,
-              claseColor: 'stroke-estado-ausente',
-            },
-            {
-              etiqueta: 'Sin registrar',
-              valor: sinRegistrar.cantidad,
-              claseColor: 'stroke-estado-sin-registrar',
-            },
-          ]}
+        <TortaDeAsistencia resumen={resumen} />
+        <div className="border-border space-y-1 border-t pt-4">
+          <p className="flex items-baseline justify-between gap-3 text-sm">
+            <span className="text-muted-foreground">Total de turnos</span>
+            <span className="text-base font-semibold tabular-nums">{formatearCantidad(total)}</span>
+          </p>
+          <p className="text-muted-foreground text-xs">
+            «Sin registrar» son los que el profesor todavía puede marcar (tiene 7 días desde la
+            clase). «Cerrados» son los que el sistema cerró pasado ese plazo.
+          </p>
+        </div>
+      </TarjetaIndicador>
+
+      <TarjetaIndicador titulo="Cerrados por el sistema" rotulo={delPeriodo}>
+        <ValorIndicador
+          destacado
+          valor={formatearCantidad(cerrados.cantidad)}
+          detalle={
+            clasesCerradas
+              ? `Son ${textoClasesCerradas(clasesCerradas)}.`
+              : 'El sistema no cerró ningún turno en este período.'
+          }
         />
-        <ul className="space-y-2">
-          <ItemLeyenda
-            claseColor="bg-estado-realizado"
-            etiqueta="Presentes"
-            valor={formatearCantidad(presentes.cantidad)}
-            detalle={formatearPorcentaje(presentes.porcentaje)}
-          />
-          <ItemLeyenda
-            claseColor="bg-estado-ausente"
-            etiqueta="Ausentes"
-            valor={formatearCantidad(ausentes.cantidad)}
-            detalle={formatearPorcentaje(ausentes.porcentaje)}
-          />
-          <ItemLeyenda
-            claseColor="bg-estado-sin-registrar"
-            etiqueta="Sin registrar"
-            valor={formatearCantidad(sinRegistrar.cantidad)}
-            detalle={formatearPorcentaje(sinRegistrar.porcentaje)}
-          />
-        </ul>
-        <p className="text-muted-foreground text-xs">
-          «Sin registrar» son los turnos que cerró el sistema porque pasaron los 7 días que tiene el
-          profesor para marcar la asistencia.
-        </p>
       </TarjetaIndicador>
 
       <TarjetaIndicador titulo="Profesores sin registrar" rotulo={rotuloALaFecha(asistencia.hoy)}>
@@ -205,6 +195,148 @@ function Resumen({ asistencia, enEspera }: { asistencia: Asistencia; enEspera: b
         </p>
       </TarjetaIndicador>
     </section>
+  )
+}
+
+type PartesDeLaTorta = {
+  etiqueta: string
+  variante: 'estadoRealizado' | 'estadoAusente' | 'estadoSinRegistrar' | 'estadoCerrado'
+  claseColor: string
+  conteo: Conteo
+}
+
+/** El ancho que se reserva a cada lado de la torta para sus rótulos, en píxeles. */
+const SEPARACION_ROTULO = 108
+
+/**
+ * La torta con cada rótulo (el badge del estado, el porcentaje y la cantidad) pegado a su porción,
+ * unido por una línea, para saber de un vistazo cuál es cuál. En pantallas chicas, donde no hay
+ * lugar a los costados, los rótulos van en una lista debajo.
+ */
+function TortaDeAsistencia({ resumen }: { resumen: ResumenAsistencia }) {
+  const partes: PartesDeLaTorta[] = [
+    {
+      etiqueta: 'Presentes',
+      variante: 'estadoRealizado',
+      claseColor: 'stroke-estado-realizado-borde',
+      conteo: resumen.presentes,
+    },
+    {
+      etiqueta: 'Ausentes',
+      variante: 'estadoAusente',
+      claseColor: 'stroke-estado-ausente-borde',
+      conteo: resumen.ausentes,
+    },
+    {
+      etiqueta: 'Sin registrar',
+      variante: 'estadoSinRegistrar',
+      claseColor: 'stroke-estado-sin-registrar-borde',
+      conteo: resumen.sinRegistrar,
+    },
+    {
+      etiqueta: 'Cerrados',
+      variante: 'estadoCerrado',
+      claseColor: 'stroke-estado-sin-registrar',
+      conteo: resumen.cerrados,
+    },
+  ]
+  const { rotulos, alto } = rotulosDeTorta(partes.map(({ conteo }) => conteo.cantidad))
+  const sinPorcion = partes.filter(({ conteo }) => conteo.cantidad === 0)
+
+  const torta = (
+    <GraficoDona
+      className="size-44"
+      descripcion={partes
+        .map(({ etiqueta, conteo }) => `${formatearCantidad(conteo.cantidad)} ${etiqueta}`)
+        .join(', ')}
+      segmentos={partes.map(({ etiqueta, conteo, claseColor }) => ({
+        etiqueta,
+        valor: conteo.cantidad,
+        claseColor,
+      }))}
+    />
+  )
+
+  return (
+    <>
+      {/* Con lugar a los costados: la torta en el medio y los rótulos alrededor. */}
+      <div className="hidden sm:block">
+        <div className="relative mx-auto w-full" style={{ height: alto }}>
+          <svg aria-hidden className="absolute inset-0 size-full overflow-visible">
+            <g style={{ transform: 'translate(50%, 50%)' }}>
+              {rotulos.map(({ indice, lado, y, borde }) => (
+                <line
+                  key={indice}
+                  x1={borde.x}
+                  y1={borde.y}
+                  x2={(lado === 'derecha' ? 1 : -1) * (SEPARACION_ROTULO - 8)}
+                  y2={y}
+                  className="stroke-border"
+                  strokeWidth={1}
+                />
+              ))}
+            </g>
+          </svg>
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2">{torta}</div>
+          {rotulos.map(({ indice, lado, y }) => {
+            const parte = partes[indice] as PartesDeLaTorta
+            return (
+              <div
+                key={indice}
+                className={cn(
+                  'absolute flex w-32 -translate-y-1/2 flex-col gap-1',
+                  lado === 'derecha' ? 'items-start text-left' : 'items-end text-right',
+                )}
+                style={{
+                  top: `calc(50% + ${y}px)`,
+                  ...(lado === 'derecha'
+                    ? { left: `calc(50% + ${SEPARACION_ROTULO}px)` }
+                    : { right: `calc(50% + ${SEPARACION_ROTULO}px)` }),
+                }}
+              >
+                <Badge variant={parte.variante}>{parte.etiqueta}</Badge>
+                <ValorDeParte conteo={parte.conteo} />
+              </div>
+            )
+          })}
+        </div>
+        {sinPorcion.length > 0 && (
+          <ul className="text-muted-foreground mt-2 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs">
+            {sinPorcion.map(({ etiqueta, variante }) => (
+              <li key={etiqueta} className="flex items-center gap-1.5">
+                <Badge variant={variante}>{etiqueta}</Badge>
+                <span className="tabular-nums">0 turnos</span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+
+      {/* Sin lugar a los costados: la torta y, debajo, la lista. */}
+      <div className="space-y-4 sm:hidden">
+        <div className="flex justify-center">{torta}</div>
+        <ul className="space-y-2">
+          {partes.map(({ etiqueta, variante, conteo }) => (
+            <li key={etiqueta} className="flex items-center justify-between gap-3">
+              <Badge variant={variante}>{etiqueta}</Badge>
+              <ValorDeParte conteo={conteo} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
+  )
+}
+
+/** El porcentaje de una parte, bien visible, con su cantidad al lado. */
+function ValorDeParte({ conteo }: { conteo: Conteo }) {
+  return (
+    <p className="tabular-nums">
+      <span className="text-2xl font-semibold">{formatearPorcentaje(conteo.porcentaje)}</span>
+      <span className="text-muted-foreground ml-1.5 text-sm">
+        {formatearCantidad(conteo.cantidad)}
+      </span>
+    </p>
   )
 }
 

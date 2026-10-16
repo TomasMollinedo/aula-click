@@ -20,7 +20,8 @@ import { TarjetaRanking } from './TarjetaRanking'
 /**
  * La sección "General" del tablero (HU-21, con los agregados de HU-39): primero el dinero (lo que
  * más se mira), con lo cobrado separado por forma de pago, después los turnos y la ocupación con
- * sus gráficos, la asistencia y los alumnos, y al final las materias y los profesores.
+ * sus gráficos y los alumnos (nuevos y atendidos, uno sobre otro), y al final las materias y los
+ * profesores. La asistencia vive en su propia pestaña.
  *
  * Cada tarjeta se rotula con el período **de la respuesta**, no con el elegido, así los números que
  * quedan atenuados mientras llegan los nuevos nunca se leen como del período nuevo. El total
@@ -121,40 +122,19 @@ export function TableroGeneral({ tablero }: { tablero: Tablero }) {
             </ul>
           </TarjetaIndicador>
 
-          <TarjetaIndicador titulo="Alumnos nuevos" rotulo={delPeriodo}>
-            <ValorIndicador destacado valor={formatearCantidad(alumnos.nuevos)} />
-          </TarjetaIndicador>
+          {/* Los alumnos, uno sobre otro: así los turnos, la ocupación y los alumnos quedan en una fila. */}
+          <div className="grid gap-4 md:col-span-2 xl:col-span-1">
+            <TarjetaIndicador titulo="Alumnos nuevos" rotulo={delPeriodo}>
+              <ValorIndicador destacado valor={formatearCantidad(alumnos.nuevos)} />
+            </TarjetaIndicador>
 
-          {/*
-            Asistencia (HU-22 y HU-39): los porcentajes son sobre los turnos **con asistencia
-            registrada**, no sobre el total, así que suman 100 (salvo el redondeo).
-          */}
-          <TarjetaIndicador titulo="Asistencia de los turnos" rotulo={delPeriodo}>
-            <ul className="space-y-2">
-              <ItemLeyenda
-                claseColor="bg-estado-realizado"
-                etiqueta="Asistió"
-                valor={formatearCantidad(turnos.asistio.cantidad)}
-                detalle={formatearPorcentaje(turnos.asistio.porcentaje)}
-              />
-              <ItemLeyenda
-                claseColor="bg-estado-ausente"
-                etiqueta="No asistió"
-                valor={formatearCantidad(turnos.noAsistio.cantidad)}
-                detalle={formatearPorcentaje(turnos.noAsistio.porcentaje)}
-              />
-            </ul>
-            <p className="text-muted-foreground text-xs">
-              Sobre los turnos con asistencia registrada, no sobre el total del período.
-            </p>
-          </TarjetaIndicador>
-
-          <TarjetaIndicador titulo="Alumnos atendidos" rotulo={delPeriodo}>
-            <ValorIndicador destacado valor={formatearCantidad(alumnos.atendidos)} />
-            <p className="text-muted-foreground -mt-2 text-xs">
-              Alumnos distintos con al menos una clase realizada.
-            </p>
-          </TarjetaIndicador>
+            <TarjetaIndicador titulo="Alumnos atendidos" rotulo={delPeriodo}>
+              <ValorIndicador destacado valor={formatearCantidad(alumnos.atendidos)} />
+              <p className="text-muted-foreground -mt-2 text-xs">
+                Alumnos distintos con al menos una clase realizada.
+              </p>
+            </TarjetaIndicador>
+          </div>
         </div>
       </Seccion>
 

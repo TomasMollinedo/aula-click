@@ -5,6 +5,7 @@ import {
   nombreArchivoTablero,
   nombreProfesor,
   periodoCompleto,
+  textoClasesCerradas,
   textoPeriodo,
   textoRangoConDias,
   tipoDePeriodo,
@@ -112,5 +113,19 @@ describe('textoRangoConDias', () => {
 
   it('un solo día', () => {
     expect(textoRangoConDias('2026-10-02', '2026-10-02')).toBe('Datos del viernes 02/10/2026')
+  })
+})
+
+describe('textoClasesCerradas', () => {
+  it('un solo día: "clases del dd/MM/yyyy"', () => {
+    expect(textoClasesCerradas({ desde: '2026-10-14', hasta: '2026-10-14' })).toBe(
+      'clases del 14/10/2026',
+    )
+  })
+
+  it('varios días: "clases del … al …"', () => {
+    expect(textoClasesCerradas({ desde: '2026-09-17', hasta: '2026-10-07' })).toBe(
+      'clases del 17/09/2026 al 07/10/2026',
+    )
   })
 })

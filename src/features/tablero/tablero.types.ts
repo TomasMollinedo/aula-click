@@ -80,6 +80,8 @@ export const ORDENES_PROFESORES = [
   'asistenciasRegistradas',
   'porcentajeRegistrado',
   'cerradosSinRegistrar',
+  'porcentajeCerrados',
+  'sinRegistrar',
   'porcentajeSinRegistrar',
 ] as const
 
@@ -89,16 +91,23 @@ export const DIRECCIONES_ORDEN = ['asc', 'desc'] as const
 
 export type DireccionOrden = (typeof DIRECCIONES_ORDEN)[number]
 
-/** Las cifras de asistencia de una fila (un profesor o una materia) en el período. */
+/**
+ * Las cifras de asistencia de una fila (un profesor o una materia) en el período. Los turnos que ya
+ * pasaron y no se cancelaron son `total`, y se reparten en tres: registradas, cerradas por el
+ * sistema y sin registrar (dentro del plazo). Los tres porcentajes son sobre `total` y suman 100.
+ */
 export type CifrasDeAsistencia = {
   /** Turnos con la asistencia marcada, "Presente" o "Ausente" (cada hora de un alumno es un turno). */
   asistenciasRegistradas: number
-  /** Registradas sobre registradas más cerradas: 100 si el profesor no dejó ninguna sin registrar. */
   porcentajeRegistrado: number
   /** Turnos que cerró el sistema sin asistencia registrada (pasaron los 7 días del plazo). */
   cerradosSinRegistrar: number
-  /** Cerrados sin registrar sobre los turnos no cancelados de la fila. */
+  porcentajeCerrados: number
+  /** Turnos sin registrar que todavía están dentro de los 7 días: el profesor aún puede marcarlos. */
+  sinRegistrar: number
   porcentajeSinRegistrar: number
+  /** Registradas, cerradas y sin registrar: la base de los tres porcentajes ("12 de 20"). */
+  total: number
 }
 
 export type FilaProfesorAsistencia = CifrasDeAsistencia & {
@@ -112,15 +121,24 @@ export type FilaMateriaAsistencia = CifrasDeAsistencia & {
 }
 
 /**
- * Los números principales de la sección. La torta (`presentes`, `ausentes` y `sinRegistrar`) es del
- * período entero, con el porcentaje de cada uno sobre los tres juntos; `profesoresSinRegistrar` no
+ * Los números principales de la sección. La torta (`presentes`, `ausentes`, `sinRegistrar` y
+ * `cerrados`, con su porcentaje sobre `total`) es del período entero; `profesoresSinRegistrar` no
  * depende del período.
  */
 export type ResumenAsistencia = {
   presentes: Conteo
   ausentes: Conteo
-  /** Turnos que cerró el sistema sin asistencia (pasaron los 7 días del plazo). */
+  /** Turnos sin registrar que todavía están dentro de los 7 días del plazo. */
   sinRegistrar: Conteo
+  /** Turnos que cerró el sistema porque pasaron los 7 días sin asistencia. */
+  cerrados: Conteo
+  /** Los cuatro juntos: la base de los porcentajes. */
+  total: number
+  /**
+   * La clase más antigua y la más reciente entre los turnos que cerró el sistema, o `null` si no
+   * cerró ninguno (por ejemplo, en un período de esta semana).
+   */
+  clasesCerradas: { desde: string; hasta: string } | null
   /**
    * Profesores con clases de los últimos 7 días (hoy incluido) sin la asistencia marcada: los que
    * todavía están a tiempo de registrarla. Siempre es la ventana que termina hoy.

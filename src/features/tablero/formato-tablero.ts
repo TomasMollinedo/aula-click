@@ -60,6 +60,16 @@ export function nombreDeProfesor({
   return `${apellido}, ${nombre}`
 }
 
+/**
+ * Las clases cuyo turno cerró el sistema: `'clases del 14/10/2026'` si es un solo día y `'clases
+ * del 10/09/2026 al 14/10/2026'` si son varios.
+ */
+export function textoClasesCerradas({ desde, hasta }: { desde: string; hasta: string }): string {
+  return desde === hasta
+    ? `clases del ${fechaCompleta(desde)}`
+    : `clases del ${fechaCompleta(desde)} al ${fechaCompleta(hasta)}`
+}
+
 /** `1` → `"1 turno"`, `15` → `"15 turnos"`. */
 export function textoTurnos(cantidad: number): string {
   return `${formatearCantidad(cantidad)} ${cantidad === 1 ? 'turno' : 'turnos'}`

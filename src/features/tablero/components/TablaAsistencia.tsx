@@ -42,19 +42,40 @@ import { EncabezadoOrdenable } from './EncabezadoOrdenable'
 // `Table`), no la página entera.
 
 /** Las columnas de cifras, iguales en las dos tablas. */
-const CIFRAS: { campo: keyof CifrasDeAsistencia; titulo: string; porcentaje?: boolean }[] = [
-  { campo: 'asistenciasRegistradas', titulo: 'Asistencias registradas' },
-  { campo: 'porcentajeRegistrado', titulo: '% registrado', porcentaje: true },
-  { campo: 'cerradosSinRegistrar', titulo: 'Cerrados sin registrar' },
+const CIFRAS: {
+  campo: Exclude<keyof CifrasDeAsistencia, 'total'>
+  titulo: string
+  porcentaje?: boolean
+  /** Se escribe "12 de 20": la cifra sobre `total`. */
+  deTotal?: boolean
+}[] = [
+  { campo: 'asistenciasRegistradas', titulo: 'Asistencias registradas', deTotal: true },
+  { campo: 'porcentajeRegistrado', titulo: '% registradas', porcentaje: true },
+  { campo: 'cerradosSinRegistrar', titulo: 'Cerrados por el sistema', deTotal: true },
+  { campo: 'porcentajeCerrados', titulo: '% cerrados', porcentaje: true },
+  { campo: 'sinRegistrar', titulo: 'Sin registrar', deTotal: true },
   { campo: 'porcentajeSinRegistrar', titulo: '% sin registrar', porcentaje: true },
 ]
 
-/** Qué es un turno "sin registrar": se dice en las dos tablas, bajo el título. */
+/**
+ * Qué es cada estado, bajo el título de las dos tablas: el total son los turnos que ya pasaron, y
+ * "sin registrar" es lo que el profesor todavía puede marcar dentro de sus 7 días.
+ */
 const ACLARACION_PLAZO =
-  'Un turno cuenta como «sin registrar» recién cuando pasan los 7 días que tiene el profesor para marcar la asistencia.'
+  'Cada cifra es sobre el total de turnos que ya pasaron. «Sin registrar» son los que el profesor todavía puede marcar: tiene 7 días desde la clase; pasado ese plazo el sistema los cierra.'
 
-function celdaDeCifra(fila: CifrasDeAsistencia, campo: keyof CifrasDeAsistencia, pct = false) {
-  return pct ? formatearPorcentaje(fila[campo]) : formatearCantidad(fila[campo])
+function celdaDeCifra(
+  fila: CifrasDeAsistencia,
+  { campo, porcentaje, deTotal }: (typeof CIFRAS)[number],
+) {
+  if (porcentaje) return formatearPorcentaje(fila[campo])
+  if (!deTotal) return formatearCantidad(fila[campo])
+  return (
+    <>
+      <span className="font-medium">{formatearCantidad(fila[campo])}</span>
+      <span className="text-muted-foreground"> de {formatearCantidad(fila.total)}</span>
+    </>
+  )
 }
 
 type TablaProps = {
@@ -204,9 +225,9 @@ export function TablaProfesoresAsistencia({
                   )}
                 </span>
               </TableCell>
-              {CIFRAS.map(({ campo, porcentaje }) => (
-                <TableCell key={campo} className="text-right tabular-nums">
-                  {celdaDeCifra(fila, campo, porcentaje)}
+              {CIFRAS.map((cifra) => (
+                <TableCell key={cifra.campo} className="text-right tabular-nums">
+                  {celdaDeCifra(fila, cifra)}
                 </TableCell>
               ))}
             </TableRow>
@@ -256,9 +277,9 @@ export function TablaMateriasAsistencia({
           {materias?.data.map((fila) => (
             <TableRow key={fila.materia.id}>
               <TableCell className="font-medium">{fila.materia.nombre}</TableCell>
-              {CIFRAS.map(({ campo, porcentaje }) => (
-                <TableCell key={campo} className="text-right tabular-nums">
-                  {celdaDeCifra(fila, campo, porcentaje)}
+              {CIFRAS.map((cifra) => (
+                <TableCell key={cifra.campo} className="text-right tabular-nums">
+                  {celdaDeCifra(fila, cifra)}
                 </TableCell>
               ))}
             </TableRow>

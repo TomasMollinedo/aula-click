@@ -215,42 +215,49 @@ export function alumnosAtendidos(
 export type CifrasDeAsistencia = {
   /** Turnos con asistencia registrada (`REALIZADO` y `AUSENTE`): cada hora de un alumno cuenta como un turno. */
   asistenciasRegistradas: number
-  /**
-   * `asistenciasRegistradas` sobre las registradas más los turnos cerrados sin registrar: mide si
-   * el profesor cumplió con su tarea, no si el alumno vino. 100 si no dejó ninguno sin registrar.
-   */
+  /** `asistenciasRegistradas` sobre `total`. */
   porcentajeRegistrado: number
   /** `SIN_REGISTRAR` con el plazo vencido: los que cerró el sistema. */
   cerradosSinRegistrar: number
-  /** `cerradosSinRegistrar` sobre los turnos **no cancelados** del grupo. */
+  /** `cerradosSinRegistrar` sobre `total`. */
+  porcentajeCerrados: number
+  /** `SIN_REGISTRAR` que todavía están dentro del plazo de 7 días: el profesor aún puede marcarlos. */
+  sinRegistrar: number
+  /** `sinRegistrar` sobre `total`. */
   porcentajeSinRegistrar: number
+  /**
+   * Los turnos que ya pasaron y no se cancelaron: las registradas, las cerradas y las sin registrar
+   * dentro del plazo. Es la base de los tres porcentajes ("12 de 20"), que suman 100. Los
+   * cancelados y los agendados no están.
+   */
+  total: number
 }
 
 /**
- * Las cifras de un grupo de turnos. Los cancelados no cuentan (no hay asistencia que registrar),
- * tampoco en la base de `porcentajeSinRegistrar`; los agendados y los que todavía están dentro del
- * plazo sí están en esa base, pero no en la de `porcentajeRegistrado`. Todos los porcentajes salen
- * en 0 si su base es 0.
+ * Las cifras de un grupo de turnos. Los cancelados no cuentan (no hay asistencia que registrar) y
+ * los agendados tampoco (todavía no pasaron). Los tres porcentajes son sobre `total` y salen en 0
+ * si es 0.
  */
 function cifrasDeAsistencia(ocurrencias: readonly OcurrenciaAsistencia[]): CifrasDeAsistencia {
-  let turnos = 0
   let asistenciasRegistradas = 0
   let cerradosSinRegistrar = 0
+  let sinRegistrar = 0
   for (const { estado, plazoAsistencia } of ocurrencias) {
-    if (estado === 'CANCELADO') continue
-    turnos += 1
     if (estado === 'REALIZADO' || estado === 'AUSENTE') asistenciasRegistradas += 1
-    else if (estado === 'SIN_REGISTRAR' && plazoAsistencia?.vencido === true)
-      cerradosSinRegistrar += 1
+    else if (estado === 'SIN_REGISTRAR') {
+      if (plazoAsistencia?.vencido === true) cerradosSinRegistrar += 1
+      else sinRegistrar += 1
+    }
   }
+  const total = asistenciasRegistradas + cerradosSinRegistrar + sinRegistrar
   return {
     asistenciasRegistradas,
-    porcentajeRegistrado: porcentaje(
-      asistenciasRegistradas,
-      asistenciasRegistradas + cerradosSinRegistrar,
-    ),
+    porcentajeRegistrado: porcentaje(asistenciasRegistradas, total),
     cerradosSinRegistrar,
-    porcentajeSinRegistrar: porcentaje(cerradosSinRegistrar, turnos),
+    porcentajeCerrados: porcentaje(cerradosSinRegistrar, total),
+    sinRegistrar,
+    porcentajeSinRegistrar: porcentaje(sinRegistrar, total),
+    total,
   }
 }
 
@@ -327,6 +334,8 @@ export const COLUMNAS_PROFESORES = [
   'asistenciasRegistradas',
   'porcentajeRegistrado',
   'cerradosSinRegistrar',
+  'porcentajeCerrados',
+  'sinRegistrar',
   'porcentajeSinRegistrar',
 ] as const
 export type ColumnaProfesores = (typeof COLUMNAS_PROFESORES)[number]
@@ -376,30 +385,58 @@ export type ResumenDeAsistencia = {
   presentes: Conteo
   /** Turnos `AUSENTE`. */
   ausentes: Conteo
-  /** Turnos cerrados "Sin registrar" por el sistema (pasaron los 7 días del plazo). */
+  /** Turnos "Sin registrar" que todavía están dentro del plazo de 7 días. */
   sinRegistrar: Conteo
+  /** Turnos "Sin registrar" que cerró el sistema (pasaron los 7 días del plazo). */
+  cerrados: Conteo
+  /** Los cuatro juntos: la base de los porcentajes. */
+  total: number
+  /**
+   * La fecha de la clase más antigua y la de la más reciente entre los turnos que cerró el sistema,
+   * o `null` si no cerró ninguno.
+   */
+  clasesCerradas: { desde: string; hasta: string } | null
 }
 
 /**
- * El resumen del período: presentes, ausentes y cerrados sin registrar, cada uno con su porcentaje
- * sobre los tres juntos. Los pendientes dentro del plazo y los agendados no entran: todavía se pueden
- * registrar. Sin ningún turno de los tres, todo en 0.
+ * Las fechas de las clases cuyo turno cerró el sistema: de la más antigua a la más reciente. Son
+ * siempre anteriores a la ventana de registro (un turno se cierra recién a los 7 días de la clase).
+ * `null` si no hay ninguno cerrado.
+ */
+export function clasesCerradasDelSistema(
+  ocurrencias: readonly Pick<OcurrenciaAsistencia, 'estado' | 'plazoAsistencia' | 'fecha'>[],
+): { desde: string; hasta: string } | null {
+  const fechas = ocurrencias
+    .filter((o) => o.estado === 'SIN_REGISTRAR' && o.plazoAsistencia?.vencido === true)
+    .map((o) => o.fecha)
+    .sort()
+  const primera = fechas[0]
+  const ultima = fechas[fechas.length - 1]
+  return primera === undefined || ultima === undefined ? null : { desde: primera, hasta: ultima }
+}
+
+/**
+ * El resumen del período: presentes, ausentes, sin registrar (dentro del plazo) y cerrados por el
+ * sistema, cada uno con su porcentaje sobre los cuatro juntos. Los cancelados y los agendados no
+ * entran. Sin ningún turno de los cuatro, todo en 0.
  */
 export function resumenDeAsistencia(
   ocurrencias: readonly OcurrenciaAsistencia[],
 ): ResumenDeAsistencia {
-  const presentes = ocurrencias.filter((o) => o.estado === 'REALIZADO').length
+  const cifras = cifrasDeAsistencia(ocurrencias)
   const ausentes = ocurrencias.filter((o) => o.estado === 'AUSENTE').length
-  const cerrados = cifrasDeAsistencia(ocurrencias).cerradosSinRegistrar
-  const base = presentes + ausentes + cerrados
+  const presentes = cifras.asistenciasRegistradas - ausentes
   const conteo = (cantidad: number): Conteo => ({
     cantidad,
-    porcentaje: porcentaje(cantidad, base),
+    porcentaje: porcentaje(cantidad, cifras.total),
   })
   return {
     presentes: conteo(presentes),
     ausentes: conteo(ausentes),
-    sinRegistrar: conteo(cerrados),
+    sinRegistrar: conteo(cifras.sinRegistrar),
+    cerrados: conteo(cifras.cerradosSinRegistrar),
+    total: cifras.total,
+    clasesCerradas: clasesCerradasDelSistema(ocurrencias),
   }
 }
 

@@ -30,7 +30,8 @@ export function GraficoDona({
 }: {
   segmentos: readonly SegmentoDona[]
   total?: number
-  centro: { valor: string; texto?: string }
+  /** Sin `centro`, el anillo queda vacío por dentro. */
+  centro?: { valor: string; texto?: string }
   descripcion: string
   className?: string
 }) {
@@ -75,10 +76,12 @@ export function GraficoDona({
             )
           })}
       </svg>
-      <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
-        <span className="text-2xl font-semibold tabular-nums">{centro.valor}</span>
-        {centro.texto && <span className="text-muted-foreground text-xs">{centro.texto}</span>}
-      </div>
+      {centro && (
+        <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center text-center">
+          <span className="text-2xl font-semibold tabular-nums">{centro.valor}</span>
+          {centro.texto && <span className="text-muted-foreground text-xs">{centro.texto}</span>}
+        </div>
+      )}
     </div>
   )
 }

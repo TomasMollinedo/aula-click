@@ -478,6 +478,9 @@ describe('asistencia: GET /tablero/asistencia', () => {
         presentes: { cantidad: 0, porcentaje: 0 },
         ausentes: { cantidad: 0, porcentaje: 0 },
         sinRegistrar: { cantidad: 0, porcentaje: 0 },
+        cerrados: { cantidad: 0, porcentaje: 0 },
+        total: 0,
+        clasesCerradas: null,
         profesoresSinRegistrar: 0,
       },
       profesores: { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } },
@@ -491,9 +494,13 @@ describe('asistencia: GET /tablero/asistencia', () => {
     const { resumen, profesores, materias } = await service.obtenerAsistencia(PRIMERA_PAGINA)
 
     expect(resumen).toEqual({
-      presentes: { cantidad: 1, porcentaje: 33.3 },
+      presentes: { cantidad: 1, porcentaje: 25 },
       ausentes: { cantidad: 0, porcentaje: 0 },
-      sinRegistrar: { cantidad: 2, porcentaje: 66.7 },
+      sinRegistrar: { cantidad: 1, porcentaje: 25 },
+      cerrados: { cantidad: 2, porcentaje: 50 },
+      total: 4,
+      // Las dos clases cerradas son del 22/09.
+      clasesCerradas: { desde: '2026-09-22', hasta: '2026-09-22' },
       // Ana tiene un turno todavía dentro del plazo; Luis sólo cerrados.
       profesoresSinRegistrar: 1,
     })
@@ -507,13 +514,19 @@ describe('asistencia: GET /tablero/asistencia', () => {
       asistenciasRegistradas: 0,
       porcentajeRegistrado: 0,
       cerradosSinRegistrar: 2,
-      porcentajeSinRegistrar: 100,
+      porcentajeCerrados: 100,
+      sinRegistrar: 0,
+      porcentajeSinRegistrar: 0,
+      total: 2,
       noRegistraAsistencia: true,
     })
+    // Ana: 1 registrada y 1 dentro del plazo.
     expect(profesores.data[1]).toMatchObject({
       asistenciasRegistradas: 1,
-      porcentajeRegistrado: 100,
-      porcentajeSinRegistrar: 0,
+      porcentajeRegistrado: 50,
+      sinRegistrar: 1,
+      porcentajeSinRegistrar: 50,
+      total: 2,
       noRegistraAsistencia: false,
     })
     expect(materias.data.map((f) => f.materia.nombre)).toEqual(['Física', 'Matemática'])
@@ -534,7 +547,7 @@ describe('asistencia: GET /tablero/asistencia', () => {
 
     const { resumen } = await service.obtenerAsistencia({ ...PRIMERA_PAGINA, ...PERIODO_VIEJO })
 
-    expect(resumen.sinRegistrar.cantidad).toBe(1)
+    expect(resumen.cerrados.cantidad).toBe(1)
     expect(resumen.profesoresSinRegistrar).toBe(2)
   })
 
@@ -655,7 +668,7 @@ describe('asistencia: tablas completas para el PDF', () => {
 
     expect(periodo).toEqual(ESTA_SEMANA)
     expect(hoy).toBe(HOY)
-    expect(resumen.sinRegistrar.cantidad).toBe(1)
+    expect(resumen.cerrados.cantidad).toBe(1)
     expect(profesores).toHaveLength(26)
     expect(profesores[0]?.profesor.id).toBe(7)
     expect(materias).toHaveLength(26)
