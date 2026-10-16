@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   ETIQUETA_FORMA_PAGO,
   anchoDeBarra,
+  etiquetasDeMeses,
   formatearCantidad,
   formatearPorcentaje,
   nombreDeProfesor,
   rotuloALaFecha,
   textoClasesCerradas,
   textoMostrando,
+  tituloDeMes,
   rotuloDelPeriodo,
   textoPeriodo,
   textoTurnos,
@@ -136,5 +138,37 @@ describe('textoClasesCerradas', () => {
     expect(textoClasesCerradas({ desde: '2026-09-17', hasta: '2026-10-07' })).toBe(
       'clases del 17/09/2026 al 07/10/2026',
     )
+  })
+})
+
+describe('tituloDeMes', () => {
+  it('un mes `YYYY-MM` con mayúscula inicial y el año', () => {
+    expect(tituloDeMes('2026-10')).toBe('Octubre de 2026')
+    expect(tituloDeMes('2025-12')).toBe('Diciembre de 2025')
+  })
+
+  it('el mes se lee en hora local: nunca se corre al anterior', () => {
+    // `new Date('2026-01-01')` sería UTC y en Argentina caería en diciembre: se usa `parseISO`.
+    expect(tituloDeMes('2026-01')).toBe('Enero de 2026')
+  })
+})
+
+describe('etiquetasDeMeses', () => {
+  it('mes corto, con el año en el primero y cada vez que cambia', () => {
+    // Como los muestra el gráfico: del más reciente al más alejado.
+    expect(etiquetasDeMeses(['2026-10', '2026-09', '2026-08'])).toEqual(['oct 2026', 'sep', 'ago'])
+  })
+
+  it('al cruzar el año, el año vuelve a escribirse', () => {
+    expect(etiquetasDeMeses(['2027-02', '2027-01', '2026-12', '2026-11'])).toEqual([
+      'feb 2027',
+      'ene',
+      'dic 2026',
+      'nov',
+    ])
+  })
+
+  it('sin meses, sin etiquetas', () => {
+    expect(etiquetasDeMeses([])).toEqual([])
   })
 })

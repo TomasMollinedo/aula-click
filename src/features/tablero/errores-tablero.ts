@@ -20,13 +20,23 @@ export const CAMPOS_ASISTENCIA = [
   'soloSinRegistrar',
 ] as const
 
-export type CampoTablero = (typeof CAMPOS_PERIODO)[number] | (typeof CAMPOS_ASISTENCIA)[number]
+/**
+ * Los parámetros propios de la sección "Finanzas" (HU-47): la página y el orden de la tabla por
+ * profesor. Como los de "Asistencia", un 400 sobre uno de ellos no invalida el período. `orden` y
+ * `direccion` son los mismos nombres que usa "Asistencia": sólo una sección está activa a la vez.
+ */
+export const CAMPOS_FINANZAS = ['page', 'orden', 'direccion'] as const
+
+export type CampoTablero =
+  | (typeof CAMPOS_PERIODO)[number]
+  | (typeof CAMPOS_ASISTENCIA)[number]
+  | (typeof CAMPOS_FINANZAS)[number]
 
 export type ErrorTablero = {
   /**
    * `periodo`: un 400 que toca el período (o que no se pudo ubicar). `parametros`: un 400 sólo
-   * sobre los parámetros de las tablas de "Asistencia", con el período válido (el PDF sigue
-   * disponible). `sinPermiso`: 403. `general`: cualquier otro.
+   * sobre los parámetros de las tablas de la sección ("Asistencia" o "Finanzas"), con el período
+   * válido (el PDF sigue disponible). `sinPermiso`: 403. `general`: cualquier otro.
    */
   tipo: 'periodo' | 'parametros' | 'sinPermiso' | 'general'
   /** El texto del lugar del contenido; en un 400, el general si algo no se ubicó en un campo. */
@@ -39,7 +49,12 @@ export type ErrorTablero = {
 
 export const MENSAJE_PERIODO_INVALIDO = 'El período no es válido. Revisá las fechas.'
 
-const CAMPOS: readonly CampoTablero[] = [...CAMPOS_PERIODO, ...CAMPOS_ASISTENCIA]
+// `orden` y `direccion` están en las dos secciones: se repiten, lo que para `includes` da igual.
+const CAMPOS: readonly CampoTablero[] = [
+  ...CAMPOS_PERIODO,
+  ...CAMPOS_ASISTENCIA,
+  ...CAMPOS_FINANZAS,
+]
 
 function esCampo(valor: unknown): valor is CampoTablero {
   return typeof valor === 'string' && (CAMPOS as readonly string[]).includes(valor)
@@ -77,20 +92,33 @@ function errorDeValidacion(details: unknown): ErrorTablero {
   }
 }
 
+/** Los mensajes del 400 de los campos de una sección, en el orden en que se muestran. */
+function mensajesDe(
+  campos: readonly CampoTablero[],
+  error: ErrorTablero | null | undefined,
+): string[] {
+  if (!error) return []
+  return campos
+    .map((campo) => error.campos[campo])
+    .filter((mensaje): mensaje is string => mensaje !== undefined)
+}
+
 /** Los mensajes del 400 que no van junto al selector de período: los de las tablas. */
 export function mensajesDeAsistencia(error: ErrorTablero | null | undefined): string[] {
-  if (!error) return []
-  return CAMPOS_ASISTENCIA.map((campo) => error.campos[campo]).filter(
-    (mensaje): mensaje is string => mensaje !== undefined,
-  )
+  return mensajesDe(CAMPOS_ASISTENCIA, error)
+}
+
+/** Lo mismo para "Finanzas": los de su tabla por profesor. */
+export function mensajesDeFinanzas(error: ErrorTablero | null | undefined): string[] {
+  return mensajesDe(CAMPOS_FINANZAS, error)
 }
 
 /**
  * - 400: el período no es válido (hasta anterior a desde, más de 366 días) o un parámetro de las
- *   tablas de "Asistencia" no existe (una página que no es un entero >= 1, un `orden`, una
- *   `direccion` o un `soloSinRegistrar` desconocidos): cada `details` sale junto a su campo, con el
- *   `message` de la API; si alguno no se puede ubicar, o no hay `details`, queda además el error
- *   general.
+ *   tablas de "Asistencia" o de "Finanzas" no existe (una página que no es un entero >= 1, un
+ *   `orden`, una `direccion` o un `soloSinRegistrar` desconocidos): cada `details` sale junto a su
+ *   campo, con el `message` de la API; si alguno no se puede ubicar, o no hay `details`, queda
+ *   además el error general.
  * - 403: sin permiso (el tablero es solo del gerente).
  * - Cualquier otro (500, red, desconocido): mensaje genérico con reintentar. Un error de red lo
  *   lanza `fetch` y no es un `ApiError`, así que `status` puede no estar.
