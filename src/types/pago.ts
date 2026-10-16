@@ -58,3 +58,25 @@ export type PagoParaAcciones = {
     quitarAdjunto: boolean
   }
 }
+
+/**
+ * El reparto de un pago entre el centro y los profesores (HU-43), del `reparto` de `GET /pagos/{id}`
+ * (solo para el gerente). Vive acá y no en `features/pagos` porque lo produce `pagos` y lo muestra
+ * `reparto` (`RepartoDelPago`, por el slot `renderReparto`). Los importes y las partes los calcula
+ * la API: la UI solo los muestra.
+ */
+export type RepartoDelPago = {
+  /** Uno por turno, en el orden de `turnos` del detalle. */
+  turnos: {
+    turnoId: number
+    /** `YYYY-MM-DD`. */
+    fecha: string
+    profesor: { id: number; nombre: string; apellido: string }
+    importe: number
+    /** El que guardó el cobro (18 = 18 %). */
+    porcentaje: number
+    parteCentro: number
+    parteProfesor: number
+  }[]
+  totales: { importe: number; parteCentro: number; parteProfesor: number }
+}
