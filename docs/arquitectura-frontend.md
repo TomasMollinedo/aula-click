@@ -186,7 +186,7 @@ src/
 │ │ │ use-pago.ts, use-adjunto-de-pago.ts, # el detalle; la URL prefirmada del adjunto (solo si tiene, se renueva cada 10 min)
 │ │ │ use-reemplazar-adjunto.ts, use-quitar-adjunto.ts} # invalidan el detalle al terminar y ante un 404 o 409
 │ │ └── components/
-│ │ ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar → éxito o rechazo
+│ │ ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar (o rechazo); al registrar, se cierra y abre el detalle del pago
 │ │ │ # (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
 │ │ ├── CamposFormaPago.tsx # SelectorFormaPago (sin opción al abrir; vacía el medio anterior) y CamposDelMedio (solo los del elegido)
 │ │ ├── CampoComprobantePago.tsx # "Comprobante": CampoArchivo que sube al elegirlo (POST /adjuntos); vale el último elegido

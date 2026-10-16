@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
-import { AlertCircle, CircleCheck, Info, Receipt } from 'lucide-react'
+import { AlertCircle, Info, Receipt } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -29,11 +29,11 @@ import { interpretarErrorPago } from '../errores-pagos'
 import {
   textoConfirmacion,
   textoExito,
-  textoNumeroComprobante,
   textoSubtotal,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
+import { useDetallePagoEnUrl } from '../hooks/use-detalle-pago-en-url'
 import { useRegistrarPago } from '../hooks/use-registrar-pago'
 import {
   type PagoFormValues,
@@ -41,7 +41,6 @@ import {
   pagoFormSchema,
   valoresInicialesPago,
 } from '../pagos.schema'
-import { hrefComprobante } from '../rutas-pagos'
 import { CamposDelMedio, SelectorFormaPago } from './CamposFormaPago'
 import { ResumenACobrarTabla } from './ResumenACobrarTabla'
 import { TurnosRechazados } from './TurnosRechazados'
@@ -54,15 +53,19 @@ type Paso = 'formulario' | 'confirmar'
 /**
  * Registrar el pago de una o varias ocurrencias de un alumno (HU-15), en efectivo, por
  * transferencia o con débito (HU-23), con el comprobante adjunto que se sube al elegirlo (HU-24).
- * Un solo diálogo por pasos: formulario → confirmar → éxito (o el rechazo de la API). Lo abren
+ * Un solo diálogo por pasos: formulario → confirmar (o el rechazo de la API). Lo abren
  * `AccionRegistrarPago` (desde el detalle del turno) y `cuentas` (con `renderRegistrarPago`,
  * compuesto en `app/`).
  *
  * - La forma de pago se elige siempre (no hay una por defecto) y el formulario muestra solo los
  *   campos de esa (`CamposFormaPago`). Mientras se sube el comprobante no se puede continuar.
  *
+ * - **Al registrar, se cierra y abre el detalle del pago** (`useDetallePagoEnUrl`, `?pago=`; lo
+ *   monta el layout de mesa): ahí están "Ver comprobante", la forma de pago con sus datos (el vuelto,
+ *   en efectivo), los turnos y el adjunto. Un toast confirma el pago con la cantidad, el total, el
+ *   medio y, en efectivo, el vuelto, todo de la respuesta.
  * - Los importes que muestra son los que mandó la API a quien lo abre; el cliente solo los suma
- *   para el resumen (`resumenACobrar`). Cantidad, total y vuelto del éxito salen de la respuesta.
+ *   para el resumen (`resumenACobrar`).
  * - Queda abierto hasta que el usuario lo cierra, aunque la invalidación haga desaparecer lo que lo
  *   abrió: por eso quien lo abre guarda su copia de `ocurrencias` (ver `SolicitudRegistrarPago`).
  * - Mientras envía no se puede cerrar, y nunca se cierra con un clic afuera (hay un formulario).
@@ -70,6 +73,7 @@ type Paso = 'formulario' | 'confirmar'
 export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: SolicitudRegistrarPago) {
   const mutation = useRegistrarPago()
   const toast = useToast()
+  const { abrir: abrirDetallePago } = useDetallePagoEnUrl()
   const [paso, setPaso] = useState<Paso>('formulario')
   const [subiendoComprobante, setSubiendoComprobante] = useState(false)
   // `isPending` se actualiza después del próximo tick: un doble clic rápido llegaría a mandar dos
@@ -98,10 +102,8 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
     () => (mutation.error ? interpretarErrorPago(mutation.error, ocurrencias) : null),
     [mutation.error, ocurrencias],
   )
-  const pagoRegistrado = mutation.data ?? null
   const bloqueado = rechazo?.tipo === 'turnos' || rechazo?.tipo === 'yaPagado'
-  const vista =
-    ocurrencias.length === 0 ? 'vacio' : pagoRegistrado ? 'exito' : bloqueado ? 'rechazo' : paso
+  const vista = ocurrencias.length === 0 ? 'vacio' : bloqueado ? 'rechazo' : paso
 
   const cerrar = () => {
     if (enviando.current) return
@@ -136,7 +138,12 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
     if (enviando.current) return
     enviando.current = true
     mutation.mutate(armarRegistrarPago(alumnoId, ocurrencias, getValues()), {
-      onSuccess: (pago) => toast.success(textoExito(pago)),
+      onSuccess: (pago) => {
+        toast.success([textoExito(pago), textoVuelto(pago)].filter(Boolean).join(' · '))
+        // El pago ya está: se ve su detalle, con "Ver comprobante" (ver el JSDoc del diálogo).
+        abrirDetallePago(pago.pagoId)
+        onCerrar()
+      },
       onError: (error) => {
         const interpretado = interpretarErrorPago(error, ocurrencias)
         if (interpretado.tipo === 'campos') {
@@ -181,21 +188,6 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               description="Cerrá y elegí los turnos de nuevo."
               className="py-8"
             />
-          )}
-
-          {vista === 'exito' && pagoRegistrado && (
-            <div role="status" className="flex items-start gap-3">
-              <CircleCheck className="text-confirmado mt-0.5 size-5 shrink-0" aria-hidden />
-              <div className="space-y-1">
-                <p className="font-semibold">{textoExito(pagoRegistrado)}</p>
-                <p className="text-muted-foreground text-sm">
-                  {textoNumeroComprobante(pagoRegistrado.numeroComprobante)}
-                </p>
-                {textoVuelto(pagoRegistrado) && (
-                  <p className="text-lg font-semibold">{textoVuelto(pagoRegistrado)}</p>
-                )}
-              </div>
-            </div>
           )}
 
           {vista === 'rechazo' && rechazo?.tipo === 'turnos' && (
@@ -323,24 +315,6 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
                 disabled={mutation.isPending}
               >
                 {mutation.isPending ? 'Registrando…' : 'Registrar pago'}
-              </Button>
-            </>
-          )}
-          {vista === 'exito' && pagoRegistrado && (
-            <>
-              <Button type="button" variant="outline" onClick={cerrar}>
-                Cerrar
-              </Button>
-              <Button asChild>
-                <a
-                  href={hrefComprobante(pagoRegistrado.pagoId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Ver comprobante: ${textoNumeroComprobante(pagoRegistrado.numeroComprobante)} (abre el PDF en otra pestaña)`}
-                >
-                  <Receipt />
-                  Ver comprobante
-                </a>
               </Button>
             </>
           )}
