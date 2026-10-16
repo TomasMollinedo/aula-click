@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
-import { AlertCircle, Info, Receipt } from 'lucide-react'
+import { AlertCircle, CircleCheck, FileSearch, Info, Receipt } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -29,12 +29,14 @@ import { interpretarErrorPago } from '../errores-pagos'
 import {
   textoConfirmacion,
   textoExito,
+  textoNumeroComprobante,
   textoSubtotal,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
 import { useDetallePagoEnUrl } from '../hooks/use-detalle-pago-en-url'
 import { useRegistrarPago } from '../hooks/use-registrar-pago'
+import type { PagoRegistrado } from '../pagos.types'
 import {
   type PagoFormValues,
   armarRegistrarPago,
@@ -61,16 +63,33 @@ type Paso = 'formulario' | 'confirmar'
  *   campos de esa (`CamposFormaPago`). Mientras se sube el comprobante no se puede continuar.
  *
  * - **Al registrar, se cierra y abre el detalle del pago** (`useDetallePagoEnUrl`, `?pago=`; lo
- *   monta el layout de mesa): ahí están "Ver comprobante", la forma de pago con sus datos (el vuelto,
+ *   monta el layout de mesa; salvo con `abrirDetalleAlRegistrar={false}`, desde el detalle del
+ *   turno): ahí están "Ver comprobante", la forma de pago con sus datos (el vuelto,
  *   en efectivo), los turnos y el adjunto. Un toast confirma el pago con la cantidad, el total, el
- *   medio y, en efectivo, el vuelto, todo de la respuesta.
+ *   medio y, en efectivo, el vuelto, todo de la respuesta. **En efectivo, el diálogo primero se
+ *   queda mostrando el vuelto, destacado**, con "Cerrar" y, desde "Por cobrar", "Ver detalle del
+ *   pago".
  * - Los importes que muestra son los que mandó la API a quien lo abre; el cliente solo los suma
  *   para el resumen (`resumenACobrar`).
  * - Queda abierto hasta que el usuario lo cierra, aunque la invalidación haga desaparecer lo que lo
  *   abrió: por eso quien lo abre guarda su copia de `ocurrencias` (ver `SolicitudRegistrarPago`).
  * - Mientras envía no se puede cerrar, y nunca se cierra con un clic afuera (hay un formulario).
  */
-export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: SolicitudRegistrarPago) {
+export type RegistrarPagoDialogProps = SolicitudRegistrarPago & {
+  /**
+   * Si al registrar se abre el detalle del pago (por defecto, sí: "Por cobrar" de `cuentas`).
+   * Desde el detalle del turno, no: ese detalle ya muestra el pago con su comprobante al
+   * refrescarse, y abrir el del pago dejaría dos detalles superpuestos.
+   */
+  abrirDetalleAlRegistrar?: boolean
+}
+
+export function RegistrarPagoDialog({
+  alumnoId,
+  ocurrencias,
+  onCerrar,
+  abrirDetalleAlRegistrar = true,
+}: RegistrarPagoDialogProps) {
   const mutation = useRegistrarPago()
   const toast = useToast()
   const { abrir: abrirDetallePago } = useDetallePagoEnUrl()
@@ -103,7 +122,11 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
     [mutation.error, ocurrencias],
   )
   const bloqueado = rechazo?.tipo === 'turnos' || rechazo?.tipo === 'yaPagado'
-  const vista = ocurrencias.length === 0 ? 'vacio' : bloqueado ? 'rechazo' : paso
+  // El pago registrado que todavía se muestra: el efectivo, para dar el vuelto (con transferencia o
+  // débito el diálogo se cierra al registrar).
+  const [vuelto, setVuelto] = useState<PagoRegistrado | null>(null)
+  const vista =
+    ocurrencias.length === 0 ? 'vacio' : vuelto ? 'vuelto' : bloqueado ? 'rechazo' : paso
 
   const cerrar = () => {
     if (enviando.current) return
@@ -140,8 +163,14 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
     mutation.mutate(armarRegistrarPago(alumnoId, ocurrencias, getValues()), {
       onSuccess: (pago) => {
         toast.success([textoExito(pago), textoVuelto(pago)].filter(Boolean).join(' · '))
+        // En efectivo, el diálogo se queda con el vuelto a la vista (el toast se va solo, y ni el
+        // detalle del turno ni, destacado, el del pago lo muestran).
+        if (pago.vuelto !== null) {
+          setVuelto(pago)
+          return
+        }
         // El pago ya está: se ve su detalle, con "Ver comprobante" (ver el JSDoc del diálogo).
-        abrirDetallePago(pago.pagoId)
+        if (abrirDetalleAlRegistrar) abrirDetallePago(pago.pagoId)
         onCerrar()
       },
       onError: (error) => {
@@ -181,6 +210,24 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
         </DialogHeader>
 
         <div ref={contenidoRef} tabIndex={-1} className="space-y-5 outline-none">
+          {vista === 'vuelto' && vuelto && (
+            <div role="status" className="space-y-4">
+              <div className="flex items-start gap-3">
+                <CircleCheck className="text-confirmado mt-0.5 size-5 shrink-0" aria-hidden />
+                <div className="space-y-1">
+                  <p className="font-semibold">{textoExito(vuelto)}</p>
+                  <p className="text-muted-foreground text-sm">
+                    {textoNumeroComprobante(vuelto.numeroComprobante)}
+                  </p>
+                </div>
+              </div>
+              {/* Lo que hay que devolver, destacado como el total a pagar de la barra. */}
+              <p className="bg-confirmado rounded-lg px-4 py-3 text-center text-2xl font-bold text-white tabular-nums">
+                {textoVuelto(vuelto)}
+              </p>
+            </div>
+          )}
+
           {vista === 'vacio' && (
             <EmptyState
               icon={Receipt}
@@ -322,6 +369,32 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
             <Button type="button" variant="outline" onClick={cerrar}>
               Cerrar
             </Button>
+          )}
+          {/*
+            Desde el detalle del turno, un solo botón: "Ver comprobante" ya está en ese detalle, que
+            queda abajo. Desde "Por cobrar", además, el detalle del pago.
+          */}
+          {vista === 'vuelto' && vuelto && !abrirDetalleAlRegistrar && (
+            <Button type="button" onClick={cerrar}>
+              Cerrar
+            </Button>
+          )}
+          {vista === 'vuelto' && vuelto && abrirDetalleAlRegistrar && (
+            <>
+              <Button type="button" variant="outline" onClick={cerrar}>
+                Cerrar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  abrirDetallePago(vuelto.pagoId)
+                  onCerrar()
+                }}
+              >
+                <FileSearch />
+                Ver detalle del pago
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>
