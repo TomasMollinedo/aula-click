@@ -4,12 +4,7 @@ import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
 import type { ResumenACobrar } from './a-cobrar'
-import type {
-  CodigoFormaPago,
-  DetallePago,
-  MotivoAnulacion,
-  RedDebito,
-} from './pago-detalle.types'
+import type { CodigoFormaPago, DetallePago, MotivoAnulacion, RedDebito } from './pago-detalle.types'
 
 import type { PagoRegistrado } from './pagos.types'
 
@@ -200,20 +195,4 @@ export function datosDelMedio(
       : []),
     ...(pago.vuelto !== null ? [{ label: 'Vuelto', valor: formatearPesos(pago.vuelto) }] : []),
   ]
-}
-
-// --- Pagos realizados (HU-36, T-100). ---
-
-const NOMBRE_FORMA_PAGO: Record<CodigoFormaPago, string> = {
-  EFECTIVO: 'Efectivo',
-  TRANSFERENCIA: 'Transferencia',
-  DEBITO: 'Tarjeta de débito',
-}
-
-/**
- * El nombre de una forma de pago por su código, para el filtro y el detalle de los totales (que
- * vienen por código): `'Tarjeta de débito'`. Los mismos nombres que el catálogo de la API.
- */
-export function textoFormaPago(codigo: CodigoFormaPago): string {
-  return NOMBRE_FORMA_PAGO[codigo]
 }
