@@ -217,6 +217,7 @@ export const ejemploListado = {
   totales: {
     cobrado: 34000,
     porForma: { EFECTIVO: 0, TRANSFERENCIA: 34000, DEBITO: 0 },
+    anulado: 16000,
   },
 } satisfies ListadoPagos
 

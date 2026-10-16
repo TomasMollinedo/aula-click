@@ -155,18 +155,23 @@ export function crearPagosService({
     },
 
     /**
-     * Pagos realizados (HU-36): la página del filtro, vigentes y anulados, y los totales de
-     * **todo** el filtro sin los anulados. `cobrado` es la suma de las tres formas, en centavos. El
+     * Pagos realizados (HU-36): la página del filtro (con `estado` `TODOS`, vigentes y anulados) y
+     * los totales de **todo** el filtro: `cobrado` y `porForma` sin los anulados (`cobrado` es la
+     * suma de las tres formas, en centavos) y `anulado`, la suma de los anulados, que da la API. El
      * período ya viene en orden (lo valida el query). Un alumno, una materia o un profesor que no
      * existen dan una lista vacía y los totales en 0, sin 404.
      */
     async listar(query: ListarPagosQuery): Promise<ListadoPagos> {
       const { page, pageSize, ...filtro } = query
-      const { data, meta, porForma } = await repository.listarRealizados(filtro, {
+      const { data, meta, porForma, anulado } = await repository.listarRealizados(filtro, {
         page,
         pageSize,
       })
-      return { data, meta, totales: { cobrado: sumarImportes(Object.values(porForma)), porForma } }
+      return {
+        data,
+        meta,
+        totales: { cobrado: sumarImportes(Object.values(porForma)), porForma, anulado },
+      }
     },
 
     /**

@@ -3,7 +3,7 @@ import type { ClienteOcurrencias } from '@/server/features/turnos/ocurrencias.co
 import { SELECT_USUARIO_AUDITORIA, type UsuarioAuditoria } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import { errorFormasDePago, sumarImportes } from './pagos.reglas'
-import type { CodigoFormaPago } from './pagos.validation'
+import type { CodigoFormaPago, EstadoFiltroPago } from './pagos.validation'
 
 // Lo que otras features necesitan del cobro sin importar `pagos.reglas.ts` ni el repository (de otra
 // feature solo se importan `*.repository` y `*.condiciones`, lo hace cumplir ESLint, y un repository
@@ -76,19 +76,21 @@ type Periodo = { desde: string; hasta: string }
 /**
  * El filtro de los pagos realizados (HU-36): el período por **fecha de pago** (`fechaPago`, no
  * `createdAt`) y, si vienen, el alumno, la materia y el profesor de algún turno (los dos sobre el
- * **mismo** turno) y la forma de pago por su código (nunca por el nombre). Un `Periodo` solo ya es
- * un filtro: así lo pasa el tablero (T-61, T-112).
+ * **mismo** turno), la forma de pago por su código (nunca por el nombre) y el estado (`TODOS` o
+ * sin estado: vigentes y anulados). Un `Periodo` solo ya es un filtro: así lo pasa el tablero
+ * (T-61, T-112).
  */
 export type FiltroPagos = Periodo & {
   alumnoId?: number
   materiaId?: number
   profesorId?: number
   formaPago?: CodigoFormaPago
+  estado?: EstadoFiltroPago
 }
 
 /**
- * El `where` de los pagos del filtro, **vigentes y anulados**: el que lista `GET /pagos`. Sin
- * claves `undefined`: con sólo el período es `{ fechaPago }`.
+ * El `where` de los pagos del filtro, el que lista `GET /pagos`: con `estado` `TODOS` (o sin él),
+ * **vigentes y anulados**. Sin claves `undefined`: con sólo el período es `{ fechaPago }`.
  */
 export function pagosDelFiltro({
   desde,
@@ -97,6 +99,7 @@ export function pagosDelFiltro({
   materiaId,
   profesorId,
   formaPago,
+  estado,
 }: FiltroPagos): Prisma.PagoWhereInput {
   const turno: Prisma.TurnoWhereInput = {
     ...(materiaId !== undefined ? { materiaId } : {}),
@@ -107,15 +110,34 @@ export function pagosDelFiltro({
     ...(alumnoId !== undefined ? { alumnoId } : {}),
     ...(Object.keys(turno).length > 0 ? { turnos: { some: { turno } } } : {}),
     ...(formaPago !== undefined ? { formaPago: { tipoFormaPago: formaPago } } : {}),
+    ...(estado !== undefined && estado !== 'TODOS' ? { estado } : {}),
   }
+}
+
+/** Los pagos del filtro que están en `estado`, para sumarlos. */
+function delEstado(estado: 'VIGENTE' | 'ANULADO', filtro: FiltroPagos): Prisma.PagoWhereInput {
+  const pideOtro =
+    filtro.estado !== undefined && filtro.estado !== 'TODOS' && filtro.estado !== estado
+  // Si el filtro pide el otro estado, ningún pago cumple los dos: `in: []` no coincide con ninguna
+  // fila, así la suma la sigue haciendo la base y da 0 (sin una rama aparte que se saltee la consulta).
+  return { ...pagosDelFiltro(filtro), estado: pideOtro ? { in: [] } : estado }
 }
 
 /**
  * Lo cobrado: los pagos del filtro que están `VIGENTE` (un anulado no cuenta, HU-42). La única
- * definición: la usan el total, el total por forma y los totales de `GET /pagos`.
+ * definición: la usan el total, el total por forma y los totales de `GET /pagos`. Con
+ * `estado: 'ANULADO'` en el filtro no hay nada cobrado.
  */
 function cobrados(filtro: FiltroPagos): Prisma.PagoWhereInput {
-  return { estado: 'VIGENTE', ...pagosDelFiltro(filtro) }
+  return delEstado('VIGENTE', filtro)
+}
+
+/**
+ * Lo anulado: los pagos del filtro que están `ANULADO`. La única definición: la usa el total
+ * anulado de `GET /pagos`. Con `estado: 'VIGENTE'` en el filtro no hay nada anulado.
+ */
+function anulados(filtro: FiltroPagos): Prisma.PagoWhereInput {
+  return delEstado('ANULADO', filtro)
 }
 
 /**
@@ -132,6 +154,22 @@ export async function totalCobradoEntre(
     _sum: { importeTotal: true },
   })
   // La base suma en `Decimal`, que es exacto: no hay error de coma flotante que acumular.
+  return _sum.importeTotal ? _sum.importeTotal.toNumber() : 0
+}
+
+/**
+ * Total anulado del filtro (HU-36): la suma de `importeTotal` de los pagos `ANULADO` (`anulados`),
+ * en pesos; 0 si no hay ninguno. Una consulta, en la base, como `totalCobradoEntre`. Lo usan los
+ * pagos realizados; no suma al cobrado.
+ */
+export async function totalAnuladoDelFiltro(
+  client: ClienteOcurrencias,
+  filtro: FiltroPagos,
+): Promise<number> {
+  const { _sum } = await client.pago.aggregate({
+    where: anulados(filtro),
+    _sum: { importeTotal: true },
+  })
   return _sum.importeTotal ? _sum.importeTotal.toNumber() : 0
 }
 

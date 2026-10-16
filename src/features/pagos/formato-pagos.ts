@@ -1,5 +1,7 @@
 import type { UsuarioAuditoria } from '@/types'
+import type { EstadoPagoRegistrado } from '@/types/pago'
 import { formatoInstante, nombreUsuarioAuditoria } from '@/utils/auditoria'
+import { fechaConAnio } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 import { textoCantidadDeTurnos } from '@/utils/turnos'
@@ -8,6 +10,7 @@ import type { ResumenACobrar } from './a-cobrar'
 import type { CodigoFormaPago, DetallePago, MotivoAnulacion, RedDebito } from './pago-detalle.types'
 
 import type { PagoRegistrado } from './pagos.types'
+import type { TotalesPagosRealizados } from './pagos-realizados.types'
 
 // Textos del registro de un pago (HU-15). Los importes del éxito y del vuelto son los que devolvió
 // la API, nunca los del resumen local.
@@ -196,4 +199,53 @@ export function datosDelMedio(
       : []),
     ...(pago.vuelto !== null ? [{ label: 'Vuelto', valor: formatearPesos(pago.vuelto) }] : []),
   ]
+}
+
+// --- Totales de los pagos realizados (HU-36). Los importes son los de la API: acá solo se elige
+// cuáles se muestran y con qué texto, según el filtro de estado (`null` = "Todos"). ---
+
+/** Un importe de los totales, con su etiqueta. `anulado`: se muestra en el color de "Anulado". */
+export type TotalAMostrar = { etiqueta: string; importe: number; anulado: boolean }
+
+/**
+ * Los totales que se muestran según el estado: con "Todos", "Total cobrado" y, al lado, "Anulado";
+ * con "Vigentes", solo "Total cobrado"; con "Anulados", solo "Total anulado".
+ */
+export function totalesAMostrar(
+  totales: Pick<TotalesPagosRealizados, 'cobrado' | 'anulado'>,
+  estado: EstadoPagoRegistrado | null,
+): TotalAMostrar[] {
+  const cobrado = { etiqueta: 'Total cobrado', importe: totales.cobrado, anulado: false }
+  if (estado === 'VIGENTE') return [cobrado]
+  if (estado === 'ANULADO')
+    return [{ etiqueta: 'Total anulado', importe: totales.anulado, anulado: true }]
+  return [cobrado, { etiqueta: 'Anulado', importe: totales.anulado, anulado: true }]
+}
+
+/** Si va el detalle por forma de pago: es de lo cobrado, así que con "Anulados" no. */
+export function muestraPorForma(estado: EstadoPagoRegistrado | null): boolean {
+  return estado !== 'ANULADO'
+}
+
+/** `'Del 01/10/2026 al 31/10/2026'`: el período de los pagos realizados (siempre con las dos fechas). */
+export function textoPeriodo({ desde, hasta }: { desde: string; hasta: string }): string {
+  return `Del ${fechaConAnio(desde)} al ${fechaConAnio(hasta)}`
+}
+
+const QUE_SE_CUENTA: Record<EstadoPagoRegistrado | 'TODOS', string> = {
+  TODOS: 'Vigentes y anulados. Lo anulado no suma al cobrado.',
+  VIGENTE: 'Sólo pagos vigentes.',
+  ANULADO: 'Sólo pagos anulados. No suma al total cobrado.',
+}
+
+/**
+ * Qué cuentan los totales según el estado (`null` = "Todos") y, con materia o profesor (`porTurno`),
+ * la aclaración de la decisión T-152: `'Sólo pagos vigentes. Con materia o profesor, suma el total
+ * completo de cada pago listado.'`.
+ */
+export function textoQueSeCuenta(estado: EstadoPagoRegistrado | null, porTurno: boolean): string {
+  const base = QUE_SE_CUENTA[estado ?? 'TODOS']
+  return porTurno
+    ? `${base} Con materia o profesor, suma el total completo de cada pago listado.`
+    : base
 }

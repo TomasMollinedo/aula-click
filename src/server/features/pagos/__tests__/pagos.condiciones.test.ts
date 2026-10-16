@@ -5,6 +5,7 @@ import {
   leerPagoParaAnular,
   pagosConMismaTransferencia,
   pagosDelFiltro,
+  totalAnuladoDelFiltro,
   totalCobradoEntre,
   totalCobradoPorForma,
 } from '../pagos.condiciones'
@@ -209,6 +210,27 @@ describe('totalCobradoPorForma', () => {
     })
   })
 
+  it('con `estado` en el filtro: VIGENTE suma como siempre; ANULADO no coincide con ningún pago', async () => {
+    const vigentes = clienteConGrupos([], FORMAS)
+    await totalCobradoPorForma(vigentes.client, { ...PERIODO, estado: 'VIGENTE' })
+    expect(vigentes.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: 'VIGENTE' }) }),
+    )
+
+    const todos = clienteConGrupos([], FORMAS)
+    await totalCobradoPorForma(todos.client, { ...PERIODO, estado: 'TODOS' })
+    expect(todos.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: 'VIGENTE' }) }),
+    )
+
+    const anulados = clienteConGrupos([], FORMAS)
+    const totales = await totalCobradoPorForma(anulados.client, { ...PERIODO, estado: 'ANULADO' })
+    expect(anulados.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: { in: [] } }) }),
+    )
+    expect(totales).toEqual({ EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 })
+  })
+
   it('una forma de pago con pagos y sin código → 500 que pide correr el seed', async () => {
     const { client } = clienteConGrupos(
       [{ formaPagoId: 9, importe: 100 }],
@@ -263,6 +285,89 @@ describe('pagosDelFiltro', () => {
     expect(pagosDelFiltro({ ...periodo, profesorId: 3 }).turnos).toStrictEqual({
       some: { turno: { bloqueAgenda: { profesorId: 3 } } },
     })
+  })
+
+  it('el estado: VIGENTE o ANULADO filtran; TODOS no agrega la clave', () => {
+    const periodo = { desde: '2026-10-01', hasta: '2026-10-31' }
+    expect(pagosDelFiltro({ ...periodo, estado: 'VIGENTE' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+      estado: 'VIGENTE',
+    })
+    expect(pagosDelFiltro({ ...periodo, estado: 'ANULADO' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+      estado: 'ANULADO',
+    })
+    expect(pagosDelFiltro({ ...periodo, estado: 'TODOS' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+    })
+  })
+})
+
+// HU-36: lo anulado del filtro, en la base y con la misma definición que el listado.
+describe('totalAnuladoDelFiltro', () => {
+  const decimal = (n: number) => ({ toNumber: () => n })
+  const FECHA_PAGO = {
+    gte: new Date('2026-10-01T00:00:00.000Z'),
+    lte: new Date('2026-10-31T00:00:00.000Z'),
+  }
+  const OCTUBRE = { desde: '2026-10-01', hasta: '2026-10-31' }
+
+  function clienteConSuma(importe: number | null) {
+    const aggregate = vi.fn(async () => ({
+      _sum: { importeTotal: importe === null ? null : decimal(importe) },
+    }))
+    return { client: { pago: { aggregate } } as unknown as Cliente, aggregate }
+  }
+
+  it('sin filtros: suma los `ANULADO` del período', async () => {
+    const { client, aggregate } = clienteConSuma(16000)
+
+    expect(await totalAnuladoDelFiltro(client, OCTUBRE)).toBe(16000)
+    expect(aggregate).toHaveBeenCalledExactlyOnceWith({
+      where: { fechaPago: FECHA_PAGO, estado: 'ANULADO' },
+      _sum: { importeTotal: true },
+    })
+  })
+
+  it('con filtros: el mismo `where` del listado más `ANULADO`; sin pagos, 0', async () => {
+    const { client, aggregate } = clienteConSuma(null)
+
+    const total = await totalAnuladoDelFiltro(client, {
+      ...OCTUBRE,
+      alumnoId: 12,
+      materiaId: 2,
+      profesorId: 3,
+      formaPago: 'EFECTIVO',
+      estado: 'TODOS',
+    })
+
+    expect(total).toBe(0)
+    expect(aggregate).toHaveBeenCalledExactlyOnceWith({
+      where: {
+        fechaPago: FECHA_PAGO,
+        alumnoId: 12,
+        turnos: { some: { turno: { materiaId: 2, bloqueAgenda: { profesorId: 3 } } } },
+        formaPago: { tipoFormaPago: 'EFECTIVO' },
+        estado: 'ANULADO',
+      },
+      _sum: { importeTotal: true },
+    })
+  })
+
+  it('con `estado: ANULADO` suma los anulados; con `VIGENTE`, ningún pago coincide', async () => {
+    const anulados = clienteConSuma(16000)
+    expect(await totalAnuladoDelFiltro(anulados.client, { ...OCTUBRE, estado: 'ANULADO' })).toBe(
+      16000,
+    )
+    expect(anulados.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: 'ANULADO' }) }),
+    )
+
+    const vigentes = clienteConSuma(null)
+    expect(await totalAnuladoDelFiltro(vigentes.client, { ...OCTUBRE, estado: 'VIGENTE' })).toBe(0)
+    expect(vigentes.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: { in: [] } }) }),
+    )
   })
 })
 

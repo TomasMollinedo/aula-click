@@ -4,6 +4,10 @@ import { formatoInstante } from '@/utils/auditoria'
 
 import {
   datosDelMedio,
+  muestraPorForma,
+  textoPeriodo,
+  textoQueSeCuenta,
+  totalesAMostrar,
   textoAdjuntadoPor,
   textoAnuladoEl,
   textoMotivoAnulacion,
@@ -207,5 +211,54 @@ describe('textos de Mis pagos (portal, HU-37)', () => {
       'Física, Matemática',
     )
     expect(textoMateriasDelPago([{ nombre: 'Inglés' }])).toBe('Inglés')
+  })
+})
+
+describe('totales de los pagos realizados (HU-36)', () => {
+  const TOTALES = { cobrado: 31000.5, anulado: 9000 }
+
+  it('con "Todos": el cobrado y, al lado, lo anulado (en rojo)', () => {
+    expect(totalesAMostrar(TOTALES, null)).toEqual([
+      { etiqueta: 'Total cobrado', importe: 31000.5, anulado: false },
+      { etiqueta: 'Anulado', importe: 9000, anulado: true },
+    ])
+  })
+
+  it('con "Vigentes", solo el cobrado; con "Anulados", solo el total anulado', () => {
+    expect(totalesAMostrar(TOTALES, 'VIGENTE')).toEqual([
+      { etiqueta: 'Total cobrado', importe: 31000.5, anulado: false },
+    ])
+    expect(totalesAMostrar(TOTALES, 'ANULADO')).toEqual([
+      { etiqueta: 'Total anulado', importe: 9000, anulado: true },
+    ])
+  })
+
+  it('el detalle por forma de pago va con "Todos" y "Vigentes", no con "Anulados"', () => {
+    expect(muestraPorForma(null)).toBe(true)
+    expect(muestraPorForma('VIGENTE')).toBe(true)
+    expect(muestraPorForma('ANULADO')).toBe(false)
+  })
+
+  it('el período, con las dos fechas', () => {
+    expect(textoPeriodo({ desde: '2026-10-01', hasta: '2026-10-31' })).toBe(
+      'Del 01/10/2026 al 31/10/2026',
+    )
+  })
+
+  it('qué se cuenta según el estado', () => {
+    expect(textoQueSeCuenta(null, false)).toBe(
+      'Vigentes y anulados. Lo anulado no suma al cobrado.',
+    )
+    expect(textoQueSeCuenta('VIGENTE', false)).toBe('Sólo pagos vigentes.')
+    expect(textoQueSeCuenta('ANULADO', false)).toBe(
+      'Sólo pagos anulados. No suma al total cobrado.',
+    )
+  })
+
+  it('con materia o profesor, suma la aclaración de T-152', () => {
+    expect(textoQueSeCuenta('VIGENTE', true)).toBe(
+      'Sólo pagos vigentes. Con materia o profesor, suma el total completo de cada pago listado.',
+    )
+    expect(textoQueSeCuenta(null, true)).toMatch(/^Vigentes y anulados\. .* total completo/)
   })
 })

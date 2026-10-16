@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  ESTADOS_PAGO,
   FORMAS_PAGO,
   type FiltrosPagosRealizados,
   aParams,
@@ -41,13 +42,14 @@ describe('mesEnCurso y filtrosPorDefecto', () => {
     expect(mesEnCurso('2024-02-10')).toEqual({ desde: '2024-02-01', hasta: '2024-02-29' })
   })
 
-  it('sin filtros: el mes en curso y nada más', () => {
+  it('sin filtros: el mes en curso, todos los estados y nada más', () => {
     expect(filtrosPorDefecto(HOY)).toEqual({
       ...OCTUBRE,
       alumnoId: null,
       materiaId: null,
       profesorId: null,
       formaPago: null,
+      estado: null,
     })
   })
 })
@@ -60,7 +62,7 @@ describe('leerFiltros', () => {
   it('lee cada parámetro', () => {
     expect(
       leer(
-        'desde=2026-09-01&hasta=2026-09-15&alumnoId=12&materiaId=2&profesorId=3&formaPago=TRANSFERENCIA',
+        'desde=2026-09-01&hasta=2026-09-15&alumnoId=12&materiaId=2&profesorId=3&formaPago=TRANSFERENCIA&estado=ANULADO',
       ),
     ).toEqual({
       desde: '2026-09-01',
@@ -69,7 +71,12 @@ describe('leerFiltros', () => {
       materiaId: 2,
       profesorId: 3,
       formaPago: 'TRANSFERENCIA',
+      estado: 'ANULADO',
     })
+  })
+
+  it.each(ESTADOS_PAGO)('acepta el estado %s', (estado) => {
+    expect(leer(`estado=${estado}`).estado).toBe(estado)
   })
 
   it.each(FORMAS_PAGO)('acepta la forma de pago %s', (codigo) => {
@@ -100,6 +107,9 @@ describe('leerFiltros', () => {
     ['profesorId', 'profesorId='],
     ['formaPago', 'formaPago=CHEQUE'],
     ['formaPago', 'formaPago=efectivo'],
+    ['estado', 'estado=TODOS'],
+    ['estado', 'estado=vigente'],
+    ['estado', 'estado=ACTIVO'],
   ] as const)('%s inválido (%s) es "sin filtro"', (campo, qs) => {
     expect(leer(qs)[campo]).toBeNull()
   })
@@ -133,8 +143,19 @@ describe('paramsConFiltros', () => {
         materiaId: 2,
         profesorId: 3,
         formaPago: 'DEBITO',
+        estado: 'VIGENTE',
       }),
-    ).toBe('alumnoId=12&materiaId=2&profesorId=3&formaPago=DEBITO')
+    ).toBe('alumnoId=12&materiaId=2&profesorId=3&formaPago=DEBITO&estado=VIGENTE')
+  })
+
+  it('"Todos" no se escribe: volver a "Todos" saca el estado de la URL', () => {
+    expect(escribir('estado=ANULADO', { estado: null })).toBe('')
+  })
+
+  it('cambiar el estado vuelve a la página 1', () => {
+    expect(escribir('vista=realizados&page=4', { estado: 'ANULADO' })).toBe(
+      'vista=realizados&estado=ANULADO',
+    )
   })
 
   it('otro período se escribe con sus dos fechas, aunque cambie una sola', () => {
@@ -184,7 +205,7 @@ describe('paramsConPagina', () => {
 describe('paramsSinFiltros', () => {
   it('vuelve al mes en curso, saca el resto y la página, y conserva tab, vista y pago', () => {
     const params = new URLSearchParams(
-      'tab=pagos&vista=realizados&pago=31&desde=2026-09-01&hasta=2026-09-30&alumnoId=12&materiaId=2&profesorId=3&formaPago=EFECTIVO&page=3',
+      'tab=pagos&vista=realizados&pago=31&desde=2026-09-01&hasta=2026-09-30&alumnoId=12&materiaId=2&profesorId=3&formaPago=EFECTIVO&estado=VIGENTE&page=3',
     )
     expect(paramsSinFiltros(params, HOY).toString()).toBe('tab=pagos&vista=realizados&pago=31')
   })
@@ -201,6 +222,7 @@ describe('hayFiltros y filtraPorTurno', () => {
     ['una materia', { materiaId: 2 }],
     ['un profesor', { profesorId: 3 }],
     ['una forma de pago', { formaPago: 'EFECTIVO' as const }],
+    ['un estado', { estado: 'ANULADO' as const }],
   ])('con %s, sí', (_caso, cambios) => {
     expect(hayFiltros({ ...filtrosPorDefecto(HOY), ...cambios }, HOY)).toBe(true)
   })
@@ -229,6 +251,7 @@ describe('aParams', () => {
           materiaId: 2,
           profesorId: 3,
           formaPago: 'TRANSFERENCIA',
+          estado: 'VIGENTE',
         },
         2,
       ),
@@ -239,8 +262,13 @@ describe('aParams', () => {
       materiaId: 2,
       profesorId: 3,
       formaPago: 'TRANSFERENCIA',
+      estado: 'VIGENTE',
       page: 2,
     })
+  })
+
+  it('con "Todos" no manda el estado (la API toma TODOS)', () => {
+    expect(aParams(filtrosPorDefecto(HOY), 1)).not.toHaveProperty('estado')
   })
 
   it('en la ficha, el alumno es el de la ficha', () => {
