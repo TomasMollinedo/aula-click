@@ -12,4 +12,6 @@ export const cuentasKeys = {
   adeudadosLista: (params: ListarGlobalParams) => [...cuentasKeys.adeudados(), params] as const,
   proximos: () => [...cuentasKeys.all, 'proximos'] as const,
   proximosLista: (params: ListarGlobalParams) => [...cuentasKeys.proximos(), params] as const,
+  /** La cuenta del alumno de la sesión, en el portal (HU-37). */
+  miCuenta: () => [...cuentasKeys.all, 'miCuenta'] as const,
 }

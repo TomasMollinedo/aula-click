@@ -11,9 +11,9 @@ import {
   textoRegistradoPor,
   textoTarjeta,
   textoTituloComprobante,
-  textoCantidad,
   textoConfirmacion,
   textoExito,
+  textoMateriasDelPago,
   textoFormaPago,
   textoHorario,
   textoImporte,
@@ -52,13 +52,6 @@ describe('textos del comprobante', () => {
   it('número del comprobante', () => {
     expect(textoNumero(1024)).toBe('N° 1024')
     expect(textoNumeroComprobante(1024)).toBe('Comprobante N° 1024')
-  })
-})
-
-describe('textoCantidad', () => {
-  it('singular y plural', () => {
-    expect(textoCantidad(1)).toBe('1 turno')
-    expect(textoCantidad(4)).toBe('4 turnos')
   })
 })
 
@@ -205,5 +198,14 @@ describe('datosDelMedio', () => {
       { label: 'Red', valor: 'Visa Débito' },
       { label: 'Cupón', valor: '000123' },
     ])
+  })
+})
+
+describe('textos de Mis pagos (portal, HU-37)', () => {
+  it('las materias del pago, separadas por coma', () => {
+    expect(textoMateriasDelPago([{ nombre: 'Física' }, { nombre: 'Matemática' }])).toBe(
+      'Física, Matemática',
+    )
+    expect(textoMateriasDelPago([{ nombre: 'Inglés' }])).toBe('Inglés')
   })
 })

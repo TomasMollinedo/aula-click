@@ -12,11 +12,11 @@ import type { PagoParaAcciones } from '@/types/pago'
 import { fechaConDia, fechaCorta } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
+import { textoCantidadDeTurnos } from '@/utils/turnos'
 
 import {
   datosDelMedio,
   textoAnuladoEl,
-  textoCantidad,
   textoMotivoAnulacion,
   textoRegistradoPor,
   textoTituloComprobante,
@@ -82,7 +82,7 @@ function AvisoAnulado({ anulacion }: { anulacion: NonNullable<DetallePago['anula
  */
 function TurnosDelPago({ pago }: { pago: DetallePago }) {
   return (
-    <Seccion icon={ListChecks} titulo={`Turnos (${textoCantidad(pago.cantidad)})`}>
+    <Seccion icon={ListChecks} titulo={`Turnos (${textoCantidadDeTurnos(pago.cantidad)})`}>
       <ul className="divide-border divide-y">
         {pago.turnos.map((turno) => (
           <li

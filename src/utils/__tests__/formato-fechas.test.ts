@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { fechaConDia, fechaCorta, textoMes } from '../formato-fechas'
+import { fechaConAnio, fechaConDia, fechaCorta, textoMes } from '../formato-fechas'
 
 describe('fechaCorta y fechaConDia', () => {
   it('muestra el día de la fecha, no el anterior (el bug de new Date en UTC−3)', () => {
@@ -27,5 +27,12 @@ describe('textoMes', () => {
   it('enero y diciembre, sin correrse de mes', () => {
     expect(textoMes('2027-01')).toBe('enero de 2027')
     expect(textoMes('2026-12')).toBe('diciembre de 2026')
+  })
+})
+
+describe('fechaConAnio', () => {
+  it('dd/MM/yyyy', () => {
+    expect(fechaConAnio('2026-10-01')).toBe('01/10/2026')
+    expect(fechaConAnio('2027-01-05')).toBe('05/01/2027')
   })
 })
