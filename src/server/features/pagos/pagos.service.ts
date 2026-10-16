@@ -10,11 +10,13 @@ import {
   medioDelPedido,
   montoRecibidoDe,
   planificarPago,
+  repartoDelPago,
   sumarImportes,
   type PedidoPago,
 } from './pagos.reglas'
 import type {
   Comprobante,
+  ComprobanteGuardado,
   DetallePago,
   ListadoPagos,
   ListarPagosQuery,
@@ -55,13 +57,23 @@ export function crearPagosService({
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
 }) {
-  /** Datos del comprobante. El vuelto se recalcula, nunca se lee de la base. 404 si no existe. */
-  async function leerComprobante(id: number): Promise<Comprobante> {
-    const comprobante = await repository.buscarComprobante(id)
-    if (!comprobante) throw new NotFoundError('Pago no encontrado')
+  /** El pago como lo guardó el repository, con el porcentaje de cada turno. 404 si no existe. */
+  async function leerGuardado(id: number): Promise<ComprobanteGuardado> {
+    const guardado = await repository.buscarComprobante(id)
+    if (!guardado) throw new NotFoundError('Pago no encontrado')
+    return guardado
+  }
+
+  /**
+   * El comprobante: el vuelto se recalcula, nunca se lee de la base, y el porcentaje de cada turno
+   * se quita (la respuesta no se filtra por el schema: si quedara, le llegaría a la mesa y al PDF).
+   */
+  function aComprobante(guardado: ComprobanteGuardado): Comprobante {
     return {
-      ...comprobante,
-      vuelto: calcularVuelto(comprobante.montoRecibido, comprobante.total),
+      ...guardado,
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- se lee para quitarlo
+      turnos: guardado.turnos.map(({ porcentaje, ...turno }) => turno),
+      vuelto: calcularVuelto(guardado.montoRecibido, guardado.total),
     }
   }
 
@@ -144,10 +156,13 @@ export function crearPagosService({
 
     /**
      * Detalle del pago (HU-36): el comprobante, la cantidad de turnos, el último adjunto activo y
-     * las acciones de quien lo pide (`accionesDelPago`). 404 si no existe.
+     * las acciones de quien lo pide (`accionesDelPago`). Sólo para el gerente, el reparto (HU-43,
+     * `repartoDelPago`), también de un pago anulado; para los demás la clave no existe. 404 si no
+     * existe.
      */
     async obtenerDetalle(id: number, actor: Actor): Promise<DetallePago> {
-      const comprobante = await leerComprobante(id)
+      const guardado = await leerGuardado(id)
+      const comprobante = aComprobante(guardado)
       const adjunto = await repository.buscarAdjunto(id)
       return {
         ...comprobante,
@@ -159,6 +174,7 @@ export function crearPagosService({
           formaPago: comprobante.formaPago.codigo,
           tieneAdjunto: adjunto !== null,
         }),
+        ...(actor.role === 'GERENTE' ? { reparto: repartoDelPago(guardado.turnos) } : {}),
       }
     },
 
@@ -169,7 +185,7 @@ export function crearPagosService({
      */
     async comprobanteParaDocumento(id: number, actor: Actor): Promise<Comprobante> {
       const alumnoId = actor.role === 'ALUMNO' ? alumnoDeLaSesion(actor) : null
-      const comprobante = await leerComprobante(id)
+      const comprobante = aComprobante(await leerGuardado(id))
       if (alumnoId !== null && comprobante.alumno.id !== alumnoId) {
         throw new ForbiddenError(MENSAJE_PAGO_AJENO)
       }
