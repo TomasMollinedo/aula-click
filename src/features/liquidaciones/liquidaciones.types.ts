@@ -107,15 +107,52 @@ export type LiquidacionDetalle = TotalesLiquidacion & {
 }
 
 /**
- * `GET /liquidaciones/mis-liquidaciones/{mes}` (T-126): el mismo detalle, sin el comprobante, las
- * observaciones ni quién registró el pago.
+ * `GET /liquidaciones/mis-liquidaciones/{mes}` (T-126): el mismo detalle, sin el profesor (es el de
+ * la sesión), el número de comprobante de las familias, las acciones, el comprobante de la
+ * transferencia, las observaciones ni quién registró el pago (decisión T-171).
  */
-export type MiLiquidacionDetalle = Omit<LiquidacionDetalle, 'cerrada'> & {
+export type MiLiquidacionDetalle = Omit<
+  LiquidacionDetalle,
+  'profesor' | 'turnos' | 'cerrada' | 'acciones'
+> & {
+  turnos: Omit<TurnoDeLiquidacion, 'numeroComprobante'>[]
   cerrada: Omit<
     LiquidacionCerrada,
     'comprobanteAdjunto' | 'observaciones' | 'registradaPor' | 'registradaEl'
   > | null
 }
+
+/** Una clase (una hora) del profesor en "Mis ingresos". */
+export type ClaseDeMisIngresos = {
+  turnoId: number
+  /** `YYYY-MM-DD`. */
+  fecha: string
+  horaInicio: string
+  horaFin: string
+  alumno: { id: number; nombre: string; apellido: string }
+  materia: { id: number; nombre: string }
+}
+
+/** `GET /liquidaciones/mis-ingresos` (T-126). */
+export type MisIngresos = {
+  /** La liquidación del mes en curso, con el mismo cálculo que ve el gerente. */
+  esteMes: MiLiquidacionDetalle
+  /** Con asistencia y sin pago vigente, de la más reciente a la más antigua. */
+  clasesSinCobrar: ClaseDeMisIngresos[]
+  /** Con pago, sin asistencia y dentro del plazo; `vence` es el último día para registrarla. */
+  clasesCobradasSinAsistencia: (ClaseDeMisIngresos & { vence: string })[]
+}
+
+/** Una fila de `GET /liquidaciones/mis-liquidaciones` (sin el mes en curso). */
+export type FilaMiLiquidacion = {
+  mes: string
+  estado: EstadoLiquidacion
+  total: number
+  /** Sólo en una `PAGADA`. */
+  fechaTransferencia: string | null
+}
+
+export type MisLiquidaciones = PaginatedResponse<FilaMiLiquidacion>
 
 /**
  * `GET /adjuntos/liquidaciones/{liquidacionId}`: el comprobante con la URL para abrirlo. La URL
