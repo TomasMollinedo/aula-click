@@ -39,3 +39,41 @@ export function sumarImportes(importes: readonly (number | null)[]): SumaDeImpor
   }
   return { total: sinPrecio > 0 ? null : centavos / 100, sinPrecio }
 }
+
+/** El subtotal de una materia (HU-25): cuántos importes tiene y su suma (`sumarImportes`). */
+export type SubtotalDeMateria = {
+  materia: { id: number; nombre: string }
+  cantidad: number
+  /** La suma de sus importes, o `null` si alguno no tiene precio. */
+  total: number | null
+}
+
+/**
+ * Importes agrupados por materia, con la cantidad y el subtotal de cada una (HU-25): lo que se va
+ * a cobrar, en la barra de `cuentas` y en el resumen del diálogo de `pagos`. Las materias van por
+ * nombre (y por id si se repite). Los importes son los que mandó la API: solo se suman, en
+ * centavos.
+ */
+export function subtotalesPorMateria(
+  items: Iterable<{ materia: { id: number; nombre: string }; importe: number | null }>,
+): SubtotalDeMateria[] {
+  const grupos = new Map<
+    number,
+    { materia: SubtotalDeMateria['materia']; importes: (number | null)[] }
+  >()
+  for (const { materia, importe } of items) {
+    const grupo = grupos.get(materia.id) ?? { materia, importes: [] }
+    grupo.importes.push(importe)
+    grupos.set(materia.id, grupo)
+  }
+  return [...grupos.values()]
+    .map(({ materia, importes }) => ({
+      materia: { id: materia.id, nombre: materia.nombre },
+      cantidad: importes.length,
+      total: sumarImportes(importes).total,
+    }))
+    .sort(
+      (a, b) =>
+        a.materia.nombre.localeCompare(b.materia.nombre, 'es') || a.materia.id - b.materia.id,
+    )
+}

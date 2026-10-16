@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatearPesos, sumarImportes } from '../moneda'
+import { formatearPesos, subtotalesPorMateria, sumarImportes } from '../moneda'
 
 // Intl separa el `$` del número con un espacio duro (U+00A0).
 const NBSP = ' '
@@ -47,5 +47,40 @@ describe('sumarImportes', () => {
 
   it('sin importes: total 0', () => {
     expect(sumarImportes([])).toEqual({ total: 0, sinPrecio: 0 })
+  })
+})
+
+describe('subtotalesPorMateria', () => {
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const INGLES = { id: 5, nombre: 'Inglés' }
+
+  it('una entrada por materia, por nombre, con su cantidad y subtotal en centavos', () => {
+    expect(
+      subtotalesPorMateria([
+        { materia: MATEMATICA, importe: 8000 },
+        { materia: INGLES, importe: 9000 },
+        { materia: MATEMATICA, importe: 8000.5 },
+      ]),
+    ).toEqual([
+      { materia: INGLES, cantidad: 1, total: 9000 },
+      { materia: MATEMATICA, cantidad: 2, total: 16000.5 },
+    ])
+  })
+
+  it('una materia con un importe sin precio queda sin subtotal', () => {
+    expect(
+      subtotalesPorMateria([
+        { materia: MATEMATICA, importe: 8000 },
+        { materia: MATEMATICA, importe: null },
+      ]),
+    ).toEqual([{ materia: MATEMATICA, cantidad: 2, total: null }])
+  })
+
+  it('acepta cualquier iterable (los valores de un Map) y, vacío, no tiene materias', () => {
+    const seleccion = new Map([['41|2026-09-21', { materia: INGLES, importe: 9000, extra: true }]])
+    expect(subtotalesPorMateria(seleccion.values())).toEqual([
+      { materia: INGLES, cantidad: 1, total: 9000 },
+    ])
+    expect(subtotalesPorMateria([])).toEqual([])
   })
 })
