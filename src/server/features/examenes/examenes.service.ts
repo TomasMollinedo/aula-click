@@ -100,7 +100,6 @@ export function crearExamenesService({
       id: examen.id,
       materia: examen.materia,
       fecha: examen.fecha,
-      tipo: examen.tipo,
       observaciones: examen.observaciones,
       pasado,
       diasRestantes: pasado ? null : diasEntre(fechaHoy, examen.fecha),
@@ -121,7 +120,6 @@ export function crearExamenesService({
       alumnoId: examen.alumnoId,
       materia: examen.materia,
       fecha: examen.fecha,
-      tipo: examen.tipo,
       observaciones: examen.observaciones,
       pasado: examen.fecha < fechaHoy,
       ...camposNota(examen),
@@ -279,13 +277,11 @@ export function crearExamenesService({
         proximo: proximo
           ? {
               fecha: proximo.fecha,
-              tipo: proximo.tipo,
               diasRestantes: diasEntre(fechaHoy, proximo.fecha),
             }
           : null,
         rendidos: rendidos.map((e) => ({
           fecha: e.fecha,
-          tipo: e.tipo,
           resultado: e.resultado,
           nota: e.nota,
         })),

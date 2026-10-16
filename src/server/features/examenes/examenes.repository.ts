@@ -60,7 +60,6 @@ function aGuardado(fila: FilaExamen): ExamenGuardado {
     materiaId: fila.materiaId,
     materia: { id: fila.materiaId, nombre: fila.materia.nombre },
     fecha: dateAFecha(fila.fecha),
-    tipo: fila.tipo,
     observaciones: fila.observaciones,
     createdAt: fila.createdAt.toISOString(),
     updatedAt: fila.updatedAt.toISOString(),
@@ -101,7 +100,7 @@ export const examenesRepository = {
   /**
    * El examen `ACTIVO` de esa materia y ese alumno con fecha `>= fechaHoy` (un pendiente), si lo
    * hay. `excluirId` lo saca de la búsqueda: al editar, el propio examen no cuenta como su
-   * duplicado. Devuelve `{ id, tipo, fecha }`, lo que pide el 409 `EXAMEN_PENDIENTE`.
+   * duplicado. Devuelve `{ id, fecha }`, lo que pide el 409 `EXAMEN_PENDIENTE`.
    */
   async buscarPendiente(
     alumnoId: number,
@@ -117,10 +116,10 @@ export const examenesRepository = {
         fecha: { gte: fechaADate(fechaHoy) },
         ...(excluirId === undefined ? {} : { id: { not: excluirId } }),
       },
-      select: { id: true, tipo: true, fecha: true },
+      select: { id: true, fecha: true },
       orderBy: [{ fecha: 'asc' }, { id: 'asc' }],
     })
-    return fila && { id: fila.id, tipo: fila.tipo, fecha: dateAFecha(fila.fecha) }
+    return fila && { id: fila.id, fecha: dateAFecha(fila.fecha) }
   },
 
   /** Alta con `createdById` y `updatedById` del actor. */
@@ -130,7 +129,6 @@ export const examenesRepository = {
         alumnoId: datos.alumnoId,
         materiaId: datos.materiaId,
         fecha: fechaADate(datos.fecha),
-        tipo: datos.tipo,
         observaciones: datos.observaciones ?? null,
         createdById: actor.userId,
         updatedById: actor.userId,
@@ -151,7 +149,6 @@ export const examenesRepository = {
         data: {
           ...(cambios.materiaId === undefined ? {} : { materiaId: cambios.materiaId }),
           ...(cambios.fecha === undefined ? {} : { fecha: fechaADate(cambios.fecha) }),
-          ...(cambios.tipo === undefined ? {} : { tipo: cambios.tipo }),
           ...(cambios.observaciones === undefined ? {} : { observaciones: cambios.observaciones }),
           updatedById: actor.userId,
         },

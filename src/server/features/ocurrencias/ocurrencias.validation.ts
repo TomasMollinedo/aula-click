@@ -19,7 +19,6 @@ const MOTIVOS_CANCELACION = [
   'PROBLEMA_ADMINISTRATIVO',
   'OTRO',
 ] as const
-const TIPOS_EXAMEN = ['PARCIAL', 'FINAL', 'RECUPERATORIO', 'TRABAJO_PRACTICO', 'OTRO'] as const
 
 // Schemas Zod de `ocurrencias` (T-43). Son la fuente del OpenAPI. Sin reglas de negocio: los
 // defaults y el rango máximo de `GET /ocurrencias` los decide el service (`ocurrencias.reglas.ts`),
@@ -134,7 +133,6 @@ const examenQueDeterminaSchema = z
   .object({
     id: z.number().int(),
     fecha: fechaISO,
-    tipo: z.enum(TIPOS_EXAMEN),
     materiaNombre: z.string(),
     dias: z.number().int(),
   })

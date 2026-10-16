@@ -93,7 +93,7 @@ export type MateriaDelPortal = {
 /**
  * Una clase del historial del portal: sin plazo, cierre del sistema, observación ni cancelación
  * (el alumno no los ve). "Realizado", "Ausente", "Cancelado" y "Sin registrar" (que no cuenta para
- * el porcentaje); la API omite las agendadas (decisión T-167).
+ * el porcentaje); la API omite las agendadas (decisión T-169).
  */
 export type ClaseDelPortal = Pick<
   ClaseDelHistorial,

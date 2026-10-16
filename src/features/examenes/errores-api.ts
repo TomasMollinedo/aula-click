@@ -5,7 +5,6 @@ import {
   type CampoNotaForm,
   EXAMEN_FORM_FIELDS,
   NOTA_FORM_FIELDS,
-  TIPOS_EXAMEN,
 } from './examenes.schema'
 import type { ExamenPendiente } from './examenes.types'
 
@@ -23,7 +22,6 @@ const MENSAJE_SIN_PERMISO =
   'No tenés permiso para esta operación: solo podés cargar, editar o eliminar exámenes de las materias que le dictás a este alumno'
 
 const CAMPOS = new Set<string>(EXAMEN_FORM_FIELDS)
-const TIPOS = new Set<string>(TIPOS_EXAMEN.map((t) => t.valor))
 
 export type ErrorExamen =
   /** 400 por campo, o 409 `MATERIA_INACTIVA` / `MATERIA_SIN_TURNOS` sobre la materia. `mensaje`: lo que no es de un campo. */
@@ -43,18 +41,12 @@ function esRegistro(valor: unknown): valor is Registro {
 }
 
 function esExamenPendiente(valor: unknown): valor is ExamenPendiente {
-  return (
-    esRegistro(valor) &&
-    typeof valor.id === 'number' &&
-    typeof valor.fecha === 'string' &&
-    typeof valor.tipo === 'string' &&
-    TIPOS.has(valor.tipo)
-  )
+  return esRegistro(valor) && typeof valor.id === 'number' && typeof valor.fecha === 'string'
 }
 
 /**
  * Convierte un ApiError del alta o la edición de un examen en lo que muestra el formulario. Los
- * `details` de `EXAMEN_PENDIENTE` son un objeto (`{ id, tipo, fecha }`, sin arreglo); si no tienen
+ * `details` de `EXAMEN_PENDIENTE` son un objeto (`{ id, fecha }`, sin arreglo); si no tienen
  * esa forma, cae al mensaje general de la API.
  */
 export function interpretarErrorExamen(error: ApiError): ErrorExamen {

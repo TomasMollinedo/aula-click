@@ -33,7 +33,6 @@ import {
   type CampoExamenForm,
   type ExamenFormValues,
   OBSERVACIONES_MAX,
-  TIPOS_EXAMEN,
   aBodyCrear,
   aBodyEditar,
   examenFormSchema,
@@ -60,8 +59,8 @@ export type ExamenDialogProps = {
 }
 
 /**
- * Alta y edición de un examen (HU-17): materia (las ofrecibles de `/examenes/materias`), fecha,
- * tipo y observaciones (contador de 500). No calcula reglas: si la API rechaza, el diálogo queda
+ * Alta y edición de un examen (HU-17): materia (las ofrecibles de `/examenes/materias`), fecha y
+ * observaciones (contador de 500). No calcula reglas: si la API rechaza, el diálogo queda
  * abierto con el error.
  */
 export function ExamenDialog({ open, onCerrar, examen, ...resto }: ExamenDialogProps) {
@@ -102,8 +101,7 @@ function FormularioExamen({
     formState: { errors },
   } = useForm<ExamenFormValues>({
     resolver: zodResolver(examenFormSchema),
-    // El tipo arranca sin elegir: el schema exige que lo elijan.
-    defaultValues: valoresIniciales(examen) as ExamenFormValues,
+    defaultValues: valoresIniciales(examen),
   })
 
   const fecha = useWatch({ control, name: 'fecha' }) ?? ''
@@ -225,44 +223,15 @@ function FormularioExamen({
         </Field>
       )}
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Fecha" htmlFor="fecha" required error={errorCampo('fecha')}>
-          <Input
-            id="fecha"
-            type="date"
-            aria-invalid={errorCampo('fecha') ? true : undefined}
-            aria-describedby={errorCampo('fecha') ? fieldErrorId('fecha') : undefined}
-            {...register('fecha')}
-          />
-        </Field>
-
-        <Field label="Tipo" htmlFor="tipo" required error={errorCampo('tipo')}>
-          <Controller
-            control={control}
-            name="tipo"
-            render={({ field }) => (
-              <Select value={field.value ?? ''} onValueChange={field.onChange}>
-                <SelectTrigger
-                  id="tipo"
-                  ref={field.ref}
-                  className="w-full"
-                  aria-invalid={errorCampo('tipo') ? true : undefined}
-                  aria-describedby={errorCampo('tipo') ? fieldErrorId('tipo') : undefined}
-                >
-                  <SelectValue placeholder="Elegí un tipo" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIPOS_EXAMEN.map((t) => (
-                    <SelectItem key={t.valor} value={t.valor}>
-                      {t.etiqueta}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
-          />
-        </Field>
-      </div>
+      <Field label="Fecha" htmlFor="fecha" required error={errorCampo('fecha')}>
+        <Input
+          id="fecha"
+          type="date"
+          aria-invalid={errorCampo('fecha') ? true : undefined}
+          aria-describedby={errorCampo('fecha') ? fieldErrorId('fecha') : undefined}
+          {...register('fecha')}
+        />
+      </Field>
 
       {fechaPasada && (
         <Alert>

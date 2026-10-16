@@ -383,7 +383,6 @@ Las cuatro agendas (`diaria`, `propia`, `profesor` y `centro`) devuelven ocurren
   "examen": {
     "id": 5,
     "fecha": "2026-10-02",
-    "tipo": "PARCIAL",
     "materiaNombre": "Matemática",
     "dias": 4
   }
@@ -486,7 +485,6 @@ El pago de la ocurrencia viaja en el detalle (`pago`) y en la lista (`estadoPago
   "examen": {
     "id": 8,
     "fecha": "2026-10-05",
-    "tipo": "PARCIAL",
     "materiaNombre": "Matemática",
     "dias": 7
   },
@@ -1324,7 +1322,6 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
       "id": 5,
       "materia": { "id": 3, "nombre": "Matemática" },
       "fecha": "2026-10-15",
-      "tipo": "PARCIAL",
       "observaciones": "Trae calculadora y formulario",
       "pasado": false,
       "diasRestantes": 10,
@@ -1351,16 +1348,16 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
 
 **`GET /api/v1/examenes/materias?alumnoId`**: materias ofrecibles para cargarle un examen **nuevo** a ese alumno: las activas en las que el alumno tiene algún turno **vigente** (al menos una fecha no cancelada de hoy en adelante; `contarVigentesPorMateria` con `alumnoId`), por nombre. Mesa de entradas: las de todos sus turnos. Profesor: sólo las de los turnos que el alumno tiene con él (si el profesor dicta Matemática y Física y el alumno tiene turnos de Matemática con él y de Química con otro, ve sólo Matemática; mesa de entradas ve Matemática y Química). Sin turnos próximos, la lista viene vacía y el front muestra "El alumno no tiene turnos próximos". Al editar, el front suma la materia del propio examen aunque ya no sea ofrecible.
 
-**`POST /api/v1/examenes`**: `{ alumnoId, materiaId, fecha, tipo, observaciones? }`. `tipo` es uno de `PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`; `observaciones`, hasta 500 caracteres. Devuelve el detalle (`201`), con `pasado: true` si `fecha` ya pasó (se acepta igual, es sólo un aviso del front).
+**`POST /api/v1/examenes`**: `{ alumnoId, materiaId, fecha, observaciones? }`. Un examen no tiene tipo (decisión T-170: no hay parcial, final ni trabajo práctico); `observaciones`, hasta 500 caracteres. Devuelve el detalle (`201`), con `pasado: true` si `fecha` ya pasó (se acepta igual, es sólo un aviso del front).
 
-**`PATCH /api/v1/examenes/{id}`**: edición parcial de `materiaId`, `fecha`, `tipo` y `observaciones` (sin `alumnoId`: un examen no cambia de alumno). Si cambia `materiaId` o `fecha`, se vuelve a chequear el examen pendiente de la materia resultante, sin contar este examen.
+**`PATCH /api/v1/examenes/{id}`**: edición parcial de `materiaId`, `fecha` y `observaciones` (sin `alumnoId`: un examen no cambia de alumno). Si cambia `materiaId` o `fecha`, se vuelve a chequear el examen pendiente de la materia resultante, sin contar este examen.
 
 **`PATCH /api/v1/examenes/{id}/baja`**: baja lógica ("eliminar" en la HU, con confirmación del front). Sin body.
 
 - Reglas del alta y la edición:
   - Materia inexistente → 404; inactiva → 409 `MATERIA_INACTIVA`.
   - **Materia con turnos:** al cargar, la materia tiene que ser una de las ofrecibles (`GET /examenes/materias`); si el alumno no tiene turnos vigentes en ella (para el profesor, con él) → 409 `MATERIA_SIN_TURNOS`, con `[{ "path": ["materiaId"], "message" }]`. Al editar se chequea sólo si `materiaId` cambia a otra materia: la que el examen ya tenía se conserva aunque el alumno ya no tenga turnos en ella.
-  - **Un examen pendiente por materia:** si el alumno ya tiene un examen `ACTIVO` con fecha `>= hoy` en la misma materia → 409 `EXAMEN_PENDIENTE`, con el existente (`{ id, tipo, fecha }`, sin arreglo) en `details`, para ofrecer editarlo. Un examen pasado no cuenta: después de la fecha, se puede cargar el siguiente.
+  - **Un examen pendiente por materia:** si el alumno ya tiene un examen `ACTIVO` con fecha `>= hoy` en la misma materia → 409 `EXAMEN_PENDIENTE`, con el existente (`{ id, fecha }`, sin arreglo) en `details`, para ofrecer editarlo. Un examen pasado no cuenta: después de la fecha, se puede cargar el siguiente.
   - **Profesor:** sólo puede cargar, editar o dar de baja un examen de una materia que le dicta a ese alumno; si no, 403 `SIN_PERMISO`.
 - Errores comunes a los cinco endpoints: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `MESA_ENTRADAS` o `PROFESOR`, o un usuario inhabilitado.
 
@@ -1379,11 +1376,11 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
 
 ```json
 {
-  "proximo": { "fecha": "2026-10-22", "tipo": "PARCIAL", "diasRestantes": 8 },
+  "proximo": { "fecha": "2026-10-22", "diasRestantes": 8 },
   "rendidos": [
-    { "fecha": "2026-10-01", "tipo": "PARCIAL", "resultado": "CON_NOTA", "nota": 7.5 },
-    { "fecha": "2026-09-20", "tipo": "TRABAJO_PRACTICO", "resultado": "AUSENTE", "nota": null },
-    { "fecha": "2026-09-05", "tipo": "PARCIAL", "resultado": "CON_NOTA", "nota": 9 }
+    { "fecha": "2026-10-01", "resultado": "CON_NOTA", "nota": 7.5 },
+    { "fecha": "2026-09-20", "resultado": "AUSENTE", "nota": null },
+    { "fecha": "2026-09-05", "resultado": "CON_NOTA", "nota": 9 }
   ],
   "promedio": 8.25
 }
@@ -1733,7 +1730,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 **`GET /api/v1/historiales/mis-materias/{materiaId}/{profesorId}?mes`** (portal, HU-33): el historial del alumno de la sesión en una materia con un profesor, **por mes** (`mes` es `AAAA-MM`; por defecto, el mes en curso; otro formato es 400 `VALIDACION`). Trae `indicacionesProximaClase` (`{ fecha, indicaciones }` de la última clase realizada con indicaciones, de **cualquier** fecha, también anterior al mes; `null` si no hay), el `resumen` **del mes** y sus `bloques`. Una materia y un profesor en los que no cursa ni cursó → 404 `NO_ENCONTRADO`.
 
-Lo que el alumno **no** ve (ver [Portal del alumno](#portal-del-alumno)): la `observacion` de la ausencia y la del cierre del sistema, la `cancelacion` (ni su motivo ni su detalle), el `plazoAsistencia`, `cerradaPorSistema` y datos de otros alumnos. Las clases **`SIN_REGISTRAR` sí se le muestran** (decisión T-167), sin el plazo ni el cierre del sistema, y **no cuentan** para el `resumen`; las **`AGENDADO`** (una de hoy todavía sin registrar) no: se omiten del bloque, y un bloque que se queda sin ninguna no viene (decisión T-148). `horas` sigue siendo el total del bloque, así que puede ser mayor que la cantidad de `clases`.
+Lo que el alumno **no** ve (ver [Portal del alumno](#portal-del-alumno)): la `observacion` de la ausencia y la del cierre del sistema, la `cancelacion` (ni su motivo ni su detalle), el `plazoAsistencia`, `cerradaPorSistema` y datos de otros alumnos. Las clases **`SIN_REGISTRAR` sí se le muestran** (decisión T-169), sin el plazo ni el cierre del sistema, y **no cuentan** para el `resumen`; las **`AGENDADO`** (una de hoy todavía sin registrar) no: se omiten del bloque, y un bloque que se queda sin ninguna no viene (decisión T-148). `horas` sigue siendo el total del bloque, así que puede ser mayor que la cantidad de `clases`.
 
 ```json
 {

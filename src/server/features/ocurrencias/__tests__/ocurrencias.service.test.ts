@@ -545,7 +545,6 @@ describe('obtenerDetalle', () => {
             examen: {
               id: 8,
               fecha: '2026-09-29',
-              tipo: 'PARCIAL',
               materiaNombre: 'Matemática',
               dias: 7,
             },
@@ -562,7 +561,6 @@ describe('obtenerDetalle', () => {
     expect(detalle.examen).toEqual({
       id: 8,
       fecha: '2026-09-29',
-      tipo: 'PARCIAL',
       materiaNombre: 'Matemática',
       dias: 7,
     })

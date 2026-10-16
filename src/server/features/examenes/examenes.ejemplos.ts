@@ -17,7 +17,6 @@ export const ejemploAlta = {
   alumnoId: 12,
   materiaId: 3,
   fecha: '2026-10-15',
-  tipo: 'PARCIAL',
   observaciones: 'Trae calculadora y formulario',
 } satisfies CrearExamen
 
@@ -41,7 +40,6 @@ export const ejemploItemProximo = {
   id: 5,
   materia: { id: 3, nombre: 'Matemática' },
   fecha: '2026-10-15',
-  tipo: 'PARCIAL',
   observaciones: 'Trae calculadora y formulario',
   pasado: false,
   diasRestantes: 10,
@@ -63,7 +61,6 @@ const ejemploItemPasado = {
   id: 2,
   materia: { id: 5, nombre: 'Física' },
   fecha: '2026-08-01',
-  tipo: 'FINAL',
   observaciones: null,
   pasado: true,
   diasRestantes: null,
@@ -92,7 +89,6 @@ export const ejemploDetalle = {
   alumnoId: 12,
   materia: { id: 3, nombre: 'Matemática' },
   fecha: '2026-10-15',
-  tipo: 'PARCIAL',
   observaciones: 'Trae calculadora y formulario',
   pasado: false,
   resultado: null,
@@ -117,7 +113,7 @@ export const ejemploErrorPendiente = {
   error: {
     code: 'EXAMEN_PENDIENTE',
     message: 'Ya hay un examen pendiente de esa materia: edítelo en vez de cargar uno nuevo',
-    details: { id: 5, tipo: 'PARCIAL', fecha: '2026-10-15' },
+    details: { id: 5, fecha: '2026-10-15' },
   },
 } satisfies ErrorResponse
 
@@ -164,11 +160,11 @@ export const ejemploErrorExamenFuturo = {
 } satisfies ErrorResponse
 
 export const ejemploMisExamenes = {
-  proximo: { fecha: '2026-10-22', tipo: 'PARCIAL', diasRestantes: 8 },
+  proximo: { fecha: '2026-10-22', diasRestantes: 8 },
   rendidos: [
-    { fecha: '2026-10-01', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 7.5 },
-    { fecha: '2026-09-20', tipo: 'TRABAJO_PRACTICO', resultado: 'AUSENTE', nota: null },
-    { fecha: '2026-09-05', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 9 },
+    { fecha: '2026-10-01', resultado: 'CON_NOTA', nota: 7.5 },
+    { fecha: '2026-09-20', resultado: 'AUSENTE', nota: null },
+    { fecha: '2026-09-05', resultado: 'CON_NOTA', nota: 9 },
   ],
   promedio: 8.25,
 } satisfies MisExamenes
