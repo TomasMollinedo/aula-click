@@ -1,5 +1,3 @@
-import { format, parseISO } from 'date-fns'
-
 import type { UsuarioAuditoria } from '@/types'
 import { formatoInstante, nombreUsuarioAuditoria } from '@/utils/auditoria'
 import { rangoHoras } from '@/utils/horas'
@@ -44,11 +42,6 @@ export function textoConfirmacion(resumen: Pick<ResumenACobrar, 'cantidad' | 'to
 /** `'Pago registrado: 4 turnos por $ 32.000,00'`, con la cantidad y el total de la respuesta. */
 export function textoExito(pago: Pick<PagoRegistrado, 'cantidad' | 'total'>): string {
   return `Pago registrado: ${textoCantidad(pago.cantidad)} por ${formatearPesos(pago.total)}`
-}
-
-/** La fecha de un pago con el año: `'2026-10-06'` → `'06/10/2026'`. */
-export function textoFechaPago(fecha: string): string {
-  return format(parseISO(fecha), 'dd/MM/yyyy')
 }
 
 /** Las materias de un pago, por nombre: `'Física, Matemática'`. */

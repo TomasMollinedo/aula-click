@@ -1,6 +1,4 @@
-import { format, parseISO } from 'date-fns'
-
-import { fechaConDia } from '@/utils/formato-fechas'
+import { fechaConAnio, fechaConDia } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
@@ -51,11 +49,6 @@ export function textoSinPrecio({ sinPrecio }: Pick<ResumenSeleccion, 'sinPrecio'
   return sinPrecio === 1 ? '1 turno sin precio' : `${sinPrecio} turnos sin precio`
 }
 
-/** Una fecha con el año, para el período y el tope: `'2026-10-01'` → `'01/10/2026'`. */
-export function textoFecha(fecha: string): string {
-  return format(parseISO(fecha), 'dd/MM/yyyy')
-}
-
 /**
  * La ocurrencia en palabras, para los `aria-label` de la casilla y de la acción de cada fila:
  * `'lunes 05/10 de 9:00 a 10:00, Matemática'`. Con `conAlumno` (vista global sin filtro, donde las
@@ -77,9 +70,10 @@ export function etiquetaTotal(periodo: Periodo): string {
 
 /** `'Del 01/09/2026 al 30/09/2026'`, `'Desde el 01/09/2026'`, `'Hasta el 30/09/2026'` o `null`. */
 export function textoPeriodo({ desde, hasta }: Periodo): string | null {
-  if (desde !== null && hasta !== null) return `Del ${textoFecha(desde)} al ${textoFecha(hasta)}`
-  if (desde !== null) return `Desde el ${textoFecha(desde)}`
-  if (hasta !== null) return `Hasta el ${textoFecha(hasta)}`
+  if (desde !== null && hasta !== null)
+    return `Del ${fechaConAnio(desde)} al ${fechaConAnio(hasta)}`
+  if (desde !== null) return `Desde el ${fechaConAnio(desde)}`
+  if (hasta !== null) return `Hasta el ${fechaConAnio(hasta)}`
   return null
 }
 
@@ -123,7 +117,9 @@ export function textoFiltrosActivos({
  */
 export function avisoDelTope({ desde, hasta }: Periodo, limiteCobro: string): string | null {
   const loPasa = (hasta !== null && hasta > limiteCobro) || (desde !== null && desde > limiteCobro)
-  return loPasa ? `Los próximos turnos se pueden cobrar hasta el ${textoFecha(limiteCobro)}` : null
+  return loPasa
+    ? `Los próximos turnos se pueden cobrar hasta el ${fechaConAnio(limiteCobro)}`
+    : null
 }
 
 const SIN_FILAS: Record<SeccionDeCuenta, string> = {

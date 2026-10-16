@@ -11,14 +11,10 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { PaginationControls } from '@/components/ui/pagination'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/utils/cn'
+import { fechaConAnio } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
 
-import {
-  textoCantidad,
-  textoFechaPago,
-  textoMateriasDelPago,
-  textoNumeroComprobante,
-} from '../formato-pagos'
+import { textoCantidad, textoMateriasDelPago, textoNumeroComprobante } from '../formato-pagos'
 import { useMisPagos } from '../hooks/use-mis-pagos'
 import type { MiPago } from '../pagos.types'
 import { hrefComprobante } from '../rutas-pagos'
@@ -92,7 +88,7 @@ function TarjetaDePago({ pago }: { pago: MiPago }) {
             {anulado && <Badge variant="cancelado">Anulado</Badge>}
           </p>
           <p className="text-muted-foreground text-sm">
-            {textoFechaPago(pago.fechaPago)} · {pago.formaPago.nombre}
+            {fechaConAnio(pago.fechaPago)} · {pago.formaPago.nombre}
           </p>
         </div>
         <p

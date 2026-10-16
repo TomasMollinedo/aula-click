@@ -14,7 +14,6 @@ import {
   textoCantidad,
   textoConfirmacion,
   textoExito,
-  textoFechaPago,
   textoMateriasDelPago,
   textoHorario,
   textoImporte,
@@ -184,10 +183,6 @@ describe('datosDelMedio', () => {
 })
 
 describe('textos de Mis pagos (portal, HU-37)', () => {
-  it('la fecha del pago con el año', () => {
-    expect(textoFechaPago('2026-10-06')).toBe('06/10/2026')
-  })
-
   it('las materias del pago, separadas por coma', () => {
     expect(textoMateriasDelPago([{ nombre: 'Física' }, { nombre: 'Matemática' }])).toBe(
       'Física, Matemática',

@@ -7,12 +7,11 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
-import { fechaConDia } from '@/utils/formato-fechas'
+import { fechaConAnio, fechaConDia } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
 
 import type { GrupoDeCuenta } from '../cuentas.types'
-import { textoFecha } from '../formato-cuentas'
 import { useMiCuenta } from '../hooks/use-mi-cuenta'
 
 /**
@@ -77,7 +76,7 @@ export function MisPendientes() {
         <SeccionPendiente
           id="mis-proximos"
           titulo="Próximos turnos"
-          descripcion={`Podés pagarlos por adelantado hasta el ${textoFecha(limiteCobro)}.`}
+          descripcion={`Podés pagarlos por adelantado hasta el ${fechaConAnio(limiteCobro)}.`}
           grupos={proximos}
         />
       )}
