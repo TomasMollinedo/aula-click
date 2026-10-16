@@ -1,4 +1,5 @@
-// Tipos de `GET /api/v1/tablero` y `GET /api/v1/tablero/asistencia` (HU-21 y HU-39), según
+// Tipos de `GET /api/v1/tablero`, `GET /api/v1/tablero/asistencia` y `GET /api/v1/tablero/finanzas`
+// (HU-21, HU-39 y HU-47), según
 // docs/contrato-api.md → Tablero. Solo agregados del período: nunca datos de un alumno, un pago o
 // una agenda. Los números llegan sin formato (ni pesos ni `%`): los textos los pone la UI.
 
@@ -164,4 +165,84 @@ export type ParamsAsistencia = PeriodoTablero & {
   orden: OrdenProfesores
   direccion: DireccionOrden
   soloSinRegistrar: boolean
+}
+
+// ---------------------------------------------------------------------------------------------
+// Sección "Finanzas" (`GET /tablero/finanzas`, HU-47)
+// ---------------------------------------------------------------------------------------------
+
+/** Columnas por las que la API ordena la tabla por profesor. */
+export const ORDENES_FINANZAS = [
+  'profesor',
+  'turnosCobrados',
+  'totalCobrado',
+  'parteCentro',
+  'parteProfesor',
+  'pagado',
+  'saldoPendiente',
+] as const
+
+export type OrdenFinanzas = (typeof ORDENES_FINANZAS)[number]
+
+/**
+ * Lo cobrado de un profesor en el período y su reparto. Un turno cobrado que el sistema cerró sin
+ * registrar va **entero** a `parteCentro` (no se le debe al profesor), así que en cada fila
+ * `parteCentro + parteProfesor` es `totalCobrado`. Los calcula el motor de liquidaciones: acá sólo
+ * se muestran.
+ */
+export type FilaProfesorFinanzas = {
+  profesor: { id: number; nombre: string; apellido: string }
+  /** Turnos de sus horas cobrados en el período (por fecha de pago). */
+  turnosCobrados: number
+  totalCobrado: number
+  parteCentro: number
+  parteProfesor: number
+  /** Sus liquidaciones pagadas con fecha de transferencia en el período. */
+  pagado: number
+  /** Lo que se le debe a `hoy`, no del período: **puede ser negativo** (un saldo a descontar). */
+  saldoPendiente: number
+}
+
+/** Los cuatro números principales de la sección. */
+export type ResumenFinanzas = {
+  /** Pagos vigentes con fecha de pago en el período: el mismo `pagos.totalCobrado` de "General". */
+  totalCobrado: number
+  /** La parte del centro de lo cobrado en el período, con su porcentaje sobre `totalCobrado`. */
+  margenCentro: { importe: number; porcentaje: number }
+  /**
+   * Cuánto de `margenCentro.importe` son turnos que el sistema cerró sin asistencia registrada (su
+   * importe completo); `0` si no hay, y entonces el detalle no se muestra.
+   */
+  incluyeSinRegistrar: number
+  /** Liquidaciones pagadas con fecha de transferencia en el período. */
+  pagadoAProfesores: number
+  /** Lo que se les debe **a hoy**, sin período: la suma de los saldos positivos. */
+  saldoAPagarAProfesores: number
+}
+
+/** Un mes de la evolución: el último llega hasta `hasta`, no hasta fin de mes. */
+export type EvolucionMes = {
+  /** `YYYY-MM`. */
+  mes: string
+  totalCobrado: number
+  margenCentro: number
+  pagadoAProfesores: number
+}
+
+export type TableroFinanzas = {
+  periodo: { desde: string; hasta: string }
+  /** La fecha con la que la API calculó todo: la del saldo a pagar a los profesores. */
+  hoy: string
+  resumen: ResumenFinanzas
+  /** De a 10 filas, con su propia página y su orden. */
+  profesores: PaginatedResponse<FilaProfesorFinanzas>
+  /** Siempre 6 meses, del más viejo al más nuevo: no se pagina ni se reordena. */
+  evolucion: EvolucionMes[]
+}
+
+/** Lo que recibe `GET /tablero/finanzas`: el período y el estado de la tabla por profesor. */
+export type ParamsFinanzas = PeriodoTablero & {
+  page: number
+  orden: OrdenFinanzas
+  direccion: DireccionOrden
 }
