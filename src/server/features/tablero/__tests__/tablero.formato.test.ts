@@ -10,6 +10,7 @@ import {
   tipoDePeriodo,
   tituloTablero,
   tituloTableroAsistencia,
+  tituloTableroFinanzas,
 } from '../tablero.formato'
 
 describe('formatearPorcentaje', () => {
@@ -62,6 +63,19 @@ describe('nombreArchivoTablero', () => {
     expect(nombreArchivoTablero(periodo, 'asistencia')).toBe(
       'tablero-asistencia-2026-09-28_2026-10-04',
     )
+  })
+
+  it('"Finanzas" lleva el suyo', () => {
+    expect(nombreArchivoTablero(periodo, 'finanzas')).toBe('tablero-finanzas-2026-09-28_2026-10-04')
+  })
+})
+
+describe('tituloTableroFinanzas', () => {
+  it('según el tipo de período', () => {
+    expect(tituloTableroFinanzas('2026-10-02', '2026-10-02')).toBe('Finanzas diaria')
+    expect(tituloTableroFinanzas('2026-09-28', '2026-10-04')).toBe('Finanzas semanal')
+    expect(tituloTableroFinanzas('2026-10-01', '2026-10-31')).toBe('Finanzas mensual')
+    expect(tituloTableroFinanzas('2026-09-15', '2026-10-20')).toBe('Finanzas del período')
   })
 })
 

@@ -9,6 +9,9 @@ const { prisma } = vi.hoisted(() => ({
   prisma: {
     pago: { aggregate: vi.fn(), groupBy: vi.fn() },
     formaPago: { findMany: vi.fn() },
+    liquidacion: { findMany: vi.fn() },
+    pagoTurno: { findMany: vi.fn() },
+    asistenciaTurno: { findMany: vi.fn() },
   },
 }))
 vi.mock('@/lib/prisma', () => ({ prisma }))
@@ -71,5 +74,55 @@ describe('totalCobradoPorForma', () => {
       TRANSFERENCIA: 0,
       DEBITO: 0,
     })
+  })
+})
+
+describe('liquidacionesPagadas', () => {
+  it('lee sólo las `PAGADA` con fecha de transferencia en el período, con su total guardado', async () => {
+    prisma.liquidacion.findMany.mockResolvedValue([
+      {
+        profesorId: 3,
+        total: { toNumber: () => 40800.5 },
+        fechaTransferencia: new Date('2026-10-01T00:00:00Z'),
+        profesor: { usuario: { nombre: 'Ana', apellido: 'Gómez' } },
+      },
+    ])
+
+    expect(await tableroRepository.liquidacionesPagadas(PERIODO)).toEqual([
+      {
+        profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+        fechaTransferencia: '2026-10-01',
+        total: 40800.5,
+      },
+    ])
+    const { where } = prisma.liquidacion.findMany.mock.calls[0]?.[0]
+    expect(where).toEqual({
+      estado: 'PAGADA',
+      fechaTransferencia: {
+        gte: new Date('2026-09-28T00:00:00Z'),
+        lte: new Date('2026-10-04T00:00:00Z'),
+      },
+    })
+  })
+})
+
+describe('cobrosConReparto', () => {
+  it('lee sólo los cobros vigentes del período: un pago anulado no cuenta', async () => {
+    prisma.pagoTurno.findMany.mockResolvedValue([])
+
+    expect(await tableroRepository.cobrosConReparto({ ...PERIODO, hoy: '2026-10-02' })).toEqual([])
+    expect(prisma.pagoTurno.findMany).toHaveBeenCalledExactlyOnceWith(
+      expect.objectContaining({
+        where: {
+          vigente: true,
+          pago: {
+            fechaPago: {
+              gte: new Date('2026-09-28T00:00:00Z'),
+              lte: new Date('2026-10-04T00:00:00Z'),
+            },
+          },
+        },
+      }),
+    )
   })
 })

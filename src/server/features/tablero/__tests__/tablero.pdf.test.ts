@@ -2,8 +2,16 @@ import { createElement } from 'react'
 import { describe, expect, it } from 'vitest'
 import { DATOS_CENTRO, LogoCentroPdf } from '@/server/features/centro/centro.condiciones'
 import { contarPaginas, idioma, metadato } from '@/server/shared/__tests__/pdf-inspeccion'
-import { renderizarTableroAsistenciaPdf, renderizarTableroPdf } from '../tablero.pdf'
-import type { Tablero, TableroAsistenciaCompleta } from '../tablero.validation'
+import {
+  renderizarTableroAsistenciaPdf,
+  renderizarTableroFinanzasPdf,
+  renderizarTableroPdf,
+} from '../tablero.pdf'
+import type {
+  Tablero,
+  TableroAsistenciaCompleta,
+  TableroFinanzasCompleta,
+} from '../tablero.validation'
 
 // Las dos plantillas del tablero en PDF (General y Asistencia), con un render real (fuentes y logo
 // del repo). No se compara el dibujo: se comprueba que sale un PDF, sus metadatos, las hojas que
@@ -261,5 +269,104 @@ describe('renderizarTableroAsistenciaPdf (Asistencia)', { timeout: 60_000 }, () 
     })
 
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  })
+})
+
+const FINANZAS: TableroFinanzasCompleta = {
+  periodo: { desde: '2026-09-28', hasta: '2026-10-04' },
+  hoy: '2026-10-02',
+  resumen: {
+    totalCobrado: 128000,
+    margenCentro: { importe: 26000, porcentaje: 20.3 },
+    incluyeSinRegistrar: 13600,
+    pagadoAProfesores: 40800,
+    saldoAPagarAProfesores: 47600,
+  },
+  profesores: [
+    {
+      profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+      turnosCobrados: 10,
+      totalCobrado: 80000,
+      parteCentro: 12000,
+      parteProfesor: 68000,
+      pagado: 40800,
+      saldoPendiente: 27200,
+    },
+    {
+      profesor: { id: 8, nombre: 'Marta', apellido: 'Ruiz' },
+      turnosCobrados: 0,
+      totalCobrado: 0,
+      parteCentro: 0,
+      parteProfesor: 0,
+      pagado: 0,
+      saldoPendiente: -6800,
+    },
+  ],
+  evolucion: ['2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10'].map((mes) => ({
+    mes,
+    totalCobrado: 96000,
+    margenCentro: 14400,
+    pagadoAProfesores: 54400,
+  })),
+}
+
+function finanzasConFilas(cantidad: number): TableroFinanzasCompleta {
+  return {
+    ...FINANZAS,
+    profesores: Array.from({ length: cantidad }, (_, i) => ({
+      profesor: { id: i + 1, nombre: `Nombre ${i}`, apellido: `Apellido ${i}` },
+      turnosCobrados: 10,
+      totalCobrado: 1234567.89,
+      parteCentro: 185185.18,
+      parteProfesor: 1049382.71,
+      pagado: 1000000,
+      saldoPendiente: -49382.71,
+    })),
+  }
+}
+
+const renderizarFinanzas = (tablero: TableroFinanzasCompleta) =>
+  renderizarTableroFinanzasPdf({ tablero, ...ENCABEZADO })
+
+describe('renderizarTableroFinanzasPdf (Finanzas)', { timeout: 60_000 }, () => {
+  it('devuelve un PDF con el título según el período y el centro como autor', async () => {
+    const pdf = await renderizarFinanzas(FINANZAS)
+
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(metadato(pdf, 'Title')).toBe('Finanzas semanal')
+    expect(metadato(pdf, 'Author')).toBe('Nexo Académico')
+    expect(idioma(pdf)).toBe('es')
+  })
+
+  it('el título cambia con el tipo de período', async () => {
+    const mensual = await renderizarFinanzas({
+      ...FINANZAS,
+      periodo: { desde: '2026-10-01', hasta: '2026-10-31' },
+    })
+
+    expect(metadato(mensual, 'Title')).toBe('Finanzas mensual')
+  })
+
+  it('sin el aviso de turnos sin registrar, sin profesores y todo en 0, también sale', async () => {
+    const pdf = await renderizarFinanzas({
+      ...FINANZAS,
+      resumen: {
+        totalCobrado: 0,
+        margenCentro: { importe: 0, porcentaje: 0 },
+        incluyeSinRegistrar: 0,
+        pagadoAProfesores: 0,
+        saldoAPagarAProfesores: 0,
+      },
+      profesores: [],
+    })
+
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  })
+
+  it('la tabla por profesor sale completa: con muchas filas ocupa más hojas', async () => {
+    const chico = await renderizarFinanzas(finanzasConFilas(5))
+    const grande = await renderizarFinanzas(finanzasConFilas(60))
+
+    expect(contarPaginas(grande)).toBeGreaterThan(contarPaginas(chico))
   })
 })

@@ -1,6 +1,6 @@
 import type { OcurrenciaDetalle } from '@/types/ocurrencia'
 import type { OcurrenciaACobrar } from '@/types/pago'
-import { sumarImportes } from '@/utils/moneda'
+import { type SubtotalDeMateria, subtotalesPorMateria, sumarImportes } from '@/utils/moneda'
 
 // Lo que se ofrece cobrar en el diálogo (HU-15). Los importes los manda la API a quien abre el
 // diálogo: el detalle del turno con `pago.importeVigente` (`GET /ocurrencias/{turnoId}/{fecha}`) y
@@ -32,15 +32,21 @@ export type ResumenACobrar = {
   total: number | null
   /** Cuántas vienen sin importe (materia sin precio). */
   sinPrecio: number
+  /** El subtotal de cada materia, por nombre (HU-25): el diálogo lo muestra si hay más de una. */
+  porMateria: SubtotalDeMateria[]
 }
 
 /**
- * Cantidad y total de lo que se ofrece cobrar. La suma va en centavos, como en la API
- * (`sumarImportes`). Sin total si alguna no tiene precio: la API la va a rechazar con `SIN_PRECIO`
- * y el envío no se bloquea.
+ * Cantidad, total y subtotal por materia de lo que se ofrece cobrar. La suma va en centavos, como
+ * en la API (`sumarImportes` y `subtotalesPorMateria`). Sin total si alguna no tiene precio: la API
+ * la va a rechazar con `SIN_PRECIO` y el envío no se bloquea.
  */
 export function resumenACobrar(
-  ocurrencias: readonly Pick<OcurrenciaACobrar, 'importe'>[],
+  ocurrencias: readonly Pick<OcurrenciaACobrar, 'importe' | 'materia'>[],
 ): ResumenACobrar {
-  return { cantidad: ocurrencias.length, ...sumarImportes(ocurrencias.map((o) => o.importe)) }
+  return {
+    cantidad: ocurrencias.length,
+    ...sumarImportes(ocurrencias.map((o) => o.importe)),
+    porMateria: subtotalesPorMateria(ocurrencias),
+  }
 }
