@@ -4,4 +4,6 @@ export const examenesKeys = {
   delAlumnos: () => [...examenesKeys.all, 'delAlumno'] as const,
   delAlumno: (alumnoId: number) => [...examenesKeys.delAlumnos(), alumnoId] as const,
   materias: (alumnoId: number) => [...examenesKeys.all, 'materias', alumnoId] as const,
+  /** Los del alumno de la sesión en una materia (portal). */
+  mios: (materiaId: number) => [...examenesKeys.all, 'mios', materiaId] as const,
 }

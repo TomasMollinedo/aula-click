@@ -4,15 +4,17 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as adjuntosController from './adjuntos.controller'
 import {
+  adjuntoDeLiquidacionSchema,
   adjuntoDePagoSchema,
   adjuntoSubidoSchema,
+  liquidacionIdParamsSchema,
   pagoIdParamsSchema,
   reemplazarAdjuntoSchema,
   subirAdjuntoSchema,
 } from './adjuntos.validation'
 
-// Contrato HTTP del comprobante adjunto de un pago (HU-24, T-95): cada endpoint se declara con
-// createRoute() y se registra acá.
+// Contrato HTTP del comprobante adjunto de un pago (HU-24, T-95) y de la transferencia a un
+// profesor (HU-44, T-123): cada endpoint se declara con createRoute() y se registra acá.
 
 const tags = ['Adjuntos']
 
@@ -47,8 +49,8 @@ export const subirAdjuntoRoute = createRoute({
   tags,
   summary: 'Subir un comprobante adjunto',
   description:
-    'Multipart con un único campo `archivo` (JPG, PNG o PDF de hasta 5 MB; se verifica también el contenido). Se sube **antes** de registrar el pago: queda sin pago hasta que `POST /pagos` lo vincula con `comprobanteAdjuntoId`. Uno que nunca se vincula queda guardado y no se muestra.',
-  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+    'Multipart con un único campo `archivo` (JPG, PNG o PDF de hasta 5 MB; se verifica también el contenido). Se sube **antes** de registrar el pago (mesa de entradas) o la transferencia a un profesor (gerente): queda sin vincular hasta que ese registro lo vincula con `comprobanteAdjuntoId`. Sólo lo vincula quien lo subió. Uno que nunca se vincula queda guardado y no se muestra.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
   request: {
     body: {
       required: true,
@@ -57,7 +59,7 @@ export const subirAdjuntoRoute = createRoute({
   },
   responses: {
     201: {
-      description: 'Adjunto subido, todavía sin pago',
+      description: 'Adjunto subido, todavía sin pago ni liquidación',
       content: {
         'application/json': {
           schema: adjuntoSubidoSchema,
@@ -66,7 +68,8 @@ export const subirAdjuntoRoute = createRoute({
       },
     },
     400: errorArchivo,
-    ...errores,
+    401: errores[401],
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
   },
 })
 
@@ -106,6 +109,38 @@ export const verAdjuntoRoute = createRoute({
     401: errores[401],
     403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
     404: sinAdjunto,
+  },
+})
+
+export const verAdjuntoDeLiquidacionRoute = createRoute({
+  method: 'get',
+  path: '/liquidaciones/{liquidacionId}',
+  tags,
+  summary: 'Comprobante de la transferencia a un profesor',
+  description:
+    'El último comprobante adjunto **activo** de la liquidación pagada (HU-44), con una URL prefirmada (15 min) que lo abre en otra pestaña y quién lo adjuntó y cuándo. Es opcional: una liquidación sin comprobante (o `DESCONTADA`, sin transferencia) responde 404. El profesor no lo ve (HU-45).',
+  middleware: [requireAuth(), requireRole('GERENTE')] as const,
+  request: { params: liquidacionIdParamsSchema },
+  responses: {
+    200: {
+      description: 'El último adjunto activo de la liquidación',
+      content: {
+        'application/json': {
+          schema: adjuntoDeLiquidacionSchema,
+          example: {
+            ...ejemploAdjuntoDePago,
+            adjuntadoPor: { id: 'usr_gerente_01', nombre: 'Marcelo', apellido: 'Ríos' },
+          },
+        },
+      },
+    },
+    400: respuestaError('`liquidacionId` inválido (VALIDACION)'),
+    401: errores[401],
+    403: respuestaError('El rol no es gerente, o el usuario está inhabilitado'),
+    404: respuestaError(
+      'La liquidación no existe, o no tiene comprobante adjunto (NO_ENCONTRADO)',
+      { error: { code: 'NO_ENCONTRADO', message: 'La liquidación no tiene comprobante adjunto' } },
+    ),
   },
 })
 
@@ -172,5 +207,6 @@ export const quitarAdjuntoRoute = createRoute({
 export const adjuntosRoutes = createRouter()
   .openapi(subirAdjuntoRoute, adjuntosController.subir)
   .openapi(verAdjuntoRoute, adjuntosController.ver)
+  .openapi(verAdjuntoDeLiquidacionRoute, adjuntosController.verDeLiquidacion)
   .openapi(reemplazarAdjuntoRoute, adjuntosController.reemplazar)
   .openapi(quitarAdjuntoRoute, adjuntosController.quitar)

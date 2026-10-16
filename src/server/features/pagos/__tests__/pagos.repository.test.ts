@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import type { Actor } from '@/server/shared/actor'
-import { pagosRepository } from '../pagos.repository'
+import { LIMITE_BUSCADOR, pagosRepository } from '../pagos.repository'
+import { crearPagosService } from '../pagos.service'
 import type { PlanPago } from '../pagos.reglas'
 import type { EntradaPago } from '../pagos.validation'
 
@@ -20,8 +21,21 @@ const {
   pagoCreate,
   adjuntoUpdateMany,
   pagoFindUnique,
+  pagoFindMany,
+  pagoCount,
+  pagoGroupBy,
+  formaPagoFindMany,
+  adjuntoFindFirst,
+  porcentajeFindFirst,
+  alumnoFindMany,
+  profesorFindMany,
+  materiaBuscadorFindMany,
   ErrorConocido,
 } = vi.hoisted(() => ({
+  alumnoFindMany: vi.fn(),
+  profesorFindMany: vi.fn(),
+  // `prisma.materia` del buscador (T-170); el `materiaFindMany` de arriba es el de la transacción.
+  materiaBuscadorFindMany: vi.fn(),
   transaction: vi.fn(),
   queryRaw: vi.fn(),
   turnoFindMany: vi.fn(),
@@ -30,6 +44,12 @@ const {
   pagoCreate: vi.fn(),
   adjuntoUpdateMany: vi.fn(),
   pagoFindUnique: vi.fn(),
+  pagoFindMany: vi.fn(),
+  pagoCount: vi.fn(),
+  pagoGroupBy: vi.fn(),
+  formaPagoFindMany: vi.fn(),
+  adjuntoFindFirst: vi.fn(),
+  porcentajeFindFirst: vi.fn(),
   ErrorConocido: class extends Error {
     constructor(
       message: string,
@@ -46,7 +66,20 @@ const {
   },
 }))
 vi.mock('@/lib/prisma', () => ({
-  prisma: { $transaction: transaction, pago: { findUnique: pagoFindUnique } },
+  prisma: {
+    $transaction: transaction,
+    pago: {
+      findUnique: pagoFindUnique,
+      findMany: pagoFindMany,
+      count: pagoCount,
+      groupBy: pagoGroupBy,
+    },
+    formaPago: { findMany: formaPagoFindMany },
+    comprobanteAdjunto: { findFirst: adjuntoFindFirst },
+    alumno: { findMany: alumnoFindMany },
+    profesor: { findMany: profesorFindMany },
+    materia: { findMany: materiaBuscadorFindMany },
+  },
 }))
 vi.mock('@/generated/prisma/client', () => ({
   Prisma: { PrismaClientKnownRequestError: ErrorConocido },
@@ -60,6 +93,7 @@ const tx = {
   formaPago: { findFirst: formaPagoFindFirst },
   pago: { create: pagoCreate },
   comprobanteAdjunto: { updateMany: adjuntoUpdateMany },
+  porcentajeCentro: { findFirst: porcentajeFindFirst },
 }
 
 const entrada: EntradaPago = {
@@ -101,6 +135,7 @@ beforeEach(() => {
   formaPagoFindFirst.mockResolvedValue({ id: 1 })
   pagoCreate.mockResolvedValue({ id: 31, numeroComprobante: 1024 })
   adjuntoUpdateMany.mockResolvedValue({ count: 1 })
+  porcentajeFindFirst.mockResolvedValue({ porcentaje: { toNumber: () => 18 } })
 })
 
 describe('registrar', () => {
@@ -141,6 +176,7 @@ describe('registrar', () => {
               turnoId: 41,
               fechaOcurrencia: new Date('2026-10-12T00:00:00.000Z'),
               importeAplicado: '8000.50',
+              porcentajeCentro: '18',
             },
           ],
         },
@@ -149,6 +185,42 @@ describe('registrar', () => {
     })
     // Efectivo: sin comprobante adjunto.
     expect(adjuntoUpdateMany).not.toHaveBeenCalled()
+    // El porcentaje vigente (T-122): una lectura, con el tx, después del lock y antes del create.
+    expect(porcentajeFindFirst).toHaveBeenCalledTimes(1)
+    expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      porcentajeFindFirst.mock.invocationCallOrder[0] ?? 0,
+    )
+    expect(porcentajeFindFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      pagoCreate.mock.invocationCallOrder[0] ?? 0,
+    )
+  })
+
+  it('un pago de dos turnos: los dos PagoTurno con el mismo porcentaje, leído una sola vez', async () => {
+    const dosTurnos: PlanPago = {
+      lineas: [
+        { turnoId: 41, fecha: '2026-10-12', importe: 8000 },
+        { turnoId: 57, fecha: '2026-10-14', importe: 9000 },
+      ],
+      total: 17000,
+      vuelto: null,
+    }
+
+    await pagosRepository.registrar(entrada, () => dosTurnos, actor)
+
+    expect(porcentajeFindFirst).toHaveBeenCalledTimes(1)
+    const { create } = pagoCreate.mock.calls[0]?.[0].data.turnos as {
+      create: { porcentajeCentro: string }[]
+    }
+    expect(create.map((t) => t.porcentajeCentro)).toEqual(['18', '18'])
+  })
+
+  it('sin porcentaje del centro configurado: rechaza y no crea el pago (decisión T-161)', async () => {
+    porcentajeFindFirst.mockResolvedValue(null)
+
+    await expect(pagosRepository.registrar(entrada, () => plan, actor)).rejects.toThrow(
+      /PorcentajeCentro/,
+    )
+    expect(pagoCreate).not.toHaveBeenCalled()
   })
 
   it('transferencia: la forma por su código, sus datos sin monto recibido, y vincula el adjunto con el tx', async () => {
@@ -183,7 +255,13 @@ describe('registrar', () => {
     })
     // `vincularAdjunto` (T-95), después de crear el pago y dentro de la misma transacción.
     expect(adjuntoUpdateMany).toHaveBeenCalledWith({
-      where: { id: 18, pagoId: null, estado: 'ACTIVO', createdById: 'usr_mesa' },
+      where: {
+        id: 18,
+        pagoId: null,
+        liquidacionId: null,
+        estado: 'ACTIVO',
+        createdById: 'usr_mesa',
+      },
       data: { pagoId: 31, updatedById: 'usr_mesa' },
     })
     expect(pagoCreate.mock.invocationCallOrder[0]).toBeLessThan(
@@ -423,8 +501,587 @@ describe('buscarComprobante', () => {
     expect(error.message).toMatch(/pnpm db:seed/)
   })
 
+  it('cada turno con el porcentaje del centro que guardó el cobro', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        turnos: [
+          {
+            turnoId: 41,
+            fechaOcurrencia: new Date('2026-10-12T00:00:00.000Z'),
+            importeAplicado: decimal(8000),
+            porcentajeCentro: decimal(15),
+            turno: {
+              materia: { id: 2, nombre: 'Matemática' },
+              bloqueAgenda: {
+                horaInicio: 540,
+                horaFin: 600,
+                profesor: { id: 3, usuario: { nombre: 'Ana', apellido: 'Gómez' } },
+              },
+            },
+          },
+        ],
+      }),
+    )
+
+    const comprobante = await pagosRepository.buscarComprobante(31)
+
+    expect(comprobante?.turnos).toEqual([
+      expect.objectContaining({ importe: 8000, porcentaje: 15 }),
+    ])
+    expect(pagoFindUnique.mock.calls[0]?.[0].select.turnos.select.porcentajeCentro).toBe(true)
+  })
+
   it('inexistente → null', async () => {
     pagoFindUnique.mockResolvedValue(null)
     expect(await pagosRepository.buscarComprobante(99)).toBeNull()
+  })
+})
+
+// T-98 (HU-36, HU-37): el listado de pagos realizados, "Mis pagos" y el adjunto del detalle. Fija
+// el `where` (estado sólo en los totales), el orden, el `skip`/`take` y lo que se lee: sin base.
+describe('pagos realizados', () => {
+  const decimal = (n: number) => ({ toNumber: () => n })
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const FISICA = { id: 7, nombre: 'Física' }
+
+  /** Una fila de `pago.findMany` con lo que leen el listado y "Mis pagos". */
+  function fila(parcial: Record<string, unknown> = {}) {
+    return {
+      id: 33,
+      numeroComprobante: 1026,
+      fechaPago: new Date('2026-10-06T00:00:00.000Z'),
+      importeTotal: decimal(34000),
+      estado: 'VIGENTE',
+      formaPago: { tipoFormaPago: 'TRANSFERENCIA', nombre: 'Transferencia' },
+      turnos: [
+        { turno: { materia: MATEMATICA } },
+        { turno: { materia: FISICA } },
+        { turno: { materia: MATEMATICA } },
+      ],
+      alumno: { id: 12, nombre: 'Lucía', apellido: 'Álvarez' },
+      createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      anulacion: null,
+      ...parcial,
+    }
+  }
+
+  const FILTRO = {
+    desde: '2026-10-01',
+    hasta: '2026-10-31',
+    alumnoId: 12,
+    materiaId: 2,
+    profesorId: 3,
+    formaPago: 'TRANSFERENCIA' as const,
+  }
+  const WHERE_LISTADO = {
+    fechaPago: {
+      gte: new Date('2026-10-01T00:00:00.000Z'),
+      lte: new Date('2026-10-31T00:00:00.000Z'),
+    },
+    alumnoId: 12,
+    turnos: { some: { turno: { materiaId: 2, bloqueAgenda: { profesorId: 3 } } } },
+    formaPago: { tipoFormaPago: 'TRANSFERENCIA' },
+  }
+
+  beforeEach(() => {
+    // La forma de arreglo de `$transaction`: las consultas ya armadas, en orden.
+    transaction.mockImplementation((consultas: Promise<unknown>[]) => Promise.all(consultas))
+    pagoFindMany.mockResolvedValue([fila()])
+    pagoCount.mockResolvedValue(21)
+    pagoGroupBy.mockResolvedValue([{ formaPagoId: 2, _sum: { importeTotal: decimal(34000) } }])
+    formaPagoFindMany.mockResolvedValue([{ id: 2, tipoFormaPago: 'TRANSFERENCIA' }])
+  })
+
+  describe('listarRealizados', () => {
+    it('la página con los filtros combinados, sin estado: lista vigentes y anulados', async () => {
+      await pagosRepository.listarRealizados(FILTRO, { page: 3, pageSize: 10 })
+
+      const consulta = pagoFindMany.mock.calls[0]?.[0]
+      expect(consulta.where).toStrictEqual(WHERE_LISTADO)
+      expect(consulta.where).not.toHaveProperty('estado')
+      expect(pagoCount).toHaveBeenCalledExactlyOnceWith({ where: WHERE_LISTADO })
+    })
+
+    it('del más reciente al más antiguo, con `id` de desempate, y `skip`/`take` de la página', async () => {
+      await pagosRepository.listarRealizados(FILTRO, { page: 3, pageSize: 10 })
+
+      expect(pagoFindMany.mock.calls[0]?.[0]).toMatchObject({
+        orderBy: [{ fechaPago: 'desc' }, { id: 'desc' }],
+        skip: 20,
+        take: 10,
+      })
+    })
+
+    it('los totales: el mismo filtro más `estado: VIGENTE`, de todo el filtro (sin skip/take)', async () => {
+      const res = await pagosRepository.listarRealizados(FILTRO, { page: 3, pageSize: 10 })
+
+      expect(pagoGroupBy).toHaveBeenCalledExactlyOnceWith({
+        by: ['formaPagoId'],
+        where: { estado: 'VIGENTE', ...WHERE_LISTADO },
+        _sum: { importeTotal: true },
+      })
+      expect(res.porForma).toEqual({ EFECTIVO: 0, TRANSFERENCIA: 34000, DEBITO: 0 })
+    })
+
+    it('cantidad fija de consultas: la página, el count, la suma por forma y las formas', async () => {
+      pagoFindMany.mockResolvedValue([fila(), fila({ id: 32 }), fila({ id: 31 })])
+
+      await pagosRepository.listarRealizados(FILTRO, { page: 1, pageSize: 10 })
+
+      expect(pagoFindMany).toHaveBeenCalledTimes(1)
+      expect(pagoCount).toHaveBeenCalledTimes(1)
+      expect(pagoGroupBy).toHaveBeenCalledTimes(1)
+      expect(formaPagoFindMany).toHaveBeenCalledTimes(1)
+      expect(pagoFindUnique).not.toHaveBeenCalled()
+      expect(adjuntoFindFirst).not.toHaveBeenCalled()
+    })
+
+    it('arma cada pago: materias distintas por nombre, cantidad, forma por código y la anulación', async () => {
+      pagoFindMany.mockResolvedValue([
+        fila({
+          estado: 'ANULADO',
+          anulacion: { motivo: 'ERROR_CARGA', detalle: 'Se cargó dos veces' },
+        }),
+      ])
+
+      const res = await pagosRepository.listarRealizados(FILTRO, { page: 3, pageSize: 10 })
+
+      expect(res.data).toEqual([
+        {
+          id: 33,
+          numeroComprobante: 1026,
+          fechaPago: '2026-10-06',
+          alumno: { id: 12, nombre: 'Lucía', apellido: 'Álvarez' },
+          materias: [FISICA, MATEMATICA],
+          cantidad: 3,
+          total: 34000,
+          formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+          registradoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+          estado: 'ANULADO',
+          anulacion: { motivo: 'ERROR_CARGA', detalle: 'Se cargó dos veces' },
+        },
+      ])
+      expect(res.meta).toEqual({ page: 3, pageSize: 10, total: 21, totalPages: 3 })
+    })
+  })
+
+  describe('listarDelAlumno', () => {
+    it('sólo los pagos del alumno, sin estado, con el mismo orden y la página', async () => {
+      await pagosRepository.listarDelAlumno(12, { page: 2, pageSize: 5 })
+
+      expect(pagoFindMany.mock.calls[0]?.[0]).toMatchObject({
+        where: { alumnoId: 12 },
+        orderBy: [{ fechaPago: 'desc' }, { id: 'desc' }],
+        skip: 5,
+        take: 5,
+      })
+      expect(pagoCount).toHaveBeenCalledExactlyOnceWith({ where: { alumnoId: 12 } })
+      expect(pagoGroupBy).not.toHaveBeenCalled()
+    })
+
+    it('no lee quién lo registró, el alumno, las observaciones ni la anulación', async () => {
+      const res = await pagosRepository.listarDelAlumno(12, { page: 1, pageSize: 10 })
+
+      const select = pagoFindMany.mock.calls[0]?.[0].select
+      for (const campo of ['createdBy', 'alumno', 'observaciones', 'anulacion']) {
+        expect(select).not.toHaveProperty(campo)
+      }
+      expect(res.data).toEqual([
+        {
+          id: 33,
+          numeroComprobante: 1026,
+          fechaPago: '2026-10-06',
+          materias: [FISICA, MATEMATICA],
+          cantidad: 3,
+          total: 34000,
+          formaPago: { codigo: 'TRANSFERENCIA', nombre: 'Transferencia' },
+          estado: 'VIGENTE',
+        },
+      ])
+    })
+  })
+
+  describe('buscarAdjunto', () => {
+    it('el último activo, sin la clave del archivo', async () => {
+      adjuntoFindFirst.mockResolvedValue({
+        id: 18,
+        archivoKey: 'adjuntos/abc.pdf',
+        nombreArchivo: 'cupon.pdf',
+        mimeType: 'application/pdf',
+        bytes: 1024,
+        createdAt: new Date('2026-10-05T14:28:00.000Z'),
+        createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      })
+
+      const adjunto = await pagosRepository.buscarAdjunto(31)
+
+      expect(adjunto).toEqual({
+        id: 18,
+        nombre: 'cupon.pdf',
+        tipo: 'application/pdf',
+        bytes: 1024,
+        adjuntadoPor: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+        adjuntadoEl: '2026-10-05T14:28:00.000Z',
+      })
+      expect(adjuntoFindFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { pagoId: 31, estado: 'ACTIVO' } }),
+      )
+    })
+
+    it('sin adjunto activo → null', async () => {
+      adjuntoFindFirst.mockResolvedValue(null)
+      expect(await pagosRepository.buscarAdjunto(31)).toBeNull()
+    })
+  })
+})
+
+// Criterios de aceptación de T-98 (HU-36), con el repository y el service reales: Prisma es un falso
+// que aplica el `where` que recibe sobre pagos en memoria (sólo los campos que usa el filtro), así
+// el listado y los totales salen de los mismos datos. Octubre de 2026.
+describe('criterios de aceptación: lo cobrado y los anulados', () => {
+  type PagoEnBase = {
+    id: number
+    fechaPago: string
+    alumnoId: number
+    estado: 'VIGENTE' | 'ANULADO'
+    formaPagoId: number
+    total: number
+    /** Materia y profesor de cada turno del pago. */
+    turnos: { materiaId: number; profesorId: number }[]
+  }
+  type Where = {
+    estado?: string
+    fechaPago?: { gte: Date; lte: Date }
+    alumnoId?: number
+    turnos?: { some: { turno: { materiaId?: number; bloqueAgenda?: { profesorId: number } } } }
+    formaPago?: { tipoFormaPago: string }
+  }
+
+  const FORMAS = [
+    { id: 1, tipoFormaPago: 'EFECTIVO', nombre: 'Efectivo' },
+    { id: 2, tipoFormaPago: 'TRANSFERENCIA', nombre: 'Transferencia' },
+    { id: 3, tipoFormaPago: 'DEBITO', nombre: 'Tarjeta de débito' },
+  ]
+  const MATERIAS: Record<number, string> = { 2: 'Matemática', 7: 'Física' }
+
+  const BASE: PagoEnBase[] = [
+    // Matemática con Ana (3).
+    {
+      id: 1,
+      fechaPago: '2026-10-02',
+      alumnoId: 12,
+      estado: 'VIGENTE',
+      formaPagoId: 1,
+      total: 8000,
+      turnos: [{ materiaId: 2, profesorId: 3 }],
+    },
+    // Matemática con Juan (5) y Física con Ana (3): materia 2 y profesor 3, pero en turnos distintos.
+    {
+      id: 2,
+      fechaPago: '2026-10-05',
+      alumnoId: 12,
+      estado: 'VIGENTE',
+      formaPagoId: 2,
+      total: 17000.5,
+      turnos: [
+        { materiaId: 2, profesorId: 5 },
+        { materiaId: 7, profesorId: 3 },
+      ],
+    },
+    // Anulado: se lista, no suma.
+    {
+      id: 3,
+      fechaPago: '2026-10-06',
+      alumnoId: 14,
+      estado: 'ANULADO',
+      formaPagoId: 3,
+      total: 9000,
+      turnos: [{ materiaId: 2, profesorId: 3 }],
+    },
+    // Fuera del período.
+    {
+      id: 4,
+      fechaPago: '2026-09-30',
+      alumnoId: 12,
+      estado: 'VIGENTE',
+      formaPagoId: 1,
+      total: 5000,
+      turnos: [{ materiaId: 2, profesorId: 3 }],
+    },
+    {
+      id: 5,
+      fechaPago: '2026-10-10',
+      alumnoId: 14,
+      estado: 'VIGENTE',
+      formaPagoId: 3,
+      total: 6000,
+      turnos: [{ materiaId: 7, profesorId: 3 }],
+    },
+  ]
+
+  const fecha = (texto: string) => new Date(`${texto}T00:00:00.000Z`)
+  const decimal = (n: number) => ({ toNumber: () => n })
+
+  function cumple(pago: PagoEnBase, where: Where): boolean {
+    if (where.estado !== undefined && pago.estado !== where.estado) return false
+    if (where.fechaPago) {
+      const f = fecha(pago.fechaPago)
+      if (f < where.fechaPago.gte || f > where.fechaPago.lte) return false
+    }
+    if (where.alumnoId !== undefined && pago.alumnoId !== where.alumnoId) return false
+    const turno = where.turnos?.some.turno
+    if (
+      turno &&
+      !pago.turnos.some(
+        (t) =>
+          (turno.materiaId === undefined || t.materiaId === turno.materiaId) &&
+          (turno.bloqueAgenda === undefined || t.profesorId === turno.bloqueAgenda.profesorId),
+      )
+    ) {
+      return false
+    }
+    const codigo = FORMAS.find((f) => f.id === pago.formaPagoId)?.tipoFormaPago
+    if (where.formaPago && codigo !== where.formaPago.tipoFormaPago) return false
+    return true
+  }
+
+  const filtrar = (where: Where) => BASE.filter((p) => cumple(p, where))
+
+  function aFila(pago: PagoEnBase) {
+    const forma = FORMAS.find((f) => f.id === pago.formaPagoId)
+    return {
+      id: pago.id,
+      numeroComprobante: 1000 + pago.id,
+      fechaPago: fecha(pago.fechaPago),
+      importeTotal: decimal(pago.total),
+      estado: pago.estado,
+      formaPago: { tipoFormaPago: forma?.tipoFormaPago, nombre: forma?.nombre },
+      turnos: pago.turnos.map((t) => ({
+        turno: { materia: { id: t.materiaId, nombre: MATERIAS[t.materiaId] } },
+      })),
+      alumno: { id: pago.alumnoId, nombre: 'Nombre', apellido: 'Apellido' },
+      createdBy: { id: 'usr_mesa', nombre: 'Laura', apellido: 'Gómez' },
+      anulacion: pago.estado === 'ANULADO' ? { motivo: 'ERROR_CARGA', detalle: null } : null,
+    }
+  }
+
+  const service = crearPagosService({
+    repository: pagosRepository,
+    alumnosRepository: { buscarPorId: vi.fn() },
+  })
+  const OCTUBRE = { desde: '2026-10-01', hasta: '2026-10-31', page: 1, pageSize: 10 }
+
+  beforeEach(() => {
+    transaction.mockImplementation((consultas: Promise<unknown>[]) => Promise.all(consultas))
+    pagoFindMany.mockImplementation(
+      async ({ where, skip, take }: { where: Where; skip: number; take: number }) =>
+        filtrar(where)
+          .sort((a, b) => b.fechaPago.localeCompare(a.fechaPago) || b.id - a.id)
+          .slice(skip, skip + take)
+          .map(aFila),
+    )
+    pagoCount.mockImplementation(async ({ where }: { where: Where }) => filtrar(where).length)
+    pagoGroupBy.mockImplementation(async ({ where }: { where: Where }) => {
+      const suma = new Map<number, number>()
+      for (const p of filtrar(where))
+        suma.set(p.formaPagoId, (suma.get(p.formaPagoId) ?? 0) + p.total)
+      return [...suma].map(([formaPagoId, total]) => ({
+        formaPagoId,
+        _sum: { importeTotal: decimal(total) },
+      }))
+    })
+    formaPagoFindMany.mockImplementation(async ({ where }: { where: { id: { in: number[] } } }) =>
+      FORMAS.filter((f) => where.id.in.includes(f.id)),
+    )
+  })
+
+  /** La suma de los totales de los pagos vigentes de la lista, en centavos. */
+  const sumaVigentes = (data: { estado: string; total: number }[]) =>
+    data.filter((p) => p.estado === 'VIGENTE').reduce((s, p) => s + Math.round(p.total * 100), 0) /
+    100
+
+  it('el total cobrado es la suma de los pagos vigentes del filtro, separado por forma de pago', async () => {
+    const { data, meta, totales } = await service.listar(OCTUBRE)
+
+    expect(data.map((p) => p.id)).toEqual([5, 3, 2, 1])
+    expect(meta.total).toBe(4)
+    expect(totales).toEqual({
+      cobrado: 31000.5,
+      porForma: { EFECTIVO: 8000, TRANSFERENCIA: 17000.5, DEBITO: 6000 },
+    })
+    expect(totales.cobrado).toBe(sumaVigentes(data))
+  })
+
+  it('un pago anulado se lista marcado y no suma', async () => {
+    const { data, totales } = await service.listar(OCTUBRE)
+
+    expect(data.find((p) => p.id === 3)).toMatchObject({
+      estado: 'ANULADO',
+      anulacion: { motivo: 'ERROR_CARGA', detalle: null },
+    })
+    // El débito anulado (9000) no está en lo cobrado con débito: sólo el vigente (6000).
+    expect(totales.porForma.DEBITO).toBe(6000)
+
+    const soloDebito = await service.listar({ ...OCTUBRE, formaPago: 'DEBITO' })
+    expect(soloDebito.data.map((p) => [p.id, p.estado])).toEqual([
+      [5, 'VIGENTE'],
+      [3, 'ANULADO'],
+    ])
+    expect(soloDebito.totales).toEqual({
+      cobrado: 6000,
+      porForma: { EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 6000 },
+    })
+  })
+
+  it('con materia, cada pago listado suma su total completo; con materia y profesor, sobre el mismo turno', async () => {
+    const matematica = await service.listar({ ...OCTUBRE, materiaId: 2 })
+    expect(matematica.data.map((p) => p.id)).toEqual([3, 2, 1])
+    // El pago 2 suma sus 17000,50 completos, no sólo su turno de Matemática.
+    expect(matematica.totales.cobrado).toBe(25000.5)
+    expect(matematica.totales.cobrado).toBe(sumaVigentes(matematica.data))
+
+    const conAna = await service.listar({ ...OCTUBRE, materiaId: 2, profesorId: 3 })
+    // El pago 2 tiene Matemática y a Ana, pero en turnos distintos: no aparece.
+    expect(conAna.data.map((p) => p.id)).toEqual([3, 1])
+    expect(conAna.totales).toEqual({
+      cobrado: 8000,
+      porForma: { EFECTIVO: 8000, TRANSFERENCIA: 0, DEBITO: 0 },
+    })
+  })
+})
+
+describe('buscadores de los filtros (T-100)', () => {
+  describe('buscarAlumnos', () => {
+    it('los que tienen algún pago (vigente o anulado), un contains por término, por apellido y nombre, hasta 20', async () => {
+      alumnoFindMany.mockResolvedValue([{ id: 12, nombre: 'Lucía', apellido: 'Álvarez' }])
+
+      const res = await pagosRepository.buscarAlumnos({ terminos: ['alva', 'lu'], id: undefined })
+
+      expect(res).toEqual([{ id: 12, nombre: 'Lucía', apellido: 'Álvarez' }])
+      expect(alumnoFindMany).toHaveBeenCalledExactlyOnceWith({
+        where: {
+          AND: [
+            { pagos: { some: {} } },
+            { busqueda: { contains: 'alva' } },
+            { busqueda: { contains: 'lu' } },
+          ],
+        },
+        select: { id: true, nombre: true, apellido: true },
+        orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+        take: 20,
+      })
+      expect(LIMITE_BUSCADOR).toBe(20)
+    })
+
+    it('con id: sólo ese alumno, sumado a la condición de tener pagos', async () => {
+      alumnoFindMany.mockResolvedValue([])
+
+      expect(await pagosRepository.buscarAlumnos({ terminos: [], id: 12 })).toEqual([])
+      expect(alumnoFindMany.mock.calls[0]?.[0].where).toEqual({
+        AND: [{ pagos: { some: {} } }, { id: 12 }],
+      })
+    })
+
+    it('no lee el DNI, la foto, el estado ni la auditoría', async () => {
+      alumnoFindMany.mockResolvedValue([])
+      await pagosRepository.buscarAlumnos({ terminos: [], id: undefined })
+
+      expect(Object.keys(alumnoFindMany.mock.calls[0]?.[0].select).sort()).toEqual([
+        'apellido',
+        'id',
+        'nombre',
+      ])
+    })
+  })
+
+  describe('buscarProfesores', () => {
+    it('por el camino del turno pagado (bloque → turno → PagoTurno), con la búsqueda sobre su usuario y sin filtro de estado', async () => {
+      profesorFindMany.mockResolvedValue([{ id: 3, usuario: { nombre: 'Ana', apellido: 'Gómez' } }])
+
+      const res = await pagosRepository.buscarProfesores({
+        terminos: ['gomez'],
+        id: 3,
+        alumnoId: undefined,
+      })
+
+      expect(res).toEqual([{ id: 3, nombre: 'Ana', apellido: 'Gómez' }])
+      expect(profesorFindMany).toHaveBeenCalledExactlyOnceWith({
+        where: {
+          bloques: { some: { turnos: { some: { pagoTurnos: { some: {} } } } } },
+          usuario: { AND: [{ busqueda: { contains: 'gomez' } }] },
+          id: 3,
+        },
+        select: { id: true, usuario: { select: { nombre: true, apellido: true } } },
+        orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
+        take: 20,
+      })
+    })
+
+    it('sin términos ni id: todos los que tienen turnos pagados, sin `id` en el where', async () => {
+      profesorFindMany.mockResolvedValue([])
+
+      expect(
+        await pagosRepository.buscarProfesores({
+          terminos: [],
+          id: undefined,
+          alumnoId: undefined,
+        }),
+      ).toEqual([])
+      expect(profesorFindMany.mock.calls[0]?.[0].where).toEqual({
+        bloques: { some: { turnos: { some: { pagoTurnos: { some: {} } } } } },
+        usuario: { AND: [] },
+      })
+    })
+
+    it('con alumnoId: sólo por los turnos de los pagos de ese alumno (T-170)', async () => {
+      profesorFindMany.mockResolvedValue([])
+
+      await pagosRepository.buscarProfesores({ terminos: [], id: undefined, alumnoId: 12 })
+
+      expect(profesorFindMany.mock.calls[0]?.[0].where).toEqual({
+        bloques: {
+          some: { turnos: { some: { pagoTurnos: { some: { pago: { alumnoId: 12 } } } } } },
+        },
+        usuario: { AND: [] },
+      })
+    })
+  })
+
+  describe('buscarMaterias (T-170)', () => {
+    it('por el camino del turno pagado (turno → PagoTurno), un contains por término, sin filtro de estado, por nombre, hasta 20', async () => {
+      materiaBuscadorFindMany.mockResolvedValue([{ id: 2, nombre: 'Matemática' }])
+
+      const res = await pagosRepository.buscarMaterias({
+        terminos: ['mat', 'fin'],
+        id: 2,
+        alumnoId: undefined,
+      })
+
+      expect(res).toEqual([{ id: 2, nombre: 'Matemática' }])
+      expect(materiaBuscadorFindMany).toHaveBeenCalledExactlyOnceWith({
+        where: {
+          AND: [
+            { turnos: { some: { pagoTurnos: { some: {} } } } },
+            { busqueda: { contains: 'mat' } },
+            { busqueda: { contains: 'fin' } },
+            { id: 2 },
+          ],
+        },
+        select: { id: true, nombre: true },
+        orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+        take: LIMITE_BUSCADOR,
+      })
+    })
+
+    it('con alumnoId: sólo las de los turnos de los pagos de ese alumno', async () => {
+      materiaBuscadorFindMany.mockResolvedValue([])
+
+      expect(
+        await pagosRepository.buscarMaterias({ terminos: [], id: undefined, alumnoId: 12 }),
+      ).toEqual([])
+      expect(materiaBuscadorFindMany.mock.calls[0]?.[0].where).toEqual({
+        AND: [{ turnos: { some: { pagoTurnos: { some: { pago: { alumnoId: 12 } } } } } }],
+      })
+    })
   })
 })

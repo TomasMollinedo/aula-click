@@ -1,6 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { ESTADOS_OCURRENCIA } from '@/server/features/turnos/ocurrencias.condiciones'
-import { fechaISO, horaHHmm } from '@/server/shared/zod'
+import { fechaISO, horaHHmm, mesISO } from '@/server/shared/zod'
 
 // Schemas Zod de `historiales` (T-108, HU-31 y HU-33). Son la fuente del OpenAPI. Sin reglas de
 // negocio: el período por defecto, el tope de días, la agrupación en bloques de horas seguidas y
@@ -22,14 +22,6 @@ const idPositivo = (description: string, example: number) =>
     .int({ error: 'Debe ser un número entero' })
     .positive({ error: 'Debe ser mayor a 0' })
     .openapi({ description, example })
-
-/** Un mes de calendario, `YYYY-MM` (el filtro del portal, HU-33). */
-export const mesISO = z
-  .string({ error: 'Debe ser un texto' })
-  .regex(/^\d{4}-(0[1-9]|1[0-2])$/, {
-    error: 'Mes inválido: debe tener formato AAAA-MM',
-  })
-  .openapi({ description: 'Mes de calendario (AAAA-MM)', example: '2026-10' })
 
 // ---------------------------------------------------------------------------------------------
 // Piezas comunes: un bloque de horas seguidas y sus clases
@@ -165,6 +157,45 @@ export const historialQuerySchema = z.object({
 })
 
 export type HistorialQuery = z.infer<typeof historialQuerySchema>
+
+// ---------------------------------------------------------------------------------------------
+// GET /historiales/alumnos/{alumnoId}/pdf?mes|desde&hasta&materiaId&profesorId (HU-32, T-110)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * El documento se pide **del mismo período que se ve en la pantalla** (decisión T-163): un `mes`
+ * (`AAAA-MM`) o un rango `desde`/`hasta`, con los mismos filtros de materia y profesor. Si vienen
+ * los dos, manda el rango; el extremo que falte lo completa el mes (o el mes en curso), igual que
+ * en `GET /historiales/alumnos/{alumnoId}`. El tope del rango es el mismo del historial
+ * (`MAX_DIAS_HISTORIAL`) y lo valida el service, no el schema.
+ */
+export const historialPdfQuerySchema = z.object({
+  mes: mesISO.optional().openapi({
+    param: { name: 'mes', in: 'query' },
+    description:
+      'Mes del documento (AAAA-MM). Sin `mes` ni `desde`/`hasta`, el mes en curso; si viene un rango, manda el rango',
+    example: '2026-10',
+  }),
+  desde: fechaISO.optional().openapi({
+    param: { name: 'desde', in: 'query' },
+    description: 'Primer día del período, incluido. Tiene prioridad sobre `mes`',
+    example: '2026-10-01',
+  }),
+  hasta: fechaISO.optional().openapi({
+    param: { name: 'hasta', in: 'query' },
+    description:
+      'Último día del período, incluido. No puede ser anterior a `desde` ni superar los 366 días. Las clases van hasta hoy',
+    example: '2026-10-31',
+  }),
+  materiaId: idPositivo('Sólo las clases y los exámenes de esta materia', 3)
+    .optional()
+    .openapi({ param: { name: 'materiaId', in: 'query' } }),
+  profesorId: idPositivo('Sólo las clases con este profesor (el del bloque)', 4)
+    .optional()
+    .openapi({ param: { name: 'profesorId', in: 'query' } }),
+})
+
+export type HistorialPdfQuery = z.infer<typeof historialPdfQuerySchema>
 
 /** Materias y profesores del **historial completo** del alumno, para los filtros de la pantalla. */
 const opcionesSchema = z

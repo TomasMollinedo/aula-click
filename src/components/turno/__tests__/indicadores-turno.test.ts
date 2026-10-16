@@ -200,7 +200,6 @@ describe('textoExamenPrioridad', () => {
   it('acepta el examen entero de la API (con id y tipo)', () => {
     const examen = {
       id: 7,
-      tipo: 'PARCIAL',
       materiaNombre: 'Historia',
       fecha: '2026-12-01',
       dias: 3,

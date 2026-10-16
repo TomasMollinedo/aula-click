@@ -13,6 +13,8 @@ const { repository, getSession, getPresignedUrl } = vi.hoisted(() => ({
     ultimo: vi.fn(),
     reemplazar: vi.fn(),
     quitar: vi.fn(),
+    existeLiquidacion: vi.fn(),
+    ultimoDeLiquidacion: vi.fn(),
   },
   getSession: vi.fn(),
   getPresignedUrl: vi.fn(),
@@ -85,6 +87,8 @@ beforeEach(() => {
   repository.ultimo.mockResolvedValue(ULTIMO)
   repository.reemplazar.mockResolvedValue(undefined)
   repository.quitar.mockResolvedValue(1)
+  repository.existeLiquidacion.mockResolvedValue(true)
+  repository.ultimoDeLiquidacion.mockResolvedValue(ULTIMO)
   getPresignedUrl.mockResolvedValue('https://minio.local/firmada')
   repository.subir.mockImplementation(
     async (guardar: { nombre: string; tipo: string; bytes: Uint8Array }) => ({
@@ -157,8 +161,19 @@ describe('POST /adjuntos', () => {
     expect((await subir(archivo('a.pdf', 'application/pdf', FIRMA_PDF))).status).toBe(401)
   })
 
+  it('como GERENTE (comprobante de la transferencia a un profesor) → 201; pasa el actor', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE', { id: 'usr_gerente' }))
+
+    const res = await subir(archivo('transferencia.pdf', 'application/pdf', FIRMA_PDF))
+
+    expect(res.status).toBe(201)
+    expect(repository.subir).toHaveBeenCalledWith(
+      expect.objectContaining({ nombre: 'transferencia.pdf' }),
+      expect.objectContaining({ userId: 'usr_gerente', role: 'GERENTE' }),
+    )
+  })
+
   it.each([
-    ['GERENTE', {}],
     ['PROFESOR', {}],
     ['ALUMNO', { alumnoId: 5 }],
   ])('con rol %s → 403', async (rol, extra) => {
@@ -197,6 +212,59 @@ describe('GET /adjuntos/pagos/{pagoId}', () => {
 
   it.each(['/pagos/abc', '/pagos/0'])('%s → 400', async (path) => {
     expect((await pedir(path)).status).toBe(400)
+  })
+})
+
+describe('GET /adjuntos/liquidaciones/{liquidacionId}', () => {
+  beforeEach(() => getSession.mockResolvedValue(sesion('GERENTE')))
+
+  it('GERENTE → 200 con la URL inline y sin la clave', async () => {
+    const res = await pedir('/liquidaciones/7')
+
+    expect(res.status).toBe(200)
+    const { archivoKey, ...visible } = ULTIMO
+    expect(await res.json()).toEqual({ ...visible, url: 'https://minio.local/firmada' })
+    expect(repository.ultimoDeLiquidacion).toHaveBeenCalledWith(7)
+    expect(getPresignedUrl).toHaveBeenCalledWith(archivoKey, undefined, {
+      inline: { nombreArchivo: 'cupón.pdf' },
+    })
+  })
+
+  it.each([
+    ['MESA_ENTRADAS', {}],
+    ['PROFESOR', {}],
+    ['ALUMNO', { alumnoId: 5 }],
+  ])('%s → 403, sin leer nada', async (rol, extra) => {
+    getSession.mockResolvedValue(sesion(rol, extra))
+
+    expect((await pedir('/liquidaciones/7')).status).toBe(403)
+    expect(repository.existeLiquidacion).not.toHaveBeenCalled()
+    expect(repository.ultimoDeLiquidacion).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('/liquidaciones/7')).status).toBe(401)
+  })
+
+  it.each(['/liquidaciones/abc', '/liquidaciones/0'])('%s → 400', async (path) => {
+    expect((await pedir(path)).status).toBe(400)
+  })
+
+  it('liquidación inexistente → 404 "Liquidación no encontrada"', async () => {
+    repository.existeLiquidacion.mockResolvedValue(false)
+    const res = await pedir('/liquidaciones/7')
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.message).toBe('Liquidación no encontrada')
+  })
+
+  it('sin adjunto → 404 "La liquidación no tiene comprobante adjunto"', async () => {
+    repository.ultimoDeLiquidacion.mockResolvedValue(null)
+    const res = await pedir('/liquidaciones/7')
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.message).toBe('La liquidación no tiene comprobante adjunto')
   })
 })
 
@@ -291,6 +359,14 @@ describe('OpenAPI', () => {
     expect(status('delete')).toEqual(['204', '400', '401', '403', '404', '409'])
   })
 
+  it('declara GET de una liquidación con todos sus status codes', () => {
+    expect(
+      Object.keys(
+        doc.paths['/api/v1/adjuntos/liquidaciones/{liquidacionId}']?.get?.responses ?? {},
+      ).sort(),
+    ).toEqual(['200', '400', '401', '403', '404'])
+  })
+
   it('declara POST /adjuntos con todos sus status codes y sus componentes', () => {
     expect(Object.keys(doc.paths['/api/v1/adjuntos']?.post?.responses ?? {}).sort()).toEqual([
       '201',
@@ -303,6 +379,7 @@ describe('OpenAPI', () => {
         'AdjuntoSubido',
         'SubirAdjunto',
         'AdjuntoDePago',
+        'AdjuntoDeLiquidacion',
         'ReemplazarAdjunto',
       ]),
     )

@@ -203,6 +203,7 @@ HU-15 (T-51; modelo de datos: T-29), con las formas de pago de HU-23 (T-96).
 - **Qué se puede cobrar:** una ocurrencia del alumno que existe (el turno genera esa fecha, dentro de su fin efectivo), que no está cancelada (`AGENDADO`, `SIN_REGISTRAR`, `REALIZADO` o `AUSENTE`: un turno dado e impago se cobra igual, HU-22) y sin un pago vigente (una de un pago anulado se vuelve a cobrar). Pasadas o futuras.
 - **Tope de 8 semanas:** una ocurrencia futura, de una serie o una sesión única, se cobra sólo hasta hoy + 56 días. Las pasadas no tienen tope (T-60).
 - **Precio vigente:** el importe de cada ocurrencia (`PagoTurno.importeAplicado`) es el precio por hora de su materia (`Materia.precioHora`) al registrar el pago (no lo manda el cliente). Cambiar el precio de la materia después no modifica los pagos ya registrados. Una materia sin precio no se cobra; una dada de baja con precio, sí (T-61).
+- **Porcentaje del centro** (HU-43): cada cobro guarda en sus `PagoTurno` el porcentaje vigente (ver [Reparto](#reparto)), leído una sola vez dentro de la transacción del pago: todos sus turnos quedan con el mismo valor aunque el gerente lo cambie en ese momento. Una ocurrencia que se vuelve a cobrar después de una anulación toma el vigente de ese momento. El detalle del pago muestra al gerente el reparto de cada turno, calculado con `repartoDeTurno` a partir de ese porcentaje guardado y el importe cobrado (también en un pago anulado); la mesa de entradas no lo ve y el comprobante no lo muestra.
 - **Todo o nada:** si alguna ocurrencia no se puede cobrar, no se registra ninguna y la API informa cuáles y por qué (no existe, cancelada, ya pagada, fuera de las 8 semanas o sin precio). Dos pagos simultáneos de la misma ocurrencia: sólo uno se registra.
 - **Fecha de pago:** obligatoria, hoy o anterior.
 - **Monto recibido y vuelto:** sólo en efectivo, donde el monto recibido es **obligatorio**: mayor a 0 y >= el total. Sin él no se registra el pago (T-112). El vuelto (`monto recibido − total`) lo calcula la API al responder y al mostrar el comprobante: **no se guarda**. Con transferencia o débito no hay monto recibido ni vuelto.
@@ -211,6 +212,17 @@ HU-15 (T-51; modelo de datos: T-29), con las formas de pago de HU-23 (T-96).
   - con más de una materia, los turnos **agrupados por materia**, con el subtotal de cada una (HU-25);
   - si el pago está anulado, **"ANULADO"** bien visible, con el motivo, la fecha y quién lo anuló (HU-42).
 - Los importes, el total y el vuelto los calcula siempre la API; la UI sólo los muestra.
+
+### Pagos realizados (HU-36, HU-37)
+
+T-98. El historial de pagos que HU-16 había dejado para después.
+
+- **Qué se lista:** los pagos con **fecha de pago** (no la de registro) en el período, del más reciente al más antiguo y paginados. Cada pago muestra número de comprobante, fecha de pago, alumno, materias incluidas, cantidad de turnos, total, forma de pago, quién lo registró y su estado.
+- **Filtros:** el período (obligatorio; la UI propone el mes en curso), el alumno, una materia, un profesor y la forma de pago. La materia y el profesor se aplican a **cada turno**, como en la deuda: un pago aparece si alguno de sus turnos es de esa materia o de ese profesor y, con los dos, si un mismo turno cumple los dos. La forma de pago se elige por su código, no por el nombre.
+- **Totales:** arriba, el total cobrado del filtro completo (no sólo de la página) y su detalle por forma de pago (efectivo, transferencia y débito). **Los pagos anulados se listan, marcados como "Anulado" con su motivo, pero no suman.** Con un filtro de materia o de profesor, cada pago suma su total completo. Lo cobrado se define igual que en el tablero.
+- **Gerente:** ve cada pago (la lista, el detalle y el comprobante en PDF) en **sólo lectura**: no registra pagos, no anula ni toca el comprobante adjunto. HU-36 amplía HU-21, que lo limitaba a datos agregados; sigue sin ver la agenda ni la ficha del alumno.
+- **Alumno ("Mis pagos" en el portal):** ve sólo los suyos, vigentes y anulados (número, fecha, materias, total, forma de pago y estado), **sin quién lo registró ni el comprobante adjunto**, y descarga el comprobante de pago en PDF de cada uno: el mismo documento que entrega la mesa. Un anulado se ve marcado y sus turnos vuelven a figurar como pendientes.
+- **Acciones del detalle:** las decide la API. Sólo la mesa de entradas actúa, y sólo sobre un pago vigente: anularlo; reemplazar el comprobante adjunto (o adjuntar uno, en un débito sin adjunto) si no es en efectivo; quitarlo, sólo en un débito que lo tenga (con transferencia es obligatorio).
 
 ## Deuda
 
@@ -232,22 +244,48 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 
 ## Tablero
 
-HU-21 (T-61). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días). Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
+HU-21 (T-61), HU-39 (T-112) y HU-47 (T-128). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días), en tres secciones con el mismo período: **General**, **Asistencia** y **Finanzas**. Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
 
-- **Turnos por estado:** los turnos del período (cada turno en cada fecha), incluidos los cancelados, con su cantidad y su porcentaje sobre el total: cancelados, sin registrar (pasados y no cancelados) y agendados (no cancelados, de hoy en adelante). Los agendados sólo se informan si el período incluye hoy o fechas futuras.
-- **Asistencia:** "Asistió", "No asistió" y "alumnos atendidos" dependen de la asistencia (HU-22, próximo sprint). Se informan como **no disponibles**, sin número, y no se reemplazan por otra cuenta (por ejemplo, los turnos pasados no cancelados).
+### General
+
+- **Turnos por estado:** los turnos del período (cada turno en cada fecha), incluidos los cancelados, con su cantidad y su porcentaje sobre el total: cancelados, sin registrar (pasados, no cancelados y sin asistencia registrada) y agendados (no cancelados, de hoy en adelante). Los agendados sólo se informan si el período incluye hoy o fechas futuras.
+- **Asistencia (HU-22):** "Asistió" son los turnos con asistencia "Presente" y "No asistió" los de "Ausente", cada uno con su cantidad y su porcentaje **sobre los turnos con asistencia registrada** (no sobre el total del período: un turno "Sin registrar" no está en la base). **Alumnos atendidos** son los alumnos distintos con al menos un turno "Realizado" (presente) en el período. Sin ninguna asistencia registrada, todo en 0.
 - **Profesores con más turnos:** los 5 con más turnos **no cancelados** en el período, con su cantidad: cada turno es un alumno que cursa en una hora del profesor, así que es el profesor con más alumnos. No depende de la asistencia. En empate, por apellido y nombre.
 - **Clase:** una hora de un profesor en una fecha con al menos un turno no cancelado (la clase de HU-19). Una hora del horario sin turnos, o con todos cancelados, no es una clase.
 - **Ocupación:** turnos no cancelados del período sobre la capacidad total de sus clases. La capacidad de cada clase es la capacidad efectiva de esa hora (la menor entre la del profesor y la del aula, HU-06) **al momento de consultar**, y cuenta una vez por clase, tenga uno o varios alumnos. No se recorta a 100 %: si a un profesor o a un aula le bajaron la capacidad después, el porcentaje real puede superarlo.
 - **Alumnos nuevos:** los dados de alta dentro del período, en hora de Salta (de las 00:00 del primer día a las 24:00 del último). Cuentan aunque después se hayan dado de baja.
 - **Materias con más demanda:** las 5 con más turnos **no cancelados** en el período, con su cantidad. En empate, por nombre.
-- **Total cobrado:** la suma de los pagos vigentes con **fecha de pago** dentro del período (no la fecha en que se cargaron).
+- **Total cobrado:** la suma de los pagos vigentes con **fecha de pago** dentro del período (no la fecha en que se cargaron). Los pagos anulados no suman. Se ve separado por forma de pago (efectivo, transferencia y tarjeta de débito) y las tres formas suman el total cobrado.
 - **Total adeudado:** la deuda **a la fecha** (hoy), de todos los alumnos: no depende del período elegido. Es la misma de [Deuda](#deuda) y coincide con el total de la vista global "Pagos" sin filtros.
 - **Porcentajes:** de 0 a 100 con un decimal; si no hay sobre qué calcular, 0.
 
+### Asistencia
+
+HU-39 (T-112, decisión T-162). La pestaña para ver **qué profesores no registran la asistencia** (HU-22) y cómo asisten los alumnos. Sólo agregados por centro, por profesor y por materia: nunca se lista un alumno con nombre. Las cifras salen de los estados de las ocurrencias del período (los calcula el motor de ocurrencias).
+
+- **Turno con asistencia registrada:** "Realizado" (presente) o "Ausente". Cada hora de un alumno cuenta como un turno. Los cancelados no cuentan en ninguna cifra de esta pestaña.
+- **Turno cerrado sin registrar:** un turno pasado "Sin registrar" cuyo plazo de 7 días venció: lo cerró el sistema (HU-22). **Turno dentro del plazo:** "Sin registrar" que el profesor todavía puede registrar. Un turno dentro del plazo no es una falta del profesor.
+- **Porcentaje de asistencia** (del centro, de un profesor, de una materia o de un alumno): turnos "Realizados" sobre los turnos con asistencia registrada. Los cerrados sin registrar, los pendientes y los agendados no entran en la base.
+- **Porcentaje sin registrar** (de un profesor o una materia): turnos cerrados sin registrar sobre sus turnos **no cancelados** del período (los agendados están en la base).
+- **Profesor que no registra asistencia:** el que tiene al menos un turno cerrado sin registrar en el período. Es un dato del período consultado: no se arrastra de un período a otro.
+- **Alumnos con baja asistencia:** los alumnos con **menos de 75 %** de asistencia en el período, entre los que tienen algún turno con asistencia registrada (75 % justo no cuenta). Se informa sólo la cantidad.
+- **Tabla de profesores:** un profesor por fila, con sus turnos realizados, ausencias, porcentaje de asistencia de sus alumnos, turnos cerrados sin registrar, turnos dentro del plazo y porcentaje sin registrar. Por defecto, primero los que más turnos cerrados sin registrar tienen; se puede reordenar por cualquier columna y filtrar para ver sólo a los que no registran. **Tabla de materias:** las mismas cifras por materia, siempre ordenadas por turnos cerrados sin registrar.
+- Cada tabla se ve de a 10 filas, pero el **PDF** de la sección trae las tablas completas.
+
+### Finanzas
+
+HU-47 (T-128, decisión T-169). Cuánto se cobró, cuánto le queda al centro y cuánto se les pagó y se les debe a los profesores. Sólo agregados por centro, por profesor y por mes. El reparto de cada cobro, qué se le debe a cada profesor y su saldo son los de [Reparto](#reparto) y [Liquidaciones](#liquidaciones): el tablero no los calcula de nuevo. **Los pagos anulados no suman en ningún número.**
+
+- **Total cobrado:** el mismo número de General: los pagos vigentes con fecha de pago dentro del período.
+- **Margen del centro:** la parte del centro de los turnos cobrados en el período (cada uno con el porcentaje que guardó su cobro), con su porcentaje sobre el total cobrado. Un turno cobrado que el sistema cerró "Sin registrar" no se le debe al profesor: entra **entero** en el margen (una sola vez, no su parte del centro más el resto). Ese importe se informa aparte: "Incluye $ 13.600 de turnos sin asistencia registrada".
+- **Pagado a profesores:** el total de las liquidaciones pagadas con **fecha de transferencia** dentro del período. Una liquidación descontada no es una transferencia y no suma.
+- **Saldo a pagar a profesores:** lo que se les debe **a hoy**, sin período (como el total adeudado de General): la suma de los saldos **positivos**. Un profesor con saldo negativo (un saldo a descontar el mes próximo) no lo resta.
+- **Tabla por profesor:** un profesor por fila (activo o no) con algo en el período o un saldo a hoy: turnos cobrados en el período, total cobrado de esos turnos, parte del centro y parte del profesor (un turno cerrado sin registrar va entero a la del centro, así la columna suma el margen), pagado en el período y saldo pendiente a hoy, **negativo incluido**. Por defecto, primero los que más cobraron; se puede reordenar por cualquier columna. Se ve de a 10 filas; el PDF la trae completa.
+- **Evolución mensual:** los 6 meses que terminan en el del fin del período, con el total cobrado y el margen del centro (por fecha de pago) y lo pagado a profesores (por fecha de transferencia) de cada mes. El último mes llega hasta el fin del período, no hasta fin de mes; un mes sin movimientos va en 0.
+
 ## Exámenes
 
-HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia, con `tipo` (`PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
+HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia y una fecha. **No tiene tipo**: no se distingue parcial, final, recuperatorio ni trabajo práctico (decisión T-170); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
 
 - **Un examen pendiente por materia:** el alumno no puede tener dos exámenes `ACTIVO` de la misma materia con fecha `>= hoy` a la vez. Al intentar cargar o mover uno a esa situación, la API responde 409 `EXAMEN_PENDIENTE` con el existente, para ofrecer editarlo en vez de duplicarlo. Un examen pasado no cuenta: pasada su fecha, se puede cargar el siguiente de la misma materia sin límite.
 - **Fecha pasada:** se acepta igual (por ejemplo, para dejar registrado un examen que ya se tomó); la API lo marca con `pasado: true` para que el front avise, pero no lo rechaza.
@@ -287,9 +325,9 @@ HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios n
 - **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
 - **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
 - **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
-- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Tampoco las clases "Sin registrar" (decisión T-148, _pendiente de confirmación de las PO_: punto 8 de "Puntos a confirmar" del Sprint 3).
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-169): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
 - **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
-- El PDF mensual del historial es HU-32 (T-110).
+- **El PDF del historial es HU-32** (T-110): lo saca mesa de entrada desde la ficha y el profesor desde "Mis alumnos" (con el mismo criterio con el que ve el historial), **del período que se está viendo**, un mes o un rango (decisión T-163, _pendiente de confirmación de las PO_: HU-32 pedía sólo el mes y sólo mesa de entrada). No lleva las observaciones internas.
 
 ## Portal del alumno
 
@@ -305,7 +343,7 @@ El alumno (o su familia) entra al portal con una cuenta propia. La convención d
 
 ## Comprobante adjunto
 
-HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la imagen o el PDF de la transferencia, o la foto del cupón de débito) y respalda el cobro. No es el comprobante de pago que emite el centro (HU-15): la UI los nombra siempre distinto.
+HU-24 (T-95) y HU-44 (T-123). El **comprobante adjunto** es el archivo que trae la familia (la imagen o el PDF de la transferencia, o la foto del cupón de débito) y respalda el cobro. No es el comprobante de pago que emite el centro (HU-15): la UI los nombra siempre distinto.
 
 - **Qué pagos lo llevan:** los por **transferencia** (obligatorio) y con **tarjeta de débito** (opcional). Uno en efectivo no lleva.
 - **El archivo:** JPG, PNG o PDF de hasta 5 MB. La API verifica también el contenido, no sólo la extensión.
@@ -314,6 +352,8 @@ HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia (la i
 - **Reemplazar** adjunta uno nuevo y **conserva el anterior** (nada se borra); se muestra sólo el último. En un pago con débito sin comprobante (nunca tuvo, o se quitó), reemplazar lo adjunta.
 - **Quitar** sólo se puede en un pago **con débito**, donde es opcional: el comprobante deja de mostrarse, pero la fila y el archivo se conservan, con quién lo quitó y cuándo (baja lógica, decisión T-136). En uno por transferencia no se puede quitar: se reemplaza.
 - **Un pago anulado** (HU-42) conserva su comprobante como estaba: se sigue viendo y no se reemplaza ni se quita.
+- **Comprobante de la transferencia a un profesor** (HU-44, T-123): al pagar una liquidación el gerente puede adjuntar el comprobante de la transferencia, **opcional**, con las mismas reglas del archivo y de "se sube antes y se vincula al registrar". Su detalle muestra el último activo, igual que un pago; lo ve sólo el gerente (**el profesor no**, HU-45). No se reemplaza ni se quita.
+- **De un pago o de una liquidación, nunca de los dos:** un adjunto se vincula a uno solo, y sólo lo vincula quien lo subió. Como sólo la mesa de entradas registra pagos y sólo el gerente registra transferencias, un adjunto subido para un pago nunca termina en una liquidación ni al revés (decisiones T-158 y T-165).
 
 ## Anulación de pagos
 
@@ -347,6 +387,43 @@ HU-34 y HU-35 (T-106).
 - **Se calcula en el momento de sacar el turno**, con la misma regla que la cuenta del alumno: alcanza con pagar los turnos adeudados de 30 días o más para volver a sacar turnos; una deuda más reciente no bloquea, y los próximos turnos impagos no son deuda.
 - **No afecta lo que ya tiene:** sus turnos siguen como están, y se pueden cancelar y reprogramar (HU-13, HU-20).
 - **Mensajes:** a la mesa de entrada, con la cantidad y el total ("El alumno tiene deuda de más de 30 días (3 turnos · $ 24.000). Debe regularizar el pago para agendar turnos nuevos"); al alumno, sin importes ("Tenés clases adeudadas de hace más de 30 días. Para sacar un turno nuevo, regularizá el pago en la mesa de entrada"). El portal se lo avisa al entrar a "Sacar turno", antes del paso 1, y el alta lo vuelve a comprobar al confirmar.
+
+## Reparto y liquidaciones (modelo)
+
+HU-43 a HU-47 (tarea T-118). Qué se guarda y para qué; los términos (reparto, devengo, ajuste, saldo, estados) son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación), y las reglas, las de cada tarea.
+
+- **`PorcentajeCentro`:** el historial del porcentaje que retiene el centro. Cada cambio es una fila nueva (desde cuándo rige y quién lo cambió); el vigente es el último. No se edita (decisión T-155).
+- **`PagoTurno.porcentajeCentro`:** el porcentaje vigente al registrarse el pago, guardado en cada cobro de un turno. Las partes del centro y del profesor no se guardan: salen de este porcentaje y el importe cobrado (decisión T-155).
+- **`Liquidacion`:** la liquidación **cerrada** de un profesor en un mes, `PAGADA` (con la fecha y el número de operación de la transferencia) o `DESCONTADA` (su saldo lo absorbió otra liquidación). Guarda los totales congelados y quién registró el pago y cuándo. Un mes se cierra una sola vez; una liquidación sin pagar no tiene fila: se calcula al consultarla (decisión T-156).
+- **`LiquidacionTurno`:** cada turno de una liquidación cerrada, con su fecha de devengo, importe, porcentaje y parte del profesor congelados. Un cobro se liquida una sola vez (decisión T-157).
+- **`AjusteLiquidacion`:** un ajuste aplicado en una liquidación cerrada, por la anulación de un turno ya liquidado o por el saldo de una liquidación anterior. Cada turno anulado y cada saldo se descuentan una sola vez (decisión T-157).
+- **Comprobante de la transferencia:** un `ComprobanteAdjunto` vinculado a la liquidación en lugar de a un pago, con las reglas de [Comprobante adjunto](#comprobante-adjunto) (decisión T-158).
+
+## Reparto
+
+HU-43 (tarea T-120). Los términos son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación).
+
+- **Porcentaje vigente:** el último `PorcentajeCentro` (por `createdAt`, con `id` como desempate). Uno solo para todo el centro. Sólo el gerente lo ve y lo cambia; cambiarlo agrega una fila y no toca los cobros anteriores, porque cada cobro guardó el suyo en `PagoTurno.porcentajeCentro`. Es un número mayor o igual a 0 y menor que 100, con hasta dos decimales, y no se puede "cambiar" por el mismo valor.
+- **Sin porcentaje configurado** es un error de configuración (500 con log), nunca un 15 % por defecto (decisión T-161).
+- **Reparto de un turno** (`repartoDeTurno(importe, porcentaje)`), en enteros: el importe en centavos y el porcentaje en centésimos (15 % = 1500). Parte del centro = `floor((centavos × centésimos + 5000) / 10000)`, es decir, redondeada a centavos **mitad hacia arriba** ($ 0,10 al 15 % → $ 0,02). Parte del profesor = importe − parte del centro, así **las dos suman siempre el importe** ($ 8.000 al 15 % → $ 1.200 y $ 6.800). Los totales se suman en centavos (`sumarReparto`).
+- **Una sola regla:** `repartoDeTurno` y `sumarReparto` se publican en `reparto.condiciones.ts` con `porcentajeVigente(client)`; liquidaciones, cobros, caja y tablero los usan de ahí y nadie calcula el reparto por su cuenta.
+
+## Liquidaciones
+
+HU-44 (tarea T-121). Los términos y los textos son los del [Vocabulario de la ampliación](sprint-3/sprint-3.md#vocabulario-de-la-ampliación); acá, las reglas que aplica el motor.
+
+- **Devengo:** un turno se le debe al profesor cuando su cobro está vigente y tiene asistencia `PRESENTE` o `AUSENTE`. Su fecha de devengo es la más tardía entre el **registro** del pago y el de la asistencia, como fecha de Salta, nunca la fecha de pago (decisión T-162). El profesor es el del bloque al leer. Un turno sin asistencia, dentro del plazo o cerrado sin registrar, no se devenga.
+- **Turnos de una liquidación:** los devengados del mes de su fecha de devengo que no están en una liquidación cerrada. Si se anula el pago de uno mientras la liquidación está abierta, deja de figurar.
+- **Ajuste por anulación:** un turno de una liquidación cerrada cuyo pago se anuló descuenta su parte del profesor congelada en la primera liquidación sin cerrar posterior con turnos, o en la del mes en curso si no hay ninguna; una línea por comprobante (decisión T-163). La cerrada no cambia.
+- **Saldo anterior:** una liquidación de un mes terminado con total de 0 o menos queda "Saldo a descontar" y entra entera como ajuste en el siguiente mes sin cerrar, aunque no tenga turnos; puede encadenarse. El mes en curso no arrastra nada (decisión T-164).
+- **Total** = parte del profesor de los turnos + ajustes, en centavos.
+- **Estados:** `EN_CURSO` (el mes de hoy, aunque dé negativo), `PENDIENTE_DE_PAGO` (mes terminado, total > 0), `SALDO_A_DESCONTAR` (mes terminado, total ≤ 0), `PAGADA` y `DESCONTADA` (cerrada porque su saldo lo absorbió la que se pagó). Sólo se paga una `PENDIENTE_DE_PAGO`; al pagarla se cierran con ella, como `DESCONTADA`, las de la cadena que absorbió.
+- **Pagar:** sólo una liquidación `PENDIENTE_DE_PAGO` de un mes terminado, y por el total que calcula el sistema: no hay pagos parciales. Al confirmar se vuelve a calcular; si el total no es el que el gerente vio, el pago se rechaza ("La liquidación cambió desde que la abriste. Revisala antes de pagar") y no se guarda nada. Pagar es todo o nada: la liquidación queda `PAGADA` y congelada con sus turnos, ajustes, la transferencia (fecha no futura y no anterior al último día del mes, número de operación, comprobante opcional y observaciones) y quién la registró, y las de saldo negativo que absorbió quedan `DESCONTADA`. Una anulación posterior de un pago de sus turnos no la cambia: se descuenta como ajuste en la siguiente.
+- **Saldo del profesor:** lo que se le debe hoy, la suma de sus liquidaciones `PENDIENTE_DE_PAGO` y `EN_CURSO`. Las `SALDO_A_DESCONTAR` no se suman: ya están dentro de la del mes siguiente. Puede ser negativo.
+
+## Caja diaria
+
+A completar por T-127 (HU-46).
 
 ## Auditoría
 

@@ -3,9 +3,14 @@ import { fetchJson } from '@/utils/fetch-json'
 import type {
   OcurrenciaDeAlumno,
   OcurrenciaDetalle,
+  OcurrenciaDelPortal,
   OcurrenciaDetallePortal,
 } from '@/types/ocurrencia'
-import type { ObtenerOcurrenciaParams, OcurrenciasDelAlumnoParams } from '../ocurrencias.types'
+import type {
+  MisTurnosParams,
+  ObtenerOcurrenciaParams,
+  OcurrenciasDelAlumnoParams,
+} from '../ocurrencias.types'
 
 const BASE = '/api/v1/ocurrencias'
 
@@ -35,4 +40,10 @@ export function obtenerMiTurno({
   fecha,
 }: ObtenerOcurrenciaParams): Promise<OcurrenciaDetallePortal> {
   return fetchJson<OcurrenciaDetallePortal>(`${BASE}/mis-turnos/${turnoId}/${fecha}`)
+}
+
+/** Los turnos del alumno de la sesión en `[desde, hasta]`, con las canceladas ("Mi calendario", HU-30). */
+export function listarMisTurnos({ desde, hasta }: MisTurnosParams): Promise<OcurrenciaDelPortal[]> {
+  const searchParams = new URLSearchParams({ desde, hasta })
+  return fetchJson<OcurrenciaDelPortal[]>(`${BASE}/mis-turnos?${searchParams.toString()}`)
 }

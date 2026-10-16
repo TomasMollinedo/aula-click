@@ -24,7 +24,6 @@ export const ejemploAgendaDiaria = {
       examen: {
         id: 5,
         fecha: '2026-10-02',
-        tipo: 'PARCIAL',
         materiaNombre: 'Matemática',
         dias: 4,
       },
@@ -72,7 +71,6 @@ export const ejemploAgendaPropia = [
     examen: {
       id: 5,
       fecha: '2026-10-02',
-      tipo: 'PARCIAL',
       materiaNombre: 'Matemática',
       dias: 4,
     },
@@ -118,7 +116,6 @@ export const ejemploAgendaCentro = [
     examen: {
       id: 6,
       fecha: '2026-10-12',
-      tipo: 'FINAL',
       materiaNombre: 'Matemática',
       dias: 14,
     },

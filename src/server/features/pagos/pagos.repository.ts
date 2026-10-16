@@ -1,7 +1,8 @@
 import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
-import { vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import { ultimoAdjunto, vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import { porcentajeVigente } from '@/server/features/reparto/reparto.condiciones'
 import {
   bloquearAlumno,
   leerOcurrencias,
@@ -10,8 +11,21 @@ import {
 import type { Actor } from '@/server/shared/actor'
 import { SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate, type Reloj } from '@/server/shared/fechas'
+import {
+  armarMeta,
+  calcularSkipTake,
+  type MetaPaginacion,
+  type PaginacionQuery,
+} from '@/server/shared/paginacion'
 import { minutosAHora } from '@/server/shared/zod'
 import {
+  pagosDelFiltro,
+  totalCobradoPorForma,
+  type FiltroPagos,
+  type TotalesPorForma,
+} from './pagos.condiciones'
+import {
+  agruparPorMateria,
   CODIGO_TURNOS_NO_COBRABLES,
   errorFormasDePago,
   MENSAJE_YA_PAGADO_CONCURRENTE,
@@ -19,10 +33,18 @@ import {
   type SnapshotPago,
 } from './pagos.reglas'
 import type {
+  AdjuntoDelPago,
+  AlumnoDePagos,
+  BusquedaAcotadaDePagos,
+  BusquedaDePagos,
   ComprobanteGuardado,
   EntradaPago,
+  MateriaDePagos,
   MedioPago,
+  MiPago,
   OcurrenciaPedida,
+  PagoRealizado,
+  ProfesorDePagos,
 } from './pagos.validation'
 
 // Único lugar de la feature que usa Prisma. Sin reglas de negocio: qué se puede cobrar y cuánto lo
@@ -160,6 +182,7 @@ const SELECT_COMPROBANTE = {
       turnoId: true,
       fechaOcurrencia: true,
       importeAplicado: true,
+      porcentajeCentro: true,
       turno: {
         select: {
           materia: { select: { id: true, nombre: true } },
@@ -178,6 +201,85 @@ const SELECT_COMPROBANTE = {
   },
 } satisfies Prisma.PagoSelect
 
+/**
+ * Lo que muestra un pago en "Mis pagos" (HU-37): sin quién lo registró, el alumno, las
+ * observaciones ni la anulación, que ni se leen.
+ */
+const SELECT_MI_PAGO = {
+  id: true,
+  numeroComprobante: true,
+  fechaPago: true,
+  importeTotal: true,
+  estado: true,
+  formaPago: { select: { tipoFormaPago: true, nombre: true } },
+  turnos: { select: { turno: { select: { materia: { select: { id: true, nombre: true } } } } } },
+} satisfies Prisma.PagoSelect
+
+/** Un pago de los pagos realizados (HU-36): lo de "Mis pagos" más el alumno, la auditoría y la anulación. */
+const SELECT_PAGO_REALIZADO = {
+  ...SELECT_MI_PAGO,
+  alumno: { select: { id: true, nombre: true, apellido: true } },
+  createdBy: { select: SELECT_USUARIO_AUDITORIA },
+  anulacion: { select: { motivo: true, detalle: true } },
+} satisfies Prisma.PagoSelect
+
+/** Del más reciente al más antiguo, con el `id` de desempate (convenciones-backend.md → Paginación). */
+const ORDEN_PAGOS = [
+  { fechaPago: 'desc' },
+  { id: 'desc' },
+] as const satisfies Prisma.PagoOrderByWithRelationInput[]
+
+/**
+ * Un pago listado: las materias distintas de sus turnos, por nombre (con `agruparPorMateria`, el
+ * mismo orden que el comprobante), y la cantidad de turnos. Es la base de `aPagoRealizado`.
+ */
+function aMiPago(fila: Prisma.PagoGetPayload<{ select: typeof SELECT_MI_PAGO }>): MiPago {
+  const codigo = fila.formaPago.tipoFormaPago
+  if (codigo === null) throw errorFormasDePago()
+  const materias = agruparPorMateria(
+    fila.turnos.map((pt) => ({ materia: pt.turno.materia, importe: null })),
+  ).map((grupo) => grupo.materia)
+  return {
+    id: fila.id,
+    numeroComprobante: fila.numeroComprobante,
+    fechaPago: dateAFecha(fila.fechaPago),
+    materias,
+    cantidad: fila.turnos.length,
+    total: fila.importeTotal.toNumber(),
+    formaPago: { codigo, nombre: fila.formaPago.nombre },
+    estado: fila.estado,
+  }
+}
+
+function aPagoRealizado(
+  fila: Prisma.PagoGetPayload<{ select: typeof SELECT_PAGO_REALIZADO }>,
+): PagoRealizado {
+  return {
+    ...aMiPago(fila),
+    alumno: fila.alumno,
+    registradoPor: {
+      id: fila.createdBy.id,
+      nombre: fila.createdBy.nombre,
+      apellido: fila.createdBy.apellido,
+    },
+    anulacion: fila.anulacion && { motivo: fila.anulacion.motivo, detalle: fila.anulacion.detalle },
+  }
+}
+
+/** Máximo de opciones de un buscador de los filtros de pagos realizados (sin paginar). */
+export const LIMITE_BUSCADOR = 20
+
+/** Un `contains` sobre `busqueda` por cada término, combinados con AND (`shared/busqueda.ts`). */
+const porTerminos = (terminos: string[]) => terminos.map((t) => ({ busqueda: { contains: t } }))
+
+/**
+ * Un turno "incluido en un pago" de los buscadores de profesores y materias: algún `PagoTurno` y,
+ * con `alumnoId`, de un pago de ese alumno (decisión T-170).
+ */
+const turnoPagado = (alumnoId: number | undefined) => ({
+  pagoTurnos: { some: alumnoId !== undefined ? { pago: { alumnoId } } : {} },
+})
+
 export const pagosRepository = {
   /**
    * Snapshot para el chequeo previo del service, **sin lock**: sólo sirve para dar errores claros
@@ -195,12 +297,15 @@ export const pagosRepository = {
    * 2. Relee con el `tx` las ocurrencias pedidas, los precios vigentes y la forma de pago activa
    *    por su código (`tipoFormaPago`; si falta, 500: es un error de configuración, falta el seed).
    * 3. `verificar(snapshot)`: si lanza, no se escribe nada.
-   * 4. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con los datos de su medio
+   * 4. Lee una vez el porcentaje del centro vigente (`porcentajeVigente`, de `reparto`): todos los
+   *    turnos del pago guardan el mismo. Sin `PorcentajeCentro` lanza y la transacción se deshace
+   *    (500, decisión T-161).
+   * 5. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con los datos de su medio
    *    (`columnasDelMedio`) y un `PagoTurno` por línea (`fechaOcurrencia` = la fecha de la
-   *    ocurrencia, `importeAplicado` = el precio vigente).
-   * 5. Con comprobante adjunto, lo vincula al pago (`vincularAdjunto`, de `adjuntos`): si no es
+   *    ocurrencia, `importeAplicado` = el precio vigente, `porcentajeCentro` = el leído en 4).
+   * 6. Con comprobante adjunto, lo vincula al pago (`vincularAdjunto`, de `adjuntos`): si no es
    *    un adjunto disponible de quien cobra, 400 `ADJUNTO_INVALIDO` y la transacción se deshace.
-   * 6. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
+   * 7. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
    *    `TURNOS_NO_COBRABLES` sin detalle por ocurrencia (la transacción ya se abortó).
    *
    * Devuelve el id, el número de comprobante y el plan con el que se registró (el decidido bajo
@@ -225,6 +330,7 @@ export const pagosRepository = {
         if (!formaPago) throw errorFormasDePago(medio.formaPago)
 
         const plan = verificar(snapshot)
+        const porcentaje = await porcentajeVigente(tx)
 
         const pago = await tx.pago.create({
           data: {
@@ -241,6 +347,7 @@ export const pagosRepository = {
                 turnoId: linea.turnoId,
                 fechaOcurrencia: fechaADate(linea.fecha),
                 importeAplicado: aDecimal(linea.importe),
+                porcentajeCentro: String(porcentaje),
               })),
             },
           },
@@ -265,7 +372,7 @@ export const pagosRepository = {
    * consulta, con la forma de pago por su código, los datos de su medio, el estado y, si está
    * anulado, la anulación (se lee junto con el pago, decisión T-120). Los turnos llevan los datos
    * **actuales** de su turno (fecha, horario, materia y profesor; decisión T-63) y el importe
-   * cobrado (`importeAplicado`), ordenados por fecha, hora de inicio y `turnoId`.
+   * cobrado (`importeAplicado`) con el porcentaje del centro que guardó el cobro, ordenados por fecha, hora de inicio y `turnoId`.
    */
   async buscarComprobante(id: number): Promise<ComprobanteGuardado | null> {
     const fila = await prisma.pago.findUnique({ where: { id }, select: SELECT_COMPROBANTE })
@@ -285,6 +392,7 @@ export const pagosRepository = {
           apellido: pt.turno.bloqueAgenda.profesor.usuario.apellido,
         },
         importe: pt.importeAplicado.toNumber(),
+        porcentaje: pt.porcentajeCentro.toNumber(),
       }))
       // `HH:mm` con ceros a la izquierda: el orden de texto es el de la hora.
       .sort(
@@ -333,6 +441,143 @@ export const pagosRepository = {
       },
       registradoEl: fila.createdAt.toISOString(),
     }
+  },
+
+  /**
+   * Pagos realizados del filtro (HU-36), vigentes y anulados (`pagosDelFiltro`), del más reciente
+   * al más antiguo y paginados, con lo cobrado por forma de **todo** el filtro, sin los anulados
+   * (`totalCobradoPorForma`, la misma definición que el tablero). Cantidad fija de consultas: la
+   * página y el `count` en una transacción, y la suma por forma y el código de las formas.
+   */
+  async listarRealizados(
+    filtro: FiltroPagos,
+    paginacion: PaginacionQuery,
+  ): Promise<{ data: PagoRealizado[]; meta: MetaPaginacion; porForma: TotalesPorForma }> {
+    const where = pagosDelFiltro(filtro)
+    const [[filas, total], porForma] = await Promise.all([
+      prisma.$transaction([
+        prisma.pago.findMany({
+          where,
+          select: SELECT_PAGO_REALIZADO,
+          orderBy: [...ORDEN_PAGOS],
+          ...calcularSkipTake(paginacion),
+        }),
+        prisma.pago.count({ where }),
+      ]),
+      totalCobradoPorForma(prisma, filtro),
+    ])
+    return { data: filas.map(aPagoRealizado), meta: armarMeta(paginacion, total), porForma }
+  },
+
+  /**
+   * Los pagos del alumno (HU-37), vigentes y anulados, con el mismo orden que `listarRealizados`
+   * y paginados. No lee quién lo registró, el alumno, las observaciones ni la anulación.
+   */
+  async listarDelAlumno(
+    alumnoId: number,
+    paginacion: PaginacionQuery,
+  ): Promise<{ data: MiPago[]; meta: MetaPaginacion }> {
+    const where = { alumnoId }
+    const [filas, total] = await prisma.$transaction([
+      prisma.pago.findMany({
+        where,
+        select: SELECT_MI_PAGO,
+        orderBy: [...ORDEN_PAGOS],
+        ...calcularSkipTake(paginacion),
+      }),
+      prisma.pago.count({ where }),
+    ])
+    return { data: filas.map(aMiPago), meta: armarMeta(paginacion, total) }
+  },
+
+  /**
+   * Buscador de alumnos del filtro de pagos realizados (HU-36, T-100): los que tienen al menos un
+   * pago, vigente o anulado, cuya `busqueda` (apellido, nombre y DNI) contiene **todos** los
+   * `terminos`, y con `id`, sólo ese. Por apellido y nombre (`busqueda`) e `id`, hasta
+   * `LIMITE_BUSCADOR`. Sólo lee id, nombre y apellido: ni el DNI ni la foto. Una consulta.
+   */
+  async buscarAlumnos({ terminos, id }: BusquedaDePagos): Promise<AlumnoDePagos[]> {
+    return prisma.alumno.findMany({
+      where: {
+        AND: [
+          { pagos: { some: {} } },
+          ...porTerminos(terminos),
+          ...(id !== undefined ? [{ id }] : []),
+        ],
+      },
+      select: { id: true, nombre: true, apellido: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+      take: LIMITE_BUSCADOR,
+    })
+  },
+
+  /**
+   * Buscador de profesores del filtro de pagos realizados (HU-36, T-100): los que dictan algún
+   * turno incluido en un pago (`PagoTurno` → `Turno` → `BloqueAgenda` → `Profesor`, el camino del
+   * filtro `profesorId` de `pagosDelFiltro`), incluidos los dados de baja, con la búsqueda sobre su
+   * `Usuario` y, con `id`, sólo ese; con `alumnoId`, sólo por los pagos de ese alumno (T-170).
+   * Mismo orden y límite que `buscarAlumnos`. Una consulta.
+   */
+  async buscarProfesores({
+    terminos,
+    id,
+    alumnoId,
+  }: BusquedaAcotadaDePagos): Promise<ProfesorDePagos[]> {
+    const filas = await prisma.profesor.findMany({
+      where: {
+        bloques: { some: { turnos: { some: turnoPagado(alumnoId) } } },
+        usuario: { AND: porTerminos(terminos) },
+        ...(id !== undefined ? { id } : {}),
+      },
+      select: { id: true, usuario: { select: { nombre: true, apellido: true } } },
+      orderBy: [{ usuario: { busqueda: 'asc' } }, { id: 'asc' }],
+      take: LIMITE_BUSCADOR,
+    })
+    return filas.map((p) => ({ id: p.id, nombre: p.usuario.nombre, apellido: p.usuario.apellido }))
+  },
+
+  /**
+   * Buscador de materias del filtro de pagos realizados (T-170): las de algún turno incluido en un
+   * pago (`PagoTurno` → `Turno` → `Materia`, el camino del filtro `materiaId`) y, con `alumnoId`,
+   * de un pago de ese alumno; incluidas las dadas de baja. La búsqueda va sobre su `busqueda` (el
+   * nombre normalizado) y, con `id`, sólo esa. Por nombre, hasta `LIMITE_BUSCADOR`. Sólo lee id y
+   * nombre. Una consulta.
+   */
+  async buscarMaterias({
+    terminos,
+    id,
+    alumnoId,
+  }: BusquedaAcotadaDePagos): Promise<MateriaDePagos[]> {
+    return prisma.materia.findMany({
+      where: {
+        AND: [
+          { turnos: { some: turnoPagado(alumnoId) } },
+          ...porTerminos(terminos),
+          ...(id !== undefined ? [{ id }] : []),
+        ],
+      },
+      select: { id: true, nombre: true },
+      orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+      take: LIMITE_BUSCADOR,
+    })
+  },
+
+  /**
+   * El último comprobante adjunto activo del pago (`ultimoAdjunto`, de `adjuntos`), sin la clave
+   * del archivo: la URL la da `GET /adjuntos/pagos/{pagoId}`. `null` si no tiene. Una consulta.
+   */
+  async buscarAdjunto(pagoId: number): Promise<AdjuntoDelPago | null> {
+    const adjunto = await ultimoAdjunto(prisma, pagoId)
+    return (
+      adjunto && {
+        id: adjunto.id,
+        nombre: adjunto.nombre,
+        tipo: adjunto.tipo,
+        bytes: adjunto.bytes,
+        adjuntadoPor: adjunto.adjuntadoPor,
+        adjuntadoEl: adjunto.adjuntadoEl,
+      }
+    )
   },
 }
 

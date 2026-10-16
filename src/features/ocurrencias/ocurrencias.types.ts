@@ -17,3 +17,9 @@ export type OcurrenciasDelAlumnoParams = {
   desde?: string
   hasta?: string
 }
+
+/** `GET /ocurrencias/mis-turnos?desde&hasta`: los dos van siempre, hasta 31 días. */
+export type MisTurnosParams = {
+  desde: string
+  hasta: string
+}

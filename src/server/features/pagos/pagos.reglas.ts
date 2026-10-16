@@ -1,13 +1,18 @@
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
+import { repartoDeTurno, sumarReparto } from '@/server/features/reparto/reparto.condiciones'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import type { Role } from '@/server/shared/actor'
 import { detallesPorPosicion } from '@/server/shared/detalles'
 import { sumarDias } from '@/server/shared/fechas'
 import { IMPORTE_MAX } from '@/server/shared/zod'
 import type {
+  AccionesPago,
   CodigoFormaPago,
   MedioPago,
   OcurrenciaPedida,
   RegistrarPago,
+  RepartoPago,
+  TurnoGuardado,
 } from './pagos.validation'
 
 // Reglas puras del cobro (HU-15, T-51): qué ocurrencias se pueden cobrar, cuánto cuesta cada una,
@@ -288,4 +293,52 @@ export function planificarPago(snapshot: SnapshotPago, pedido: PedidoPago, hoy: 
   }
 
   return { lineas, total, vuelto: calcularVuelto(montoRecibido, total) }
+}
+
+/** Lo que decide las acciones del detalle de un pago (HU-36): quién lo pide y cómo está el pago. */
+export type EntradaAccionesPago = {
+  rol: Role
+  estado: 'VIGENTE' | 'ANULADO'
+  formaPago: CodigoFormaPago
+  /** Si tiene un comprobante adjunto activo. */
+  tieneAdjunto: boolean
+}
+
+/**
+ * Las acciones del detalle de un pago (`PagoParaAcciones` del frontend). Coinciden con lo que
+ * aceptan `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (T-95): un pago anulado
+ * conserva todo como estaba, un efectivo no lleva adjunto y uno por transferencia no puede quedar
+ * sin comprobante. Sólo la mesa de entradas actúa; el gerente ve en sólo lectura (todas en `false`).
+ * - `anular`: vigente.
+ * - `reemplazarAdjunto`: vigente y con transferencia o débito (en un débito sin adjunto es
+ *   "adjuntar").
+ * - `quitarAdjunto`: vigente, con débito y con adjunto.
+ */
+export function accionesDelPago({
+  rol,
+  estado,
+  formaPago,
+  tieneAdjunto,
+}: EntradaAccionesPago): AccionesPago {
+  const puede = rol === 'MESA_ENTRADAS' && estado === 'VIGENTE'
+  return {
+    anular: puede,
+    reemplazarAdjunto: puede && formaPago !== 'EFECTIVO',
+    quitarAdjunto: puede && formaPago === 'DEBITO' && tieneAdjunto,
+  }
+}
+
+/**
+ * El reparto del pago (HU-43) entre el centro y cada profesor, con el porcentaje que guardó cada
+ * cobro: una fila por turno, en el mismo orden, y los totales. Sólo arma: el cálculo es el de
+ * `repartoDeTurno` y `sumarReparto` (de `reparto`), la única regla del reparto.
+ */
+export function repartoDelPago(turnos: readonly TurnoGuardado[]): RepartoPago {
+  const filas = turnos.map((turno) => ({
+    turnoId: turno.turnoId,
+    fecha: turno.fecha,
+    profesor: turno.profesor,
+    ...repartoDeTurno(turno.importe, turno.porcentaje),
+  }))
+  return { turnos: filas, totales: sumarReparto(filas) }
 }

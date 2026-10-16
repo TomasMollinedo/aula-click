@@ -1,17 +1,20 @@
 import { describe, expect, it } from 'vitest'
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
 import {
+  accionesDelPago,
   agruparPorMateria,
   errorFormasDePago,
   calcularVuelto,
   formatearPesos,
   limiteDeCobro,
   planificarPago,
+  repartoDelPago,
   sumarImportes,
   type OcurrenciaCobro,
   type PedidoPago,
   type SnapshotPago,
 } from '../pagos.reglas'
+import type { TurnoGuardado } from '../pagos.validation'
 
 // Reglas puras del cobro (T-51). Hoy: lunes 05/10/2026; hoy + 56 = lunes 30/11/2026.
 
@@ -379,5 +382,130 @@ describe('agruparPorMateria', () => {
 
   it('sin turnos: sin grupos', () => {
     expect(agruparPorMateria([])).toEqual([])
+  })
+})
+
+// T-98 (HU-36): las acciones del detalle de un pago. Tienen que coincidir con lo que aceptan
+// `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (T-95): anulado o efectivo → 409;
+// quitar en transferencia → 409.
+describe('accionesDelPago', () => {
+  const ninguna = { anular: false, reemplazarAdjunto: false, quitarAdjunto: false }
+
+  // Mesa de entradas, pago vigente: [forma, tiene adjunto, anular, reemplazar, quitar].
+  it.each([
+    ['EFECTIVO', false, true, false, false],
+    ['TRANSFERENCIA', true, true, true, false],
+    ['TRANSFERENCIA', false, true, true, false],
+    ['DEBITO', true, true, true, true],
+    // En un débito sin adjunto, "reemplazar" es adjuntar uno; no hay nada que quitar.
+    ['DEBITO', false, true, true, false],
+  ] as const)(
+    'mesa de entradas, vigente, %s con adjunto=%s → anular %s, reemplazar %s, quitar %s',
+    (formaPago, tieneAdjunto, anular, reemplazarAdjunto, quitarAdjunto) => {
+      expect(
+        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'VIGENTE', formaPago, tieneAdjunto }),
+      ).toEqual({ anular, reemplazarAdjunto, quitarAdjunto })
+    },
+  )
+
+  const FORMAS = ['EFECTIVO', 'TRANSFERENCIA', 'DEBITO'] as const
+  const combinaciones = FORMAS.flatMap((formaPago) =>
+    [true, false].map((tieneAdjunto) => [formaPago, tieneAdjunto] as const),
+  )
+
+  it.each(combinaciones)(
+    'un pago anulado (%s, adjunto=%s): todas en false, también para la mesa',
+    (formaPago, tieneAdjunto) => {
+      expect(
+        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'ANULADO', formaPago, tieneAdjunto }),
+      ).toEqual(ninguna)
+    },
+  )
+
+  it.each(['GERENTE', 'PROFESOR', 'ALUMNO'] as const)(
+    '%s: todas en false en cualquier pago (sólo lectura)',
+    (rol) => {
+      for (const [formaPago, tieneAdjunto] of combinaciones) {
+        for (const estado of ['VIGENTE', 'ANULADO'] as const) {
+          expect(accionesDelPago({ rol, estado, formaPago, tieneAdjunto })).toEqual(ninguna)
+        }
+      }
+    },
+  )
+
+  it('quitarAdjunto sólo con débito y adjunto', () => {
+    const conQuitar = combinaciones.filter(
+      ([formaPago, tieneAdjunto]) =>
+        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'VIGENTE', formaPago, tieneAdjunto })
+          .quitarAdjunto,
+    )
+    expect(conQuitar).toEqual([['DEBITO', true]])
+  })
+})
+
+// T-122 (HU-43): el reparto del pago arma filas y totales con `repartoDeTurno` y `sumarReparto`.
+describe('repartoDelPago', () => {
+  const ANA = { id: 3, nombre: 'Ana', apellido: 'Gómez' }
+  const JUAN = { id: 5, nombre: 'Juan', apellido: 'Ruiz' }
+
+  function turno(parcial: Partial<TurnoGuardado> = {}): TurnoGuardado {
+    return {
+      turnoId: 41,
+      fecha: '2026-10-12',
+      horaInicio: '09:00',
+      horaFin: '10:00',
+      materia: { id: 2, nombre: 'Matemática' },
+      profesor: ANA,
+      importe: 8000,
+      porcentaje: 15,
+      ...parcial,
+    }
+  }
+
+  it('dos turnos de profesores y porcentajes distintos: una fila por turno, en orden, y los totales', () => {
+    expect(
+      repartoDelPago([
+        turno(),
+        turno({ turnoId: 57, fecha: '2026-10-14', profesor: JUAN, importe: 9000, porcentaje: 18 }),
+      ]),
+    ).toEqual({
+      turnos: [
+        {
+          turnoId: 41,
+          fecha: '2026-10-12',
+          profesor: ANA,
+          importe: 8000,
+          porcentaje: 15,
+          parteCentro: 1200,
+          parteProfesor: 6800,
+        },
+        {
+          turnoId: 57,
+          fecha: '2026-10-14',
+          profesor: JUAN,
+          importe: 9000,
+          porcentaje: 18,
+          parteCentro: 1620,
+          parteProfesor: 7380,
+        },
+      ],
+      totales: { importe: 17000, parteCentro: 2820, parteProfesor: 14180 },
+    })
+  })
+
+  it('importes con centavos: los totales suman en centavos, sin error de coma flotante', () => {
+    const { turnos, totales } = repartoDelPago([
+      turno({ importe: 0.1, porcentaje: 15 }),
+      turno({ turnoId: 57, importe: 0.2, porcentaje: 15 }),
+      turno({ turnoId: 58, importe: 8000.55, porcentaje: 17.5 }),
+    ])
+
+    // $ 0,10 al 15 % → $ 0,02 (mitad hacia arriba); $ 8.000,55 al 17,5 % → $ 1.400,10.
+    expect(turnos.map((t) => [t.parteCentro, t.parteProfesor])).toEqual([
+      [0.02, 0.08],
+      [0.03, 0.17],
+      [1400.1, 6600.45],
+    ])
+    expect(totales).toEqual({ importe: 8000.85, parteCentro: 1400.15, parteProfesor: 6600.7 })
   })
 })

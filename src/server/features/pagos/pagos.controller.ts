@@ -6,6 +6,11 @@ import { respuestaPdf } from '@/server/shared/pdf/respuesta'
 import { nombreArchivoComprobante } from './pagos.formato'
 import { renderizarComprobantePdf } from './pagos.pdf'
 import type {
+  buscarAlumnosRoute,
+  buscarMateriasRoute,
+  buscarProfesoresRoute,
+  listarPagosRoute,
+  misPagosRoute,
   obtenerComprobantePdfRoute,
   obtenerComprobanteRoute,
   registrarPagoRoute,
@@ -23,18 +28,37 @@ const pagosService = crearPagosService({ repository: pagosRepository, alumnosRep
 export const registrar: RouteHandler<typeof registrarPagoRoute, AppEnv> = async (c) =>
   c.json(await pagosService.registrar(c.req.valid('json'), c.get('actor')), 201)
 
+export const listar: RouteHandler<typeof listarPagosRoute, AppEnv> = async (c) =>
+  c.json(await pagosService.listar(c.req.valid('query')), 200)
+
+export const misPagos: RouteHandler<typeof misPagosRoute, AppEnv> = async (c) =>
+  c.json(await pagosService.misPagos(c.req.valid('query'), c.get('actor')), 200)
+
+export const buscarAlumnos: RouteHandler<typeof buscarAlumnosRoute, AppEnv> = async (c) =>
+  c.json(await pagosService.buscarAlumnos(c.req.valid('query')), 200)
+
+export const buscarProfesores: RouteHandler<typeof buscarProfesoresRoute, AppEnv> = async (c) =>
+  c.json(await pagosService.buscarProfesores(c.req.valid('query')), 200)
+
+export const buscarMaterias: RouteHandler<typeof buscarMateriasRoute, AppEnv> = async (c) =>
+  c.json(await pagosService.buscarMaterias(c.req.valid('query')), 200)
+
 export const obtenerComprobante: RouteHandler<typeof obtenerComprobanteRoute, AppEnv> = async (c) =>
-  c.json(await pagosService.obtenerComprobante(c.req.valid('param').id), 200)
+  c.json(await pagosService.obtenerDetalle(c.req.valid('param').id, c.get('actor')), 200)
 
 /**
- * El comprobante en PDF: los mismos datos que `obtenerComprobante`, sin consultas nuevas. "Emitido
- * por" es quien lo pide (decisión T-111) y la fecha de emisión, la del servidor.
+ * El comprobante en PDF: los mismos datos que el detalle, sin el adjunto ni las acciones (el mismo
+ * documento para todos los roles). "Emitido por" es quien lo pide (decisión T-111) y la fecha de
+ * emisión, la del servidor.
  */
 export const obtenerComprobantePdf: RouteHandler<
   typeof obtenerComprobantePdfRoute,
   AppEnv
 > = async (c) => {
-  const comprobante = await pagosService.obtenerComprobante(c.req.valid('param').id)
+  const comprobante = await pagosService.comprobanteParaDocumento(
+    c.req.valid('param').id,
+    c.get('actor'),
+  )
   const pdf = await renderizarComprobantePdf({
     comprobante,
     ...encabezadoDeDocumento(c.get('user')),

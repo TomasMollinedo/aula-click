@@ -3,7 +3,6 @@
 import { Suspense } from 'react'
 
 import { DetalleTurno } from '@/app/mesa/_componentes/detalle-turno'
-import { DetallePago } from '@/app/mesa/_componentes/detalle-pago'
 import { PagosConVistas } from '@/app/mesa/_componentes/pagos-con-vistas'
 import { PageHeader } from '@/components/layout/page-header'
 import { PagosGlobal } from '@/features/cuentas/components/PagosGlobal'
@@ -14,8 +13,8 @@ import { useDetallePagoEnUrl } from '@/features/pagos/hooks/use-detalle-pago-en-
 // Vista global de pagos: "Por cobrar" (turnos adeudados y próximos, HU-16) y "Pagos realizados"
 // (HU-36), en subpestañas (`?vista=`). Client Component: le pasa funciones (el diálogo de registrar
 // el pago de varios turnos y el detalle del turno, desde donde se cobra uno solo; los dos de otras
-// features) y monta una sola vez el detalle del pago. Suspense: lee los filtros, la subpestaña y los
-// detalles de la URL con useSearchParams.
+// features) y abre el detalle del pago, que muestra el layout de mesa. Suspense: lee los filtros, la
+// subpestaña y los detalles de la URL con useSearchParams.
 export default function PagosPage() {
   return (
     <div className="space-y-8">
@@ -28,20 +27,17 @@ export default function PagosPage() {
 }
 
 function PagosDeMesa() {
-  const { pagoId, abrir, cerrar } = useDetallePagoEnUrl()
+  const { abrir } = useDetallePagoEnUrl()
 
   return (
-    <>
-      <PagosConVistas
-        porCobrar={
-          <PagosGlobal
-            renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
-            renderDetalle={(detalle) => <DetalleTurno {...detalle} soloPago />}
-          />
-        }
-        realizados={<PagosRealizados onAbrirPago={abrir} />}
-      />
-      {pagoId !== null && <DetallePago pagoId={pagoId} onCerrar={cerrar} />}
-    </>
+    <PagosConVistas
+      porCobrar={
+        <PagosGlobal
+          renderRegistrarPago={(pago) => <RegistrarPagoDialog {...pago} />}
+          renderDetalle={(detalle) => <DetalleTurno {...detalle} soloPago />}
+        />
+      }
+      realizados={<PagosRealizados onAbrirPago={abrir} />}
+    />
   )
 }

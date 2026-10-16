@@ -211,8 +211,6 @@ const HORARIO: (Recurrente | SesionesUnicas)[] = [
   { tipo: 'RECURRENTE', dia: 7, hora: 12, materia: 'Física', desdeSemana: -2, hastaSemana: null },
 ]
 
-type TipoExamen = 'PARCIAL' | 'FINAL' | 'RECUPERATORIO' | 'TRABAJO_PRACTICO' | 'OTRO'
-
 /**
  * Exámenes, en días desde hoy. Un solo pendiente (activo y con fecha >= hoy) por materia (HU-17).
  * Matemática y Física tienen uno pendiente (dan prioridad Alta y Media a sus turnos cercanos);
@@ -222,7 +220,6 @@ type TipoExamen = 'PARCIAL' | 'FINAL' | 'RECUPERATORIO' | 'TRABAJO_PRACTICO' | '
 const EXAMENES: {
   materia: NombreMateria
   dias: number
-  tipo: TipoExamen
   observaciones: string
   estado: 'ACTIVO' | 'INACTIVO'
   cargadoPor: 'profesor' | 'mesa'
@@ -230,7 +227,6 @@ const EXAMENES: {
   {
     materia: 'Matemática',
     dias: -24,
-    tipo: 'PARCIAL',
     observaciones: 'Primer parcial de Análisis Matemático I. Aprobó con 7.',
     estado: 'ACTIVO',
     cargadoPor: 'profesor',
@@ -238,7 +234,6 @@ const EXAMENES: {
   {
     materia: 'Matemática',
     dias: 6,
-    tipo: 'PARCIAL',
     observaciones: 'Segundo parcial: integrales y aplicaciones.',
     estado: 'ACTIVO',
     cargadoPor: 'profesor',
@@ -246,7 +241,6 @@ const EXAMENES: {
   {
     materia: 'Física',
     dias: -11,
-    tipo: 'TRABAJO_PRACTICO',
     observaciones: 'Entrega del informe de laboratorio de cinemática.',
     estado: 'ACTIVO',
     cargadoPor: 'mesa',
@@ -254,7 +248,6 @@ const EXAMENES: {
   {
     materia: 'Física',
     dias: 16,
-    tipo: 'PARCIAL',
     observaciones: 'Primer parcial de Física I: dinámica y energía.',
     estado: 'ACTIVO',
     cargadoPor: 'profesor',
@@ -262,7 +255,6 @@ const EXAMENES: {
   {
     materia: 'Química',
     dias: -20,
-    tipo: 'PARCIAL',
     observaciones: 'Primer parcial de Química General. Desaprobó con 4.',
     estado: 'ACTIVO',
     cargadoPor: 'profesor',
@@ -270,7 +262,6 @@ const EXAMENES: {
   {
     materia: 'Química',
     dias: -6,
-    tipo: 'RECUPERATORIO',
     observaciones: 'Recuperatorio del primer parcial. Aprobó con 6.',
     estado: 'ACTIVO',
     cargadoPor: 'mesa',
@@ -278,7 +269,6 @@ const EXAMENES: {
   {
     materia: 'Química',
     dias: 25,
-    tipo: 'FINAL',
     observaciones: 'Se cargó por error: la fecha de la mesa de final todavía no salió.',
     estado: 'INACTIVO',
     cargadoPor: 'mesa',
@@ -608,7 +598,6 @@ async function crear() {
         alumnoId: alumno.id,
         materiaId: materiaDe(examen.materia).id,
         fecha: fechaADate(sumarDias(fechaHoy, examen.dias)),
-        tipo: examen.tipo,
         observaciones: examen.observaciones,
         estado: examen.estado,
         createdById: autor,
@@ -706,6 +695,7 @@ async function crear() {
             turnoId: o.turno.id,
             fechaOcurrencia: fechaADate(o.fecha),
             importeAplicado: aImporte(o.centavos),
+            porcentajeCentro: 15,
           })),
         },
       },
@@ -758,7 +748,7 @@ async function crear() {
     const fecha = sumarDias(fechaHoy, e.dias)
     const estado =
       e.estado === 'INACTIVO' ? 'dado de baja' : fecha >= fechaHoy ? 'PENDIENTE' : 'pasado'
-    console.log(`    ${diaMes(fecha)}  ${e.materia.padEnd(11)} ${e.tipo.padEnd(16)} ${estado}`)
+    console.log(`    ${diaMes(fecha)}  ${e.materia.padEnd(11)} ${estado}`)
   }
   console.log('    Química no tiene examen pendiente: se le puede cargar uno nuevo.')
   console.log(`  Profesores: ${PROFESORES.map((p) => p.email).join(', ')}`)

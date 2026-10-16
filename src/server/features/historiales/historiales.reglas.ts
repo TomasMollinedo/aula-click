@@ -5,8 +5,8 @@ import {
   textosDeHorasSeguidas,
   type Ocurrencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
-import { dateAFecha, fechaADate, sumarDias } from '@/server/shared/fechas'
-import { minutosAHora } from '@/server/shared/zod'
+import { fechaADate } from '@/server/shared/fechas'
+import { mesDe, minutosAHora, primerDiaDelMes, ultimoDiaDelMes } from '@/server/shared/zod'
 import type {
   BloqueDelHistorial,
   BloqueDelPortal,
@@ -61,20 +61,9 @@ export type OcurrenciaHistorial = Pick<
 // Período
 // ---------------------------------------------------------------------------------------------
 
-/** El mes de `fecha` (`YYYY-MM-DD` o `YYYY-MM`) como `YYYY-MM`. */
-export function mesDe(fecha: string): string {
-  return fecha.slice(0, 7)
-}
-
-/**
- * Primer y último día del mes `YYYY-MM`. El último se calcula con el día 0 del mes siguiente, así
- * que no hay que saber cuántos días tiene ni si el año es bisiesto.
- */
+/** Primer y último día del mes `YYYY-MM`, como período `{ desde, hasta }`. */
 export function rangoDelMes(mes: string): { desde: string; hasta: string } {
-  const desde = `${mes}-01`
-  const siguiente = new Date(fechaADate(desde).getTime())
-  siguiente.setUTCMonth(siguiente.getUTCMonth() + 1)
-  return { desde, hasta: sumarDias(dateAFecha(siguiente), -1) }
+  return { desde: primerDiaDelMes(mes), hasta: ultimoDiaDelMes(mes) }
 }
 
 /** El período por defecto de los dos endpoints: el mes en curso completo. */
@@ -301,17 +290,21 @@ export function opcionesDeLosGrupos(
 // Portal del alumno (HU-33)
 // ---------------------------------------------------------------------------------------------
 
-/** Los estados que el alumno ve de una clase: HU-33 no lista los "Sin registrar" ni los agendados. */
+/**
+ * Los estados que el alumno ve de una clase (decisión T-169): también los "Sin registrar", para que
+ * vea la hora que el profesor no registró (no cuenta para su porcentaje). Los agendados de hoy, no.
+ */
 const ESTADOS_DEL_PORTAL: readonly ClaseDelHistorial['estado'][] = [
   'REALIZADO',
   'AUSENTE',
   'CANCELADO',
+  'SIN_REGISTRAR',
 ]
 
 /**
  * Los bloques del portal: los mismos bloques y los mismos textos, **sin** la observación interna,
- * el motivo de la cancelación, el plazo ni el cierre del sistema, y sin las clases "Sin registrar"
- * ni agendadas, que el alumno no ve (punto 8 de "Puntos a confirmar" del Sprint 3, decisión T-148).
+ * el motivo de la cancelación, el plazo ni el cierre del sistema, y sin las clases agendadas (una de
+ * hoy todavía sin registrar, decisión T-148). Las "Sin registrar" sí se muestran (decisión T-169).
  * Un bloque que se queda sin clases no se muestra.
  */
 export function bloquesDelPortal(bloques: readonly BloqueDelHistorial[]): BloqueDelPortal[] {

@@ -10,14 +10,20 @@ import {
   horaHHmm,
   IMPORTE_MAX,
   importe,
+  mesAnterior,
+  mesDe,
+  mesISO,
+  mesSiguiente,
   minutosAHora,
   nombrePersona,
   opcional,
   partirEnHoras,
+  primerDiaDelMes,
   rangoHorasEnPunto,
   telefono,
   textoOpcional,
   textoRequerido,
+  ultimoDiaDelMes,
 } from '../zod'
 
 // Primer mensaje de error de un safeParse fallido.
@@ -371,5 +377,69 @@ describe('importe', () => {
     const opcionalNulo = monto.nullable().optional()
     expect(opcionalNulo.parse(null)).toBeNull()
     expect(opcionalNulo.parse(undefined)).toBeUndefined()
+  })
+})
+
+describe('mesISO', () => {
+  it('acepta un mes YYYY-MM', () => {
+    expect(mesISO.parse('2026-10')).toBe('2026-10')
+  })
+
+  it.each(['2026-13', '2026-00', '2026-1', '2026-10-01'])('rechaza %s', (valor) => {
+    expect(mensaje(mesISO.safeParse(valor))).toBe('El mes debe tener el formato AAAA-MM')
+  })
+})
+
+describe('primerDiaDelMes', () => {
+  it('devuelve el día 1 del mes', () => {
+    expect(primerDiaDelMes('2026-10')).toBe('2026-10-01')
+  })
+
+  it('lanza RangeError con un mes inválido', () => {
+    expect(() => primerDiaDelMes('2026-13')).toThrow(RangeError)
+  })
+})
+
+describe('ultimoDiaDelMes', () => {
+  it.each([
+    ['2024-02', '2024-02-29'], // febrero bisiesto
+    ['2026-02', '2026-02-28'],
+    ['2026-12', '2026-12-31'], // no se pasa al año siguiente
+  ])('%s → %s', (mes, ultimo) => {
+    expect(ultimoDiaDelMes(mes)).toBe(ultimo)
+  })
+
+  it('lanza RangeError con un mes inválido', () => {
+    expect(() => ultimoDiaDelMes('2026-00')).toThrow(RangeError)
+  })
+})
+
+describe('mesDe', () => {
+  it('devuelve el mes de una fecha', () => {
+    expect(mesDe('2026-10-15')).toBe('2026-10')
+  })
+
+  it('lanza RangeError con una fecha inválida', () => {
+    expect(() => mesDe('2026-02-30')).toThrow(RangeError)
+  })
+})
+
+describe('mesAnterior', () => {
+  it('en enero pasa al diciembre del año anterior', () => {
+    expect(mesAnterior('2026-01')).toBe('2025-12')
+  })
+
+  it('lanza RangeError con un mes inválido', () => {
+    expect(() => mesAnterior('2026-1')).toThrow(RangeError)
+  })
+})
+
+describe('mesSiguiente', () => {
+  it('en diciembre pasa al enero del año siguiente', () => {
+    expect(mesSiguiente('2026-12')).toBe('2027-01')
+  })
+
+  it('lanza RangeError con un mes inválido', () => {
+    expect(() => mesSiguiente('2026-13')).toThrow(RangeError)
   })
 })

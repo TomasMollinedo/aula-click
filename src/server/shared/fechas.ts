@@ -31,7 +31,17 @@ export function ahora(reloj: Reloj = relojDelSistema): Date {
 
 /** Fecha de hoy en `America/Argentina/Salta`, como `YYYY-MM-DD`. */
 export function hoy(reloj: Reloj = relojDelSistema): string {
-  const partes = formatoSalta.formatToParts(reloj())
+  return fechaEnZona(reloj())
+}
+
+/**
+ * Fecha (`YYYY-MM-DD`) de un instante en `America/Argentina/Salta`: un pago registrado el 31/10 a
+ * las 22:00 de Salta es del 31/10, aunque en UTC ya sea 1/11.
+ * Lanza `RangeError` si es un `Invalid Date`.
+ */
+export function fechaEnZona(instante: Date): string {
+  if (Number.isNaN(instante.getTime())) throw new RangeError('Fecha inválida: Invalid Date')
+  const partes = formatoSalta.formatToParts(instante)
   const parte = (tipo: Intl.DateTimeFormatPartTypes) =>
     partes.find((p) => p.type === tipo)?.value ?? ''
   return `${parte('year')}-${parte('month')}-${parte('day')}`

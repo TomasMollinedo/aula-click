@@ -31,6 +31,11 @@ export type AsistenciaDelTurnoProps = {
    * desde `app/` con `renderRegistrarAsistencia`). El portal no lo pasa.
    */
   registro?: ReactNode
+  /**
+   * El estado de esa hora ya está en otro lugar (el portal lo muestra como un dato, igual que el
+   * pago): la sección no lo repite y, si no le queda nada más, no se muestra.
+   */
+  sinEstado?: boolean
 }
 
 function Textos({ textos, className }: { textos: TextoAsistencia[]; className?: string }) {
@@ -61,14 +66,18 @@ export function AsistenciaDelTurno({
   horasSeguidas,
   hrefHora,
   registro,
+  sinEstado = false,
 }: AsistenciaDelTurnoProps) {
   const hora = vistaAsistenciaHora(asistencia, plazo, { conHorasSeguidas: horasSeguidas !== null })
   const grupo = horasSeguidas && vistaHorasSeguidas(horasSeguidas)
+  const tieneMas = Boolean(hora.cierre) || hora.textos.length > 0 || hora.registro.length > 0
+  if (sinEstado && !tieneMas && !grupo && !registro) return null
 
   return (
     <SeccionDetalle icon={ClipboardCheck} titulo="Asistencia">
       <div className="space-y-3">
-        <EstadoTurnoBadge estado={estado} plazo={plazo} />
+        {/* "Agendado" no dice nada: si el turno está, está agendado. Solo van los de asistencia. */}
+        {!sinEstado && estado !== 'AGENDADO' && <EstadoTurnoBadge estado={estado} plazo={plazo} />}
         {hora.cierre && (
           <p className="flex items-center gap-1.5 text-sm font-medium">
             <Lock aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
@@ -101,9 +110,8 @@ export function AsistenciaDelTurno({
                 <>
                   <span className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                     <span className="text-sm font-medium tabular-nums">{h.horario}</span>
-                    <EstadoTurnoBadge estado={h.estado} plazo={h.plazo} />
-                    {h.actual && (
-                      <span className="text-cobalto text-xs font-semibold">Esta hora</span>
+                    {h.estado !== 'AGENDADO' && (
+                      <EstadoTurnoBadge estado={h.estado} plazo={h.plazo} />
                     )}
                   </span>
                   <Textos textos={h.textos} className="mt-1.5" />

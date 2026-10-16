@@ -13,7 +13,9 @@ import type { ComprobanteGuardado, EntradaPago, OcurrenciaPedida } from '../pago
 // (como el `FOR UPDATE` del alumno en Postgres, que es la garantía real), arma el snapshot con los
 // datos de ese momento y ejecuta el `verificar` real que le pasa el service. Si `verificar` lanza,
 // no se escribe nada. El comprobante adjunto se vincula como `vincularAdjunto` (T-95): sólo uno
-// disponible (sin pago) que subió quien cobra; si no, el mismo 400 y no queda nada escrito.
+// disponible (sin pago) que subió quien cobra; si no, el mismo 400 y no queda nada escrito. Cada
+// pago guarda el porcentaje del centro de `vigente` al registrarse (T-122): cambiarlo después no
+// toca los pagos ya registrados.
 
 /** Una ocurrencia de la "base": lo que devuelve el motor, más los datos del comprobante. */
 export type OcurrenciaEnBase = OcurrenciaCobro & {
@@ -28,7 +30,13 @@ const NOMBRE_FORMA = {
   DEBITO: 'Tarjeta de débito',
 } as const
 
-type PagoEnBase = { id: number; numeroComprobante: number; entrada: EntradaPago; plan: PlanPago }
+type PagoEnBase = {
+  id: number
+  numeroComprobante: number
+  entrada: EntradaPago
+  plan: PlanPago
+  porcentaje: number
+}
 
 /** Un comprobante subido con `POST /adjuntos`: quién lo subió y a qué pago quedó vinculado. */
 export type AdjuntoEnBase = { subidoPor: string; pagoId: number | null }
@@ -37,6 +45,7 @@ export function crearPagosEnMemoria(
   ocurrencias: OcurrenciaEnBase[],
   precios: Map<number, number | null>,
   adjuntos: Map<number, AdjuntoEnBase> = new Map(),
+  vigente: { porcentaje: number } = { porcentaje: 15 },
 ) {
   const pagos: PagoEnBase[] = []
   /** Pagos por `(turnoId, fecha)`: el único de `pago_turno`. */
@@ -90,6 +99,7 @@ export function crearPagosEnMemoria(
         numeroComprobante: 1024 + pagos.length,
         entrada,
         plan,
+        porcentaje: vigente.porcentaje,
       }
       pagos.push(pago)
       for (const linea of plan.lineas) pagadas.set(clave(linea.turnoId, linea.fecha), pago.id)
@@ -122,6 +132,7 @@ export function crearPagosEnMemoria(
           materia: { id: o?.materiaId ?? 0, nombre: 'Matemática' },
           profesor: o?.profesor ?? { id: 0, nombre: '', apellido: '' },
           importe: linea.importe,
+          porcentaje: pago.porcentaje,
         }
       }),
       total: pago.plan.total,
@@ -144,5 +155,30 @@ export function crearPagosEnMemoria(
     return comprobante
   })
 
-  return { repository: { leerSnapshot, registrar, buscarComprobante }, pagos, pagadas }
+  // Los pagos realizados, "Mis pagos" y el adjunto (T-98) no los simula la base en memoria: cada test
+  // les pone su respuesta.
+  const listarRealizados = vi.fn<PagosRepository['listarRealizados']>()
+  const listarDelAlumno = vi.fn<PagosRepository['listarDelAlumno']>()
+  const buscarAdjunto = vi.fn<PagosRepository['buscarAdjunto']>(async () => null)
+  // Los buscadores de los filtros (T-100), tampoco: por defecto, ninguna opción.
+  const buscarAlumnos = vi.fn<PagosRepository['buscarAlumnos']>(async () => [])
+  const buscarProfesores = vi.fn<PagosRepository['buscarProfesores']>(async () => [])
+  const buscarMaterias = vi.fn<PagosRepository['buscarMaterias']>(async () => [])
+
+  return {
+    repository: {
+      leerSnapshot,
+      registrar,
+      buscarComprobante,
+      listarRealizados,
+      listarDelAlumno,
+      buscarAdjunto,
+      buscarAlumnos,
+      buscarProfesores,
+      buscarMaterias,
+    },
+    pagos,
+    pagadas,
+    vigente,
+  }
 }

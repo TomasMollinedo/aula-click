@@ -85,15 +85,8 @@ function ausente(observacion: string | null) {
 // ---------------------------------------------------------------------------------------------
 
 describe('rangoDelMes y mesEnCurso', () => {
-  it('un mes de 31 días, uno de 30 y febrero de un año bisiesto', () => {
-    expect(rangoDelMes('2026-10')).toEqual({ desde: '2026-10-01', hasta: '2026-10-31' })
+  it('el período va del primer al último día del mes', () => {
     expect(rangoDelMes('2026-11')).toEqual({ desde: '2026-11-01', hasta: '2026-11-30' })
-    expect(rangoDelMes('2024-02')).toEqual({ desde: '2024-02-01', hasta: '2024-02-29' })
-    expect(rangoDelMes('2026-02')).toEqual({ desde: '2026-02-01', hasta: '2026-02-28' })
-  })
-
-  it('diciembre cierra el año sin pasarse al siguiente', () => {
-    expect(rangoDelMes('2026-12')).toEqual({ desde: '2026-12-01', hasta: '2026-12-31' })
   })
 
   it('el mes en curso es el de hoy, completo', () => {
@@ -398,7 +391,7 @@ describe('opcionesDeLosGrupos', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('bloquesDelPortal', () => {
-  it('saca las clases "Sin registrar" y agendadas, y el bloque que se queda vacío', () => {
+  it('muestra las "Sin registrar", saca las agendadas y el bloque que se queda vacío', () => {
     const [grupo] = armarGrupos([
       hora({ turnoId: 1, fecha: '2026-10-13', horaInicio: 480, horaFin: 540 }),
       hora({
@@ -412,9 +405,10 @@ describe('bloquesDelPortal', () => {
     ])
 
     const bloques = bloquesDelPortal(grupo.bloques)
-    // El bloque de hoy (agendado) desaparece; del otro queda sólo la hora realizada.
+    // El bloque de hoy (agendado) desaparece; el otro queda con sus dos horas (decisión T-169).
     expect(bloques).toHaveLength(1)
-    expect(bloques[0].clases.map((clase) => clase.turnoId)).toEqual([1])
+    expect(bloques[0].clases.map((clase) => clase.turnoId)).toEqual([1, 2])
+    expect(bloques[0].clases[1].estado).toBe('SIN_REGISTRAR')
     expect(bloques[0].horas).toBe(2)
   })
 

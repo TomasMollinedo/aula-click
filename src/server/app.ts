@@ -8,16 +8,19 @@ import { anulacionesRoutes } from './features/anulaciones/anulaciones.routes'
 import { asistenciasRoutes } from './features/asistencias/asistencias.routes'
 import { aulasRoutes } from './features/aulas/aulas.routes'
 import { bloquesRoutes } from './features/bloques/bloques.routes'
+import { cajaRoutes } from './features/caja/caja.routes'
 import { cancelacionesRoutes } from './features/cancelaciones/cancelaciones.routes'
 import { centroRoutes } from './features/centro/centro.routes'
 import { cuentasRoutes } from './features/cuentas/cuentas.routes'
 import { examenesRoutes } from './features/examenes/examenes.routes'
 import { finalizacionesRoutes } from './features/finalizaciones/finalizaciones.routes'
 import { historialesRoutes } from './features/historiales/historiales.routes'
+import { liquidacionesRoutes } from './features/liquidaciones/liquidaciones.routes'
 import { materiasRoutes } from './features/materias/materias.routes'
 import { ocurrenciasRoutes } from './features/ocurrencias/ocurrencias.routes'
 import { pagosRoutes } from './features/pagos/pagos.routes'
 import { profesoresRoutes } from './features/profesores/profesores.routes'
+import { repartoRoutes } from './features/reparto/reparto.routes'
 import { reprogramacionesRoutes } from './features/reprogramaciones/reprogramaciones.routes'
 import { tableroRoutes } from './features/tablero/tablero.routes'
 import { turnosRoutes } from './features/turnos/turnos.routes'
@@ -56,3 +59,6 @@ app.route('/historiales', historialesRoutes)
 app.route('/adjuntos', adjuntosRoutes)
 app.route('/anulaciones', anulacionesRoutes)
 app.route('/usuarios', usuariosRoutes)
+app.route('/reparto', repartoRoutes)
+app.route('/liquidaciones', liquidacionesRoutes)
+app.route('/caja', cajaRoutes)
