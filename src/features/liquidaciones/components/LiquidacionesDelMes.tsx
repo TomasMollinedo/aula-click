@@ -286,8 +286,17 @@ function TablaLiquidaciones({
   }
 
   return (
-    <Card className="gap-0 overflow-hidden p-0">
-      <Table>
+    // Desde `xl` el contenedor de la tabla no hace scroll propio y la tarjeta recorta sin ser un
+    // scroll (`overflow-clip`): así la fila del total (sticky) se pega al scroll de la página (el
+    // `bottom` negativo compensa el padding de `<main>`, que el sticky respeta). Más
+    // angosto, la tabla vuelve a hacer scroll horizontal dentro de la tarjeta.
+    <Card className="gap-0 overflow-hidden p-0 xl:overflow-clip">
+      <Table
+        containerClassName="xl:overflow-visible"
+        // Las columnas de importes, más juntas (la primera y la última conservan su margen): con la
+        // tabla sin scroll propio tiene que entrar en la tarjeta.
+        className="[&_td]:px-4 [&_td:first-child]:px-6 [&_td:last-child]:px-6 [&_th]:px-4 [&_th:first-child]:px-6 [&_th:last-child]:px-6"
+      >
         <TableHeader>
           <TableRow>
             <TableHead>Profesor</TableHead>
@@ -319,12 +328,14 @@ function TablaLiquidaciones({
             </TableRow>
           ))}
         </TableBody>
-        <TableFooter>
+        {/* Fija abajo mientras se hace scroll, con fondo sólido y una línea de marca arriba (en una
+            tabla con bordes colapsados el borde de una fila sticky no se dibuja: va como sombra). */}
+        <TableFooter className="bg-canvas sticky bottom-[-2.5rem] z-10 border-t-0 [&_td]:shadow-[inset_0_2px_0_0_var(--color-cobalto)]">
           <TableRow className="hover:bg-transparent">
-            <TableCell className="font-semibold whitespace-nowrap">
-              {conFiltro ? 'Total filtrado' : 'Total del mes'}
+            <TableCell className="py-4 text-base font-bold whitespace-nowrap">
+              {conFiltro ? 'Total' : 'Total del mes'}
             </TableCell>
-            <Importes totales={totales} aPagar={totales.totalAPagar} />
+            <Importes totales={totales} aPagar={totales.totalAPagar} destacada />
             <TableCell />
           </TableRow>
         </TableFooter>
@@ -355,27 +366,57 @@ function TablaLiquidaciones({
  * los ajustes son una alerta, en rojo si descuentan y apagados si son $ 0; y el total cobrado y la
  * parte del profesor son contexto, sin énfasis.
  */
-function Importes({ totales, aPagar }: { totales: TotalesLiquidacion; aPagar: number }) {
+function Importes({
+  totales,
+  aPagar,
+  destacada = false,
+}: {
+  totales: TotalesLiquidacion
+  aPagar: number
+  /** La fila del total: mismas columnas, con más cuerpo y sin los tonos apagados. */
+  destacada?: boolean
+}) {
   return (
     <>
-      <TableCell className={IMPORTE}>{totales.cantidadTurnos}</TableCell>
-      <TableCell className={cn(IMPORTE, 'text-muted-foreground')}>
+      <TableCell className={cn(IMPORTE, destacada && 'text-base font-bold')}>
+        {totales.cantidadTurnos}
+      </TableCell>
+      <TableCell
+        className={cn(IMPORTE, destacada ? 'text-base font-bold' : 'text-muted-foreground')}
+      >
         {formatearPesos(totales.totalCobrado)}
       </TableCell>
-      <TableCell className={cn(IMPORTE, 'text-confirmado font-semibold')}>
-        {formatearPesos(totales.parteCentro)}
-      </TableCell>
-      <TableCell className={IMPORTE}>{formatearPesos(totales.parteProfesor)}</TableCell>
       <TableCell
         className={cn(
           IMPORTE,
-          totales.totalAjustes < 0 ? 'text-cancelado font-semibold' : 'text-muted-foreground/60',
+          'text-confirmado',
+          destacada ? 'text-base font-bold' : 'font-semibold',
+        )}
+      >
+        {formatearPesos(totales.parteCentro)}
+      </TableCell>
+      <TableCell className={cn(IMPORTE, destacada && 'text-base font-bold')}>
+        {formatearPesos(totales.parteProfesor)}
+      </TableCell>
+      <TableCell
+        className={cn(
+          IMPORTE,
+          destacada && 'text-base',
+          totales.totalAjustes < 0
+            ? 'text-cancelado font-semibold'
+            : destacada
+              ? 'text-muted-foreground font-bold'
+              : 'text-muted-foreground/60',
         )}
       >
         {formatearPesos(totales.totalAjustes)}
       </TableCell>
       <TableCell
-        className={cn(IMPORTE, aPagar > 0 ? 'text-base font-bold' : 'text-muted-foreground')}
+        className={cn(
+          IMPORTE,
+          aPagar > 0 ? 'text-base font-bold' : 'text-muted-foreground',
+          destacada && 'text-lg font-bold',
+        )}
       >
         {formatearPesos(aPagar)}
       </TableCell>
