@@ -747,6 +747,58 @@ describe('GET /pagos/{id}', () => {
     expect(detalle.acciones).toEqual({ anular: true, reemplazarAdjunto: true, quitarAdjunto: true })
   })
 
+  describe('reparto (HU-43)', () => {
+    const turno = {
+      turnoId: 41,
+      fecha: HOY,
+      horaInicio: '09:00',
+      horaFin: '10:00',
+      materia: { id: 2, nombre: 'Matemática' },
+      profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+      importe: 8000,
+    }
+
+    beforeEach(() => {
+      repository.buscarComprobante.mockResolvedValue({
+        ...comprobante,
+        turnos: [{ ...turno, porcentaje: 15 }],
+      })
+    })
+
+    it('GERENTE → 200 con el reparto, y los turnos sin el porcentaje', async () => {
+      getSession.mockResolvedValue(sesion('GERENTE'))
+
+      const res = await pedir('/31')
+
+      expect(res.status).toBe(200)
+      const detalle = await res.json()
+      expect(detalle.turnos).toEqual([turno])
+      expect(detalle.reparto).toEqual({
+        turnos: [
+          {
+            turnoId: 41,
+            fecha: HOY,
+            profesor: turno.profesor,
+            importe: 8000,
+            porcentaje: 15,
+            parteCentro: 1200,
+            parteProfesor: 6800,
+          },
+        ],
+        totales: { importe: 8000, parteCentro: 1200, parteProfesor: 6800 },
+      })
+    })
+
+    it('MESA_ENTRADAS → 200 sin la clave reparto', async () => {
+      const res = await pedir('/31')
+
+      expect(res.status).toBe(200)
+      const detalle = await res.json()
+      expect('reparto' in detalle).toBe(false)
+      expect(detalle.turnos).toEqual([turno])
+    })
+  })
+
   it('inexistente → 404 NO_ENCONTRADO', async () => {
     repository.buscarComprobante.mockResolvedValue(null)
     const res = await pedir('/99')
@@ -866,6 +918,16 @@ describe('OpenAPI', () => {
     expect(Object.keys(doc.paths?.['/api/v1/pagos/{id}/pdf']?.get?.responses ?? {}).sort()).toEqual(
       ['200', '400', '401', '403', '404'],
     )
+  })
+
+  it('el detalle declara el reparto opcional como RepartoPago', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    expect(doc.components?.schemas).toHaveProperty('RepartoPago')
+    expect(doc.components?.schemas).toHaveProperty('RepartoTurnoPago')
+    // `DetallePago` extiende `Comprobante` (`allOf`): el reparto está en la parte propia.
+    const detalle = JSON.stringify(doc.components?.schemas?.DetallePago)
+    expect(detalle).toContain('"reparto":{"$ref":"#/components/schemas/RepartoPago"')
+    expect(detalle).not.toMatch(/"required":[[^]]*"reparto"/)
   })
 
   it('el PDF se declara como binario `application/pdf`', () => {

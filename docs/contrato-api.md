@@ -851,7 +851,7 @@ HU-15 (T-51), con las formas de pago de HU-23 (T-96), y los pagos realizados y "
 | `GET /api/v1/pagos/alumnos`    | `MESA_ENTRADAS`, `GERENTE`                          | Buscador de alumnos con pagos, para el filtro de los pagos realizados. 400                                      |
 | `GET /api/v1/pagos/profesores` | `MESA_ENTRADAS`, `GERENTE`                          | Buscador de profesores con turnos pagados, para el filtro de los pagos realizados. 400                          |
 | `GET /api/v1/pagos/materias`   | `MESA_ENTRADAS`, `GERENTE`                          | Buscador de materias con turnos pagados, para el filtro de los pagos realizados. 400                            |
-| `GET /api/v1/pagos/{id}`       | `MESA_ENTRADAS`, `GERENTE`                          | Detalle del pago: el comprobante, el adjunto y las acciones. 404 si el pago no existe                           |
+| `GET /api/v1/pagos/{id}`       | `MESA_ENTRADAS`, `GERENTE`                          | Detalle del pago: el comprobante, el adjunto, las acciones y, para el gerente, el reparto. 404 si no existe     |
 | `GET /api/v1/pagos/{id}/pdf`   | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) | El comprobante como documento PDF (ver Documentos PDF). 400 si el id es inválido; 403 si es de otro alumno; 404 |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. El gerente ve los pagos en sólo lectura: no registra (`POST /pagos` → 403) y en el detalle todas sus acciones van en `false`. El alumno sólo usa `GET /pagos/mis-pagos` y el PDF de sus propios pagos.
@@ -898,6 +898,7 @@ El mismo cobro por transferencia y con débito (sin `montoRecibido`):
 - `comprobanteAdjuntoId`: el `id` de un archivo subido con `POST /adjuntos` (ver Adjuntos), que se vincula al pago al registrarlo, en la misma transacción. Si no existe, ya se usó en otro pago o lo subió otro usuario, 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]` y no se registra nada. Con débito, el adjunto se puede agregar o quitar después (`PUT` y `DELETE /adjuntos/pagos/{pagoId}`); con transferencia sólo se reemplaza.
 - `observaciones`: opcional, hasta 500 caracteres; `""` o `null` = sin observaciones.
 - El importe no cambia según el medio.
+- Cada turno cobrado guarda el porcentaje del centro vigente al registrarse el pago (HU-43; ver [Reparto](#reparto)); todos los turnos del pago guardan el mismo. Sin porcentaje configurado, 500 `ERROR_INTERNO` y no se registra nada (decisión T-161).
 
 **Respuesta 201:**
 
@@ -1023,7 +1024,28 @@ Un pago anulado trae `"estado": "ANULADO"` y su anulación:
 
   El gerente las recibe todas en `false` (sólo lectura), y un pago anulado también, para cualquier rol: conserva todo como estaba.
 
-**`GET /pagos/{id}/pdf`**: el comprobante de pago como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Misma validación del `id` y mismo 404 que `GET /pagos/{id}`, y **los mismos datos** (sin `adjunto` ni `acciones`): los importes, el total y el vuelto son los de esa respuesta, sin recalcular (decisiones T-63 y T-80).
+- `reparto` (HU-43): **sólo para el `GERENTE`**. Para la mesa de entradas la clave **no existe** (no es `null`). Por cada turno, en el orden de `turnos`, el importe cobrado, el `porcentaje` del centro que guardó el cobro y la parte del centro y la del profesor (`repartoDeTurno`, ver `dominio.md` → Reparto), con los `totales` del pago. `turnoId` y `fecha` identifican la fila; la materia y el horario están en `turnos`. Un pago anulado lo muestra igual (lo que se cobró). El comprobante en PDF no lleva el porcentaje ni el reparto:
+
+  ```json
+  {
+    "reparto": {
+      "turnos": [
+        {
+          "turnoId": 41,
+          "fecha": "2026-10-05",
+          "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+          "importe": 8000,
+          "porcentaje": 15,
+          "parteCentro": 1200,
+          "parteProfesor": 6800
+        }
+      ],
+      "totales": { "importe": 8000, "parteCentro": 1200, "parteProfesor": 6800 }
+    }
+  }
+  ```
+
+**`GET /pagos/{id}/pdf`**: el comprobante de pago como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Misma validación del `id` y mismo 404 que `GET /pagos/{id}`, y **los mismos datos** (sin `adjunto`, `acciones` ni `reparto`): los importes, el total y el vuelto son los de esa respuesta, sin recalcular (decisiones T-63 y T-80).
 
 - Roles: `MESA_ENTRADAS`, `GERENTE` y `ALUMNO`, este último **sólo con sus propios pagos** (HU-37). Es **el mismo documento para todos los roles**: el alumno descarga el mismo comprobante que le entrega la mesa, con "Registrado por" y, si está anulado, quién lo anuló (decisión T-153).
 - Errores del alumno, en este orden: cuenta sin alumno vinculado → 403 `SIN_PERMISO`; pago inexistente → 404 `NO_ENCONTRADO`; pago de otro alumno → 403 `SIN_PERMISO`.

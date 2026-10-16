@@ -1,4 +1,5 @@
 import { AppError, ConflictError, ValidationError } from '@/server/errors'
+import { repartoDeTurno, sumarReparto } from '@/server/features/reparto/reparto.condiciones'
 import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
 import type { Role } from '@/server/shared/actor'
 import { detallesPorPosicion } from '@/server/shared/detalles'
@@ -10,6 +11,8 @@ import type {
   MedioPago,
   OcurrenciaPedida,
   RegistrarPago,
+  RepartoPago,
+  TurnoGuardado,
 } from './pagos.validation'
 
 // Reglas puras del cobro (HU-15, T-51): qué ocurrencias se pueden cobrar, cuánto cuesta cada una,
@@ -323,4 +326,19 @@ export function accionesDelPago({
     reemplazarAdjunto: puede && formaPago !== 'EFECTIVO',
     quitarAdjunto: puede && formaPago === 'DEBITO' && tieneAdjunto,
   }
+}
+
+/**
+ * El reparto del pago (HU-43) entre el centro y cada profesor, con el porcentaje que guardó cada
+ * cobro: una fila por turno, en el mismo orden, y los totales. Sólo arma: el cálculo es el de
+ * `repartoDeTurno` y `sumarReparto` (de `reparto`), la única regla del reparto.
+ */
+export function repartoDelPago(turnos: readonly TurnoGuardado[]): RepartoPago {
+  const filas = turnos.map((turno) => ({
+    turnoId: turno.turnoId,
+    fecha: turno.fecha,
+    profesor: turno.profesor,
+    ...repartoDeTurno(turno.importe, turno.porcentaje),
+  }))
+  return { turnos: filas, totales: sumarReparto(filas) }
 }

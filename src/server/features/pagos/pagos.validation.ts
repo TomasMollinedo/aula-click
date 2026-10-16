@@ -358,8 +358,16 @@ export const comprobanteSchema = z
   .openapi('Comprobante')
 
 export type Comprobante = z.infer<typeof comprobanteSchema>
-/** Lo que devuelve el repository: el comprobante sin el vuelto (lo calcula el service). */
-export type ComprobanteGuardado = Omit<Comprobante, 'vuelto'>
+export type TurnoComprobante = z.infer<typeof turnoComprobanteSchema>
+/** Un turno como lo lee el repository: con el porcentaje del centro que guardó el cobro. */
+export type TurnoGuardado = TurnoComprobante & { porcentaje: number }
+/**
+ * Lo que devuelve el repository: el comprobante sin el vuelto (lo calcula el service) y con el
+ * porcentaje de cada turno, que sólo usa el reparto del gerente (nunca va en el comprobante).
+ */
+export type ComprobanteGuardado = Omit<Comprobante, 'vuelto' | 'turnos'> & {
+  turnos: TurnoGuardado[]
+}
 
 /**
  * El último comprobante adjunto **activo** del pago (HU-24), sin la clave del archivo ni la URL:
@@ -401,8 +409,41 @@ export const accionesPagoSchema = z
 export type AccionesPago = z.infer<typeof accionesPagoSchema>
 
 /**
- * Respuesta de `GET /pagos/{id}`: el comprobante, la cantidad de turnos, el último adjunto activo
- * y las acciones (HU-36).
+ * El reparto de un turno cobrado (HU-43), con el porcentaje que guardó el cobro. `turnoId` y
+ * `fecha` identifican la fila; la materia y el horario están en `turnos` del comprobante.
+ */
+export const repartoTurnoPagoSchema = z
+  .object({
+    turnoId: z.number().int(),
+    fecha: fechaISO,
+    profesor: persona,
+    importe: z.number().openapi({ description: 'Importe cobrado', example: 8000 }),
+    porcentaje: z.number().openapi({
+      description: 'Porcentaje del centro guardado al cobrar (15 = 15 %)',
+      example: 15,
+    }),
+    parteCentro: z.number().openapi({ example: 1200 }),
+    parteProfesor: z.number().openapi({ example: 6800 }),
+  })
+  .openapi('RepartoTurnoPago')
+
+/** El reparto de un pago: una fila por turno, en el orden de `turnos`, y sus totales. */
+export const repartoPagoSchema = z
+  .object({
+    turnos: z.array(repartoTurnoPagoSchema),
+    totales: z.object({
+      importe: z.number(),
+      parteCentro: z.number(),
+      parteProfesor: z.number(),
+    }),
+  })
+  .openapi('RepartoPago')
+
+export type RepartoPago = z.infer<typeof repartoPagoSchema>
+
+/**
+ * Respuesta de `GET /pagos/{id}`: el comprobante, la cantidad de turnos, el último adjunto activo,
+ * las acciones (HU-36) y, sólo para el gerente, el reparto (HU-43).
  */
 export const detallePagoSchema = comprobanteSchema
   .extend({
@@ -411,6 +452,10 @@ export const detallePagoSchema = comprobanteSchema
       description: 'El último comprobante adjunto activo; `null` si no tiene',
     }),
     acciones: accionesPagoSchema,
+    reparto: repartoPagoSchema.optional().openapi({
+      description:
+        'Sólo para el `GERENTE`; para los demás roles el campo no viene. Un pago anulado muestra lo que se cobró',
+    }),
   })
   .openapi('DetallePago')
 
