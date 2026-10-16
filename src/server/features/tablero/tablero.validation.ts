@@ -11,7 +11,6 @@ import {
   MESES_EVOLUCION,
   ORDEN_FINANZAS_POR_DEFECTO,
   ORDEN_PROFESORES_POR_DEFECTO,
-  UMBRAL_ASISTENCIA_ALUMNO,
   problemaDelPeriodo,
 } from './tablero.reglas'
 
@@ -79,6 +78,16 @@ const conteoAsistenciaSchema = z
     }),
   })
   .openapi('TableroConteoAsistencia')
+
+const conteoResumenSchema = z
+  .object({
+    cantidad: z.number().int().min(0),
+    porcentaje: z.number().openapi({
+      description: `Sobre \`total\` (los cuatro juntos): ${PORCENTAJE}`,
+      example: 70,
+    }),
+  })
+  .openapi('TableroConteoResumenAsistencia')
 
 const importe = (description: string, example: number) =>
   z.number().openapi({ description, example })
@@ -263,25 +272,33 @@ export const tableroPdfQuerySchema = z
 export type TableroPdfQuery = z.infer<typeof tableroPdfQuerySchema>
 
 const cifrasAsistenciaShape = {
-  clasesRealizadas: z.number().int().min(0).openapi({
+  asistenciasRegistradas: z.number().int().min(0).openapi({
     description:
-      'Turnos con asistencia "Presente" (`REALIZADO`): cada hora de un alumno es un turno',
+      'Turnos con asistencia registrada, "Presente" o "Ausente" (`REALIZADO` + `AUSENTE`): cada hora de un alumno es un turno',
   }),
-  ausencias: z.number().int().min(0).openapi({ description: 'Turnos con asistencia "Ausente"' }),
-  porcentajeAsistencia: z.number().openapi({
-    description: `\`clasesRealizadas\` sobre los turnos con asistencia registrada (\`clasesRealizadas\` + \`ausencias\`): ${PORCENTAJE}`,
-    example: 87.5,
+  porcentajeRegistrado: z.number().openapi({
+    description: `\`asistenciasRegistradas\` sobre \`total\`: ${PORCENTAJE}`,
+    example: 60,
   }),
   cerradosSinRegistrar: z.number().int().min(0).openapi({
     description:
       'Turnos "Sin registrar" cuyo plazo de 7 días venció: los cerró el sistema. Es lo que muestra que el profesor no registra',
   }),
-  dentroDelPlazo: z.number().int().min(0).openapi({
-    description: 'Turnos "Sin registrar" que todavía se pueden registrar (plazo vigente)',
+  porcentajeCerrados: z.number().openapi({
+    description: `\`cerradosSinRegistrar\` sobre \`total\`: ${PORCENTAJE}`,
+    example: 25,
+  }),
+  sinRegistrar: z.number().int().min(0).openapi({
+    description:
+      'Turnos "Sin registrar" que todavía están dentro del plazo de 7 días: el profesor aún puede marcar la asistencia. No son una falta',
   }),
   porcentajeSinRegistrar: z.number().openapi({
-    description: `\`cerradosSinRegistrar\` sobre los turnos **no cancelados** del período del profesor o la materia (los agendados están en la base): ${PORCENTAJE}`,
-    example: 12.5,
+    description: `\`sinRegistrar\` sobre \`total\`: ${PORCENTAJE}`,
+    example: 15,
+  }),
+  total: z.number().int().min(0).openapi({
+    description:
+      '`asistenciasRegistradas` + `cerradosSinRegistrar` + `sinRegistrar`: los turnos no cancelados que ya pasaron. Es la base de los tres porcentajes ("12 de 20"), que suman 100 salvo el redondeo. Los agendados no cuentan',
   }),
 }
 
@@ -320,23 +337,38 @@ export const tableroAsistenciaSchema = z
       example: '2026-10-02',
     }),
     resumen: z.object({
-      porcentajeAsistencia: z.number().openapi({
-        description: `Asistencia del centro: turnos \`REALIZADO\` sobre los que tienen asistencia registrada: ${PORCENTAJE}`,
-        example: 84.6,
+      presentes: conteoResumenSchema.openapi({
+        description: 'Turnos con asistencia "Presente" (`REALIZADO`) del período',
       }),
-      cerradosSinRegistrar: z.number().int().min(0).openapi({
-        description: 'Turnos del período cerrados "Sin registrar" por el sistema',
+      ausentes: conteoResumenSchema.openapi({
+        description: 'Turnos con asistencia "Ausente" (`AUSENTE`) del período',
       }),
-      profesoresSinRegistrar: z.number().int().min(0).openapi({
-        description: 'Profesores con al menos un turno cerrado sin registrar en el período',
+      sinRegistrar: conteoResumenSchema.openapi({
+        description:
+          'Turnos "Sin registrar" del período que todavía están dentro del plazo de 7 días: el profesor aún puede marcar la asistencia',
       }),
-      alumnosBajoElUmbral: z
-        .number()
-        .int()
-        .min(0)
+      cerrados: conteoResumenSchema.openapi({
+        description:
+          'Turnos del período cerrados "Sin registrar" por el sistema (pasaron los 7 días del plazo)',
+      }),
+      total: z.number().int().min(0).openapi({
+        description:
+          'La suma de `presentes`, `ausentes`, `sinRegistrar` y `cerrados`: la base de los porcentajes',
+      }),
+      clasesCerradas: z
+        .object({
+          desde: fechaISO.openapi({ example: '2026-09-17' }),
+          hasta: fechaISO.openapi({ example: '2026-10-07' }),
+        })
+        .nullable()
         .openapi({
-          description: `Alumnos con menos de ${UMBRAL_ASISTENCIA_ALUMNO} % de asistencia, entre los que tienen algún turno con asistencia registrada en el período. Sólo la cantidad: nunca se listan alumnos`,
+          description:
+            'La fecha de la clase más antigua y la de la más reciente entre los turnos de `cerrados`. `null` si el sistema no cerró ninguno: por ejemplo, en un período de esta semana',
         }),
+      profesoresSinRegistrar: z.number().int().min(0).openapi({
+        description:
+          'Profesores con al menos un turno "Sin registrar" dentro del plazo: los que todavía tienen que marcar la asistencia de alguna clase de los últimos 7 días (hoy incluido). **No depende del período pedido**: es siempre la ventana que termina hoy',
+      }),
     }),
     profesores: tablaPaginada(profesorAsistenciaSchema).openapi({
       description: `Un profesor por fila, de a ${FILAS_POR_PAGINA_ASISTENCIA}. Sólo profesores con turnos no cancelados en el período. Por defecto, los que más turnos cerrados sin registrar tienen primero`,

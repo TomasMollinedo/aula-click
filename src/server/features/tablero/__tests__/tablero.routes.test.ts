@@ -293,21 +293,27 @@ describe('GET /tablero/asistencia', () => {
       periodo: PERIODO,
       hoy: expect.stringMatching(FECHA),
       resumen: {
-        porcentajeAsistencia: 50,
-        cerradosSinRegistrar: 1,
-        profesoresSinRegistrar: 1,
-        alumnosBajoElUmbral: 1,
+        presentes: { cantidad: 1, porcentaje: 33.3 },
+        ausentes: { cantidad: 1, porcentaje: 33.3 },
+        sinRegistrar: { cantidad: 0, porcentaje: 0 },
+        cerrados: { cantidad: 1, porcentaje: 33.3 },
+        total: 3,
+        // El cerrado es de la clase del 06/01.
+        clasesCerradas: { desde: '2020-01-06', hasta: '2020-01-06' },
+        // Todo lo que hay está cerrado: ninguno tiene turnos dentro del plazo.
+        profesoresSinRegistrar: 0,
       },
       profesores: {
         data: [
           {
             profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
-            clasesRealizadas: 1,
-            ausencias: 1,
-            porcentajeAsistencia: 50,
+            asistenciasRegistradas: 2,
+            porcentajeRegistrado: 66.7,
             cerradosSinRegistrar: 1,
-            dentroDelPlazo: 0,
-            porcentajeSinRegistrar: 33.3,
+            porcentajeCerrados: 33.3,
+            sinRegistrar: 0,
+            porcentajeSinRegistrar: 0,
+            total: 3,
             noRegistraAsistencia: true,
           },
         ],
@@ -317,12 +323,13 @@ describe('GET /tablero/asistencia', () => {
         data: [
           {
             materia: { id: 2, nombre: 'Matemática' },
-            clasesRealizadas: 1,
-            ausencias: 1,
-            porcentajeAsistencia: 50,
+            asistenciasRegistradas: 2,
+            porcentajeRegistrado: 66.7,
             cerradosSinRegistrar: 1,
-            dentroDelPlazo: 0,
-            porcentajeSinRegistrar: 33.3,
+            porcentajeCerrados: 33.3,
+            sinRegistrar: 0,
+            porcentajeSinRegistrar: 0,
+            total: 3,
           },
         ],
         meta: { page: 1, pageSize: 10, total: 1, totalPages: 1 },
@@ -330,10 +337,10 @@ describe('GET /tablero/asistencia', () => {
     })
   })
 
-  it('lee las ocurrencias una sola vez, con el período tal cual, y no pide nada más', async () => {
+  it('lee las ocurrencias del período tal cual y las de la ventana de hoy, y no pide nada más', async () => {
     await pedirAsistencia()
 
-    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(1)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(2)
     expect(repository.ocurrenciasDelPeriodo.mock.calls[0]?.[0]).toEqual(PERIODO)
     expect(repository.totalCobrado).not.toHaveBeenCalled()
     expect(repository.totalAdeudado).not.toHaveBeenCalled()
@@ -467,7 +474,7 @@ describe('GET /tablero/pdf', { timeout: 30_000 }, () => {
     const pdf = Buffer.from(await res.arrayBuffer())
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
     expect(metadato(pdf, 'Title')).toBe('Asistencia semanal')
-    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(1)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(2)
     expect(repository.totalCobrado).not.toHaveBeenCalled()
     expect(repository.totalCobradoPorForma).not.toHaveBeenCalled()
   })

@@ -3,15 +3,20 @@ import { FileText } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 import { hrefPdfTablero } from '../rutas-tablero'
+import type { Seccion } from '../seccion'
 import type { PeriodoTablero } from '../tablero.types'
 
 /**
- * "Generar PDF" del tablero (HU-21): abre el PDF que arma la API (`hrefPdfTablero`) en una pestaña
- * nueva, en el visor del navegador, con el período que se está viendo, así el tablero queda como
- * estaba. Sin `periodo` (el que se ve no es válido: la API respondería el 400 en JSON) queda
- * deshabilitado. No pide datos: el documento lo calcula la API.
+ * "Generar PDF" del tablero (HU-21 y HU-39): abre el PDF que arma la API (`hrefPdfTablero`) en una
+ * pestaña nueva, en el visor del navegador, con **la sección y el período que se están viendo**,
+ * así el tablero queda como estaba. Sin `periodo` (el que se ve no es válido: la API respondería el
+ * 400 en JSON) queda deshabilitado. No pide datos: el documento lo calcula la API.
  */
-export function BotonPdfTablero({ periodo }: { periodo: PeriodoTablero | null }) {
+export function BotonPdfTablero({
+  periodo,
+}: {
+  periodo: (PeriodoTablero & { seccion: Seccion }) | null
+}) {
   if (periodo === null) {
     return (
       <Button type="button" variant="accent" disabled>

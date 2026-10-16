@@ -22,12 +22,12 @@ import {
   formatearPorcentaje,
   nombreProfesor,
   textoPeriodo,
+  textoClasesCerradas,
   textoRangoConDias,
   tituloTablero,
   tituloTableroAsistencia,
   tituloTableroFinanzas,
 } from './tablero.formato'
-import { UMBRAL_ASISTENCIA_ALUMNO } from './tablero.reglas'
 import type {
   Tablero,
   TableroAsistenciaCompleta,
@@ -51,6 +51,12 @@ export type DatosTableroFinanzasPdf = EncabezadoDeDocumento & { tablero: Tablero
 const COLOR_ACTIVOS = COLORES.cobalto
 const COLOR_CANCELADOS = '#6f1f2a'
 const COLOR_LIBRES = '#c5beaa'
+// Los de la asistencia son los de los badges de estado de la pantalla (realizado, ausente y sin
+// registrar).
+const COLOR_PRESENTE = '#86d17a'
+const COLOR_AUSENTE = '#f5b94f'
+const COLOR_SIN_REGISTRAR = '#c9c3b0'
+const COLOR_CERRADO = '#55503f'
 // Un poco más chicos que el de por defecto: con la asistencia, el tablero sigue entrando en una hoja.
 const DIAMETRO_DONA = px(88)
 // Una forma de pago por color en la leyenda de lo cobrado.
@@ -209,21 +215,9 @@ export function TableroPdf({ tablero, ...encabezado }: DatosTableroPdf) {
             />
           </Tarjeta>
 
-          <Tarjeta titulo="Asistencia y alumnos" rotulo={delPeriodo}>
+          <Tarjeta titulo="Alumnos" rotulo={delPeriodo}>
             <LeyendaPdf
               items={[
-                {
-                  color: COLOR_ACTIVOS,
-                  etiqueta: 'Asistió',
-                  valor: formatearCantidad(turnos.asistio.cantidad),
-                  detalle: formatearPorcentaje(turnos.asistio.porcentaje),
-                },
-                {
-                  color: COLOR_CANCELADOS,
-                  etiqueta: 'No asistió',
-                  valor: formatearCantidad(turnos.noAsistio.cantidad),
-                  detalle: formatearPorcentaje(turnos.noAsistio.porcentaje),
-                },
                 {
                   color: COLOR_ACTIVOS,
                   etiqueta: 'Alumnos atendidos',
@@ -236,9 +230,6 @@ export function TableroPdf({ tablero, ...encabezado }: DatosTableroPdf) {
                 },
               ]}
             />
-            <Text style={estilos.rotulo}>
-              Los porcentajes son sobre los turnos con asistencia registrada.
-            </Text>
           </Tarjeta>
         </Seccion>
 
@@ -274,23 +265,23 @@ export function renderizarTableroPdf(datos: DatosTableroPdf): Promise<Buffer> {
 
 // Proporciones de las columnas (no puntos). Sin ningún dato de los alumnos: sólo agregados.
 const COLUMNAS_CIFRAS: readonly ColumnaPdf[] = [
-  { titulo: 'Clases', ancho: 9, numerica: true },
-  { titulo: 'Ausencias', ancho: 13, numerica: true },
-  { titulo: '% Asist.', ancho: 11, numerica: true },
-  { titulo: 'Cerrados', ancho: 13, numerica: true },
-  { titulo: 'En plazo', ancho: 11, numerica: true },
-  { titulo: '% Sin reg.', ancho: 12, numerica: true },
+  { titulo: 'Registradas', ancho: 13, numerica: true },
+  { titulo: '%', ancho: 7, numerica: true },
+  { titulo: 'Cerrados', ancho: 12, numerica: true },
+  { titulo: '%', ancho: 7, numerica: true },
+  { titulo: 'Sin reg.', ancho: 12, numerica: true },
+  { titulo: '%', ancho: 7, numerica: true },
 ]
 
 const COLUMNAS_TABLA_PROFESORES: readonly ColumnaPdf[] = [
-  { titulo: 'Profesor', ancho: 26 },
+  { titulo: 'Profesor', ancho: 23 },
   ...COLUMNAS_CIFRAS,
   // Alineada a la derecha, como las cifras: así no se pega a la columna de al lado.
-  { titulo: 'Estado', ancho: 15, numerica: true },
+  { titulo: 'Estado', ancho: 14, numerica: true },
 ]
 
 const COLUMNAS_TABLA_MATERIAS: readonly ColumnaPdf[] = [
-  { titulo: 'Materia', ancho: 41 },
+  { titulo: 'Materia', ancho: 42 },
   ...COLUMNAS_CIFRAS,
 ]
 
@@ -301,18 +292,20 @@ type Cifras = TableroAsistenciaCompleta['profesores'][number]
  * componente: `FilaPdf` reparte sus hijas directas entre las columnas.
  */
 function celdasDeCifras(fila: Cifras | TableroAsistenciaCompleta['materias'][number]) {
+  const deTotal = (cantidad: number) =>
+    `${formatearCantidad(cantidad)} de ${formatearCantidad(fila.total)}`
   return [
-    formatearCantidad(fila.clasesRealizadas),
-    formatearCantidad(fila.ausencias),
-    formatearPorcentaje(fila.porcentajeAsistencia),
-    formatearCantidad(fila.cerradosSinRegistrar),
-    formatearCantidad(fila.dentroDelPlazo),
+    deTotal(fila.asistenciasRegistradas),
+    formatearPorcentaje(fila.porcentajeRegistrado),
+    deTotal(fila.cerradosSinRegistrar),
+    formatearPorcentaje(fila.porcentajeCerrados),
+    deTotal(fila.sinRegistrar),
     formatearPorcentaje(fila.porcentajeSinRegistrar),
   ].map((texto, i) => <CeldaPdf key={i}>{texto}</CeldaPdf>)
 }
 
 const NOTA_TABLAS_ASISTENCIA =
-  'Clases: turnos con asistencia «Presente». Ausencias: turnos con asistencia «Ausente». Cerrados: turnos «Sin registrar» que cerró el sistema (pasaron 7 días). En plazo: «Sin registrar» que todavía se pueden registrar. % Asist.: clases sobre los turnos con asistencia registrada. % Sin reg.: cerrados sobre los turnos no cancelados.'
+  'Cada cifra es sobre el total de turnos que ya pasaron. Registradas: turnos con la asistencia marcada. Cerrados: turnos que cerró el sistema porque pasaron los 7 días que tiene el profesor para marcar la asistencia. Sin reg.: turnos que todavía están dentro de esos 7 días.'
 
 /** Una tabla con su título y la aclaración de sus columnas. Puede ocupar varias hojas. */
 function SeccionTabla({
@@ -337,7 +330,7 @@ function SeccionTabla({
 }
 
 export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsistenciaPdf) {
-  const { periodo, resumen, profesores, materias } = tablero
+  const { periodo, hoy, resumen, profesores, materias } = tablero
   const delPeriodo = `Período: ${textoPeriodo(periodo.desde, periodo.hasta)}`
 
   return (
@@ -350,26 +343,64 @@ export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsi
 
         <Seccion titulo="Resumen">
           <Tarjeta titulo="Asistencia del centro" rotulo={delPeriodo}>
-            <Text style={estilos.valorMediano}>
-              {formatearPorcentaje(resumen.porcentajeAsistencia)}
+            <DonaPdf
+              diametro={DIAMETRO_DONA}
+              centro={{ valor: formatearCantidad(resumen.total), texto: 'turnos' }}
+              segmentos={[
+                { valor: resumen.presentes.cantidad, color: COLOR_PRESENTE },
+                { valor: resumen.ausentes.cantidad, color: COLOR_AUSENTE },
+                { valor: resumen.sinRegistrar.cantidad, color: COLOR_SIN_REGISTRAR },
+                { valor: resumen.cerrados.cantidad, color: COLOR_CERRADO },
+              ]}
+            />
+            <LeyendaPdf
+              items={[
+                {
+                  color: COLOR_PRESENTE,
+                  etiqueta: 'Presentes',
+                  valor: formatearCantidad(resumen.presentes.cantidad),
+                  detalle: formatearPorcentaje(resumen.presentes.porcentaje),
+                },
+                {
+                  color: COLOR_AUSENTE,
+                  etiqueta: 'Ausentes',
+                  valor: formatearCantidad(resumen.ausentes.cantidad),
+                  detalle: formatearPorcentaje(resumen.ausentes.porcentaje),
+                },
+                {
+                  color: COLOR_SIN_REGISTRAR,
+                  etiqueta: 'Sin registrar',
+                  valor: formatearCantidad(resumen.sinRegistrar.cantidad),
+                  detalle: formatearPorcentaje(resumen.sinRegistrar.porcentaje),
+                },
+                {
+                  color: COLOR_CERRADO,
+                  etiqueta: 'Cerrados por el sistema',
+                  valor: formatearCantidad(resumen.cerrados.cantidad),
+                  detalle: formatearPorcentaje(resumen.cerrados.porcentaje),
+                },
+              ]}
+            />
+            <Text style={estilos.rotulo}>
+              Total de turnos: {formatearCantidad(resumen.total)}. «Sin registrar» todavía están
+              dentro de los 7 días para marcar la asistencia.
             </Text>
           </Tarjeta>
-          <Tarjeta titulo="Cerrados sin registrar" rotulo="Por el sistema">
-            <Text style={estilos.valorMediano}>
-              {formatearCantidad(resumen.cerradosSinRegistrar)}
+          <Tarjeta titulo="Cerrados por el sistema" rotulo={delPeriodo}>
+            <Text style={estilos.valorMediano}>{formatearCantidad(resumen.cerrados.cantidad)}</Text>
+            <Text style={estilos.rotulo}>
+              {resumen.clasesCerradas
+                ? `Son ${textoClasesCerradas(resumen.clasesCerradas)}.`
+                : 'El sistema no cerró ningún turno en este período.'}
             </Text>
           </Tarjeta>
-          <Tarjeta titulo="Profesores sin registrar" rotulo="Con turnos cerrados">
+          {/* No depende del período: son las clases de los últimos 7 días, hasta hoy. */}
+          <Tarjeta titulo="Profesores sin registrar" rotulo={`A la fecha: ${fechaDocumento(hoy)}`}>
             <Text style={estilos.valorMediano}>
               {formatearCantidad(resumen.profesoresSinRegistrar)}
             </Text>
-          </Tarjeta>
-          <Tarjeta
-            titulo={`Alumnos con menos de ${UMBRAL_ASISTENCIA_ALUMNO} %`}
-            rotulo="De asistencia"
-          >
-            <Text style={estilos.valorMediano}>
-              {formatearCantidad(resumen.alumnosBajoElUmbral)}
+            <Text style={estilos.rotulo}>
+              Con clases de los últimos 7 días sin asistencia marcada.
             </Text>
           </Tarjeta>
         </Seccion>

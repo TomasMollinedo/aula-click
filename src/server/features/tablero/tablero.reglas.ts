@@ -4,7 +4,10 @@ import type {
 } from '@/server/features/liquidaciones/liquidaciones.condiciones'
 import { sumarImportes } from '@/server/features/pagos/pagos.condiciones'
 import { sumarReparto, type TotalReparto } from '@/server/features/reparto/reparto.condiciones'
-import type { Ocurrencia } from '@/server/features/turnos/ocurrencias.condiciones'
+import {
+  PLAZO_ASISTENCIA_DIAS,
+  type Ocurrencia,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 import { ZONA_HORARIA, fechaADate, sumarDias } from '@/server/shared/fechas'
 import { mesAnterior, mesDe } from '@/server/shared/zod'
 
@@ -183,9 +186,6 @@ export function profesoresConMasTurnos(
 // Asistencia (HU-39, T-112, decisión T-162)
 // ---------------------------------------------------------------------------------------------
 
-/** Debajo de este porcentaje de asistencia (estricto) un alumno cuenta en "alumnos con baja asistencia". */
-export const UMBRAL_ASISTENCIA_ALUMNO = 75
-
 /** Filas de cada tabla de la pestaña "Asistencia". */
 export const FILAS_POR_PAGINA_ASISTENCIA = 10
 
@@ -220,48 +220,51 @@ export function alumnosAtendidos(
 
 /** Las cifras de asistencia de un grupo de turnos (un profesor o una materia). */
 export type CifrasDeAsistencia = {
-  /** Turnos `REALIZADO` (asistencia "Presente"): cada hora de un alumno cuenta como un turno. */
-  clasesRealizadas: number
-  /** Turnos `AUSENTE`. */
-  ausencias: number
-  /** `clasesRealizadas` sobre los turnos con asistencia registrada (`clasesRealizadas + ausencias`). */
-  porcentajeAsistencia: number
+  /** Turnos con asistencia registrada (`REALIZADO` y `AUSENTE`): cada hora de un alumno cuenta como un turno. */
+  asistenciasRegistradas: number
+  /** `asistenciasRegistradas` sobre `total`. */
+  porcentajeRegistrado: number
   /** `SIN_REGISTRAR` con el plazo vencido: los que cerró el sistema. */
   cerradosSinRegistrar: number
-  /** `SIN_REGISTRAR` que todavía están dentro del plazo de registro. */
-  dentroDelPlazo: number
-  /** `cerradosSinRegistrar` sobre los turnos **no cancelados** del grupo. */
+  /** `cerradosSinRegistrar` sobre `total`. */
+  porcentajeCerrados: number
+  /** `SIN_REGISTRAR` que todavía están dentro del plazo de 7 días: el profesor aún puede marcarlos. */
+  sinRegistrar: number
+  /** `sinRegistrar` sobre `total`. */
   porcentajeSinRegistrar: number
+  /**
+   * Los turnos que ya pasaron y no se cancelaron: las registradas, las cerradas y las sin registrar
+   * dentro del plazo. Es la base de los tres porcentajes ("12 de 20"), que suman 100. Los
+   * cancelados y los agendados no están.
+   */
+  total: number
 }
 
 /**
- * Las cifras de un grupo de turnos. Los cancelados no cuentan (no hay asistencia que registrar),
- * tampoco en la base de `porcentajeSinRegistrar`; los agendados sí están en esa base. Todos los
- * porcentajes salen en 0 si su base es 0.
+ * Las cifras de un grupo de turnos. Los cancelados no cuentan (no hay asistencia que registrar) y
+ * los agendados tampoco (todavía no pasaron). Los tres porcentajes son sobre `total` y salen en 0
+ * si es 0.
  */
 function cifrasDeAsistencia(ocurrencias: readonly OcurrenciaAsistencia[]): CifrasDeAsistencia {
-  let turnos = 0
-  let clasesRealizadas = 0
-  let ausencias = 0
+  let asistenciasRegistradas = 0
   let cerradosSinRegistrar = 0
-  let dentroDelPlazo = 0
+  let sinRegistrar = 0
   for (const { estado, plazoAsistencia } of ocurrencias) {
-    if (estado === 'CANCELADO') continue
-    turnos += 1
-    if (estado === 'REALIZADO') clasesRealizadas += 1
-    else if (estado === 'AUSENTE') ausencias += 1
+    if (estado === 'REALIZADO' || estado === 'AUSENTE') asistenciasRegistradas += 1
     else if (estado === 'SIN_REGISTRAR') {
       if (plazoAsistencia?.vencido === true) cerradosSinRegistrar += 1
-      else dentroDelPlazo += 1
+      else sinRegistrar += 1
     }
   }
+  const total = asistenciasRegistradas + cerradosSinRegistrar + sinRegistrar
   return {
-    clasesRealizadas,
-    ausencias,
-    porcentajeAsistencia: porcentaje(clasesRealizadas, clasesRealizadas + ausencias),
+    asistenciasRegistradas,
+    porcentajeRegistrado: porcentaje(asistenciasRegistradas, total),
     cerradosSinRegistrar,
-    dentroDelPlazo,
-    porcentajeSinRegistrar: porcentaje(cerradosSinRegistrar, turnos),
+    porcentajeCerrados: porcentaje(cerradosSinRegistrar, total),
+    sinRegistrar,
+    porcentajeSinRegistrar: porcentaje(sinRegistrar, total),
+    total,
   }
 }
 
@@ -335,11 +338,11 @@ export function filasDeMaterias(
 /** Columnas por las que se puede ordenar la tabla de profesores. */
 export const COLUMNAS_PROFESORES = [
   'profesor',
-  'clasesRealizadas',
-  'ausencias',
-  'porcentajeAsistencia',
+  'asistenciasRegistradas',
+  'porcentajeRegistrado',
   'cerradosSinRegistrar',
-  'dentroDelPlazo',
+  'porcentajeCerrados',
+  'sinRegistrar',
   'porcentajeSinRegistrar',
 ] as const
 export type ColumnaProfesores = (typeof COLUMNAS_PROFESORES)[number]
@@ -385,46 +388,88 @@ export function soloQueNoRegistran(
   return filas.filter((fila) => fila.noRegistraAsistencia)
 }
 
-/** Los números principales de la pestaña "Asistencia". */
+/** Los números de la torta de la pestaña "Asistencia", sobre el período pedido. */
 export type ResumenDeAsistencia = {
-  /** `REALIZADO` sobre los turnos con asistencia registrada de todo el centro. */
-  porcentajeAsistencia: number
-  /** Turnos cerrados "Sin registrar" por el sistema en el período. */
-  cerradosSinRegistrar: number
-  /** Profesores con al menos un turno cerrado sin registrar. */
-  profesoresSinRegistrar: number
-  /** Alumnos con algún registro y menos de `UMBRAL_ASISTENCIA_ALUMNO` % de asistencia: sólo la cantidad. */
-  alumnosBajoElUmbral: number
+  /** Turnos `REALIZADO`. */
+  presentes: Conteo
+  /** Turnos `AUSENTE`. */
+  ausentes: Conteo
+  /** Turnos "Sin registrar" que todavía están dentro del plazo de 7 días. */
+  sinRegistrar: Conteo
+  /** Turnos "Sin registrar" que cerró el sistema (pasaron los 7 días del plazo). */
+  cerrados: Conteo
+  /** Los cuatro juntos: la base de los porcentajes. */
+  total: number
+  /**
+   * La fecha de la clase más antigua y la de la más reciente entre los turnos que cerró el sistema,
+   * o `null` si no cerró ninguno.
+   */
+  clasesCerradas: { desde: string; hasta: string } | null
 }
 
 /**
- * El resumen del período. El porcentaje de asistencia de un alumno se compara **sin redondear**
- * (`realizadas × 100 < umbral × registradas`): 74,96 % no pasa por 75. Los alumnos sin ningún turno
- * con asistencia registrada no entran.
+ * Las fechas de las clases cuyo turno cerró el sistema: de la más antigua a la más reciente. Son
+ * siempre anteriores a la ventana de registro (un turno se cierra recién a los 7 días de la clase).
+ * `null` si no hay ninguno cerrado.
+ */
+export function clasesCerradasDelSistema(
+  ocurrencias: readonly Pick<OcurrenciaAsistencia, 'estado' | 'plazoAsistencia' | 'fecha'>[],
+): { desde: string; hasta: string } | null {
+  const fechas = ocurrencias
+    .filter((o) => o.estado === 'SIN_REGISTRAR' && o.plazoAsistencia?.vencido === true)
+    .map((o) => o.fecha)
+    .sort()
+  const primera = fechas[0]
+  const ultima = fechas[fechas.length - 1]
+  return primera === undefined || ultima === undefined ? null : { desde: primera, hasta: ultima }
+}
+
+/**
+ * El resumen del período: presentes, ausentes, sin registrar (dentro del plazo) y cerrados por el
+ * sistema, cada uno con su porcentaje sobre los cuatro juntos. Los cancelados y los agendados no
+ * entran. Sin ningún turno de los cuatro, todo en 0.
  */
 export function resumenDeAsistencia(
   ocurrencias: readonly OcurrenciaAsistencia[],
 ): ResumenDeAsistencia {
-  const centro = cifrasDeAsistencia(ocurrencias)
-
-  const porAlumno = new Map<number, { realizadas: number; registradas: number }>()
-  for (const { alumnoId, estado } of ocurrencias) {
-    if (estado !== 'REALIZADO' && estado !== 'AUSENTE') continue
-    const cuenta = porAlumno.get(alumnoId) ?? { realizadas: 0, registradas: 0 }
-    cuenta.registradas += 1
-    if (estado === 'REALIZADO') cuenta.realizadas += 1
-    porAlumno.set(alumnoId, cuenta)
-  }
-  const alumnosBajoElUmbral = [...porAlumno.values()].filter(
-    ({ realizadas, registradas }) => realizadas * 100 < UMBRAL_ASISTENCIA_ALUMNO * registradas,
-  ).length
-
+  const cifras = cifrasDeAsistencia(ocurrencias)
+  const ausentes = ocurrencias.filter((o) => o.estado === 'AUSENTE').length
+  const presentes = cifras.asistenciasRegistradas - ausentes
+  const conteo = (cantidad: number): Conteo => ({
+    cantidad,
+    porcentaje: porcentaje(cantidad, cifras.total),
+  })
   return {
-    porcentajeAsistencia: centro.porcentajeAsistencia,
-    cerradosSinRegistrar: centro.cerradosSinRegistrar,
-    profesoresSinRegistrar: soloQueNoRegistran(filasDeProfesores(ocurrencias)).length,
-    alumnosBajoElUmbral,
+    presentes: conteo(presentes),
+    ausentes: conteo(ausentes),
+    sinRegistrar: conteo(cifras.sinRegistrar),
+    cerrados: conteo(cifras.cerradosSinRegistrar),
+    total: cifras.total,
+    clasesCerradas: clasesCerradasDelSistema(ocurrencias),
   }
+}
+
+/**
+ * La ventana de registro que termina hoy: de `PLAZO_ASISTENCIA_DIAS` días atrás a hoy. Las clases de
+ * esas fechas son las que el profesor todavía puede registrar, así que no depende del período que
+ * se mira en el tablero.
+ */
+export function ventanaDeRegistro(fechaHoy: string): { desde: string; hasta: string } {
+  return { desde: sumarDias(fechaHoy, -PLAZO_ASISTENCIA_DIAS), hasta: fechaHoy }
+}
+
+/**
+ * Profesores con al menos un turno "Sin registrar" **dentro del plazo**: los que todavía deben
+ * marcar la asistencia de alguna clase. Se calcula sobre las ocurrencias de `ventanaDeRegistro`.
+ */
+export function profesoresConTurnosPorRegistrar(
+  ocurrencias: readonly Pick<OcurrenciaAsistencia, 'estado' | 'plazoAsistencia' | 'profesor'>[],
+): number {
+  return new Set(
+    ocurrencias
+      .filter((o) => o.estado === 'SIN_REGISTRAR' && o.plazoAsistencia?.vencido === false)
+      .map((o) => o.profesor.id),
+  ).size
 }
 
 // ---------------------------------------------------------------------------------------------
