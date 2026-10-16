@@ -148,3 +148,35 @@ export function nombreArchivoTablero(
 ): string {
   return `${seccion === 'general' ? 'tablero' : `tablero-${seccion}`}-${desde}_${hasta}`
 }
+
+const MESES_CORTOS = [
+  'ene',
+  'feb',
+  'mar',
+  'abr',
+  'may',
+  'jun',
+  'jul',
+  'ago',
+  'sep',
+  'oct',
+  'nov',
+  'dic',
+]
+
+/**
+ * Los meses `YYYY-MM` como los rotula el eje del gráfico de la evolución: cortos (`'oct'`), con el
+ * año solo en el primero y cada vez que cambia (`['oct 2026', 'sep', 'ago', …]`), igual que la
+ * pantalla. Se resuelven todos juntos porque cada etiqueta depende de la anterior; el orden es el
+ * que se va a mostrar.
+ */
+export function etiquetasDeMeses(meses: readonly string[]): string[] {
+  let anterior: string | null = null
+  return meses.map((mes) => {
+    const anio = mes.slice(0, 4)
+    const nombre = MESES_CORTOS[Number(mes.slice(5, 7)) - 1] ?? mes
+    const etiqueta = anio === anterior ? nombre : `${nombre} ${anio}`
+    anterior = anio
+    return etiqueta
+  })
+}

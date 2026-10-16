@@ -132,6 +132,70 @@ describe('listar', () => {
     expect(resultado.mes).toBe('2026-09')
   })
 
+  it('con profesorId, se lo pasa al motor y los totales son los de ese profesor', async () => {
+    repository.delMes.mockResolvedValue([
+      liquidacion({ profesor: PAZ, importe: 8000, parteProfesor: 6800 }),
+    ])
+
+    const resultado = await service.listar({ ...pagina, mes: '2026-09', profesorId: PAZ.id })
+
+    expect(repository.delMes).toHaveBeenCalledWith({
+      mes: '2026-09',
+      profesorId: PAZ.id,
+      hoy: '2026-10-15',
+    })
+    expect(resultado.data.map((fila) => fila.profesor.id)).toEqual([PAZ.id])
+    expect(resultado.totales.totalCobrado).toBe(8000)
+    expect(resultado.meta.total).toBe(1)
+  })
+
+  it('con estado, sólo las de ese estado, y los totales y la paginación son los del filtro', async () => {
+    repository.delMes.mockResolvedValue([
+      liquidacion({ profesor: GOMEZ, estado: 'PAGADA', importe: 8000, parteProfesor: 6800 }),
+      liquidacion({
+        profesor: PAZ,
+        estado: 'PENDIENTE_DE_PAGO',
+        importe: 8000,
+        parteProfesor: 6800,
+      }),
+      liquidacion({
+        profesor: RUIZ,
+        estado: 'PENDIENTE_DE_PAGO',
+        importe: 8000,
+        parteProfesor: 6800,
+      }),
+    ])
+
+    const resultado = await service.listar({
+      ...pagina,
+      mes: '2026-09',
+      estado: 'PENDIENTE_DE_PAGO',
+    })
+
+    expect(resultado.data.map((fila) => fila.profesor.id)).toEqual([PAZ.id, RUIZ.id])
+    expect(resultado.meta.total).toBe(2)
+    expect(resultado.totales.totalCobrado).toBe(16000)
+  })
+
+  it('estado y profesor se combinan: el profesor va al motor y el estado filtra lo que vuelve', async () => {
+    repository.delMes.mockResolvedValue([liquidacion({ profesor: PAZ, estado: 'PAGADA' })])
+
+    const resultado = await service.listar({
+      ...pagina,
+      mes: '2026-09',
+      profesorId: PAZ.id,
+      estado: 'PENDIENTE_DE_PAGO',
+    })
+
+    expect(repository.delMes).toHaveBeenCalledWith({
+      mes: '2026-09',
+      profesorId: PAZ.id,
+      hoy: '2026-10-15',
+    })
+    expect(resultado.data).toEqual([])
+    expect(resultado.meta.total).toBe(0)
+  })
+
   it('sólo los profesores que devuelve el motor, un inactivo incluido, en su orden', async () => {
     repository.delMes.mockResolvedValue([
       liquidacion({ profesor: GOMEZ }),
@@ -186,7 +250,27 @@ describe('listar', () => {
       parteProfesor: 20400.3,
       totalAjustes: -6800,
       total: 13600.3,
+      totalAPagar: 13600.3,
     })
+  })
+
+  it('totalAPagar suma sólo los totales positivos: un saldo negativo no se paga', async () => {
+    repository.delMes.mockResolvedValue([
+      liquidacion({ profesor: GOMEZ, importe: 8000, parteProfesor: 6800 }),
+      liquidacion({
+        profesor: RUIZ,
+        estado: 'SALDO_A_DESCONTAR',
+        importe: 8000,
+        parteProfesor: 6800,
+        totalAjustes: -21120,
+      }),
+    ])
+
+    const { totales, data } = await service.listar({ ...pagina, mes: '2026-09' })
+
+    expect(data[1]!.total).toBe(-14320)
+    expect(totales.total).toBe(-7520)
+    expect(totales.totalAPagar).toBe(6800)
   })
 
   it('sin movimientos → data vacía y totales en 0', async () => {
@@ -201,6 +285,7 @@ describe('listar', () => {
         parteProfesor: 0,
         totalAjustes: 0,
         total: 0,
+        totalAPagar: 0,
       },
       data: [],
       meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },

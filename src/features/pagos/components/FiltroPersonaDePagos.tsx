@@ -56,25 +56,28 @@ function ComboboxPersona({
     textoValor = persona ? etiqueta(persona) : textos.noEncontrado
   }
 
+  // En la fila de filtros el botón es angosto y corta el nombre con "…": el `title` lo muestra entero.
   return (
-    <ComboboxBuscador
-      id={id}
-      estado={estado}
-      valor={value}
-      textoValor={textoValor}
-      textoTodos="Todos"
-      placeholderBusqueda={textos.placeholder}
-      textoSinResultados={textos.sinResultados}
-      opciones={(busqueda.data ?? []).map((persona) => ({
-        id: persona.id,
-        etiqueta: etiqueta(persona),
-      }))}
-      buscando={busqueda.isFetching}
-      error={busqueda.isError ? textos.error : null}
-      onElegir={onChange}
-      aria-invalid={aria['aria-invalid']}
-      aria-describedby={aria['aria-describedby']}
-    />
+    <div title={textoValor ?? undefined}>
+      <ComboboxBuscador
+        id={id}
+        estado={estado}
+        valor={value}
+        textoValor={textoValor}
+        textoTodos="Todos"
+        placeholderBusqueda={textos.placeholder}
+        textoSinResultados={textos.sinResultados}
+        opciones={(busqueda.data ?? []).map((persona) => ({
+          id: persona.id,
+          etiqueta: etiqueta(persona),
+        }))}
+        buscando={busqueda.isFetching}
+        error={busqueda.isError ? textos.error : null}
+        onElegir={onChange}
+        aria-invalid={aria['aria-invalid']}
+        aria-describedby={aria['aria-describedby']}
+      />
+    </div>
   )
 }
 

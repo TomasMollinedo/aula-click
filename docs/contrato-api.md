@@ -1059,11 +1059,12 @@ Un pago anulado trae `"estado": "ANULADO"` y su anulación:
 
 ### Pagos realizados (HU-36)
 
-**`GET /pagos?desde&hasta&alumnoId?&materiaId?&profesorId?&formaPago?&page&pageSize`** (`MESA_ENTRADAS`, `GERENTE`): los pagos con **fecha de pago** en el período, vigentes y anulados.
+**`GET /pagos?desde&hasta&alumnoId?&materiaId?&profesorId?&formaPago?&estado?&page&pageSize`** (`MESA_ENTRADAS`, `GERENTE`): los pagos con **fecha de pago** en el período; por defecto, vigentes y anulados.
 
 - `desde` y `hasta`: `YYYY-MM-DD`, **obligatorios**, extremos incluidos y **sin tope de días** (la UI manda el mes en curso por defecto). `hasta` no puede ser anterior a `desde`.
 - `alumnoId`, `materiaId` y `profesorId` (opcionales): enteros positivos; `materiaId` es **una sola** materia. **La materia y el profesor se aplican a cada turno**, como en Cuentas: un pago aparece si tiene algún turno de esa materia o de ese profesor y, con los dos, si **un mismo turno** cumple los dos (decisión T-152). Un alumno, una materia o un profesor que no existen dan una lista vacía y los totales en 0: **no hay 404**.
 - `formaPago` (opcional): `EFECTIVO`, `TRANSFERENCIA` o `DEBITO`, por el código, nunca por el nombre.
+- `estado` (opcional): `VIGENTE`, `ANULADO` o `TODOS` (no filtra); por defecto `TODOS`. Filtra la lista y los totales (ver abajo). Mismo nombre y convención que el filtro `estado` de Filtros (decisión T-178).
 - `page` y `pageSize`: ver Listados paginados.
 - Orden: del más reciente al más antiguo (`fechaPago` y, con la misma fecha, `id` descendentes).
 
@@ -1105,17 +1106,21 @@ Responde el formato de un listado paginado **más `totales`, junto a `data` y `m
   "meta": { "page": 1, "pageSize": 10, "total": 2, "totalPages": 1 },
   "totales": {
     "cobrado": 34000,
-    "porForma": { "EFECTIVO": 0, "TRANSFERENCIA": 34000, "DEBITO": 0 }
+    "porForma": { "EFECTIVO": 0, "TRANSFERENCIA": 34000, "DEBITO": 0 },
+    "anulado": 16000
   }
 }
 ```
 
 - Cada pago (`PagoRealizado`): `materias` son las materias distintas de sus turnos, por nombre; `cantidad`, cuántos turnos incluye; `registradoPor`, un `UsuarioAuditoria`; `anulacion`, `{ motivo, detalle }` si está anulado y `null` si está vigente (quién lo anuló y cuándo están en el detalle).
-- **Un pago anulado se lista, marcado con su `estado`, pero no suma.**
-- `totales` es de **todo el filtro**, no sólo de la página, y **sólo de los pagos vigentes**: `porForma` tiene lo cobrado por cada forma de pago y `cobrado` es la suma de las tres. Con `formaPago`, las otras dos van en 0. Con `materiaId` o `profesorId`, cada pago listado suma su **total completo**, no sólo la parte de esa materia o profesor (decisión T-152). Es la misma definición de "cobrado" que el tablero.
+- **Un pago anulado se lista (con `estado` `TODOS` o `ANULADO`), marcado con su `estado`, pero no suma al cobrado.**
+- `totales` es de **todo el filtro**, no sólo de la página. `cobrado` y `porForma` son **sólo de los pagos vigentes**: `porForma` tiene lo cobrado por cada forma de pago y `cobrado` es la suma de las tres. Con `formaPago`, las otras dos van en 0. Es la misma definición de "cobrado" que el tablero.
+- `anulado` es la suma del total de los pagos **anulados** del filtro (en la base, con la misma definición que el listado); no suma a `cobrado`.
+- Con `estado=VIGENTE`, `anulado` es 0; con `estado=ANULADO`, `cobrado` y `porForma` son 0 (decisión T-178).
+- Con `materiaId` o `profesorId`, cada pago listado suma su **total completo** a los totales, no sólo la parte de esa materia o profesor (decisión T-152).
 - Sin pagos en el filtro: `data: []`, `meta.total: 0` y `totales` en 0. La UI muestra "No hay pagos en este período".
 
-**Errores:** 400 `VALIDACION` si falta `desde` o `hasta` (en ese campo), si una fecha es inválida, si `hasta` es anterior a `desde` (en `["hasta"]`: "La fecha hasta no puede ser anterior a la fecha desde", el mismo mensaje que Cuentas), si un id no es un entero positivo, si `formaPago` no es uno de los tres códigos o si la paginación está fuera de rango; 401 sin sesión; 403 `SIN_PERMISO` con otro rol (también el alumno).
+**Errores:** 400 `VALIDACION` si falta `desde` o `hasta` (en ese campo), si una fecha es inválida, si `hasta` es anterior a `desde` (en `["hasta"]`: "La fecha hasta no puede ser anterior a la fecha desde", el mismo mensaje que Cuentas), si un id no es un entero positivo, si `formaPago` no es uno de los tres códigos, si `estado` no es `VIGENTE`, `ANULADO` ni `TODOS` (en `["estado"]`) o si la paginación está fuera de rango; 401 sin sesión; 403 `SIN_PERMISO` con otro rol (también el alumno).
 
 ### Buscadores de los filtros (HU-36)
 
@@ -1674,7 +1679,7 @@ HU-21 (T-61, decisiones T-112 a T-119), HU-39 (T-112, decisión T-162) y HU-47 (
 - `seccion`: `general` (por defecto, así el enlace anterior a las secciones sigue funcionando), `asistencia` o `finanzas`. 400 `VALIDACION` con `details` sobre `seccion` si es otra.
 - **`general`** (reemplaza al PDF de HU-21): una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período, con lo cobrado por forma de pago, y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), los alumnos atendidos y nuevos, y al final las materias y los profesores con más turnos en barras.
 - **`asistencia`**: el título es `Asistencia semanal`, `Asistencia diaria`, `Asistencia mensual` o `Asistencia del período` (según el período, igual que el de General) y debajo, de qué día a qué día son los datos. Trae los números principales del `resumen` y las **tablas completas** de profesores y de materias: **todas las filas** (sin las páginas de la pantalla y sin el filtro `soloSinRegistrar`), en el orden por defecto (cerrados sin registrar de mayor a menor), repitiendo el encabezado de la tabla en cada hoja, así que ocupa las hojas que hagan falta. Sin ningún dato de los alumnos. La tabla de profesores marca con "No registra" a los que tienen turnos cerrados sin registrar.
-- **`finanzas`**: el título es `Finanzas semanal`, `Finanzas diaria`, `Finanzas mensual` o `Finanzas del período` y debajo, de qué día a qué día son los datos. Trae los cuatro números del `resumen` (el margen con su porcentaje y, si `incluyeSinRegistrar` es mayor a 0, "Incluye $ … de turnos sin asistencia registrada"; el saldo con la fecha de hoy), la tabla por profesor **completa** (todas las filas, sin las páginas de la pantalla, en el orden por defecto, repitiendo el encabezado en cada hoja) y la evolución de los 6 meses.
+- **`finanzas`**: el título es `Finanzas semanal`, `Finanzas diaria`, `Finanzas mensual` o `Finanzas del período` y debajo, de qué día a qué día son los datos. Trae los cuatro números del `resumen` (el margen con su porcentaje y, si `incluyeSinRegistrar` es mayor a 0, "Incluye $ … de turnos sin asistencia registrada"; el saldo con la fecha de hoy), la **evolución de los 6 meses** —con su gráfico de columnas (cobrado, margen y pagado a profesores) y su tabla, del mes más reciente al más alejado— y, después, la tabla por profesor **completa** (todas las filas, sin las páginas de la pantalla, en el orden por defecto, repitiendo el encabezado en cada hoja). Es el mismo orden que la pantalla.
 - **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` para General (`tablero-2026-09-28_2026-10-04.pdf`), `tablero-asistencia-<desde>_<hasta>.pdf` para Asistencia y `tablero-finanzas-<desde>_<hasta>.pdf` para Finanzas.
 
 ## Centro
@@ -2154,16 +2159,18 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 ## Liquidaciones
 
-HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF (T-125) está al final de la sección, en [La liquidación en PDF](#la-liquidación-en-pdf), y los endpoints del profesor (T-126), en [Mis ingresos del profesor](#mis-ingresos-del-profesor).
 
-| Endpoint                                                        | Roles      | Qué hace                                                                         |
-| --------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------- |
-| `GET /api/v1/liquidaciones`                                     | `GERENTE`  | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
-| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`  | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
-| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`  | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
-| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR` | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200        |
-| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR` | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                  |
-| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR` | Su liquidación de un mes. 200; 400                                               |
+| Endpoint                                                        | Roles                 | Qué hace                                                                         |
+| --------------------------------------------------------------- | --------------------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                                     | `GERENTE`             | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`             | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`             | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
+| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR`            | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200        |
+| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR`            | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                  |
+| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR`            | Su liquidación de un mes. 200; 400                                               |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pdf`   | `GERENTE`, `PROFESOR` | La liquidación en PDF; el profesor, sólo la suya. 200; 400; 403; 404             |
+| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}/pdf`         | `PROFESOR`            | Su liquidación en PDF, sin el `profesorId`. 200; 400; 403                        |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de la sesión (HU-45, T-126): ver [Mis ingresos del profesor](#mis-ingresos-del-profesor).
 
@@ -2173,7 +2180,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
 
 **Importes** en pesos (número JSON), sumados en centavos: en cada fila y en los totales, `parteProfesor + totalAjustes = total` y `parteCentro + parteProfesor = totalCobrado`. Los ajustes son negativos.
 
-**`GET /liquidaciones?mes=2026-09&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy):
+**`GET /liquidaciones?mes=2026-09&profesorId=4&estado=PENDIENTE_DE_PAGO&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy). `profesorId` (opcional, entero mayor a 0; si no, 400 en `["profesorId"]`) deja sólo la liquidación de ese profesor: lista de 0 o 1 fila, con `totales` de esa fila. Un profesor sin movimientos en el mes, o que no existe, da `data: []` (no 404). `estado` (opcional: `EN_CURSO`, `PENDIENTE_DE_PAGO`, `SALDO_A_DESCONTAR`, `PAGADA` o `DESCONTADA`; otro valor, 400 en `["estado"]`) deja sólo las liquidaciones en ese estado. Los dos filtros se combinan, y `data`, `meta` y `totales` son los del resultado filtrado (sin coincidencias: `data: []` y totales en 0). Las opciones del filtro por profesor salen del buscador del gerente `GET /pagos/profesores`:
 
 ```json
 {
@@ -2184,7 +2191,8 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
     "parteCentro": 22800,
     "parteProfesor": 129200,
     "totalAjustes": -6800,
-    "total": 122400
+    "total": 122400,
+    "totalAPagar": 122400
   },
   "data": [
     {
@@ -2218,7 +2226,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
 
 - `mes`: el pedido o el por defecto (el front arma el selector con él).
 - Una fila por profesor **con turnos o ajustes en el mes, aunque esté inactivo**, por apellido y nombre. Un profesor sin movimientos no aparece. Sin ninguno: `data: []` y los totales en 0 ("No hay liquidaciones en …").
-- `totales`: la suma de cada columna de **todo el listado**, no de la página.
+- `totales`: la suma de cada columna de **todo el listado**, no de la página. Suma además **`totalAPagar`**: lo que hay que transferir, la suma de los `total` **mayores a 0**. El `total` de una fila conserva su signo (un saldo negativo es lo que se descuenta del mes siguiente) y entra en `totales.total`; la UI nunca lo muestra como "a pagar" (ver `arquitectura-frontend.md`).
 - `fechaTransferencia`: sólo en una `PAGADA`; `descontadaEnMes`: sólo en una `DESCONTADA` ("Descontada en la liquidación de …"). Si no, `null`.
 
 **`GET /liquidaciones/profesores/{profesorId}/{mes}`**: el detalle, con el mismo cálculo del listado.
@@ -2396,6 +2404,19 @@ HU-45 (T-126). Rol `PROFESOR`, con el **profesor de la sesión** (como `GET /alu
 
 **`GET /liquidaciones/mis-liquidaciones/{mes}`**: su liquidación de `mes`, con el formato de arriba. Cualquier mes **no futuro**, también el en curso (devuelve lo mismo que `esteMes`). Sin movimientos: la vacía. Un mes con formato inválido o futuro → 400 `VALIDACION` en `["mes"]`, como el detalle del gerente. En una cerrada, `cerrada` es `{ liquidacionId, fechaTransferencia, numeroOperacion, descontadaEnMes }`.
 
+### La liquidación en PDF
+
+HU-44 y HU-45 (T-125). El documento oficial de la liquidación de un profesor en un mes, con el contrato común de los PDF ([Documentos PDF](#documentos-pdf)) y **el mismo cálculo** que el detalle (el motor; nada se recalcula). Dos rutas que arman el mismo documento (decisión T-179):
+
+- **`GET /liquidaciones/profesores/{profesorId}/{mes}/pdf`**: `GERENTE`, la de cualquier profesor; `PROFESOR`, **sólo la suya** (403 `SIN_PERMISO` con la de otro o sin ficha de profesor).
+- **`GET /liquidaciones/mis-liquidaciones/{mes}/pdf`**: `PROFESOR`, la del profesor de la sesión, sin el `profesorId` (como los otros `mis-…`). Es la que enlaza "Mis ingresos".
+
+**Contenido**, en este orden: el encabezado oficial (`encabezadoDeDocumento`); el profesor, el mes, el estado ("Pagada el 05/10/2026", "Pendiente de pago"…) y, si está pagada, la fecha y el número de operación de la transferencia; los turnos (fecha y horario, alumno, materia, comprobante, importe, porcentaje del centro y parte del profesor); los ajustes, si hay; y los totales (cobrado, parte del centro, parte del profesor, ajustes y total a pagar). **Sin** la forma de pago de las familias, el comprobante adjunto, las observaciones del pago ni quién lo registró. El documento del **profesor** no lleva la columna del comprobante (decisión T-171). Un mes sin movimientos dice "Sin turnos en el mes".
+
+**Errores**, en JSON: 400 `VALIDACION` si `profesorId` o `mes` son inválidos o el mes es futuro; 403 (el permiso del profesor se resuelve antes que el mes); 404 `NO_ENCONTRADO` "Profesor no encontrado".
+
+**Nombre del archivo:** `liquidacion-<apellido>-<nombre>-<mes>.pdf` (`liquidacion-gomez-ana-2026-09.pdf`), con guiones entre las partes como el historial (decisión T-162). Metadatos: título "Liquidación Septiembre de 2026".
+
 ## Caja
 
 HU-46 (T-127, decisión T-175). La caja diaria del gerente: todo el dinero que entró y salió del centro en un día, por forma de pago, con la parte del centro y la de los profesores. **Sólo lectura:** no tiene tablas propias, se arma al consultar con los cobros, las anulaciones y los pagos a profesores ya registrados. Las reglas están en `dominio.md` → Caja diaria.
@@ -2527,16 +2548,17 @@ Como el portal, lo propio del profesor vive en la feature dueña del concepto y 
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
 
-| Documento                                                                                                                                       | Endpoint                                                     | Roles                                               |
-| ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
-| Comprobante de pago                                                                                                                             | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
-| Detalle de un turno                                                                                                                             | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Turnos de un alumno                                                                                                                             | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
-| Historial académico                                                                                                                             | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Agenda de un profesor                                                                                                                           | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
-| Tablero del gerente                                                                                                                             | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
-| Caja diaria                                                                                                                                     | `GET /caja/pdf?fecha`                                        | `GERENTE`                                           |
-| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas, Tablero y Caja. |
+| Documento                                                                                                                                                      | Endpoint                                                                                                  | Roles                                               |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| Comprobante de pago                                                                                                                                            | `GET /pagos/{id}/pdf`                                                                                     | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
+| Detalle de un turno                                                                                                                                            | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                                                                  | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Turnos de un alumno                                                                                                                                            | `GET /ocurrencias/pdf?alumnoId&…`                                                                         | `MESA_ENTRADAS`                                     |
+| Historial académico                                                                                                                                            | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…`                                              | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Agenda de un profesor                                                                                                                                          | `GET /agendas/diaria/pdf?profesorId&…`                                                                    | `MESA_ENTRADAS`                                     |
+| Tablero del gerente                                                                                                                                            | `GET /tablero/pdf?desde&hasta`                                                                            | `GERENTE`                                           |
+| Caja diaria                                                                                                                                                    | `GET /caja/pdf?fecha`                                                                                     | `GERENTE`                                           |
+| Liquidación de un profesor                                                                                                                                     | `GET /liquidaciones/profesores/{profesorId}/{mes}/pdf` y `GET /liquidaciones/mis-liquidaciones/{mes}/pdf` | `GERENTE`; `PROFESOR`, sólo la suya                 |
+| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas, Tablero, Caja y Liquidaciones. |
 
 - **200** con el cuerpo binario del PDF y estos headers:
 
@@ -2560,7 +2582,7 @@ Nombres fijos de query (un filtro nuevo se agrega a esta lista):
 | Query                                | Qué hace                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `q`                                  | Búsqueda por palabras: cada palabra coincide en forma parcial y todas deben coincidir (`juan gonz` encuentra a "González, Juan"). No distingue mayúsculas ni tildes (`gonzalez` encuentra a "González") e ignora los puntos (`30.123` encuentra el DNI `30123456`). Hasta 100 caracteres; se usan las primeras 5 palabras. En la agenda (decisión T-36) busca por nombre de alumno **o** de profesor, nunca mezclando palabras entre los dos; si además se manda `profesorId`, busca sólo por alumno (T-42)                                                                                                                                |
-| `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| `estado`                             | `ACTIVO`, `INACTIVO` o `TODOS` (no filtra). Solo en entidades con baja lógica (profesores y materias); por defecto `ACTIVO`. En Pagos (`GET /pagos`), el estado del pago: `VIGENTE`, `ANULADO` o `TODOS` (no filtra); por defecto `TODOS` (decisión T-178)                                                                                                                                                                                                                                                                                                                                                                                 |
 | `materiaId`                          | Filtra por materia. En Cuentas (T-101), una o más, repitiendo el parámetro: `?materiaId=2&materiaId=5`. En Pagos (`GET /pagos`), una sola                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
 | `formaPago`                          | Filtra por forma de pago, por su código: `EFECTIVO`, `TRANSFERENCIA` o `DEBITO` (nunca por el nombre). En Pagos (`GET /pagos`)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | `profesorId`                         | Filtra por profesor. En la agenda (decisión T-42) es la vista personal de su agenda ese día                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                |

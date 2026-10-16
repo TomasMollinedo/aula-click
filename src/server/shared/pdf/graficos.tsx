@@ -1,7 +1,8 @@
-import { Circle, Path, StyleSheet, Svg, Text, View } from '@react-pdf/renderer'
+import { Circle, Line, Path, Rect, StyleSheet, Svg, Text, View } from '@react-pdf/renderer'
 import { COLORES, TEXTO, px } from './estilos'
 
-// Gráficos simples para los documentos: un anillo (torta), una leyenda y barras horizontales. Solo
+// Gráficos simples para los documentos: un anillo (torta), una leyenda, barras horizontales y
+// columnas agrupadas (una evolución mes a mes). Solo
 // dibujo, sin significado de negocio: reciben números ya calculados y colores. Vectoriales (Svg de
 // react-pdf), así que salen nítidos al imprimir. Sin contexto ni hooks, como el resto de
 // `shared/pdf/`.
@@ -43,6 +44,13 @@ const estilos = StyleSheet.create({
   pista: { height: px(7), borderRadius: px(3.5), backgroundColor: COLORES.borde },
   relleno: { height: px(7), borderRadius: px(3.5), backgroundColor: COLORES.cobalto },
   vacio: { ...TEXTO.chico, color: COLORES.texto70 },
+  evolucion: { gap: px(8) },
+  graficoEvolucion: { position: 'relative' },
+  rotuloEje: { position: 'absolute', fontSize: px(9), color: COLORES.texto60 },
+  rotuloEjeY: { textAlign: 'right' },
+  rotuloEjeX: { textAlign: 'center' },
+  leyendaEvolucion: { flexDirection: 'row', flexWrap: 'wrap', gap: px(14) },
+  itemEvolucion: { flexDirection: 'row', alignItems: 'center', gap: px(6) },
 })
 
 /** El punto del círculo de radio `RADIO` a `fraccion` de la vuelta, empezando arriba y en sentido horario. */
@@ -185,6 +193,166 @@ export function BarrasPdf({ items, vacio }: { items: readonly ItemBarraPdf[]; va
           </View>
         </View>
       ))}
+    </View>
+  )
+}
+
+export type SerieColumnasPdf = { etiqueta: string; color: string }
+
+export type GrupoColumnasPdf = {
+  /** Lo que se escribe debajo del grupo, en el eje (corto: entra una vez por grupo). */
+  etiqueta: string
+  /** Un valor por serie, en el mismo orden que `series`. */
+  valores: readonly number[]
+}
+
+// Geometría del gráfico, en puntos (el viewBox es del tamaño del dibujo: 1 unidad = 1 pt).
+/** Lo que mide el gráfico de ancho: el de la hoja A4 menos sus márgenes. */
+const ANCHO_COLUMNAS = 478
+const ALTO_COLUMNAS = 150
+/** Columna de la izquierda, donde van los números del eje (entran hasta 9 cifras con puntos). */
+const X_EJE = 56
+const MARGEN_DERECHO = 4
+const PAD_SUPERIOR = 6
+/** Franja de abajo, donde va la etiqueta de cada grupo. */
+const ALTO_ETIQUETAS = 16
+const ANCHO_COLUMNA_MAXIMO = 14
+const ALTO_EN_CERO = 1
+const DIVISIONES = 3
+
+/** Saca el ruido de coma flotante de una multiplicación (`0.2 * 3` → `0.6000000000000001`). */
+function sinRuido(valor: number): number {
+  return Number(valor.toPrecision(12))
+}
+
+/**
+ * La escala del eje: termina en un número redondo arriba del valor más alto, con un paso de 1, 2
+ * o 5 por una potencia de 10 (la misma que usa el gráfico de la pantalla). Sin nada que medir (0 o
+ * negativo), solo la línea del cero.
+ */
+function escalaDelEje(maximo: number): { tope: number; valores: number[] } {
+  if (!(maximo > 0)) return { tope: 0, valores: [] }
+  const bruto = maximo / DIVISIONES
+  const magnitud = 10 ** Math.floor(Math.log10(bruto))
+  const normalizado = bruto / magnitud
+  const escalon = normalizado <= 1 ? 1 : normalizado <= 2 ? 2 : normalizado <= 5 ? 5 : 10
+  const paso = sinRuido(escalon * magnitud)
+  return {
+    tope: sinRuido(paso * DIVISIONES),
+    valores: Array.from({ length: DIVISIONES + 1 }, (_, i) => sinRuido(paso * i)),
+  }
+}
+
+/**
+ * Columnas verticales agrupadas: un grupo por período —en el orden en que llegan— con una columna
+ * por serie, líneas de guía con los números del eje y su leyenda abajo. Solo dibuja: los números
+ * ya los calculó la API; lo único que se calcula es la escala del eje (geometría). Un valor en 0
+ * deja una marca fina sobre el eje, así un período sin movimientos se lee como un cero y no como un
+ * hueco. Sin grupos muestra `vacio`.
+ */
+export function ColumnasAgrupadasPdf({
+  series,
+  grupos,
+  formatearEje,
+  vacio,
+}: {
+  series: readonly SerieColumnasPdf[]
+  grupos: readonly GrupoColumnasPdf[]
+  /** Cómo se escribe un número del eje (con separador de miles). */
+  formatearEje: (valor: number) => string
+  vacio: string
+}) {
+  if (grupos.length === 0) return <Text style={estilos.vacio}>{vacio}</Text>
+
+  const maximo = Math.max(0, ...grupos.flatMap(({ valores }) => [...valores]))
+  const { tope, valores: marcas } = escalaDelEje(maximo)
+  const yBase = ALTO_COLUMNAS - ALTO_ETIQUETAS
+  const altoUtil = yBase - PAD_SUPERIOR
+  const anchoGrupo = (ANCHO_COLUMNAS - X_EJE - MARGEN_DERECHO) / grupos.length
+  const anchoColumna = Math.min(ANCHO_COLUMNA_MAXIMO, (anchoGrupo * 0.75) / series.length)
+  const anchoConjunto = anchoColumna * series.length
+  const yDe = (valor: number) => yBase - (tope > 0 ? (valor / tope) * altoUtil : 0)
+
+  return (
+    <View style={estilos.evolucion}>
+      <View style={[estilos.graficoEvolucion, { width: ANCHO_COLUMNAS, height: ALTO_COLUMNAS }]}>
+        <Svg
+          width={ANCHO_COLUMNAS}
+          height={ALTO_COLUMNAS}
+          viewBox={`0 0 ${ANCHO_COLUMNAS} ${ALTO_COLUMNAS}`}
+        >
+          {marcas.map((marca) => (
+            <Line
+              key={marca}
+              x1={X_EJE}
+              x2={ANCHO_COLUMNAS - MARGEN_DERECHO}
+              y1={yDe(marca)}
+              y2={yDe(marca)}
+              stroke={marca === 0 ? COLORES.bordeFuerte : COLORES.borde}
+              strokeWidth={0.5}
+            />
+          ))}
+          {marcas.length === 0 && (
+            <Line
+              x1={X_EJE}
+              x2={ANCHO_COLUMNAS - MARGEN_DERECHO}
+              y1={yBase}
+              y2={yBase}
+              stroke={COLORES.bordeFuerte}
+              strokeWidth={0.5}
+            />
+          )}
+          {grupos.map((grupo, g) =>
+            series.map((serie, s) => {
+              const valor = grupo.valores[s] ?? 0
+              const alto =
+                valor > 0 ? Math.max((valor / tope) * altoUtil, ALTO_EN_CERO) : ALTO_EN_CERO
+              return (
+                <Rect
+                  key={`${g}-${s}`}
+                  x={X_EJE + g * anchoGrupo + (anchoGrupo - anchoConjunto) / 2 + s * anchoColumna}
+                  y={yBase - alto}
+                  width={anchoColumna}
+                  height={alto}
+                  fill={serie.color}
+                />
+              )
+            }),
+          )}
+        </Svg>
+        {marcas.map((marca) => (
+          <Text
+            key={marca}
+            style={[
+              estilos.rotuloEje,
+              estilos.rotuloEjeY,
+              { left: 0, width: X_EJE - 6, top: yDe(marca) - px(5) },
+            ]}
+          >
+            {formatearEje(marca)}
+          </Text>
+        ))}
+        {grupos.map((grupo, g) => (
+          <Text
+            key={g}
+            style={[
+              estilos.rotuloEje,
+              estilos.rotuloEjeX,
+              { left: X_EJE + g * anchoGrupo, width: anchoGrupo, top: yBase + 4 },
+            ]}
+          >
+            {grupo.etiqueta}
+          </Text>
+        ))}
+      </View>
+      <View style={estilos.leyendaEvolucion}>
+        {series.map(({ etiqueta, color }) => (
+          <View key={etiqueta} style={estilos.itemEvolucion}>
+            <View style={[estilos.punto, { backgroundColor: color }]} />
+            <Text style={estilos.etiquetaLeyenda}>{etiqueta}</Text>
+          </View>
+        ))}
+      </View>
     </View>
   )
 }

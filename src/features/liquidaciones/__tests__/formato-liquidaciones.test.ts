@@ -4,11 +4,13 @@ import {
   fechaLarga,
   formatoEstadoLiquidacion,
   nombreDeProfesor,
+  saldoADescontar,
   textoAdjuntadoPor,
   textoConfirmacionPagoLiquidacion,
   textoExitoPagoLiquidacion,
   textoNumeroComprobante,
   textoRegistradoPor,
+  totalAPagar,
 } from '../formato-liquidaciones'
 import type { EstadoAMostrar } from '../formato-liquidaciones'
 
@@ -88,5 +90,22 @@ describe('textos del pago de una liquidación', () => {
     expect(textoExitoPagoLiquidacion({ profesor, mes: '2026-09' })).toBe(
       'Pago registrado. La liquidación de septiembre de Gómez, Ana quedó pagada',
     )
+  })
+})
+
+describe('totalAPagar y saldoADescontar', () => {
+  it('un total positivo se paga entero y no deja saldo', () => {
+    expect(totalAPagar(6800)).toBe(6800)
+    expect(saldoADescontar(6800)).toBeNull()
+  })
+
+  it('un total de 0 no se paga y no deja saldo', () => {
+    expect(totalAPagar(0)).toBe(0)
+    expect(saldoADescontar(0)).toBeNull()
+  })
+
+  it('un total negativo no se paga: es un saldo que pasa al mes siguiente', () => {
+    expect(totalAPagar(-14320)).toBe(0)
+    expect(saldoADescontar(-14320)).toBe(-14320)
   })
 })

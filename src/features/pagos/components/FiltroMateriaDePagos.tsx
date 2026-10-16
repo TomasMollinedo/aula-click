@@ -38,24 +38,27 @@ export function FiltroMateriaDePagos({
     textoValor = materia ? materia.nombre : 'Materia no encontrada'
   }
 
+  // En la fila de filtros el botón es angosto y corta el nombre con "…": el `title` lo muestra entero.
   return (
-    <ComboboxBuscador
-      id={id}
-      estado={estado}
-      valor={value}
-      textoValor={textoValor}
-      textoTodos="Todas"
-      placeholderBusqueda="Buscar materia…"
-      textoSinResultados="No se encontraron materias con turnos pagados."
-      opciones={(busqueda.data ?? []).map((materia) => ({
-        id: materia.id,
-        etiqueta: materia.nombre,
-      }))}
-      buscando={busqueda.isFetching}
-      error={busqueda.isError ? 'No se pudieron buscar las materias.' : null}
-      onElegir={onChange}
-      aria-invalid={aria['aria-invalid']}
-      aria-describedby={aria['aria-describedby']}
-    />
+    <div title={textoValor ?? undefined}>
+      <ComboboxBuscador
+        id={id}
+        estado={estado}
+        valor={value}
+        textoValor={textoValor}
+        textoTodos="Todas"
+        placeholderBusqueda="Buscar materia…"
+        textoSinResultados="No se encontraron materias con turnos pagados."
+        opciones={(busqueda.data ?? []).map((materia) => ({
+          id: materia.id,
+          etiqueta: materia.nombre,
+        }))}
+        buscando={busqueda.isFetching}
+        error={busqueda.isError ? 'No se pudieron buscar las materias.' : null}
+        onElegir={onChange}
+        aria-invalid={aria['aria-invalid']}
+        aria-describedby={aria['aria-describedby']}
+      />
+    </div>
   )
 }

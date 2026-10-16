@@ -103,7 +103,7 @@ export const listarPagosRoute = createRoute({
   tags,
   summary: 'Pagos realizados, con lo cobrado por forma de pago',
   description:
-    'Pagos con **fecha de pago** en `[desde, hasta]` (obligatorios, sin tope de días), del más reciente al más antiguo (`fechaPago` y `id`, descendentes) y paginados. Vigentes y anulados: un anulado se lista con su `estado` y su motivo, pero no suma. Con `materiaId` y/o `profesorId`, los pagos con algún turno de esa materia y/o ese profesor (los dos sobre el mismo turno). `formaPago` filtra por código. Un alumno, una materia o un profesor que no existen dan una lista vacía y los totales en 0. `totales` es de **todo** el filtro, no de la página, sólo con pagos vigentes: `cobrado` es la suma de `porForma` (con materia o profesor, cada pago suma su total completo).',
+    'Pagos con **fecha de pago** en `[desde, hasta]` (obligatorios, sin tope de días), del más reciente al más antiguo (`fechaPago` y `id`, descendentes) y paginados. `estado` (`VIGENTE`, `ANULADO` o `TODOS`, por defecto) filtra la lista; con `TODOS`, vigentes y anulados: un anulado se lista con su `estado` y su motivo, pero no suma al cobrado. Con `materiaId` y/o `profesorId`, los pagos con algún turno de esa materia y/o ese profesor (los dos sobre el mismo turno). `formaPago` filtra por código. Un alumno, una materia o un profesor que no existen dan una lista vacía y los totales en 0. `totales` es de **todo** el filtro, no de la página, `cobrado` y `porForma` sólo con pagos vigentes (`cobrado` es la suma de `porForma`) y `anulado`, la suma de los anulados; con materia o profesor, cada pago suma su total completo. Con `estado=VIGENTE`, `anulado` da 0; con `estado=ANULADO`, `cobrado` y `porForma` dan 0.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
   request: { query: listarPagosQuerySchema },
   responses: {
@@ -112,7 +112,7 @@ export const listarPagosRoute = createRoute({
       content: { 'application/json': { schema: listadoPagosSchema, example: ejemploListado } },
     },
     400: respuestaError(
-      'Query inválido (VALIDACION): falta `desde` o `hasta`, fecha inválida, `hasta` anterior a `desde` (en `hasta`), id que no es un entero positivo, `formaPago` desconocida o paginación fuera de rango',
+      'Query inválido (VALIDACION): falta `desde` o `hasta`, fecha inválida, `hasta` anterior a `desde` (en `hasta`), id que no es un entero positivo, `formaPago` o `estado` desconocidos o paginación fuera de rango',
       ejemploErrorRango,
     ),
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),

@@ -24,6 +24,7 @@ export const ejemploLiquidacionesDelMes = {
     parteProfesor: 129200,
     totalAjustes: -6800,
     total: 122400,
+    totalAPagar: 122400,
   },
   data: [
     {

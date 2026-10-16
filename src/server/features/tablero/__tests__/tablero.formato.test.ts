@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  etiquetasDeMeses,
   formatearCantidad,
   formatearPorcentaje,
   nombreArchivoTablero,
@@ -141,5 +142,21 @@ describe('textoClasesCerradas', () => {
     expect(textoClasesCerradas({ desde: '2026-09-17', hasta: '2026-10-07' })).toBe(
       'clases del 17/09/2026 al 07/10/2026',
     )
+  })
+})
+
+describe('etiquetasDeMeses', () => {
+  it('cortos, con el año solo en el primero y cuando cambia (como la pantalla)', () => {
+    expect(etiquetasDeMeses(['2026-10', '2026-09', '2026-08'])).toEqual(['oct 2026', 'sep', 'ago'])
+    expect(etiquetasDeMeses(['2026-02', '2026-01', '2025-12', '2025-11'])).toEqual([
+      'feb 2026',
+      'ene',
+      'dic 2025',
+      'nov',
+    ])
+  })
+
+  it('sin meses, sin etiquetas', () => {
+    expect(etiquetasDeMeses([])).toEqual([])
   })
 })

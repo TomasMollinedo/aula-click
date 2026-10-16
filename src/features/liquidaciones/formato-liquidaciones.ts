@@ -9,6 +9,7 @@ import { textoMes } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
 
 import type {
+  EstadoLiquidacion,
   FilaLiquidacion,
   LiquidacionDetalle,
   PagoLiquidacionRegistrado,
@@ -59,6 +60,29 @@ export function formatoEstadoLiquidacion({
         variante: 'outline',
       }
   }
+}
+
+/** El texto de cada estado en el filtro del listado (sin fechas: el badge de la fila las lleva). */
+export const TEXTO_ESTADO_FILTRO: Record<EstadoLiquidacion, string> = {
+  EN_CURSO: 'En curso',
+  PENDIENTE_DE_PAGO: 'Pendiente de pago',
+  SALDO_A_DESCONTAR: 'Saldo a descontar',
+  PAGADA: 'Pagada',
+  DESCONTADA: 'Descontada',
+}
+
+/**
+ * Lo que hay que transferir de una liquidación: un total de 0 o menos no se paga, es un saldo que
+ * pasa al mes siguiente (no una deuda del profesor con el centro). El `total` de la API conserva
+ * el signo porque es lo que se arrastra.
+ */
+export function totalAPagar(total: number): number {
+  return Math.max(total, 0)
+}
+
+/** El saldo negativo que se descuenta más adelante, o `null` si el total no es negativo. */
+export function saldoADescontar(total: number): number | null {
+  return total < 0 ? total : null
 }
 
 /** "Gómez, Ana". */

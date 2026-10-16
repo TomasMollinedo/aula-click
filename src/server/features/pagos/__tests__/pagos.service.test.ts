@@ -853,6 +853,7 @@ describe('listar (pagos realizados)', () => {
       data: [],
       meta: { page: 2, pageSize: 5, total: 7, totalPages: 2 },
       porForma: { EFECTIVO: 0.1, TRANSFERENCIA: 0.2, DEBITO: 10000 },
+      anulado: 4500,
     })
 
     const res = await service.listar({
@@ -862,6 +863,7 @@ describe('listar (pagos realizados)', () => {
       materiaId: 2,
       profesorId: 3,
       formaPago: 'EFECTIVO',
+      estado: 'VIGENTE',
       page: 2,
       pageSize: 5,
     })
@@ -874,15 +876,18 @@ describe('listar (pagos realizados)', () => {
         materiaId: 2,
         profesorId: 3,
         formaPago: 'EFECTIVO',
+        estado: 'VIGENTE',
       },
       { page: 2, pageSize: 5 },
     )
+    // `anulado` es el que da el repository (la suma la hace la base): el service no lo toca.
     expect(res).toEqual({
       data: [],
       meta: { page: 2, pageSize: 5, total: 7, totalPages: 2 },
       totales: {
         cobrado: 10000.3,
         porForma: { EFECTIVO: 0.1, TRANSFERENCIA: 0.2, DEBITO: 10000 },
+        anulado: 4500,
       },
     })
   })
