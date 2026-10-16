@@ -20,6 +20,7 @@ import {
   textoNumeroComprobante,
   textoTotal,
   textoVuelto,
+  textoFormaPago,
 } from '../formato-pagos'
 
 // `formatearPesos` (Intl) separa el `$` del número con un espacio duro (U+00A0).
@@ -178,5 +179,15 @@ describe('datosDelMedio', () => {
       { label: 'Red', valor: 'Visa Débito' },
       { label: 'Cupón', valor: '000123' },
     ])
+  })
+})
+
+describe('textoFormaPago (pagos realizados, T-100)', () => {
+  it.each([
+    ['EFECTIVO', 'Efectivo'],
+    ['TRANSFERENCIA', 'Transferencia'],
+    ['DEBITO', 'Tarjeta de débito'],
+  ] as const)('%s → %s', (codigo, texto) => {
+    expect(textoFormaPago(codigo)).toBe(texto)
   })
 })
