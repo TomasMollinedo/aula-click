@@ -242,3 +242,109 @@ export const liquidacionPagadaSchema = z
   .openapi('LiquidacionPagada')
 
 export type LiquidacionPagada = z.infer<typeof liquidacionPagadaSchema>
+
+// ---------- "Mis ingresos" del profesor (HU-45, T-126) ----------
+//
+// El profesor sale de la sesión: ningún endpoint recibe un `profesorId`. Su liquidación tiene el
+// formato del detalle del gerente sin lo que no es suyo: ni el número de comprobante de las
+// familias, ni el adjunto, ni quién registró el pago, ni las observaciones, ni las acciones.
+
+const turnoDelProfesorSchema = turnoLiquidacionSchema
+  .omit({ numeroComprobante: true })
+  .openapi('TurnoDeMiLiquidacion')
+
+const cerradaDelProfesorSchema = cerradaSchema
+  .omit({ observaciones: true, comprobanteAdjunto: true, registradaPor: true, registradaEl: true })
+  .openapi('MiLiquidacionCerrada')
+
+export const miLiquidacionSchema = totalesSchema
+  .extend({
+    mes: mesISO,
+    estado: estadoLiquidacionSchema.nullable().openapi({
+      description: '`null` si no tiene movimientos en el mes',
+    }),
+    turnos: z.array(turnoDelProfesorSchema),
+    ajustes: z.array(ajusteLiquidacionSchema),
+    cerrada: cerradaDelProfesorSchema.nullable().openapi({
+      description: 'Datos del cierre (`PAGADA` o `DESCONTADA`); `null` si está abierta',
+    }),
+  })
+  .openapi('MiLiquidacion')
+
+export type MiLiquidacion = z.infer<typeof miLiquidacionSchema>
+
+/** Una clase (una hora) del profesor: lo que se ve de ella en "Mis ingresos". */
+const claseDelProfesorSchema = z
+  .object({
+    turnoId: z.number().int(),
+    fecha: fechaISO,
+    horaInicio: horaHHmm,
+    horaFin: horaHHmm,
+    alumno: z.object({ id: z.number().int(), nombre: z.string(), apellido: z.string() }),
+    materia: z.object({ id: z.number().int(), nombre: z.string() }),
+  })
+  .openapi('ClaseDeMisIngresos')
+
+export type ClaseDelProfesor = z.infer<typeof claseDelProfesorSchema>
+
+const claseCobradaSinAsistenciaSchema = claseDelProfesorSchema
+  .extend({
+    vence: fechaISO.openapi({
+      description: 'Último día para registrar la asistencia (`plazoDeAsistencia`)',
+      example: '2026-10-22',
+    }),
+  })
+  .openapi('ClaseCobradaSinAsistencia')
+
+export type ClaseCobradaSinAsistencia = z.infer<typeof claseCobradaSinAsistenciaSchema>
+
+export const misIngresosSchema = z
+  .object({
+    esteMes: miLiquidacionSchema.openapi({
+      description: 'La liquidación del mes en curso, con el mismo cálculo que ve el gerente',
+    }),
+    clasesSinCobrar: z.array(claseDelProfesorSchema).openapi({
+      description:
+        'Con asistencia (presente o ausente) y sin pago vigente, de los últimos 366 días, de la más reciente a la más antigua',
+    }),
+    clasesCobradasSinAsistencia: z.array(claseCobradaSinAsistenciaSchema).openapi({
+      description:
+        'De hoy o anteriores, con pago vigente, sin asistencia y dentro del plazo para registrarla, de la más reciente a la más antigua',
+    }),
+  })
+  .openapi('MisIngresos')
+
+export type MisIngresos = z.infer<typeof misIngresosSchema>
+
+export const misLiquidacionesQuerySchema = paginacionQuerySchema
+
+export type MisLiquidacionesQuery = z.infer<typeof misLiquidacionesQuerySchema>
+
+const filaMiLiquidacionSchema = z
+  .object({
+    mes: mesISO,
+    estado: estadoLiquidacionSchema,
+    total: pesos('A cobrar: su parte + ajustes', 81600),
+    fechaTransferencia: fechaISO.nullable().openapi({
+      description: 'Sólo en una `PAGADA`',
+      example: '2026-10-05',
+    }),
+  })
+  .openapi('FilaDeMisLiquidaciones')
+
+export type FilaMiLiquidacion = z.infer<typeof filaMiLiquidacionSchema>
+
+export const misLiquidacionesSchema =
+  paginatedSchema(filaMiLiquidacionSchema).openapi('MisLiquidaciones')
+
+export type MisLiquidaciones = z.infer<typeof misLiquidacionesSchema>
+
+export const miLiquidacionParamsSchema = z.object({
+  mes: mesISO.openapi({
+    param: { name: 'mes', in: 'path' },
+    description: 'Mes de la liquidación (AAAA-MM). No puede ser futuro',
+    example: '2026-09',
+  }),
+})
+
+export type MiLiquidacionParams = z.infer<typeof miLiquidacionParamsSchema>

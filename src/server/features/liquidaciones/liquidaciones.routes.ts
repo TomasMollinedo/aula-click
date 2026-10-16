@@ -14,6 +14,9 @@ import {
   ejemploLiquidacionDetalle,
   ejemploLiquidacionesDelMes,
   ejemploLiquidacionPagada,
+  ejemploMiLiquidacion,
+  ejemploMisIngresos,
+  ejemploMisLiquidaciones,
   ejemploPagarLiquidacion,
 } from './liquidaciones.ejemplos'
 import {
@@ -22,6 +25,11 @@ import {
   liquidacionesDelMesSchema,
   liquidacionesQuerySchema,
   liquidacionParamsSchema,
+  miLiquidacionParamsSchema,
+  miLiquidacionSchema,
+  misIngresosSchema,
+  misLiquidacionesQuerySchema,
+  misLiquidacionesSchema,
   pagarLiquidacionSchema,
 } from './liquidaciones.validation'
 
@@ -153,7 +161,77 @@ export const pagarLiquidacionRoute = createRoute({
   },
 })
 
+// ---------- "Mis ingresos" del profesor (HU-45, T-126) ----------
+
+const ERROR_403_PROFESOR =
+  'El rol no es profesor, el usuario no tiene ficha de profesor o está inhabilitado (SIN_PERMISO)'
+
+export const misIngresosRoute = createRoute({
+  method: 'get',
+  path: '/mis-ingresos',
+  tags,
+  summary: 'Mis ingresos (profesor)',
+  description:
+    'Del profesor de la sesión (no recibe un `profesorId`): `esteMes`, la liquidación del mes en curso con el mismo cálculo que ve el gerente (sin el número de comprobante de las familias); `clasesSinCobrar`, las clases con asistencia (presente o ausente) y sin pago vigente de los últimos 366 días; y `clasesCobradasSinAsistencia`, las de hoy o anteriores con pago vigente, sin asistencia y dentro del plazo, con su `vence`. Las dos listas, de la más reciente a la más antigua. Nada de otros profesores ni del centro.',
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  responses: {
+    200: {
+      description: 'Mis ingresos',
+      content: { 'application/json': { schema: misIngresosSchema, example: ejemploMisIngresos } },
+    },
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(ERROR_403_PROFESOR),
+  },
+})
+
+export const misLiquidacionesRoute = createRoute({
+  method: 'get',
+  path: '/mis-liquidaciones',
+  tags,
+  summary: 'Mis liquidaciones (profesor)',
+  description:
+    'Del profesor de la sesión: una fila por mes con movimientos, sin el mes en curso (está en `GET /liquidaciones/mis-ingresos`), del más reciente al más antiguo: mes, estado, total y la fecha de la transferencia si está pagada.',
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  request: { query: misLiquidacionesQuerySchema },
+  responses: {
+    200: {
+      description: 'Mis liquidaciones',
+      content: {
+        'application/json': { schema: misLiquidacionesSchema, example: ejemploMisLiquidaciones },
+      },
+    },
+    400: respuestaError('Paginación inválida (VALIDACION)'),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(ERROR_403_PROFESOR),
+  },
+})
+
+export const miLiquidacionRoute = createRoute({
+  method: 'get',
+  path: '/mis-liquidaciones/{mes}',
+  tags,
+  summary: 'Mi liquidación de un mes (profesor)',
+  description:
+    'La liquidación del profesor de la sesión en `mes`, con el formato del detalle del gerente sin el comprobante adjunto, quién registró el pago, las observaciones, las acciones ni el número de comprobante de las familias. Cualquier mes no futuro (también el en curso). Sin movimientos: la liquidación vacía (`estado: null`).',
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  request: { params: miLiquidacionParamsSchema },
+  responses: {
+    200: {
+      description: 'La liquidación',
+      content: {
+        'application/json': { schema: miLiquidacionSchema, example: ejemploMiLiquidacion },
+      },
+    },
+    400: respuestaError('`mes` con formato inválido o futuro (VALIDACION)', ejemploErrorMesFuturo),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(ERROR_403_PROFESOR),
+  },
+})
+
 export const liquidacionesRoutes = createRouter()
   .openapi(listarLiquidacionesRoute, liquidacionesController.listarLiquidaciones)
+  .openapi(misIngresosRoute, liquidacionesController.misIngresos)
+  .openapi(misLiquidacionesRoute, liquidacionesController.misLiquidaciones)
+  .openapi(miLiquidacionRoute, liquidacionesController.miLiquidacion)
   .openapi(detalleLiquidacionRoute, liquidacionesController.detalleLiquidacion)
   .openapi(pagarLiquidacionRoute, liquidacionesController.pagarLiquidacion)
