@@ -245,9 +245,10 @@ src/
 │ │ ├── mis-materias.ts # el mes de la URL (?mes=AAAA-MM) y los textos del portal; con test
 │ │ ├── hooks/{use-materias-del-portal.ts, use-mi-materia.ts, use-mes-en-url.ts, use-pestana-mi-materia.ts} # GET /historiales/mis-materias y /mis-materias/{materiaId}/{profesorId}?mes
 │ │ └── components/{MisMaterias, MiMateria}.tsx # "Mis materias" del portal (HU-33, T-111)
-│ ├── anulaciones/ # HU-42 (andamiaje T-79; la completa T-105): anular un pago
-│ │ ├── api/anulaciones.keys.ts, hooks/use-invalidar-anulaciones.ts
-│ │ └── components/AccionAnularPago.tsx # ({ pago: PagoParaAcciones }): el pie del detalle del pago
+│ ├── anulaciones/ # HU-42 (T-79, T-105): anular un pago
+│ │ ├── anulaciones.{types,schema}.ts, errores-api.ts, formato-anulaciones.ts, api/{anulaciones.api,anulaciones.keys}.ts
+│ │ ├── hooks/{use-previa-anulacion.ts, use-anular-pago.ts, use-invalidar-anulaciones.ts} # al anular invalida pagos, cuentas, ocurrencias y agendas
+│ │ └── components/{AccionAnularPago, AnularPagoDialog}.tsx # AccionAnularPago({ pago: PagoParaAcciones }): el pie del detalle del pago
 │ ├── cancelaciones/ # HU-13 (T-46): cancelar uno o varios turnos
 │ │ ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
 │ │ ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts} # al cancelar invalida ocurrencias, agendas y cuentas
