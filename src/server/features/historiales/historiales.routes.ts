@@ -1,4 +1,4 @@
-import { createRoute } from '@hono/zod-openapi'
+import { createRoute, z } from '@hono/zod-openapi'
 import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
@@ -11,6 +11,7 @@ import {
 import {
   alumnoIdParamsSchema,
   historialDelAlumnoSchema,
+  historialPdfQuerySchema,
   historialQuerySchema,
   miMateriaParamsSchema,
   miMateriaQuerySchema,
@@ -28,6 +29,14 @@ function respuestaError(description: string) {
   return {
     description,
     content: { 'application/json': { schema: ErrorResponseSchema } },
+  }
+}
+
+// El 200 de un documento: el cuerpo binario del PDF (docs/contrato-api.md → Documentos PDF).
+function respuestaPdf(description: string) {
+  return {
+    description,
+    content: { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } },
   }
 }
 
@@ -52,6 +61,28 @@ export const historialDelAlumnoRoute = createRoute({
     },
     400: respuestaError(
       '`alumnoId` inválido, una fecha inválida, `hasta` anterior a `desde` o un período de más de 366 días (`details` sobre `hasta`) (VALIDACION)',
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(
+      'El rol no es mesa de entradas ni profesor, el alumno no tiene ni tuvo turnos con el profesor de la sesión, o el usuario está inhabilitado (SIN_PERMISO)',
+    ),
+    404: respuestaError('El alumno no existe (NO_ENCONTRADO)'),
+  },
+})
+
+export const historialDelAlumnoPdfRoute = createRoute({
+  method: 'get',
+  path: '/alumnos/{alumnoId}/pdf',
+  tags,
+  summary: 'Historial académico de un alumno, en PDF',
+  description:
+    'El historial académico del alumno **del período pedido** como documento oficial en PDF (A4, HU-32): el alumno con su nivel de escolaridad, el período y los filtros aplicados; por cada materia y profesor, su resumen y sus clases en **bloques de horas seguidas** (el estado de cada hora, y "Qué se trabajó" e indicaciones una sola vez); los turnos cancelados del período con su motivo; y los exámenes del período con su nota. Sale del **mismo cálculo** que `GET /historiales/alumnos/{alumnoId}`: un `mes` (`AAAA-MM`) o un rango `desde`/`hasta` (si vienen los dos manda el rango; sin ninguno, el mes en curso), con el mismo tope de 366 días. No lleva las observaciones internas del alumno ni de los turnos. Mismas reglas de acceso que el historial: `PROFESOR` sólo de un alumno que tiene o tuvo turnos con él (decisión T-163). Archivo `historial-academico-<apellido>-<nombre>-<mes>.pdf`, o `…-<desde>_<hasta>.pdf` si el período no es un mes completo. Los errores responden JSON.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'PROFESOR')] as const,
+  request: { params: alumnoIdParamsSchema, query: historialPdfQuerySchema },
+  responses: {
+    200: respuestaPdf('El PDF del historial académico del período'),
+    400: respuestaError(
+      '`alumnoId`, `mes`, una fecha, `materiaId` o `profesorId` inválidos, `hasta` anterior a `desde` o un período de más de 366 días (`details` sobre `hasta`) (VALIDACION)',
     ),
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
     403: respuestaError(
@@ -114,4 +145,5 @@ export const miMateriaRoute = createRoute({
 export const historialesRoutes = createRouter()
   .openapi(misMateriasRoute, historialesController.misMaterias)
   .openapi(miMateriaRoute, historialesController.miMateria)
+  .openapi(historialDelAlumnoPdfRoute, historialesController.historialDelAlumnoPdf)
   .openapi(historialDelAlumnoRoute, historialesController.historialDelAlumno)

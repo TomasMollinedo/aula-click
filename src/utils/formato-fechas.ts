@@ -13,3 +13,8 @@ export function fechaCorta(fecha: string): string {
 export function fechaConDia(fecha: string): string {
   return format(parseISO(fecha), 'EEEE dd/MM', { locale: es })
 }
+
+/** Un mes `YYYY-MM` → `'octubre de 2026'` (en un título, la mayúscula inicial va por CSS). */
+export function textoMes(mes: string): string {
+  return format(parseISO(`${mes}-01`), "MMMM 'de' yyyy", { locale: es })
+}

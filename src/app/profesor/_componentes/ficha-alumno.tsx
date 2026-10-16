@@ -21,7 +21,6 @@ export function FichaAlumno({ alumnoId }: { alumnoId: string }) {
         renderHistorial={(alumno) => (
           <HistorialAcademico
             alumnoId={alumno.id}
-            rol="PROFESOR"
             renderDetalle={(detalle) => <DetalleTurno {...detalle} />}
           />
         )}
