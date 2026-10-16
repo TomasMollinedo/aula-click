@@ -1,6 +1,7 @@
 import { ForbiddenError, NotFoundError, ValidationError } from '@/server/errors'
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import { alumnoDeLaSesion, type Actor } from '@/server/shared/actor'
+import { terminosDeBusqueda } from '@/server/shared/busqueda'
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import type { PagosRepository } from './pagos.repository'
 import {
@@ -14,6 +15,8 @@ import {
   type PedidoPago,
 } from './pagos.reglas'
 import type {
+  AlumnoDePagos,
+  BuscadorPagosQuery,
   Comprobante,
   DetallePago,
   ListadoPagos,
@@ -21,6 +24,7 @@ import type {
   MisPagos,
   MisPagosQuery,
   PagoRegistrado,
+  ProfesorDePagos,
   RegistrarPago,
 } from './pagos.validation'
 
@@ -51,6 +55,8 @@ export function crearPagosService({
     | 'listarRealizados'
     | 'listarDelAlumno'
     | 'buscarAdjunto'
+    | 'buscarAlumnos'
+    | 'buscarProfesores'
   >
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
@@ -182,6 +188,20 @@ export function crearPagosService({
      */
     async misPagos(query: MisPagosQuery, actor: Actor): Promise<MisPagos> {
       return repository.listarDelAlumno(alumnoDeLaSesion(actor), query)
+    },
+
+    /**
+     * Buscador de alumnos para el filtro de pagos realizados (HU-36, T-100): los que tienen algún
+     * pago, por palabras (`terminosDeBusqueda`, como `GET /alumnos`) y/o por `id`. Sin pagos o sin
+     * coincidencias, `[]`.
+     */
+    async buscarAlumnos(query: BuscadorPagosQuery): Promise<AlumnoDePagos[]> {
+      return repository.buscarAlumnos({ terminos: terminosDeBusqueda(query.q), id: query.id })
+    },
+
+    /** Lo mismo con los profesores que dictan algún turno incluido en un pago (T-100). */
+    async buscarProfesores(query: BuscadorPagosQuery): Promise<ProfesorDePagos[]> {
+      return repository.buscarProfesores({ terminos: terminosDeBusqueda(query.q), id: query.id })
     },
   }
 }

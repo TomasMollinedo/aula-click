@@ -16,6 +16,8 @@ const { repository, alumnosRepository, getSession } = vi.hoisted(() => ({
     listarRealizados: vi.fn(),
     listarDelAlumno: vi.fn(),
     buscarAdjunto: vi.fn(),
+    buscarAlumnos: vi.fn(),
+    buscarProfesores: vi.fn(),
   },
   alumnosRepository: { buscarPorId: vi.fn() },
   getSession: vi.fn(),
@@ -341,6 +343,90 @@ describe('GET /pagos/mis-pagos', () => {
   it('la mesa de entradas → 403', async () => {
     expect((await pedir('/mis-pagos')).status).toBe(403)
     expect(repository.listarDelAlumno).not.toHaveBeenCalled()
+  })
+})
+
+describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', () => {
+  const LUCIA = { id: 12, nombre: 'Lucía', apellido: 'Álvarez' }
+  const ANA = { id: 3, nombre: 'Ana', apellido: 'Gómez' }
+
+  beforeEach(() => {
+    repository.buscarAlumnos.mockResolvedValue([LUCIA])
+    repository.buscarProfesores.mockResolvedValue([ANA])
+  })
+
+  it.each(['MESA_ENTRADAS', 'GERENTE'])(
+    '%s → 200 con las opciones; no caen en `/{id}`',
+    async (rol) => {
+      getSession.mockResolvedValue(sesion(rol))
+
+      const alumnos = await pedir('/alumnos?q=alva&id=12')
+      expect(alumnos.status).toBe(200)
+      expect(await alumnos.json()).toEqual([LUCIA])
+      expect(repository.buscarAlumnos).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['alva'],
+        id: 12,
+      })
+
+      const profesores = await pedir('/profesores?q=G%C3%B3mez')
+      expect(profesores.status).toBe(200)
+      expect(await profesores.json()).toEqual([ANA])
+      expect(repository.buscarProfesores).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['gomez'],
+        id: undefined,
+      })
+
+      expect(repository.buscarComprobante).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each([
+    ['PROFESOR', undefined],
+    ['ALUMNO', 12],
+  ])('%s → 403', async (rol, alumnoId) => {
+    getSession.mockResolvedValue(sesion(rol, alumnoId))
+
+    for (const path of ['/alumnos', '/profesores']) {
+      const res = await pedir(path)
+      expect(res.status).toBe(403)
+      expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    }
+    expect(repository.buscarAlumnos).not.toHaveBeenCalled()
+    expect(repository.buscarProfesores).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    for (const path of ['/alumnos', '/profesores']) {
+      expect((await pedir(path)).status).toBe(401)
+    }
+  })
+
+  it.each([
+    ['/alumnos', `q=${'a'.repeat(101)}`, 'q'],
+    ['/alumnos', 'id=0', 'id'],
+    ['/profesores', 'id=abc', 'id'],
+    ['/profesores', 'id=1.5', 'id'],
+  ])('%s?%s → 400 VALIDACION en `%s`', async (path, query, campo) => {
+    const res = await pedir(`${path}?${query}`)
+
+    expect(res.status).toBe(400)
+    const { error } = await res.json()
+    expect(error.code).toBe('VALIDACION')
+    expect(error.details).toEqual([expect.objectContaining({ path: [campo] })])
+    expect(repository.buscarAlumnos).not.toHaveBeenCalled()
+    expect(repository.buscarProfesores).not.toHaveBeenCalled()
+  })
+
+  it('la respuesta trae sólo id, nombre y apellido: ni dni ni fotoUrl', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE'))
+
+    for (const path of ['/alumnos', '/profesores']) {
+      const [opcion] = await (await pedir(path)).json()
+      expect(Object.keys(opcion).sort()).toEqual(['apellido', 'id', 'nombre'])
+      expect(opcion).not.toHaveProperty('dni')
+      expect(opcion).not.toHaveProperty('fotoUrl')
+    }
   })
 })
 
@@ -722,6 +808,14 @@ describe('OpenAPI', () => {
     expect(
       Object.keys(doc.paths?.['/api/v1/pagos/mis-pagos']?.get?.responses ?? {}).sort(),
     ).toEqual(['200', '400', '401', '403'])
+    for (const path of ['/api/v1/pagos/alumnos', '/api/v1/pagos/profesores']) {
+      expect(Object.keys(doc.paths?.[path]?.get?.responses ?? {}).sort()).toEqual([
+        '200',
+        '400',
+        '401',
+        '403',
+      ])
+    }
     expect(Object.keys(doc.paths?.['/api/v1/pagos/{id}']?.get?.responses ?? {}).sort()).toEqual([
       '200',
       '400',

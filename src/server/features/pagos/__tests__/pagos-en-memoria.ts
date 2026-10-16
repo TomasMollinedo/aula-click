@@ -149,6 +149,9 @@ export function crearPagosEnMemoria(
   const listarRealizados = vi.fn<PagosRepository['listarRealizados']>()
   const listarDelAlumno = vi.fn<PagosRepository['listarDelAlumno']>()
   const buscarAdjunto = vi.fn<PagosRepository['buscarAdjunto']>(async () => null)
+  // Los buscadores de los filtros (T-100), tampoco: por defecto, ninguna opción.
+  const buscarAlumnos = vi.fn<PagosRepository['buscarAlumnos']>(async () => [])
+  const buscarProfesores = vi.fn<PagosRepository['buscarProfesores']>(async () => [])
 
   return {
     repository: {
@@ -158,6 +161,8 @@ export function crearPagosEnMemoria(
       listarRealizados,
       listarDelAlumno,
       buscarAdjunto,
+      buscarAlumnos,
+      buscarProfesores,
     },
     pagos,
     pagadas,

@@ -817,3 +817,40 @@ describe('misPagos', () => {
     expect(memoria.repository.listarDelAlumno).not.toHaveBeenCalled()
   })
 })
+
+describe('buscadores de los filtros (T-100)', () => {
+  const LUCIA = { id: 12, nombre: 'Lucía', apellido: 'Álvarez' }
+
+  it.each([
+    ['sin q ni id: todos los que tienen pagos', {}, { terminos: [], id: undefined }],
+    [
+      'q: normalizado y partido en palabras, sin puntos ni tildes',
+      { q: 'Álva. JUAN' },
+      { terminos: ['alva', 'juan'], id: undefined },
+    ],
+    ['q con DNI con puntos', { q: '52.345' }, { terminos: ['52345'], id: undefined }],
+    ['id solo', { id: 12 }, { terminos: [], id: 12 }],
+    ['q e id juntos', { q: 'lucia', id: 12 }, { terminos: ['lucia'], id: 12 }],
+  ])('alumnos, %s', async (_caso, query, esperado) => {
+    memoria.repository.buscarAlumnos.mockResolvedValue([LUCIA])
+
+    expect(await service.buscarAlumnos(query)).toEqual([LUCIA])
+    expect(memoria.repository.buscarAlumnos).toHaveBeenCalledExactlyOnceWith(esperado)
+  })
+
+  it.each([
+    ['q', { q: 'Gómez' }, { terminos: ['gomez'], id: undefined }],
+    ['id', { id: 3 }, { terminos: [], id: 3 }],
+    ['q e id juntos', { q: 'ana', id: 3 }, { terminos: ['ana'], id: 3 }],
+  ])('profesores, %s', async (_caso, query, esperado) => {
+    memoria.repository.buscarProfesores.mockResolvedValue([ANA])
+
+    expect(await service.buscarProfesores(query)).toEqual([ANA])
+    expect(memoria.repository.buscarProfesores).toHaveBeenCalledExactlyOnceWith(esperado)
+  })
+
+  it('sin coincidencias, o un id sin pagos: [] (no es un error)', async () => {
+    expect(await service.buscarAlumnos({ id: 999 })).toEqual([])
+    expect(await service.buscarProfesores({ q: 'nadie' })).toEqual([])
+  })
+})

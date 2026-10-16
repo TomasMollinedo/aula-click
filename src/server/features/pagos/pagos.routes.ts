@@ -4,18 +4,23 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as pagosController from './pagos.controller'
 import {
+  ejemploAlumnosDePagos,
   ejemploDetalle,
+  ejemploErrorBuscador,
   ejemploErrorMonto,
   ejemploErrorNoCobrables,
   ejemploErrorRango,
   ejemploListado,
   ejemploMisPagos,
+  ejemploProfesoresDePagos,
   ejemploRegistrado,
   ejemploRegistrar,
   ejemploRegistrarDebito,
   ejemploRegistrarTransferencia,
 } from './pagos.ejemplos'
 import {
+  alumnosDePagosSchema,
+  buscadorPagosQuerySchema,
   detallePagoSchema,
   listadoPagosSchema,
   listarPagosQuerySchema,
@@ -23,6 +28,7 @@ import {
   misPagosSchema,
   pagoIdParamsSchema,
   pagoRegistradoSchema,
+  profesoresDePagosSchema,
   registrarPagoSchema,
 } from './pagos.validation'
 
@@ -132,6 +138,60 @@ export const misPagosRoute = createRoute({
   },
 })
 
+// Buscadores de los filtros de pagos realizados (HU-36, T-100): pagos publica los suyos, sin abrirle
+// al gerente `GET /alumnos` ni `GET /profesores` (decisión T-167). Se registran antes de `/{id}`,
+// como `/mis-pagos`: si no, `/alumnos` y `/profesores` caerían en ese path param.
+const descripcionBuscador =
+  'Sin paginar, por apellido y nombre, hasta 20. `q`: búsqueda por palabras, como `GET /alumnos` (sin mayúsculas, tildes ni puntos). `id`: sólo esa opción si corresponde, o `[]` (para mostrar el nombre del filtro que viene en la URL). Cada opción trae sólo `id`, `nombre` y `apellido`.'
+
+export const buscarAlumnosRoute = createRoute({
+  method: 'get',
+  path: '/alumnos',
+  tags,
+  summary: 'Buscador de alumnos para el filtro de pagos realizados',
+  description: `Alumnos con al menos un pago, vigente o anulado. La búsqueda también encuentra por DNI, que no se devuelve. ${descripcionBuscador}`,
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: buscadorPagosQuerySchema },
+  responses: {
+    200: {
+      description: 'Alumnos con pagos (arreglo vacío si no hay ninguno)',
+      content: {
+        'application/json': { schema: alumnosDePagosSchema, example: ejemploAlumnosDePagos },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres o `id` que no es un entero positivo',
+      ejemploErrorBuscador,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
+export const buscarProfesoresRoute = createRoute({
+  method: 'get',
+  path: '/profesores',
+  tags,
+  summary: 'Buscador de profesores para el filtro de pagos realizados',
+  description: `Profesores que dictan algún turno incluido en un pago (el profesor actual del turno, como el filtro \`profesorId\`), incluidos los dados de baja. ${descripcionBuscador}`,
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: buscadorPagosQuerySchema },
+  responses: {
+    200: {
+      description: 'Profesores con turnos pagados (arreglo vacío si no hay ninguno)',
+      content: {
+        'application/json': { schema: profesoresDePagosSchema, example: ejemploProfesoresDePagos },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres o `id` que no es un entero positivo',
+      ejemploErrorBuscador,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
 export const obtenerComprobanteRoute = createRoute({
   method: 'get',
   path: '/{id}',
@@ -180,5 +240,7 @@ export const pagosRoutes = createRouter()
   .openapi(registrarPagoRoute, pagosController.registrar)
   .openapi(listarPagosRoute, pagosController.listar)
   .openapi(misPagosRoute, pagosController.misPagos)
+  .openapi(buscarAlumnosRoute, pagosController.buscarAlumnos)
+  .openapi(buscarProfesoresRoute, pagosController.buscarProfesores)
   .openapi(obtenerComprobanteRoute, pagosController.obtenerComprobante)
   .openapi(obtenerComprobantePdfRoute, pagosController.obtenerComprobantePdf)

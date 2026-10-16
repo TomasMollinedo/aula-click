@@ -1,10 +1,12 @@
 import type { ErrorResponse } from '@/server/errors'
 import type {
+  AlumnoDePagos,
   Comprobante,
   DetallePago,
   ListadoPagos,
   MisPagos,
   PagoRegistrado,
+  ProfesorDePagos,
   RegistrarPago,
 } from './pagos.validation'
 
@@ -225,5 +227,24 @@ export const ejemploErrorRango = {
     details: [
       { path: ['hasta'], message: 'La fecha hasta no puede ser anterior a la fecha desde' },
     ],
+  },
+} satisfies ErrorResponse
+
+/** Buscador de alumnos del filtro (`?q=alv`): sólo id, nombre y apellido, sin DNI ni foto. */
+export const ejemploAlumnosDePagos = [
+  { id: 12, nombre: 'Lucía', apellido: 'Álvarez' },
+  { id: 27, nombre: 'Martín', apellido: 'Alvear' },
+] satisfies AlumnoDePagos[]
+
+/** Buscador de profesores del filtro (`?q=gom`): también los dados de baja que dictaron turnos pagados. */
+export const ejemploProfesoresDePagos = [
+  { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+] satisfies ProfesorDePagos[]
+
+export const ejemploErrorBuscador = {
+  error: {
+    code: 'VALIDACION',
+    message: 'Datos de entrada inválidos',
+    details: [{ path: ['q'], message: 'No puede superar los 100 caracteres' }],
   },
 } satisfies ErrorResponse
