@@ -1,4 +1,4 @@
-import type { PaginatedResponse } from '@/types'
+import type { PaginatedResponse, UsuarioAuditoria } from '@/types'
 
 // Tipos de lo que devuelve la API de liquidaciones (docs/contrato-api.md → Liquidaciones).
 
@@ -44,3 +44,81 @@ export type ListarLiquidacionesDelMesParams = {
   mes?: string
   page: number
 }
+
+/** Un turno liquidado, en el orden de la API. */
+export type TurnoDeLiquidacion = {
+  /** `YYYY-MM-DD`. */
+  fecha: string
+  horaInicio: string
+  horaFin: string
+  alumno: { id: number; nombre: string; apellido: string }
+  materia: { id: number; nombre: string }
+  /** Del cobro del turno. */
+  numeroComprobante: number
+  importe: number
+  /** El porcentaje del centro de ese cobro (15 = 15 %). */
+  porcentaje: number
+  parteProfesor: number
+}
+
+/** Un ajuste (negativo); el `texto` lo arma la API. */
+export type AjusteDeLiquidacion = {
+  tipo: 'ANULACION' | 'SALDO_ANTERIOR'
+  texto: string
+  importe: number
+}
+
+/** El comprobante de la transferencia, como viene en el detalle: sin URL. */
+export type ComprobanteDeTransferencia = {
+  id: number
+  nombre: string
+  tipo: 'image/jpeg' | 'image/png' | 'application/pdf'
+  bytes: number
+  adjuntadoPor: UsuarioAuditoria
+  /** Instante ISO 8601 en UTC. */
+  adjuntadoEl: string
+}
+
+/** El cierre de una `PAGADA` o una `DESCONTADA`. */
+export type LiquidacionCerrada = {
+  liquidacionId: number
+  /** `YYYY-MM-DD`; `null` en una `DESCONTADA`. */
+  fechaTransferencia: string | null
+  numeroOperacion: string | null
+  observaciones: string | null
+  /** `YYYY-MM`, solo en una `DESCONTADA`. */
+  descontadaEnMes: string | null
+  comprobanteAdjunto: ComprobanteDeTransferencia | null
+  registradaPor: UsuarioAuditoria
+  /** Instante ISO 8601 en UTC. */
+  registradaEl: string
+}
+
+/** `GET /liquidaciones/profesores/{profesorId}/{mes}`. Sin movimientos, `estado: null`. */
+export type LiquidacionDetalle = TotalesLiquidacion & {
+  profesor: ProfesorLiquidacion
+  /** `YYYY-MM`. */
+  mes: string
+  estado: EstadoLiquidacion | null
+  turnos: TurnoDeLiquidacion[]
+  ajustes: AjusteDeLiquidacion[]
+  cerrada: LiquidacionCerrada | null
+  acciones: { registrarPago: boolean }
+}
+
+/**
+ * `GET /liquidaciones/mis-liquidaciones/{mes}` (T-126): el mismo detalle, sin el comprobante, las
+ * observaciones ni quién registró el pago.
+ */
+export type MiLiquidacionDetalle = Omit<LiquidacionDetalle, 'cerrada'> & {
+  cerrada: Omit<
+    LiquidacionCerrada,
+    'comprobanteAdjunto' | 'observaciones' | 'registradaPor' | 'registradaEl'
+  > | null
+}
+
+/**
+ * `GET /adjuntos/liquidaciones/{liquidacionId}`: el comprobante con la URL para abrirlo. La URL
+ * vence a los 15 minutos: se usa como enlace y no se guarda.
+ */
+export type AdjuntoDeLiquidacion = ComprobanteDeTransferencia & { url: string }

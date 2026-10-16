@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { formatoEstadoLiquidacion, nombreDeProfesor } from '../formato-liquidaciones'
+import {
+  fechaLarga,
+  formatoEstadoLiquidacion,
+  nombreDeProfesor,
+  textoAdjuntadoPor,
+  textoNumeroComprobante,
+  textoRegistradoPor,
+} from '../formato-liquidaciones'
 import type { EstadoAMostrar } from '../formato-liquidaciones'
 
 const SIN_DATOS = { fechaTransferencia: null, descontadaEnMes: null }
@@ -42,5 +49,26 @@ describe('formatoEstadoLiquidacion', () => {
 describe('nombreDeProfesor', () => {
   it('apellido, nombre', () => {
     expect(nombreDeProfesor({ nombre: 'Ana', apellido: 'Gómez' })).toBe('Gómez, Ana')
+  })
+})
+
+describe('textos del detalle', () => {
+  const MARTA = { id: 'usr_gerente_01', nombre: 'Marta', apellido: 'Ríos' }
+
+  it('fechaLarga, sin correrse de día', () => {
+    expect(fechaLarga('2026-10-05')).toBe('05/10/2026')
+  })
+
+  it('el número de comprobante', () => {
+    expect(textoNumeroComprobante(123)).toBe('N.º 123')
+  })
+
+  it('quién y cuándo, en hora local', () => {
+    // El instante sale en hora local; se compara con el mismo formato para no depender del huso.
+    const instante = '2026-10-05T14:03:00.000Z'
+    expect(textoRegistradoPor(MARTA, instante)).toMatch(
+      /^Registrado por Marta Ríos · \d{2}\/\d{2}\/2026, \d{2}:\d{2}$/,
+    )
+    expect(textoAdjuntadoPor(MARTA, instante)).toMatch(/^Adjuntado por Marta Ríos · /)
   })
 })
