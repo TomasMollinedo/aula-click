@@ -237,7 +237,7 @@ export function crearHistorialesService({
      * el resumen del mes y sus clases en bloques de horas seguidas, con la misma forma que la ficha.
      *
      * Por defecto, el mes en curso. Sin la observación interna de la ausencia, sin el motivo de la
-     * cancelación y sin las clases agendadas (decisión T-148); las "Sin registrar" sí (decisión T-167). Una materia y un
+     * cancelación y sin las clases agendadas (decisión T-148); las "Sin registrar" sí (decisión T-169). Una materia y un
      * profesor en los que no cursa → 404.
      */
     async miMateria(

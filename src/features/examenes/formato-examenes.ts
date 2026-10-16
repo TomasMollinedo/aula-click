@@ -4,8 +4,8 @@ import { es } from 'date-fns/locale/es'
 import type { Role } from '@/types'
 import { formatoInstante } from '@/utils/auditoria'
 
-import { TIPOS_EXAMEN, notaConComa } from './examenes.schema'
-import type { ExamenItem, ExamenUsuarioAuditoria, TipoExamen } from './examenes.types'
+import { notaConComa } from './examenes.schema'
+import type { ExamenItem, ExamenUsuarioAuditoria } from './examenes.types'
 
 // Textos de la pestaña "Exámenes". No calculan nada del negocio: los días que faltan los manda la
 // API (`diasRestantes`).
@@ -15,11 +15,6 @@ const ROLES: Record<Role, string> = {
   PROFESOR: 'Profesor',
   GERENTE: 'Gerente',
   ALUMNO: 'Alumno',
-}
-
-/** `'TRABAJO_PRACTICO'` → `'Trabajo práctico'`. */
-export function etiquetaTipo(tipo: TipoExamen): string {
-  return TIPOS_EXAMEN.find((t) => t.valor === tipo)?.etiqueta ?? tipo
 }
 
 /** `'2026-10-15'` → `'jueves 15/10/2026'`. */
@@ -62,8 +57,8 @@ export function esFechaPasada(fecha: string, hoy: string): boolean {
 }
 
 /** "Parcial del jueves 15/10/2026", para el examen existente de un 409 y la confirmación. */
-export function resumenExamen(examen: { tipo: TipoExamen; fecha: string }): string {
-  return `${etiquetaTipo(examen.tipo)} del ${fechaExamen(examen.fecha)}`
+export function resumenExamen(examen: { fecha: string }): string {
+  return `Examen del ${fechaExamen(examen.fecha)}`
 }
 
 // ---------- Nota (HU-34) ----------

@@ -1,4 +1,3 @@
-import type { TipoExamen } from '@/server/features/examenes/examenes.condiciones'
 import { etiquetaEstadoConPlazo } from '@/server/features/turnos/ocurrencias.condiciones'
 import { fechaConDia, fechaDocumento, rangoHoras } from '@/server/shared/formato'
 import type {
@@ -21,23 +20,10 @@ import type {
 //
 // El estado de una hora y su plazo **no** se escriben acá: los publica `ocurrencias.condiciones`
 // (`etiquetaEstado` y `etiquetaEstadoConPlazo`) y hay una sola definición para todos los
-// documentos. Las etiquetas de `TipoExamen`, `MotivoCancelacion` y `NivelEscolaridad` sí, porque
+// documentos. Las etiquetas de `MotivoCancelacion` y `NivelEscolaridad` sí, porque
 // el backend no las tenía.
 
 const PORCENTAJE = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 })
-
-const ETIQUETA_TIPO_EXAMEN: Record<TipoExamen, string> = {
-  PARCIAL: 'Parcial',
-  FINAL: 'Final',
-  RECUPERATORIO: 'Recuperatorio',
-  TRABAJO_PRACTICO: 'Trabajo práctico',
-  OTRO: 'Otro',
-}
-
-/** `'TRABAJO_PRACTICO'` → `'Trabajo práctico'`. */
-export function etiquetaTipoExamen(tipo: TipoExamen): string {
-  return ETIQUETA_TIPO_EXAMEN[tipo]
-}
 
 const ETIQUETA_MOTIVO: Record<MotivoDeCancelacion, string> = {
   CANCELACION_ALUMNO: 'Cancelación por el alumno',

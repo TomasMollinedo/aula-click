@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import {
   etiquetaMotivoCancelacion,
   etiquetaNivelEscolaridad,
-  etiquetaTipoExamen,
   fechaDelBloque,
   horarioDelBloque,
   nombreProfesor,
@@ -21,14 +20,6 @@ import type { BloqueDelHistorial } from '../historiales.validation'
 // Los textos del PDF del historial (T-110). Funciones puras: las mismas palabras que la pantalla.
 
 describe('etiquetas', () => {
-  it('el tipo de un examen', () => {
-    expect(etiquetaTipoExamen('PARCIAL')).toBe('Parcial')
-    expect(etiquetaTipoExamen('TRABAJO_PRACTICO')).toBe('Trabajo práctico')
-    expect(etiquetaTipoExamen('RECUPERATORIO')).toBe('Recuperatorio')
-    expect(etiquetaTipoExamen('FINAL')).toBe('Final')
-    expect(etiquetaTipoExamen('OTRO')).toBe('Otro')
-  })
-
   it('el motivo de una cancelación', () => {
     expect(etiquetaMotivoCancelacion('CANCELACION_ALUMNO')).toBe('Cancelación por el alumno')
     expect(etiquetaMotivoCancelacion('CANCELACION_PROFESOR')).toBe('Cancelación por el profesor')

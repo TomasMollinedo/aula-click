@@ -83,7 +83,6 @@ export type AccionesOcurrencia = {
 export type ExamenQueDeterminaPrioridad = {
   id: number
   fecha: string
-  tipo: string
   materiaNombre: string
   /** Días desde la fecha de la ocurrencia hasta el examen. */
   dias: number

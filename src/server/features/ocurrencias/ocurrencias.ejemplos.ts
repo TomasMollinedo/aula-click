@@ -35,7 +35,6 @@ export const ejemploOcurrenciaDetalle = {
   examen: {
     id: 8,
     fecha: '2026-10-05',
-    tipo: 'PARCIAL',
     materiaNombre: 'Matemática',
     dias: 7,
   },
