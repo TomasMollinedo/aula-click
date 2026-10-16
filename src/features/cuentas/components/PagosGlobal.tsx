@@ -258,6 +258,7 @@ export function PagosGlobal({ renderRegistrarPago, renderDetalle }: PagosGlobalP
       <Card>
         <FiltrosCuenta
           filtros={filtros}
+          alumnoId={alumnoId}
           nombres={nombres}
           onCambiar={cambiar}
           onLimpiar={limpiar}

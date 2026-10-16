@@ -1,4 +1,5 @@
 import { z } from '@hono/zod-openapi'
+import { ESTADOS } from '@/server/shared/estado'
 import { metaPaginacionSchema, paginacionQuerySchema } from '@/server/shared/paginacion'
 import { fechaISO, horaHHmm } from '@/server/shared/zod'
 
@@ -238,3 +239,27 @@ export const miCuentaSchema = z
   .openapi('MiCuenta')
 
 export type MiCuenta = z.infer<typeof miCuentaSchema>
+
+/**
+ * Respuesta de `GET /cuentas/alumnos/{alumnoId}/opciones` (decisión T-177): las materias y los
+ * profesores de lo que el alumno tiene por cobrar (adeudados y próximos hasta el tope de cobro),
+ * para los filtros de "Por cobrar".
+ */
+export const opcionesDeCuentaSchema = z
+  .object({
+    materias: z
+      .array(
+        z.object({
+          id: z.number().int(),
+          nombre: z.string(),
+          estado: z.enum(ESTADOS).openapi({ description: '`INACTIVO` si fue dada de baja' }),
+        }),
+      )
+      .openapi({ description: 'Por nombre; incluye las dadas de baja' }),
+    profesores: z
+      .array(persona)
+      .openapi({ description: 'Por apellido y nombre; incluye los dados de baja' }),
+  })
+  .openapi('OpcionesDeCuenta')
+
+export type OpcionesDeCuenta = z.infer<typeof opcionesDeCuentaSchema>

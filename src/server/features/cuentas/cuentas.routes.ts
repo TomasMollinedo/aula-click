@@ -8,6 +8,7 @@ import {
   ejemploCuenta,
   ejemploErrorAlumno,
   ejemploMiCuenta,
+  ejemploOpciones,
   ejemploProximos,
 } from './cuentas.ejemplos'
 import {
@@ -17,6 +18,7 @@ import {
   filtroCuentaQuerySchema,
   listadoCuentaQuerySchema,
   miCuentaSchema,
+  opcionesDeCuentaSchema,
   proximosGlobalSchema,
 } from './cuentas.validation'
 
@@ -59,6 +61,27 @@ export const obtenerCuentaRoute = createRoute({
     400: respuestaError(
       'Id o query inválido, o `hasta` anterior a `desde` (VALIDACION, `details` sobre `hasta`)',
     ),
+    ...errores,
+  },
+})
+
+export const obtenerOpcionesRoute = createRoute({
+  method: 'get',
+  path: '/alumnos/{alumnoId}/opciones',
+  tags,
+  summary: 'Materias y profesores de lo que un alumno tiene por cobrar',
+  description:
+    'Las opciones de los filtros de materia y profesor de "Por cobrar" con un alumno: las materias y los profesores de sus turnos adeudados y próximos (hasta `limiteCobro`), sin período, materia ni profesor, así el filtro no se queda sin opciones al elegir uno. Incluye las materias y los profesores dados de baja; las materias van por nombre y los profesores por apellido y nombre. Sin nada por cobrar, las dos listas vacías.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+  request: { params: alumnoIdParamsSchema },
+  responses: {
+    200: {
+      description: 'Opciones de los filtros',
+      content: {
+        'application/json': { schema: opcionesDeCuentaSchema, example: ejemploOpciones },
+      },
+    },
+    400: respuestaError('Id inválido (VALIDACION)'),
     ...errores,
   },
 })
@@ -130,6 +153,8 @@ export const miCuentaRoute = createRoute({
 
 export const cuentasRoutes = createRouter()
   .openapi(miCuentaRoute, cuentasController.miCuenta)
+  // Antes que `/alumnos/{alumnoId}`: un segmento más, sin pisarla.
+  .openapi(obtenerOpcionesRoute, cuentasController.obtenerOpciones)
   .openapi(obtenerCuentaRoute, cuentasController.obtenerCuenta)
   .openapi(listarAdeudadosRoute, cuentasController.listarAdeudados)
   .openapi(listarProximosRoute, cuentasController.listarProximos)

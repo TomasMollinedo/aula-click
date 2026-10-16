@@ -83,6 +83,16 @@ export type MiCuenta = {
   limiteCobro: string
 }
 
+/**
+ * `GET /cuentas/alumnos/{alumnoId}/opciones` (decisión T-177): las materias y los profesores de lo
+ * que el alumno tiene por cobrar, también los dados de baja. Materias por nombre; profesores por
+ * apellido y nombre.
+ */
+export type OpcionesDeCuenta = {
+  materias: { id: number; nombre: string; estado: 'ACTIVO' | 'INACTIVO' }[]
+  profesores: { id: number; nombre: string; apellido: string }[]
+}
+
 /** Los filtros comunes a los tres endpoints, como van en el query: sin los vacíos. */
 export type FiltrosCuentaParams = {
   desde?: string
