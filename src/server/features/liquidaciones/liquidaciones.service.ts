@@ -6,6 +6,7 @@ import { fechaDocumento } from '@/server/shared/formato'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
 import { mesAnterior, mesDe, minutosAHora, ultimoDiaDelMes } from '@/server/shared/zod'
 import type { Liquidacion, ProfesorRef } from './liquidaciones.condiciones'
+import { documentoDeLiquidacion, type LiquidacionDocumento } from './liquidaciones.documentos'
 import type { ClaseLeida, LiquidacionesRepository } from './liquidaciones.repository'
 import {
   MENSAJE_MES_FUTURO,
@@ -266,6 +267,26 @@ export function crearLiquidacionesService({
     }
   }
 
+  /**
+   * El documento PDF de la liquidación, con el permiso ya resuelto: 400 si el mes es futuro, 404 si
+   * el profesor no existe. El número de comprobante sólo va en el del gerente (decisión T-171).
+   */
+  async function armarDocumento(
+    { profesorId, mes }: LiquidacionParams,
+    actor: Actor,
+  ): Promise<LiquidacionDocumento> {
+    const fechaHoy = hoy(reloj)
+    exigirMesNoFuturo(mes, fechaHoy)
+    const [profesor, liquidacion] = await Promise.all([
+      repository.leerProfesor(profesorId),
+      repository.deProfesor({ profesorId, mes, hoy: fechaHoy }),
+    ])
+    if (!profesor) throw new NotFoundError('Profesor no encontrado')
+    return documentoDeLiquidacion(profesor, mes, liquidacion, {
+      conComprobante: actor.role === 'GERENTE',
+    })
+  }
+
   async function exigirProfesor(profesorId: number): Promise<ProfesorRef> {
     const profesor = await repository.leerProfesor(profesorId)
     if (!profesor) throw new NotFoundError('Profesor no encontrado')
@@ -413,6 +434,30 @@ export function crearLiquidacionesService({
       exigirMesNoFuturo(mes, fechaHoy)
       const liquidacion = await repository.deProfesor({ profesorId, mes, hoy: fechaHoy })
       return liquidacion ? aMiLiquidacion(liquidacion) : miLiquidacionVacia(mes)
+    },
+
+    // ---------- El documento PDF (HU-44 y HU-45, T-125) ----------
+
+    /**
+     * La liquidación de `profesorId` en `mes` para el PDF, con el mismo cálculo del detalle. El
+     * gerente saca la de cualquier profesor (con el número de comprobante); un profesor, sólo la
+     * suya (sin él, decisión T-171) y 403 con la de otro. Orden de errores: 403 del profesor; 400
+     * del mes futuro; 404 del profesor inexistente.
+     */
+    async documento(params: LiquidacionParams, actor: Actor): Promise<LiquidacionDocumento> {
+      if (actor.role === 'PROFESOR' && (await profesorDeLaSesion(actor)) !== params.profesorId) {
+        throw new ForbiddenError('No tenés permiso para esta operación')
+      }
+      return armarDocumento(params, actor)
+    },
+
+    /**
+     * El PDF de la liquidación del profesor de la sesión (`mis-liquidaciones/{mes}/pdf`, para la
+     * pantalla de T-133, que no conoce su `profesorId`): el mismo documento que `documento`.
+     */
+    async miDocumento({ mes }: MiLiquidacionParams, actor: Actor): Promise<LiquidacionDocumento> {
+      const profesorId = await profesorDeLaSesion(actor)
+      return armarDocumento({ profesorId, mes }, actor)
     },
   }
 }
