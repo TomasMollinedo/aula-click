@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { StyleSheet, Text, View } from '@react-pdf/renderer'
 import type { EncabezadoDeDocumento } from '@/server/features/centro/centro.condiciones'
+import { textoMes } from '@/server/features/liquidaciones/liquidaciones.condiciones'
 import { fechaDocumento, formatearPesos } from '@/server/shared/formato'
 import { DocumentoOficialPdf } from '@/server/shared/pdf/documento'
 import {
@@ -24,21 +25,27 @@ import {
   textoRangoConDias,
   tituloTablero,
   tituloTableroAsistencia,
+  tituloTableroFinanzas,
 } from './tablero.formato'
 import { UMBRAL_ASISTENCIA_ALUMNO } from './tablero.reglas'
-import type { Tablero, TableroAsistenciaCompleta } from './tablero.validation'
+import type {
+  Tablero,
+  TableroAsistenciaCompleta,
+  TableroFinanzasCompleta,
+} from './tablero.validation'
 
-// El tablero del gerente en PDF, una plantilla por sección (HU-21, T-130; HU-39, T-112). Solo
-// presentación: recibe lo que devuelve el service y no recalcula nada (porcentajes, ocupación, tops
-// y tablas son los de la API). Mismo contenido y mismo orden que la pantalla. "General": primero el
-// dinero (con lo cobrado por forma de pago), después los turnos y la ocupación con sus gráficos, la
-// asistencia y, al final, las materias y los profesores. "Asistencia": los números principales y
-// las tablas de profesores y materias completas, que pueden ocupar varias hojas.
+// El tablero del gerente en PDF, una plantilla por sección (HU-21, T-130; HU-39, T-112; HU-47,
+// T-128). Solo presentación: recibe lo que devuelve el service y no recalcula nada (porcentajes,
+// ocupación, tops, tablas y márgenes son los de la API). Mismo contenido y mismo orden que la
+// pantalla. "General": primero el dinero (con lo cobrado por forma de pago), después los turnos y la
+// ocupación con sus gráficos, la asistencia y, al final, las materias y los profesores. "Asistencia"
+// y "Finanzas": los números principales y sus tablas completas, que pueden ocupar varias hojas.
 
 export type DatosTableroPdf = EncabezadoDeDocumento & { tablero: Tablero }
 export type DatosTableroAsistenciaPdf = EncabezadoDeDocumento & {
   tablero: TableroAsistenciaCompleta
 }
+export type DatosTableroFinanzasPdf = EncabezadoDeDocumento & { tablero: TableroFinanzasCompleta }
 
 // Los colores de los gráficos son los de la pantalla: cobalto, `cancelado` y `piedra`.
 const COLOR_ACTIVOS = COLORES.cobalto
@@ -304,19 +311,25 @@ function celdasDeCifras(fila: Cifras | TableroAsistenciaCompleta['materias'][num
   ].map((texto, i) => <CeldaPdf key={i}>{texto}</CeldaPdf>)
 }
 
+const NOTA_TABLAS_ASISTENCIA =
+  'Clases: turnos con asistencia «Presente». Ausencias: turnos con asistencia «Ausente». Cerrados: turnos «Sin registrar» que cerró el sistema (pasaron 7 días). En plazo: «Sin registrar» que todavía se pueden registrar. % Asist.: clases sobre los turnos con asistencia registrada. % Sin reg.: cerrados sobre los turnos no cancelados.'
+
 /** Una tabla con su título y la aclaración de sus columnas. Puede ocupar varias hojas. */
-function SeccionTabla({ titulo, children }: { titulo: string; children: ReactNode }) {
+function SeccionTabla({
+  titulo,
+  nota,
+  children,
+}: {
+  titulo: string
+  nota: string
+  children: ReactNode
+}) {
   return (
     <View style={estilos.tabla}>
       {/* El título no queda solo al final de una hoja: se queda con las primeras filas. */}
       <View minPresenceAhead={90} style={estilos.seccion}>
         <Text style={estilos.tituloSeccion}>{titulo}</Text>
-        <Text style={estilos.nota}>
-          Clases: turnos con asistencia «Presente». Ausencias: turnos con asistencia «Ausente».
-          Cerrados: turnos «Sin registrar» que cerró el sistema (pasaron 7 días). En plazo: «Sin
-          registrar» que todavía se pueden registrar. % Asist.: clases sobre los turnos con
-          asistencia registrada. % Sin reg.: cerrados sobre los turnos no cancelados.
-        </Text>
+        <Text style={estilos.nota}>{nota}</Text>
       </View>
       {children}
     </View>
@@ -361,7 +374,7 @@ export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsi
           </Tarjeta>
         </Seccion>
 
-        <SeccionTabla titulo="Por profesor">
+        <SeccionTabla titulo="Por profesor" nota={NOTA_TABLAS_ASISTENCIA}>
           {profesores.length === 0 ? (
             <Text style={estilos.rotulo}>No hay turnos en este período.</Text>
           ) : (
@@ -377,7 +390,7 @@ export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsi
           )}
         </SeccionTabla>
 
-        <SeccionTabla titulo="Por materia">
+        <SeccionTabla titulo="Por materia" nota={NOTA_TABLAS_ASISTENCIA}>
           {materias.length === 0 ? (
             <Text style={estilos.rotulo}>No hay turnos en este período.</Text>
           ) : (
@@ -399,4 +412,115 @@ export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsi
 /** Los bytes del PDF del tablero ("Asistencia"), con las tablas completas. */
 export function renderizarTableroAsistenciaPdf(datos: DatosTableroAsistenciaPdf): Promise<Buffer> {
   return renderizarPdf(<TableroAsistenciaPdf {...datos} />)
+}
+
+// Proporciones de las columnas de "Finanzas" (no puntos). Importes en pesos, alineados a la derecha.
+const COLUMNAS_TABLA_FINANZAS: readonly ColumnaPdf[] = [
+  { titulo: 'Profesor', ancho: 18 },
+  { titulo: 'Turnos', ancho: 7, numerica: true },
+  { titulo: 'Cobrado', ancho: 15, numerica: true },
+  { titulo: 'Centro', ancho: 15, numerica: true },
+  { titulo: 'Profesor', ancho: 15, numerica: true },
+  { titulo: 'Pagado', ancho: 15, numerica: true },
+  { titulo: 'Saldo', ancho: 15, numerica: true },
+]
+
+const COLUMNAS_TABLA_EVOLUCION: readonly ColumnaPdf[] = [
+  { titulo: 'Mes', ancho: 31 },
+  { titulo: 'Total cobrado', ancho: 23, numerica: true },
+  { titulo: 'Margen del centro', ancho: 23, numerica: true },
+  { titulo: 'Pagado a profesores', ancho: 23, numerica: true },
+]
+
+const NOTA_TABLA_FINANZAS =
+  'Turnos y Cobrado: turnos cobrados en el período, sin pagos anulados. Centro y Profesor: el reparto de esos cobros; un turno cobrado y cerrado sin registrar va entero al centro. Pagado: liquidaciones pagadas con fecha de transferencia en el período. Saldo: lo que se le debe a la fecha de hoy; negativo, un saldo a descontar.'
+
+const NOTA_TABLA_EVOLUCION =
+  'Cobrado y margen por fecha de pago; pagado a profesores por fecha de transferencia. El último mes llega hasta el fin del período.'
+
+export function TableroFinanzasPdf({ tablero, ...encabezado }: DatosTableroFinanzasPdf) {
+  const { periodo, hoy, resumen, profesores, evolucion } = tablero
+  const delPeriodo = `Período: ${textoPeriodo(periodo.desde, periodo.hasta)}`
+
+  return (
+    <DocumentoOficialPdf
+      titulo={tituloTableroFinanzas(periodo.desde, periodo.hasta)}
+      {...encabezado}
+    >
+      <View style={estilos.contenido}>
+        <Text style={estilos.rango}>{textoRangoConDias(periodo.desde, periodo.hasta)}</Text>
+
+        <Seccion titulo="Cobrado y margen del centro">
+          <Tarjeta titulo="Total cobrado" rotulo={delPeriodo}>
+            <Text style={estilos.valorMediano}>{formatearPesos(resumen.totalCobrado)}</Text>
+          </Tarjeta>
+          <Tarjeta titulo="Margen del centro" rotulo={delPeriodo}>
+            <Text style={estilos.valorMediano}>{formatearPesos(resumen.margenCentro.importe)}</Text>
+            <Text style={estilos.nota}>
+              {formatearPorcentaje(resumen.margenCentro.porcentaje)} del total cobrado
+            </Text>
+            {resumen.incluyeSinRegistrar > 0 && (
+              <Text style={estilos.nota}>
+                Incluye {formatearPesos(resumen.incluyeSinRegistrar)} de turnos sin asistencia
+                registrada
+              </Text>
+            )}
+          </Tarjeta>
+        </Seccion>
+
+        <Seccion titulo="Profesores">
+          <Tarjeta titulo="Pagado a profesores" rotulo={delPeriodo}>
+            <Text style={estilos.valorMediano}>{formatearPesos(resumen.pagadoAProfesores)}</Text>
+          </Tarjeta>
+          {/* El saldo es a la fecha: no depende del período. */}
+          <Tarjeta titulo="Saldo a pagar a profesores" rotulo={`A hoy: ${fechaDocumento(hoy)}`}>
+            <Text style={estilos.valorMediano}>
+              {formatearPesos(resumen.saldoAPagarAProfesores)}
+            </Text>
+          </Tarjeta>
+        </Seccion>
+
+        <SeccionTabla titulo="Por profesor" nota={NOTA_TABLA_FINANZAS}>
+          {profesores.length === 0 ? (
+            <Text style={estilos.rotulo}>No hay cobros, pagos ni saldos en este período.</Text>
+          ) : (
+            <TablaPdf columnas={COLUMNAS_TABLA_FINANZAS} alternada>
+              {profesores.map((fila) => (
+                <FilaPdf key={fila.profesor.id}>
+                  <CeldaPdf>{nombreProfesor(fila.profesor)}</CeldaPdf>
+                  <CeldaPdf>{formatearCantidad(fila.turnosCobrados)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.totalCobrado)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.parteCentro)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.parteProfesor)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.pagado)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.saldoPendiente)}</CeldaPdf>
+                </FilaPdf>
+              ))}
+            </TablaPdf>
+          )}
+        </SeccionTabla>
+
+        {/* Son 6 filas: la tabla no se parte entre dos hojas. */}
+        <View wrap={false}>
+          <SeccionTabla titulo="Evolución mensual" nota={NOTA_TABLA_EVOLUCION}>
+            <TablaPdf columnas={COLUMNAS_TABLA_EVOLUCION} alternada>
+              {evolucion.map((fila) => (
+                <FilaPdf key={fila.mes}>
+                  <CeldaPdf>{textoMes(fila.mes)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.totalCobrado)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.margenCentro)}</CeldaPdf>
+                  <CeldaPdf>{formatearPesos(fila.pagadoAProfesores)}</CeldaPdf>
+                </FilaPdf>
+              ))}
+            </TablaPdf>
+          </SeccionTabla>
+        </View>
+      </View>
+    </DocumentoOficialPdf>
+  )
+}
+
+/** Los bytes del PDF del tablero ("Finanzas"), con la tabla por profesor completa. */
+export function renderizarTableroFinanzasPdf(datos: DatosTableroFinanzasPdf): Promise<Buffer> {
+  return renderizarPdf(<TableroFinanzasPdf {...datos} />)
 }

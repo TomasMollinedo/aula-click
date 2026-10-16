@@ -1396,9 +1396,9 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
 
 ## Tablero
 
-HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicadores del centro para el gerente, en dos secciones: **General** (`GET /tablero`) y **Asistencia** (`GET /tablero/asistencia`), cada una con su PDF (`GET /tablero/pdf?seccion=`). **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
+HU-21 (T-61, decisiones T-112 a T-119), HU-39 (T-112, decisión T-162) y HU-47 (T-128, decisión T-169). Indicadores del centro para el gerente, en tres secciones: **General** (`GET /tablero`), **Asistencia** (`GET /tablero/asistencia`) y **Finanzas** (`GET /tablero/finanzas`), cada una con su PDF (`GET /tablero/pdf?seccion=`). **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
 
-**Período común.** Los tres endpoints reciben el mismo período y lo validan igual:
+**Período común.** Los cuatro endpoints reciben el mismo período y lo validan igual:
 
 - `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos, **los dos obligatorios** (la UI traduce "Hoy", "Esta semana", "Este mes" o un rango a estas dos fechas).
 - 400 `VALIDACION` si falta alguno o no es una fecha real (`details` en su campo), y con `details` sobre `hasta` si `hasta` es anterior a `desde` ("La fecha hasta no puede ser anterior a la fecha desde") o si el período supera los **366 días**, extremos incluidos ("El período no puede superar los 366 días").
@@ -1513,14 +1513,88 @@ HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicad
 - `materias`: las mismas cifras agrupadas por materia (sin `noRegistraAsistencia`: no es una persona que registre). Orden fijo: `cerradosSinRegistrar` de mayor a menor y, en empate, nombre e `id`.
 - Los cancelados no cuentan en ninguna cifra. Con todo en 0 (por ejemplo, un período sin turnos), los porcentajes son `0` y las tablas, `[]`.
 
+### Finanzas
+
+**`GET /api/v1/tablero/finanzas?desde&hasta&page&orden&direccion`** — rol `GERENTE` (HU-47, T-128, decisión T-169). La pestaña "Finanzas": cuánto se cobró, cuánto le queda al centro y cuánto se les pagó y se les debe a los profesores. **Sólo agregados por centro, profesor y mes: nunca un alumno ni un pago puntual.** Los pagos anulados no suman en ningún número. Los repartos, el devengo y los saldos salen del motor de liquidaciones (`convenciones-backend.md` → Liquidaciones): el tablero no los recalcula.
+
+- `desde`, `hasta`: el período común (arriba).
+- `page`: página de la tabla por profesor (entero ≥ 1, por defecto `1`), **de a 10 filas**, sin `pageSize`. Una página pasada del final devuelve `data: []` con su `meta`.
+- `orden`: columna por la que se ordena la tabla por profesor: `profesor` (apellido y nombre), `turnosCobrados`, `totalCobrado` (por defecto), `parteCentro`, `parteProfesor`, `pagado` o `saldoPendiente`. `direccion`: `asc` o `desc` (por defecto `desc`). En empate, siempre apellido, nombre e `id` ascendentes. La evolución no se reordena.
+- 400 `VALIDACION` además por una `page` que no es un entero ≥ 1 y por un `orden` o una `direccion` que no existen (`details` en su campo).
+
+```json
+{
+  "periodo": { "desde": "2026-10-01", "hasta": "2026-10-31" },
+  "hoy": "2026-10-15",
+  "resumen": {
+    "totalCobrado": 128000,
+    "margenCentro": { "importe": 26000, "porcentaje": 20.3 },
+    "incluyeSinRegistrar": 8000,
+    "pagadoAProfesores": 40800,
+    "saldoAPagarAProfesores": 47600
+  },
+  "profesores": {
+    "data": [
+      {
+        "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+        "turnosCobrados": 10,
+        "totalCobrado": 80000,
+        "parteCentro": 12000,
+        "parteProfesor": 68000,
+        "pagado": 40800,
+        "saldoPendiente": 27200
+      },
+      {
+        "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" },
+        "turnosCobrados": 6,
+        "totalCobrado": 48000,
+        "parteCentro": 14000,
+        "parteProfesor": 34000,
+        "pagado": 0,
+        "saldoPendiente": 20400
+      },
+      {
+        "profesor": { "id": 8, "nombre": "Marta", "apellido": "Ruiz" },
+        "turnosCobrados": 0,
+        "totalCobrado": 0,
+        "parteCentro": 0,
+        "parteProfesor": 0,
+        "pagado": 0,
+        "saldoPendiente": -6800
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 10, "total": 3, "totalPages": 1 }
+  },
+  "evolucion": [
+    { "mes": "2026-05", "totalCobrado": 0, "margenCentro": 0, "pagadoAProfesores": 0 },
+    { "mes": "2026-06", "totalCobrado": 64000, "margenCentro": 9600, "pagadoAProfesores": 0 },
+    { "mes": "2026-07", "totalCobrado": 96000, "margenCentro": 14400, "pagadoAProfesores": 54400 },
+    { "mes": "2026-08", "totalCobrado": 112000, "margenCentro": 16800, "pagadoAProfesores": 81600 },
+    { "mes": "2026-09", "totalCobrado": 104000, "margenCentro": 23600, "pagadoAProfesores": 95200 },
+    { "mes": "2026-10", "totalCobrado": 128000, "margenCentro": 26000, "pagadoAProfesores": 40800 }
+  ]
+}
+```
+
+- `hoy`: la fecha con la que se calculó la respuesta: la del saldo a pagar y la que decide qué turnos cobrados quedaron cerrados sin registrar (plazo de 7 días, ver Asistencias).
+- `resumen` (los números principales):
+  - `totalCobrado`: suma de los pagos vigentes con **fecha de pago** dentro del período. **Es el mismo número que `pagos.totalCobrado` de `GET /tablero`** (misma implementación).
+  - `margenCentro.importe`: la parte del centro de los turnos cobrados en el período (cada uno al porcentaje que guardó su cobro) **más el importe completo** de los turnos cobrados que el sistema cerró sin registrar (no se le deben al profesor, ver Liquidaciones). La parte del centro de un cerrado no se suma aparte: el cerrado cuenta una sola vez, entero. `margenCentro.porcentaje`: `importe` sobre `totalCobrado` (0 si `totalCobrado` es 0).
+  - `incluyeSinRegistrar`: cuánto de `margenCentro.importe` son esos turnos cerrados sin registrar (su importe completo); `0` si no hay. Con un valor mayor a 0, la UI muestra "Incluye $ 13.600 de turnos sin asistencia registrada".
+  - `pagadoAProfesores`: suma del `total` de las liquidaciones **pagadas** con **fecha de transferencia** dentro del período (los importes guardados al pagar). Las descontadas no son transferencias y no entran.
+  - `saldoAPagarAProfesores`: lo que se les debe a los profesores **a hoy**, sin período (como `pagos.totalAdeudado` de General): la suma de los `saldoPendiente` **positivos** de la tabla completa. Un profesor con saldo negativo **no lo resta**.
+- `profesores`: un profesor por fila, de a 10, activo o inactivo, con alguna cifra distinta de 0: cobros o pagos en el período o saldo a hoy. `turnosCobrados` y `totalCobrado` son los turnos de sus horas cobrados en el período (por fecha de pago) y su importe; `parteCentro` y `parteProfesor` su reparto, con la misma regla del margen: **un turno cerrado sin registrar va entero a `parteCentro`** (y 0 a `parteProfesor`). Así, la suma de `parteCentro` de la tabla completa es `resumen.margenCentro.importe` y `parteCentro + parteProfesor = totalCobrado` en cada fila. `pagado`: sus liquidaciones pagadas con fecha de transferencia en el período. `saldoPendiente`: lo que se le debe a hoy (el mismo de Liquidaciones), **que puede ser negativo** (un saldo a descontar). Orden por defecto: `totalCobrado` de mayor a menor.
+- `evolucion`: siempre **6 filas**, los meses `YYYY-MM` que terminan en el de `hasta`, del más viejo al más nuevo (cruzan el cambio de año), sin paginar. Cada una con `totalCobrado` y `margenCentro` (por fecha de pago, con la misma regla del margen) y `pagadoAProfesores` (por fecha de transferencia). Los meses anteriores son completos; **el último llega hasta `hasta`**, no hasta fin de mes. Un mes sin movimientos va en 0.
+
 ### PDF
 
 **`GET /api/v1/tablero/pdf?desde&hasta&seccion`** (rol `GERENTE`, decisiones T-130 y T-162): una sección del tablero como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismo período, mismas reglas y mismos errores 400, 401 y 403 que los otros endpoints, y los mismos números que el JSON de la sección (sale del mismo cálculo, no hay un segundo).
 
-- `seccion`: `general` (por defecto, así el enlace anterior a las secciones sigue funcionando) o `asistencia`. 400 `VALIDACION` con `details` sobre `seccion` si es otra.
+- `seccion`: `general` (por defecto, así el enlace anterior a las secciones sigue funcionando), `asistencia` o `finanzas`. 400 `VALIDACION` con `details` sobre `seccion` si es otra.
 - **`general`** (reemplaza al PDF de HU-21): una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período, con lo cobrado por forma de pago, y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), la asistencia (asistió y no asistió, con su porcentaje) con los alumnos atendidos y nuevos, y al final las materias y los profesores con más turnos en barras.
 - **`asistencia`**: el título es `Asistencia semanal`, `Asistencia diaria`, `Asistencia mensual` o `Asistencia del período` (según el período, igual que el de General) y debajo, de qué día a qué día son los datos. Trae los números principales del `resumen` y las **tablas completas** de profesores y de materias: **todas las filas** (sin las páginas de la pantalla y sin el filtro `soloSinRegistrar`), en el orden por defecto (cerrados sin registrar de mayor a menor), repitiendo el encabezado de la tabla en cada hoja, así que ocupa las hojas que hagan falta. Sin ningún dato de los alumnos. La tabla de profesores marca con "No registra" a los que tienen turnos cerrados sin registrar.
-- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` para General (`tablero-2026-09-28_2026-10-04.pdf`) y `tablero-asistencia-<desde>_<hasta>.pdf` para Asistencia.
+- **`finanzas`**: el título es `Finanzas semanal`, `Finanzas diaria`, `Finanzas mensual` o `Finanzas del período` y debajo, de qué día a qué día son los datos. Trae los cuatro números del `resumen` (el margen con su porcentaje y, si `incluyeSinRegistrar` es mayor a 0, "Incluye $ … de turnos sin asistencia registrada"; el saldo con la fecha de hoy), la tabla por profesor **completa** (todas las filas, sin las páginas de la pantalla, en el orden por defecto, repitiendo el encabezado en cada hoja) y la evolución de los 6 meses.
+- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` para General (`tablero-2026-09-28_2026-10-04.pdf`), `tablero-asistencia-<desde>_<hasta>.pdf` para Asistencia y `tablero-finanzas-<desde>_<hasta>.pdf` para Finanzas.
 
 ## Centro
 
