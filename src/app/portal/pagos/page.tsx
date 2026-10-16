@@ -1,12 +1,13 @@
+import { Suspense } from 'react'
 import { Info } from 'lucide-react'
 
+import { MisPagosConVistas } from '@/app/portal/_componentes/mis-pagos-con-vistas'
 import { PageHeader } from '@/components/layout/page-header'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { MisPendientes } from '@/features/cuentas/components/MisPendientes'
-import { MisPagosRealizados } from '@/features/pagos/components/MisPagosRealizados'
 
 // "Mis pagos" del portal del alumno (HU-37, T-103): lo pendiente (`cuentas`) y lo pagado (`pagos`),
-// de sólo lectura. Cada feature pide lo suyo; esta página solo los compone.
+// de sólo lectura, en subpestañas (`?vista=`). Cada feature pide lo suyo; esta página solo los
+// compone. Suspense: la subpestaña se lee de la URL con useSearchParams.
 export default function MisPagosPage() {
   return (
     <div className="space-y-8">
@@ -21,19 +22,9 @@ export default function MisPagosPage() {
         </Alert>
       </div>
 
-      <section aria-labelledby="mis-pagos-pendientes" className="space-y-4">
-        <h2 id="mis-pagos-pendientes" className="text-xl font-semibold">
-          Pendiente de pago
-        </h2>
-        <MisPendientes />
-      </section>
-
-      <section aria-labelledby="mis-pagos-realizados" className="space-y-4">
-        <h2 id="mis-pagos-realizados" className="text-xl font-semibold">
-          Pagos realizados
-        </h2>
-        <MisPagosRealizados />
-      </section>
+      <Suspense>
+        <MisPagosConVistas />
+      </Suspense>
     </div>
   )
 }

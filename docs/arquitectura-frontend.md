@@ -98,9 +98,10 @@ src/
 │ │ ├── turnos/nuevo/page.tsx # SacarTurno (turnos, T-94)
 │ │ ├── materias/page.tsx # MisMaterias (historiales, T-111)
 │ │ ├── materias/[materiaId]/[profesorId]/page.tsx # MiMateria (historiales) + MisExamenes (examenes) (T-111)
-│ │ ├── pagos/page.tsx # el aviso de dónde se paga, MisPendientes (cuentas) y MisPagosRealizados (pagos), de sólo lectura (T-103)
+│ │ ├── pagos/page.tsx # el aviso de dónde se paga y, en subpestañas (?vista=), MisPendientes (cuentas) y MisPagosRealizados (pagos), de sólo lectura (T-103)
 │ │ ├── configuracion/page.tsx # CambiarContrasena (usuarios, T-92)
-│ │ └── _componentes/detalle-turno.tsx # DetalleTurnoPortal: compone OcurrenciaDetallePortal (ocurrencias, T-85)
+│ │ └── _componentes/ # detalle-turno.tsx (DetalleTurnoPortal: compone OcurrenciaDetallePortal, de ocurrencias, T-85) y
+│ │ # mis-pagos-con-vistas.tsx (las subpestañas de Mis pagos)
 │ └── api/ # BACKEND (adaptadores); no se toca desde el frontend
 │
 ├── features/
