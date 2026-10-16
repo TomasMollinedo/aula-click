@@ -17,6 +17,7 @@ describe('leerSeccion', () => {
 
   it('la sección de la URL', () => {
     expect(leer('seccion=asistencia')).toBe('asistencia')
+    expect(leer('seccion=finanzas')).toBe('finanzas')
     expect(leer('seccion=general')).toBe('general')
   })
 

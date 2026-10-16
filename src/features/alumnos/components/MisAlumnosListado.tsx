@@ -9,9 +9,9 @@ import { Card } from '@/components/ui/card'
 import { PaginationControls } from '@/components/ui/pagination'
 
 import { useBuscadorMisAlumnos } from '../hooks/use-buscador-mis-alumnos'
+import { AlumnosGrid } from './AlumnosGrid'
 import { BuscadorAlumnos } from './BuscadorAlumnos'
 import { FiltroMateriaAlumnos } from './FiltroMateriaAlumnos'
-import { MisAlumnosTable } from './MisAlumnosTable'
 import { SinResultadosMisAlumnos } from './SinResultadosMisAlumnos'
 
 type MisAlumnosListadoProps = {
@@ -19,8 +19,8 @@ type MisAlumnosListadoProps = {
   rutaBase: string
 }
 
-// Solo lectura: sin alta ni edición (eso es de mesa de entradas). El detalle sí es el mismo que
-// mesa: GET /alumnos/{id} ahora también admite PROFESOR.
+// Misma grilla de tarjetas que mesa, en solo lectura: sin alta ni lápiz de edición (eso es de mesa
+// de entradas). El detalle sí es el mismo que mesa: GET /alumnos/{id} ahora también admite PROFESOR.
 export function MisAlumnosListado({ rutaBase }: MisAlumnosListadoProps) {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -80,7 +80,7 @@ export function MisAlumnosListado({ rutaBase }: MisAlumnosListadoProps) {
           </Alert>
         </div>
       ) : (
-        <MisAlumnosTable
+        <AlumnosGrid
           rutaBase={rutaBase}
           data={buscador.data}
           isLoading={buscador.isLoading}

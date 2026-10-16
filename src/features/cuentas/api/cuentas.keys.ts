@@ -8,6 +8,8 @@ export const cuentasKeys = {
   /** El `alumnoId` va en la posición 2: `useCuentaDelAlumno` lo lee de la query anterior. */
   alumno: (alumnoId: number, filtros: FiltrosCuentaParams = {}) =>
     [...cuentasKeys.alumnos(), alumnoId, filtros] as const,
+  /** Las opciones de los filtros con un alumno: cobrar las cambia, por eso cuelgan de `all`. */
+  opciones: (alumnoId: number) => [...cuentasKeys.all, 'opciones', alumnoId] as const,
   adeudados: () => [...cuentasKeys.all, 'adeudados'] as const,
   adeudadosLista: (params: ListarGlobalParams) => [...cuentasKeys.adeudados(), params] as const,
   proximos: () => [...cuentasKeys.all, 'proximos'] as const,

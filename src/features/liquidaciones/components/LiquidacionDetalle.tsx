@@ -48,7 +48,7 @@ import {
 import { useLiquidacion } from '../hooks/use-liquidacion'
 import { useMiLiquidacion } from '../hooks/use-mi-liquidacion'
 import type { LiquidacionDetalle as Detalle, MiLiquidacionDetalle } from '../liquidaciones.types'
-import { hrefPdfLiquidacion } from '../rutas-liquidaciones'
+import { hrefPdfLiquidacion, hrefPdfMiLiquidacion } from '../rutas-liquidaciones'
 import { ComprobanteTransferencia } from './ComprobanteTransferencia'
 import { EstadoLiquidacionBadge } from './EstadoLiquidacionBadge'
 import { RegistrarPagoLiquidacionDialog } from './RegistrarPagoLiquidacionDialog'
@@ -219,7 +219,9 @@ function Cargando({
 
 function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; volver?: ReactNode }) {
   const { liquidacion } = contenido
-  const nombre = nombreDeProfesor(liquidacion.profesor)
+  // El profesor no viene en su propia liquidación (es el de la sesión, T-126): sin nombre.
+  const nombre =
+    contenido.vista === 'gerente' ? nombreDeProfesor(contenido.liquidacion.profesor) : null
   const mes = textoMes(liquidacion.mes)
 
   // Registrar pago: el diálogo recibe una copia de la liquidación al abrir y queda montado hasta
@@ -245,7 +247,14 @@ function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; vol
       <div className="space-y-6">
         {volver}
         <Card className="p-0">
-          <EmptyState icon={HandCoins} title={`No hay movimientos de ${nombre} en ${mes}`} />
+          <EmptyState
+            icon={HandCoins}
+            title={
+              nombre === null
+                ? `No tenés movimientos en ${mes}`
+                : `No hay movimientos de ${nombre} en ${mes}`
+            }
+          />
         </Card>
       </div>
     )
@@ -260,12 +269,12 @@ function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; vol
       <PageHeader
         title={
           <span ref={tituloRef} tabIndex={-1} className="outline-none">
-            {nombre}
+            {nombre ?? `Liquidación de ${mes}`}
           </span>
         }
         description={
           <span className="flex flex-wrap items-center gap-2">
-            Liquidación de {mes}
+            {nombre !== null && `Liquidación de ${mes}`}
             <EstadoLiquidacionBadge
               liquidacion={{
                 estado: liquidacion.estado,
@@ -279,10 +288,14 @@ function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; vol
           <div className="flex flex-wrap items-center gap-2">
             <Button variant="accent" asChild>
               <a
-                href={hrefPdfLiquidacion({
-                  profesorId: liquidacion.profesor.id,
-                  mes: liquidacion.mes,
-                })}
+                href={
+                  contenido.vista === 'gerente'
+                    ? hrefPdfLiquidacion({
+                        profesorId: contenido.liquidacion.profesor.id,
+                        mes: liquidacion.mes,
+                      })
+                    : hrefPdfMiLiquidacion(liquidacion.mes)
+                }
                 target="_blank"
                 rel="noopener noreferrer"
               >
@@ -313,7 +326,8 @@ function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; vol
                   <TableHead>Horario</TableHead>
                   <TableHead>Alumno</TableHead>
                   <TableHead>Materia</TableHead>
-                  <TableHead>Comprobante</TableHead>
+                  {/* El número de comprobante es de la familia: el profesor no lo ve (T-171). */}
+                  {contenido.vista === 'gerente' && <TableHead>Comprobante</TableHead>}
                   <TableHead className="text-right">Importe</TableHead>
                   <TableHead className="text-right whitespace-nowrap">% del centro</TableHead>
                   <TableHead className="text-right whitespace-nowrap">Parte del profesor</TableHead>
@@ -333,9 +347,11 @@ function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; vol
                       {nombreDeProfesor(turno.alumno)}
                     </TableCell>
                     <TableCell>{turno.materia.nombre}</TableCell>
-                    <TableCell className="whitespace-nowrap tabular-nums">
-                      {textoNumeroComprobante(turno.numeroComprobante)}
-                    </TableCell>
+                    {'numeroComprobante' in turno && (
+                      <TableCell className="whitespace-nowrap tabular-nums">
+                        {textoNumeroComprobante(turno.numeroComprobante)}
+                      </TableCell>
+                    )}
                     <TableCell className={IMPORTE}>{formatearPesos(turno.importe)}</TableCell>
                     <TableCell className={IMPORTE}>
                       {formatearPorcentaje(turno.porcentaje)}
@@ -465,7 +481,7 @@ function Cierre({ contenido }: { contenido: Contenido }) {
           Descontada en la liquidación de{' '}
           {contenido.vista === 'gerente' ? (
             <Link
-              href={`${contenido.rutaBase}/${liquidacion.profesor.id}/${enMes}`}
+              href={`${contenido.rutaBase}/${contenido.liquidacion.profesor.id}/${enMes}`}
               className="text-primary font-medium underline-offset-4 hover:underline"
             >
               {textoMes(enMes)}

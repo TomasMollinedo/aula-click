@@ -5,20 +5,22 @@ import { useRouter } from 'next/navigation'
 import { Eye, Pencil } from 'lucide-react'
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
+import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { cn } from '@/utils/cn'
 import { getInitials } from '@/utils/initials'
 
-import type { AlumnoListadoItem } from '../alumnos.types'
+import type { AlumnoListadoItem, AlumnoMateria } from '../alumnos.types'
 
 type AlumnoCardProps = {
-  alumno: AlumnoListadoItem
+  /** Con `materias` (listado "Mis alumnos" del profesor) la tarjeta las muestra debajo del DNI. */
+  alumno: AlumnoListadoItem & { materias?: AlumnoMateria[] }
   /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
   rutaBase: string
-  /** URL que abre la edición de un alumno como modal encima del listado. */
-  hrefEditar: (id: number) => string
+  /** URL que abre la edición de un alumno como modal encima del listado. Sin ella, no hay lápiz. */
+  hrefEditar?: (id: number) => string
   /** Se llama al abrir la edición con el lápiz en esta pestaña (no con Cmd/Ctrl+clic). */
-  onEditar: () => void
+  onEditar?: () => void
 }
 
 /** Acciones de la tarjeta (ver detalle, editar): ícono sin relleno; el color lo pone cada una. */
@@ -57,6 +59,15 @@ export function AlumnoCard({ alumno, rutaBase, hrefEditar, onEditar }: AlumnoCar
           <span className="text-muted-foreground w-full text-sm break-words">{alumno.nombre}</span>
           <span className="text-muted-foreground text-sm tabular-nums">DNI {alumno.dni}</span>
         </div>
+        {alumno.materias && alumno.materias.length > 0 && (
+          <div className="flex flex-wrap justify-center gap-1">
+            {alumno.materias.map((materia) => (
+              <Badge key={materia.id} variant="secondary">
+                {materia.nombre}
+              </Badge>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="border-border mt-auto flex w-full items-center justify-center gap-1 border-t pt-3">
@@ -70,19 +81,21 @@ export function AlumnoCard({ alumno, rutaBase, hrefEditar, onEditar }: AlumnoCar
         </Link>
         {/* Dorado, como el "Editar" del detalle. Con `urgente`, el dorado oscuro de la paleta: el
             `dorado` sobre blanco no llega al contraste 3:1 de un ícono. */}
-        <Link
-          href={hrefEditar(alumno.id)}
-          scroll={false}
-          onClick={(e) => {
-            // Cmd/Ctrl/Shift+clic abre otra pestaña: esta no abrió el modal.
-            if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) onEditar()
-          }}
-          aria-label={`Editar a ${alumno.nombre} ${alumno.apellido}`}
-          title="Editar"
-          className={cn(accionDeTarjeta, 'text-urgente hover:bg-dorado/15')}
-        >
-          <Pencil className="size-5" />
-        </Link>
+        {hrefEditar && (
+          <Link
+            href={hrefEditar(alumno.id)}
+            scroll={false}
+            onClick={(e) => {
+              // Cmd/Ctrl/Shift+clic abre otra pestaña: esta no abrió el modal.
+              if (e.button === 0 && !e.metaKey && !e.ctrlKey && !e.shiftKey) onEditar?.()
+            }}
+            aria-label={`Editar a ${alumno.nombre} ${alumno.apellido}`}
+            title="Editar"
+            className={cn(accionDeTarjeta, 'text-urgente hover:bg-dorado/15')}
+          >
+            <Pencil className="size-5" />
+          </Link>
+        )}
       </div>
     </Card>
   )

@@ -20,7 +20,6 @@ import {
   textoHoraDeRegistro,
   textoImporteConSigno,
   textoMesLiquidado,
-  textoMotivoAnulacion,
   textoNumeroComprobante,
   textoOperacion,
 } from '../formato-caja'
@@ -48,7 +47,7 @@ type MovimientosCajaProps = {
  * los da el `tipo`: un cobro suma (verde) y una anulación o un pago a un profesor restan (rojo). Un
  * cobro anulado lleva la marca "Anulado" y **su importe no se tacha**: ese día fue un cobro y suma;
  * lo que resta es su anulación, que figura aparte. Un cobro o una anulación abren el detalle del
- * pago; un pago a un profesor, su liquidación.
+ * pago (ahí se ve el motivo de la anulación, no en la tabla); un pago a un profesor, su liquidación.
  */
 export function MovimientosCaja({
   movimientos,
@@ -139,9 +138,6 @@ function DetalleDelMovimiento({ movimiento }: { movimiento: Movimiento }) {
       <p className="text-muted-foreground text-xs tabular-nums">
         {textoNumeroComprobante(movimiento.numeroComprobante)}
       </p>
-      {movimiento.tipo === 'ANULACION' && (
-        <p className="text-cancelado mt-1 text-xs">Motivo: {textoMotivoAnulacion(movimiento)}</p>
-      )}
     </>
   )
 }

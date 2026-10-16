@@ -11,40 +11,54 @@ import { cn } from '@/utils/cn'
 
 import { interpretarErrorTablero } from '../errores-tablero'
 import { aParamsAsistencia } from '../filtros-asistencia'
+import { aParamsFinanzas } from '../filtros-finanzas'
 import { useFiltrosAsistencia } from '../hooks/use-filtros-asistencia'
+import { useFiltrosFinanzas } from '../hooks/use-filtros-finanzas'
 import { usePeriodoEnUrl } from '../hooks/use-periodo-en-url'
 import { useSeccionEnUrl } from '../hooks/use-seccion-en-url'
 import { useTablero } from '../hooks/use-tablero'
 import { useTableroAsistencia } from '../hooks/use-tablero-asistencia'
+import { useTableroFinanzas } from '../hooks/use-tablero-finanzas'
 import { ETIQUETA_SECCION, SECCIONES, type Seccion } from '../seccion'
 import { BotonPdfTablero } from './BotonPdfTablero'
 import { SelectorPeriodo } from './SelectorPeriodo'
 import { TableroAsistencia } from './TableroAsistencia'
+import { TableroFinanzas } from './TableroFinanzas'
 import { TableroGeneral } from './TableroGeneral'
 
 /**
- * El tablero del gerente (`/gerente/tablero`, HU-21 y HU-39): indicadores del centro de un período,
- * de sólo lectura y sin enlaces, en dos pestañas ("General" y "Asistencia", `?seccion=`). El
- * selector de período está **arriba de las dos** y es común: cambiar de pestaña lo conserva, y
- * cambiarlo pide de nuevo la sección que se ve.
+ * El tablero del gerente (`/gerente/tablero`, HU-21, HU-39 y HU-47): indicadores del centro de un
+ * período, de sólo lectura y sin enlaces, en tres pestañas ("General", "Asistencia" y "Finanzas",
+ * `?seccion=`). El selector de período está **arriba de las tres** y es común: cambiar de pestaña
+ * lo conserva, y cambiarlo pide de nuevo la sección que se ve.
  *
- * Sólo se consulta la sección activa (la otra queda deshabilitada, no pide datos). Mientras llegan
- * los números nuevos se ven los anteriores atenuados, cada uno rotulado con el período que devolvió
- * la API. Los porcentajes, la ocupación y los rankings los calcula la API: la pantalla sólo dibuja.
+ * Sólo se consulta la sección activa (las otras quedan deshabilitadas, no piden datos). Mientras
+ * llegan los números nuevos se ven los anteriores atenuados, cada uno rotulado con el período que
+ * devolvió la API. Los porcentajes, la ocupación, el reparto y los rankings los calcula la API: la
+ * pantalla sólo dibuja.
  */
 export function TableroPantalla() {
   const { periodo, elegir, cambiarRango } = usePeriodoEnUrl()
   const { seccion, cambiar } = useSeccionEnUrl()
   const { filtros, irAProfesores, irAMaterias, ordenarPor, cambiarSoloSinRegistrar } =
     useFiltrosAsistencia()
+  const {
+    filtros: filtrosFinanzas,
+    irAPagina,
+    ordenarPor: ordenarFinanzasPor,
+  } = useFiltrosFinanzas()
 
   const general = useTablero(periodo, seccion === 'general')
   const asistencia = useTableroAsistencia(
     aParamsAsistencia(periodo, filtros),
     seccion === 'asistencia',
   )
+  const finanzas = useTableroFinanzas(
+    aParamsFinanzas(periodo, filtrosFinanzas),
+    seccion === 'finanzas',
+  )
 
-  const query = seccion === 'general' ? general : asistencia
+  const query = seccion === 'general' ? general : seccion === 'asistencia' ? asistencia : finanzas
   const error = query.isError ? interpretarErrorTablero(query.error) : null
   // Un 400 sobre el período deja el documento sin armar; uno sobre los parámetros de las tablas, no.
   const periodoValido = error?.tipo !== 'periodo'
@@ -78,7 +92,7 @@ export function TableroPantalla() {
 
         {/*
           El error del período ya está junto a sus campos y el de los parámetros de las tablas lo
-          muestra la sección "Asistencia", junto a ellas: los dos dejan `mensaje` en `null`. Acá
+          muestra la sección que las tiene, junto a ellas: los dos dejan `mensaje` en `null`. Acá
           queda el que no se pudo ubicar en ningún campo, el 403 y el genérico.
         */}
         {error?.mensaje && (
@@ -125,6 +139,20 @@ export function TableroPantalla() {
               onPaginaProfesores={irAProfesores}
               onPaginaMaterias={irAMaterias}
               onSoloSinRegistrar={cambiarSoloSinRegistrar}
+            />
+          )}
+        </TabsContent>
+
+        <TabsContent value="finanzas">
+          {/* Un 400 sobre un parámetro de la tabla no tapa la sección: sale junto a ella. */}
+          {finanzas.isError && error?.tipo !== 'parametros' ? null : (
+            <TableroFinanzas
+              finanzas={finanzas.data ?? null}
+              filtros={filtrosFinanzas}
+              enEspera={finanzas.isPlaceholderData}
+              error={error?.tipo === 'parametros' ? error : null}
+              onOrdenar={ordenarFinanzasPor}
+              onPagina={irAPagina}
             />
           )}
         </TabsContent>

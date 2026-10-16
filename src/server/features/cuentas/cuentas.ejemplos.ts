@@ -4,6 +4,7 @@ import type {
   CuentaDelAlumno,
   MiCuenta,
   OcurrenciaDeCuenta,
+  OpcionesDeCuenta,
   ProximosGlobal,
 } from './cuentas.validation'
 
@@ -99,6 +100,17 @@ export const ejemploMiCuenta = {
   ],
   limiteCobro: '2026-11-26',
 } satisfies MiCuenta
+
+export const ejemploOpciones = {
+  materias: [
+    { id: 7, nombre: 'Física', estado: 'ACTIVO' },
+    { id: 2, nombre: 'Matemática', estado: 'INACTIVO' },
+  ],
+  profesores: [
+    { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+    { id: 5, nombre: 'Juan', apellido: 'Ruiz' },
+  ],
+} satisfies OpcionesDeCuenta
 
 export const ejemploErrorAlumno = {
   error: { code: 'NO_ENCONTRADO', message: 'Alumno no encontrado' },

@@ -10,6 +10,9 @@ export const liquidacionesKeys = {
   detalle: (profesorId: string, mes: string) =>
     [...liquidacionesKeys.all, 'detalle', profesorId, mes] as const,
   miDetalle: (mes: string) => [...liquidacionesKeys.all, 'mi-detalle', mes] as const,
+  misIngresos: () => [...liquidacionesKeys.all, 'mis-ingresos'] as const,
+  misLiquidaciones: (page: number) =>
+    [...liquidacionesKeys.all, 'mis-liquidaciones', page] as const,
   comprobante: (liquidacionId: number) =>
     [...liquidacionesKeys.all, 'comprobante', liquidacionId] as const,
 }

@@ -1,4 +1,4 @@
-import { createRoute } from '@hono/zod-openapi'
+import { createRoute, z } from '@hono/zod-openapi'
 import { ErrorResponseSchema } from '@/server/errors'
 import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
@@ -35,7 +35,7 @@ import {
 
 // Contrato HTTP de liquidaciones (pago a profesores, HU-44): cada endpoint se declara con
 // createRoute() y se registra acá. Las rutas del gerente cuelgan de `/` y de
-// `/profesores/{profesorId}/{mes}` (T-124: el detalle y `…/pago`; T-125 suma `…/pdf`); las del profesor, de los segmentos
+// `/profesores/{profesorId}/{mes}` (T-124: el detalle y `…/pago`; T-125: `…/pdf`); las del profesor, de los segmentos
 // fijos `/mis-ingresos` y `/mis-liquidaciones` (T-126), que no chocan con éstas.
 
 const tags = ['Liquidaciones']
@@ -228,10 +228,63 @@ export const miLiquidacionRoute = createRoute({
   },
 })
 
+// ---------- El documento PDF (HU-44 y HU-45, T-125) ----------
+
+// El 200 de un documento: el cuerpo binario del PDF (docs/contrato-api.md → Documentos PDF).
+function respuestaPdf(description: string) {
+  return {
+    description,
+    content: { 'application/pdf': { schema: z.string().openapi({ format: 'binary' }) } },
+  }
+}
+
+const CONTENIDO_PDF =
+  'Encabezado oficial; profesor, mes y estado; los turnos (fecha, horario, alumno, materia, comprobante, importe, porcentaje y parte del profesor); los ajustes; los totales y, si está pagada, la fecha y el número de operación de la transferencia. Sale del **mismo cálculo** que el detalle. Sin la forma de pago de las familias ni el comprobante adjunto. Archivo `liquidacion-<apellido>-<nombre>-<mes>.pdf`. Los errores responden JSON.'
+
+export const liquidacionPdfRoute = createRoute({
+  method: 'get',
+  path: '/profesores/{profesorId}/{mes}/pdf',
+  tags,
+  summary: 'Liquidación de un profesor en un mes, en PDF',
+  description: `${CONTENIDO_PDF} \`GERENTE\` saca la de cualquier profesor; \`PROFESOR\`, sólo la suya (403 con la de otro), y sin la columna del comprobante (decisión T-171).`,
+  middleware: [requireAuth(), requireRole('GERENTE', 'PROFESOR')] as const,
+  request: { params: liquidacionParamsSchema },
+  responses: {
+    200: respuestaPdf('El PDF de la liquidación'),
+    400: respuestaError(
+      '`profesorId` no es un entero positivo, o `mes` con formato inválido o futuro (VALIDACION)',
+      ejemploErrorMesFuturo,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(
+      'El rol no es gerente ni profesor, un profesor pide la de otro o no tiene ficha de profesor, o el usuario está inhabilitado (SIN_PERMISO)',
+    ),
+    404: respuestaError('Profesor no encontrado', ejemploErrorProfesorNoEncontrado),
+  },
+})
+
+export const miLiquidacionPdfRoute = createRoute({
+  method: 'get',
+  path: '/mis-liquidaciones/{mes}/pdf',
+  tags,
+  summary: 'Mi liquidación de un mes, en PDF (profesor)',
+  description: `La liquidación del profesor de la sesión (no recibe un \`profesorId\`, como los otros \`mis-…\`): el mismo documento que \`GET /liquidaciones/profesores/{profesorId}/{mes}/pdf\`, sin la columna del comprobante. ${CONTENIDO_PDF}`,
+  middleware: [requireAuth(), requireRole('PROFESOR')] as const,
+  request: { params: miLiquidacionParamsSchema },
+  responses: {
+    200: respuestaPdf('El PDF de la liquidación'),
+    400: respuestaError('`mes` con formato inválido o futuro (VALIDACION)', ejemploErrorMesFuturo),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError(ERROR_403_PROFESOR),
+  },
+})
+
 export const liquidacionesRoutes = createRouter()
   .openapi(listarLiquidacionesRoute, liquidacionesController.listarLiquidaciones)
   .openapi(misIngresosRoute, liquidacionesController.misIngresos)
   .openapi(misLiquidacionesRoute, liquidacionesController.misLiquidaciones)
   .openapi(miLiquidacionRoute, liquidacionesController.miLiquidacion)
+  .openapi(miLiquidacionPdfRoute, liquidacionesController.miLiquidacionPdf)
   .openapi(detalleLiquidacionRoute, liquidacionesController.detalleLiquidacion)
+  .openapi(liquidacionPdfRoute, liquidacionesController.liquidacionPdf)
   .openapi(pagarLiquidacionRoute, liquidacionesController.pagarLiquidacion)

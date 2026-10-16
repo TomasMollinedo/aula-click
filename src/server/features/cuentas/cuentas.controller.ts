@@ -6,6 +6,7 @@ import type {
   listarProximosRoute,
   miCuentaRoute,
   obtenerCuentaRoute,
+  obtenerOpcionesRoute,
 } from './cuentas.routes'
 import { cuentasRepository } from './cuentas.repository'
 import { crearCuentasService } from './cuentas.service'
@@ -22,6 +23,9 @@ export const obtenerCuenta: RouteHandler<typeof obtenerCuentaRoute, AppEnv> = as
     await cuentasService.obtenerCuenta(c.req.valid('param').alumnoId, c.req.valid('query')),
     200,
   )
+
+export const obtenerOpciones: RouteHandler<typeof obtenerOpcionesRoute, AppEnv> = async (c) =>
+  c.json(await cuentasService.opcionesDelAlumno(c.req.valid('param').alumnoId), 200)
 
 export const miCuenta: RouteHandler<typeof miCuentaRoute, AppEnv> = async (c) =>
   c.json(await cuentasService.miCuenta(c.get('actor')), 200)

@@ -1,4 +1,4 @@
-import type { ParamsAsistencia, PeriodoTablero } from '../tablero.types'
+import type { ParamsAsistencia, ParamsFinanzas, PeriodoTablero } from '../tablero.types'
 
 export const tableroKeys = {
   all: ['tablero'] as const,
@@ -9,4 +9,6 @@ export const tableroKeys = {
    * página, el mismo orden y el mismo filtro) no vuelve a pedir nada.
    */
   asistencia: (params: ParamsAsistencia) => [...tableroKeys.all, 'asistencia', params] as const,
+  /** La sección "Finanzas" de un período con el estado de su tabla, igual que "Asistencia". */
+  finanzas: (params: ParamsFinanzas) => [...tableroKeys.all, 'finanzas', params] as const,
 }

@@ -1,4 +1,7 @@
 import { format, parseISO } from 'date-fns'
+import { es } from 'date-fns/locale/es'
+
+import { textoMes } from '@/utils/formato-fechas'
 
 import type { CodigoFormaPago } from './tablero.types'
 
@@ -68,6 +71,32 @@ export function textoClasesCerradas({ desde, hasta }: { desde: string; hasta: st
   return desde === hasta
     ? `clases del ${fechaCompleta(desde)}`
     : `clases del ${fechaCompleta(desde)} al ${fechaCompleta(hasta)}`
+}
+
+/**
+ * El mes de la evolución de "Finanzas" (HU-47) como título: `'2026-10'` → `'Octubre de 2026'`. Es
+ * el mismo texto en la tabla y en el gráfico, así que la mayúscula inicial va acá y no por CSS: en
+ * un `<text>` de un SVG no se puede confiar en `first-letter`.
+ */
+export function tituloDeMes(mes: string): string {
+  const texto = textoMes(mes)
+  return texto.charAt(0).toUpperCase() + texto.slice(1)
+}
+
+/**
+ * Los meses `YYYY-MM` como los rotula el eje del gráfico de la evolución: cortos (`'oct'`), con el
+ * año sólo en el primero y cada vez que cambia (`['oct 2026', 'sep', 'ago', …]`). Se resuelven
+ * todos juntos porque cada etiqueta depende de la anterior; el orden es el que se va a mostrar.
+ */
+export function etiquetasDeMeses(meses: readonly string[]): string[] {
+  let anterior: string | null = null
+  return meses.map((mes) => {
+    const anio = mes.slice(0, 4)
+    const nombre = format(parseISO(`${mes}-01`), 'MMM', { locale: es })
+    const etiqueta = anio === anterior ? nombre : `${nombre} ${anio}`
+    anterior = anio
+    return etiqueta
+  })
 }
 
 /** `1` → `"1 turno"`, `15` → `"15 turnos"`. */

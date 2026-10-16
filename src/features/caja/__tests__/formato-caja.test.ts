@@ -10,7 +10,6 @@ import {
   textoHoraDeRegistro,
   textoImporteConSigno,
   textoMesLiquidado,
-  textoMotivoAnulacion,
   textoNumeroComprobante,
   textoOperacion,
   textoSinMovimientos,
@@ -63,15 +62,6 @@ describe('textos de un movimiento', () => {
   it('apellido y nombre, y el comprobante', () => {
     expect(apellidoYNombre({ nombre: 'Juan', apellido: 'Pérez' })).toBe('Pérez, Juan')
     expect(textoNumeroComprobante(1024)).toBe('Comprobante N° 1024')
-  })
-
-  it('el motivo de la anulación, con el detalle si lo hay', () => {
-    expect(textoMotivoAnulacion({ motivo: 'ERROR_CARGA', detalle: 'Se cargó dos veces' })).toBe(
-      'Error de carga: Se cargó dos veces',
-    )
-    expect(textoMotivoAnulacion({ motivo: 'FORMA_PAGO_EQUIVOCADA', detalle: null })).toBe(
-      'Forma de pago equivocada',
-    )
   })
 
   it('la operación de la transferencia, o nada si no se cargó', () => {

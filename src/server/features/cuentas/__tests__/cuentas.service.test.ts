@@ -78,6 +78,9 @@ beforeEach(() => {
     dnisDeAlumnos: vi
       .fn<CuentasRepository['dnisDeAlumnos']>()
       .mockImplementation(async (ids) => new Map(ids.map((id) => [id, `50${id}000`]))),
+    estadosDeMaterias: vi
+      .fn<CuentasRepository['estadosDeMaterias']>()
+      .mockImplementation(async (ids) => new Map(ids.map((id) => [id, 'ACTIVO' as const]))),
   }
   alumnosRepository = {
     buscarPorId: vi.fn<AlumnosRepository['buscarPorId']>().mockResolvedValue({
@@ -621,5 +624,86 @@ describe('miCuenta (portal, HU-37, T-101)', () => {
       service.miCuenta({ userId: 'usr_mesa', role: 'MESA_ENTRADAS' }),
     ).rejects.toBeInstanceOf(ForbiddenError)
     expect(repository.leerAdeudados).not.toHaveBeenCalled()
+  })
+})
+
+describe('opcionesDelAlumno (decisión T-177)', () => {
+  const conProfesor = (
+    item: Adeudado,
+    profesor: { id: number; nombre: string; apellido: string },
+  ): Adeudado => ({
+    ...item,
+    ocurrencia: { ...item.ocurrencia, profesor: { ...profesor, busqueda: profesor.apellido } },
+  })
+  const RUIZ = { id: 5, nombre: 'Juan', apellido: 'Ruiz' }
+  const ALVAREZ = { id: 8, nombre: 'Eva', apellido: 'Álvarez' }
+
+  it('alumno inexistente → 404 sin leer nada', async () => {
+    alumnosRepository.buscarPorId.mockResolvedValue(null)
+
+    await expect(service.opcionesDelAlumno(99)).rejects.toBeInstanceOf(NotFoundError)
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
+    expect(repository.leerProximos).not.toHaveBeenCalled()
+    expect(repository.estadosDeMaterias).not.toHaveBeenCalled()
+  })
+
+  it('lee adeudados y próximos del alumno sin período, materia ni profesor, con hoy del reloj', async () => {
+    await service.opcionesDelAlumno(12)
+
+    const filtro = {
+      alumnoId: 12,
+      materiaIds: undefined,
+      profesorId: undefined,
+      desde: undefined,
+      hasta: undefined,
+      hoy: HOY,
+    }
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(filtro)
+    expect(repository.leerProximos).toHaveBeenCalledWith(filtro)
+  })
+
+  it('sólo lo por cobrar: materias y profesores de adeudados y próximos, sin repetir y en orden', async () => {
+    repository.leerAdeudados.mockResolvedValue([
+      adeudado({ fecha: '2026-09-28', materia: MATEMATICA }),
+      conProfesor(adeudado({ fecha: '2026-09-29', materia: FISICA }), RUIZ),
+      adeudado({ fecha: '2026-09-30', materia: MATEMATICA }),
+    ])
+    repository.leerProximos.mockResolvedValue([
+      conProfesor(proximo({ fecha: '2026-10-07', materia: INGLES }), ALVAREZ),
+    ])
+
+    expect(await service.opcionesDelAlumno(12)).toEqual({
+      materias: [
+        { ...FISICA, estado: 'ACTIVO' },
+        { ...INGLES, estado: 'ACTIVO' },
+        { ...MATEMATICA, estado: 'ACTIVO' },
+      ],
+      profesores: [ALVAREZ, { id: 3, nombre: 'Ana', apellido: 'Gómez' }, RUIZ],
+    })
+  })
+
+  it('incluye las materias dadas de baja, con su estado leído aparte', async () => {
+    repository.leerAdeudados.mockResolvedValue([
+      adeudado({ fecha: '2026-09-28', materia: MATEMATICA }),
+      adeudado({ fecha: '2026-09-29', materia: FISICA }),
+    ])
+    repository.estadosDeMaterias.mockResolvedValue(
+      new Map([
+        [MATEMATICA.id, 'INACTIVO'],
+        [FISICA.id, 'ACTIVO'],
+      ]),
+    )
+
+    const { materias } = await service.opcionesDelAlumno(12)
+
+    expect(materias).toEqual([
+      { ...FISICA, estado: 'ACTIVO' },
+      { ...MATEMATICA, estado: 'INACTIVO' },
+    ])
+    expect(repository.estadosDeMaterias).toHaveBeenCalledWith([MATEMATICA.id, FISICA.id])
+  })
+
+  it('sin nada por cobrar: las dos listas vacías', async () => {
+    expect(await service.opcionesDelAlumno(12)).toEqual({ materias: [], profesores: [] })
   })
 })

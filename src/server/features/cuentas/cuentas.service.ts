@@ -6,7 +6,7 @@ import { hoy, type Reloj } from '@/server/shared/fechas'
 import { minutosAHora } from '@/server/shared/zod'
 import type { Adeudado, FiltroDeuda } from './cuentas.condiciones'
 import type { CuentasRepository } from './cuentas.repository'
-import { paginarEnMemoria, rangosDelPeriodo, totalDe } from './cuentas.reglas'
+import { opcionesDeLaCuenta, paginarEnMemoria, rangosDelPeriodo, totalDe } from './cuentas.reglas'
 import type {
   AdeudadosGlobal,
   CuentaDelAlumno,
@@ -16,6 +16,7 @@ import type {
   MiCuenta,
   OcurrenciaDeCuenta,
   OcurrenciaDeCuentaGlobal,
+  OpcionesDeCuenta,
   ProximosGlobal,
 } from './cuentas.validation'
 
@@ -89,7 +90,10 @@ export function crearCuentasService({
   alumnosRepository,
   reloj,
 }: {
-  repository: Pick<CuentasRepository, 'leerAdeudados' | 'leerProximos' | 'dnisDeAlumnos'>
+  repository: Pick<
+    CuentasRepository,
+    'leerAdeudados' | 'leerProximos' | 'dnisDeAlumnos' | 'estadosDeMaterias'
+  >
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
 }) {
@@ -159,6 +163,28 @@ export function crearCuentasService({
     ): Promise<CuentaDelAlumno> {
       await exigirAlumno(alumnoId)
       return leerCuenta(alumnoId, filtro)
+    },
+
+    /**
+     * Materias y profesores de lo que el alumno tiene por cobrar, para los filtros de "Por cobrar"
+     * (decisión T-177): salen de la misma lectura que la cuenta **sin filtros** (adeudados y
+     * próximos hasta el tope de cobro), así el filtro no se queda sin opciones al elegir un período,
+     * una materia o un profesor. Incluye las materias y los profesores dados de baja. 404 si el
+     * alumno no existe.
+     */
+    async opcionesDelAlumno(alumnoId: number): Promise<OpcionesDeCuenta> {
+      await exigirAlumno(alumnoId)
+      const fechaHoy = hoy(reloj)
+      const filtroDeuda = aFiltroDeuda({}, alumnoId, fechaHoy)
+      const [adeudados, proximos] = await Promise.all([
+        repository.leerAdeudados(filtroDeuda),
+        repository.leerProximos(filtroDeuda),
+      ])
+      const porCobrar = [...adeudados, ...proximos]
+      const estados = await repository.estadosDeMaterias(
+        porCobrar.map((a) => a.ocurrencia.materia.id),
+      )
+      return opcionesDeLaCuenta(porCobrar, estados)
     },
 
     /**
