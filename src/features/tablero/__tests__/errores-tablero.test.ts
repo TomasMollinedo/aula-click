@@ -2,7 +2,11 @@ import { describe, expect, it } from 'vitest'
 
 import { ApiError } from '@/utils/fetch-json'
 
-import { MENSAJE_PERIODO_INVALIDO, interpretarErrorTablero } from '../errores-tablero'
+import {
+  MENSAJE_PERIODO_INVALIDO,
+  interpretarErrorTablero,
+  mensajesDeAsistencia,
+} from '../errores-tablero'
 
 const api = (status: number, details?: unknown) =>
   new ApiError(status, 'CODIGO', 'mensaje de la API', details)
@@ -79,5 +83,69 @@ describe('interpretarErrorTablero', () => {
       expect(interpretado.tipo).toBe('general')
       expect(interpretado.reintentar).toBe(true)
     }
+  })
+})
+
+describe('400 de los parámetros de "Asistencia"', () => {
+  it('un detalle sobre una página, el orden o el filtro no invalida el período', () => {
+    const error = interpretarErrorTablero(
+      api(400, [{ code: 'custom', path: ['orden'], message: 'Orden inválido' }]),
+    )
+
+    expect(error).toEqual({
+      tipo: 'parametros',
+      mensaje: null,
+      campos: { orden: 'Orden inválido' },
+      reintentar: false,
+    })
+    expect(mensajesDeAsistencia(error)).toEqual(['Orden inválido'])
+  })
+
+  it('ubica cada campo de las tablas, en el orden en que se muestran', () => {
+    const error = interpretarErrorTablero(
+      api(400, [
+        { path: ['soloSinRegistrar'], message: 'Debe ser true o false' },
+        { path: ['paginaProfesores'], message: 'Debe ser mayor a 0' },
+        { path: ['direccion'], message: 'Dirección inválida' },
+      ]),
+    )
+
+    expect(error.tipo).toBe('parametros')
+    expect(error.campos).toEqual({
+      soloSinRegistrar: 'Debe ser true o false',
+      paginaProfesores: 'Debe ser mayor a 0',
+      direccion: 'Dirección inválida',
+    })
+    expect(mensajesDeAsistencia(error)).toEqual([
+      'Debe ser mayor a 0',
+      'Dirección inválida',
+      'Debe ser true o false',
+    ])
+  })
+
+  it('si además toca el período, manda el período (el documento no se puede armar)', () => {
+    const error = interpretarErrorTablero(
+      api(400, [
+        { path: ['hasta'], message: 'La fecha hasta no puede ser anterior a la fecha desde' },
+        { path: ['paginaMaterias'], message: 'Debe ser mayor a 0' },
+      ]),
+    )
+
+    expect(error.tipo).toBe('periodo')
+    expect(error.campos.hasta).toBe('La fecha hasta no puede ser anterior a la fecha desde')
+    expect(mensajesDeAsistencia(error)).toEqual(['Debe ser mayor a 0'])
+  })
+
+  it('un campo desconocido deja el error general del período', () => {
+    const error = interpretarErrorTablero(api(400, [{ path: ['pagina'], message: 'Inválido' }]))
+
+    expect(error.tipo).toBe('periodo')
+    expect(error.mensaje).toBe(MENSAJE_PERIODO_INVALIDO)
+    expect(mensajesDeAsistencia(error)).toEqual([])
+  })
+
+  it('sin error, o con uno que no es un 400, no hay mensajes de las tablas', () => {
+    expect(mensajesDeAsistencia(null)).toEqual([])
+    expect(mensajesDeAsistencia(interpretarErrorTablero(api(403)))).toEqual([])
   })
 })
