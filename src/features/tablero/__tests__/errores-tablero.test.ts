@@ -6,6 +6,7 @@ import {
   MENSAJE_PERIODO_INVALIDO,
   interpretarErrorTablero,
   mensajesDeAsistencia,
+  mensajesDeFinanzas,
 } from '../errores-tablero'
 
 const api = (status: number, details?: unknown) =>
@@ -147,5 +148,39 @@ describe('400 de los parámetros de "Asistencia"', () => {
   it('sin error, o con uno que no es un 400, no hay mensajes de las tablas', () => {
     expect(mensajesDeAsistencia(null)).toEqual([])
     expect(mensajesDeAsistencia(interpretarErrorTablero(api(403)))).toEqual([])
+  })
+})
+
+describe('400 de los parámetros de "Finanzas"', () => {
+  it('un detalle sobre la página o el orden no invalida el período', () => {
+    const error = interpretarErrorTablero(
+      api(400, [
+        { path: ['page'], message: 'Debe ser mayor a 0' },
+        { path: ['orden'], message: 'Orden inválido' },
+      ]),
+    )
+
+    expect(error.tipo).toBe('parametros')
+    expect(error.mensaje).toBeNull()
+    expect(mensajesDeFinanzas(error)).toEqual(['Debe ser mayor a 0', 'Orden inválido'])
+  })
+
+  it('`orden` y `direccion` los comparten las dos secciones', () => {
+    const error = interpretarErrorTablero(api(400, [{ path: ['direccion'], message: 'Inválida' }]))
+
+    expect(mensajesDeFinanzas(error)).toEqual(['Inválida'])
+    expect(mensajesDeAsistencia(error)).toEqual(['Inválida'])
+  })
+
+  it('la página de "Finanzas" no sale en los mensajes de "Asistencia"', () => {
+    const error = interpretarErrorTablero(api(400, [{ path: ['page'], message: 'Inválida' }]))
+
+    expect(mensajesDeAsistencia(error)).toEqual([])
+    expect(mensajesDeFinanzas(error)).toEqual(['Inválida'])
+  })
+
+  it('sin error, o con uno que no es un 400, no hay mensajes de la tabla', () => {
+    expect(mensajesDeFinanzas(null)).toEqual([])
+    expect(mensajesDeFinanzas(interpretarErrorTablero(api(403)))).toEqual([])
   })
 })

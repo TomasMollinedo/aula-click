@@ -3,10 +3,11 @@
 // de cero al cambiar y descarta lo que no esté en `conservar`: acá el período, la paginación y el
 // orden de las tablas tienen que sobrevivir al cambio de pestaña.
 //
-// URL: sin parámetros, "General" (la sección por defecto no se escribe). `?seccion=asistencia` para
-// la otra, y un valor desconocido cae en la default: la URL nunca rompe la pantalla.
+// URL: sin parámetros, "General" (la sección por defecto no se escribe). `?seccion=asistencia` o
+// `?seccion=finanzas` para las otras, y un valor desconocido cae en la default: la URL nunca rompe
+// la pantalla.
 
-export const SECCIONES = ['general', 'asistencia'] as const
+export const SECCIONES = ['general', 'asistencia', 'finanzas'] as const
 
 export type Seccion = (typeof SECCIONES)[number]
 
@@ -15,6 +16,7 @@ export const SECCION_POR_DEFECTO: Seccion = 'general'
 export const ETIQUETA_SECCION: Record<Seccion, string> = {
   general: 'General',
   asistencia: 'Asistencia',
+  finanzas: 'Finanzas',
 }
 
 function esSeccion(valor: string | null): valor is Seccion {
