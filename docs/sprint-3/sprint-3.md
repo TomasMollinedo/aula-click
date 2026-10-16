@@ -1697,7 +1697,7 @@ Liquidaciones, "Mis ingresos" y el tablero tienen que decir exactamente lo mismo
 **Alcance**
 
 1. **Reglas puras** en `liquidaciones.reglas.ts` (sin Prisma, con tests):
-   - `fechaDeDevengo({ pagoRegistradoEl, asistenciaRegistradaEl })`: la más tardía de las dos, como fecha de Salta (`fechaEnZona`).
+   - `fechaDevengo({ pagoRegistradoEl, asistenciaRegistradaEl })`: la más tardía de las dos, como fecha de Salta (`fechaEnZona`).
    - `estaDevengado({ pagoVigente, asistencia })`: pago vigente y asistencia `PRESENTE` o `AUSENTE`.
    - `armarLiquidaciones({ devengados, liquidacionesCerradas, anulacionesPendientes, hoy })` → por profesor y mes: turnos, ajustes, totales (`totalCobrado`, `parteCentro`, `parteProfesor`, `totalAjustes`, `total`) y estado, con las reglas del Vocabulario de la ampliación:
      - cada devengado no cerrado va al mes de su fecha de devengo;
@@ -1711,7 +1711,7 @@ Liquidaciones, "Mis ingresos" y el tablero tienen que decir exactamente lo mismo
    - `leerLiquidacionesCerradas(client, { profesorId?, desde?, hasta? })`.
    - `liquidacionesDelMes(client, { mes, profesorId?, hoy })` y `liquidacionDe(client, { profesorId, mes, hoy })`: abiertas (calculadas) y cerradas (leídas, con sus importes congelados), con el mismo formato de salida. Una cerrada **no se recalcula**.
    - `saldoAPagarPorProfesor(client, { hoy })`: lo que se le debe hoy a cada profesor (todas sus liquidaciones sin cerrar, incluida la del mes en curso), para el tablero (T-128).
-   - `cobrosConReparto(client, { desde, hasta })`: los `PagoTurno` vigentes con fecha de pago en el rango, con su reparto, el profesor y si la ocurrencia quedó **cerrada sin registrar** (con `plazoDeAsistencia` de `turnos.condiciones`, nunca recalculado): para el margen del centro (T-128).
+   - `cobrosConReparto(client, { desde, hasta, hoy })`: los `PagoTurno` vigentes con fecha de pago en el rango, con su reparto, el profesor y si la ocurrencia quedó **cerrada sin registrar** (con `plazoDeAsistencia` de `turnos.condiciones`, nunca recalculado): para el margen del centro (T-128).
    - `cierreDeLiquidacion(client, { profesorId, mes, hoy })`: lo que hay que escribir para cerrar una liquidación (la `Liquidacion`, sus `LiquidacionTurno`, sus `AjusteLiquidacion` y las `DESCONTADA` que absorbe). La escritura la hace el repository de T-124 en su transacción; el cálculo es uno solo.
 3. Tests (reglas puras y motor a nivel repository, con reloj fijo), como mínimo:
    - Clase dada en octubre y pagada en noviembre → noviembre. Pagada por adelantado en octubre y dada en noviembre → noviembre. "Ausente" pagado → se debe.

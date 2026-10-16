@@ -156,6 +156,26 @@ Además de las lecturas, el motor publica las reglas y los textos de la asistenc
 
 `turnos/turnos.condiciones.ts` (T-39, mismas firmas desde el Sprint 1): `contarVigentesPorMateria(client, { fechaHoy, alumnoId?, profesorId?, materiaIds? })` (`alumnoId` lo usa `examenes` para las materias en las que el alumno tiene turnos vigentes), `contarVigentesPorBloques(client, bloqueAgendaIds, fechaHoy)`, `listarVigentesPorProfesor(client, profesorId, fechaHoy)` y `ocupacionMaximaPorFila(client, profesorId, fechaHoy)`.
 
+## Liquidaciones
+
+`liquidaciones/liquidaciones.condiciones.ts` (el motor de liquidaciones, T-121) es la única implementación del devengo, los ajustes por anulación, el saldo anterior y el saldo de cada profesor (`dominio.md` → Liquidaciones). Las reglas son las puras de `liquidaciones.reglas.ts`; las condiciones sólo leen y delegan. Reciben el cliente (`prisma` o el `tx`) y de Prisma sólo importan tipos (decisión T-39). Nadie más calcula devengo, ajustes ni saldos: `liquidaciones` (T-124, T-125), "Mis ingresos" (T-126) y el tablero (T-128) los leen de acá.
+
+| Función                                                              | Devuelve                                                                                                                                                                                                |
+| -------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `liquidacionesDelMes(client, { mes, profesorId?, hoy })`             | `Liquidacion[]` del mes `YYYY-MM`, una por profesor: la cerrada si la hay, si no la abierta. Ordenadas por profesor. Un mes posterior al de `hoy` → `[]`                                                |
+| `liquidacionDe(client, { profesorId, mes, hoy })`                    | La `Liquidacion` del profesor en ese mes (cerrada o abierta), o `null` sin movimientos                                                                                                                  |
+| `saldoAPagarPorProfesor(client, { hoy })`                            | `{ profesor, saldo }[]` de los profesores con alguna abierta (`PENDIENTE_DE_PAGO` + `EN_CURSO`); puede ser negativo                                                                                     |
+| `cobrosConReparto(client, { desde, hasta, hoy })`                    | Los `PagoTurno` vigentes con `fechaPago` en el rango, con su `reparto` (al porcentaje del cobro), el profesor del bloque y `cerradaSinRegistrar` (sin asistencia y `plazoDeAsistencia` vencido a `hoy`) |
+| `cierreDeLiquidacion(client, { profesorId, mes, hoy })`              | Lo que se escribe al pagar (`{ liquidacion, escrituras }`: las `DESCONTADA` de la cadena y la `PAGADA`, de la más vieja a la más nueva), o `null` si no está `PENDIENTE_DE_PAGO`. No escribe            |
+| `leerDevengados(client, { profesorId?, hasta })`                     | Los turnos devengados hasta `hasta` que no están en una liquidación cerrada                                                                                                                             |
+| `leerAnulacionesPendientes(client, { profesorId? })`                 | Los turnos de liquidaciones cerradas con el pago anulado (`vigente: null`) y sin su ajuste                                                                                                              |
+| `leerLiquidacionesCerradas(client, { profesorId?, desde?, hasta? })` | Las cerradas de esos meses, con sus importes guardados                                                                                                                                                  |
+
+- **Una sola forma de salida:** abiertas y cerradas son `Liquidacion` (`cerrada: null` en las abiertas; en las cerradas, los datos del cierre con quién lo registró, `registradaPor`, y cuándo, `registradaEl`). También se re-exportan `ESTADOS_LIQUIDACION`, `textoMes` y los tipos de salida: nadie importa `liquidaciones.reglas.ts`.
+- **Una cerrada se lee y nunca se recalcula** (decisión T-156): sus turnos, ajustes y totales son los guardados, aunque después se anule un pago (eso genera el ajuste en otra liquidación, decisión T-163).
+- **Consultas fijas, sin N+1:** las abiertas salen de cuatro consultas (cobros sin liquidar, sus asistencias, anulaciones pendientes y meses cerrados) y el resto se arma en memoria con las reglas; el devengo y su fecha nunca se prefiltran en la base.
+- **`cierreDeLiquidacion` calcula y el repository de `liquidaciones` (T-124) escribe**, en su transacción y con su `tx`: crea las escrituras en orden y resuelve `mesOrigen` y `descontadaEnMes` a ids.
+
 ## Concurrencia en la capacidad de un bloque
 
 - La verificación de capacidad y la inserción del turno se hacen en una sola transacción de `turnosRepository.reservar`. Las reglas las decide el service con un callback puro (`planificar`, que envuelve `planificarReserva` de `turnos.reglas.ts`); el repository toma los locks, relee y ejecuta el callback: si lanza, no se inserta nada.

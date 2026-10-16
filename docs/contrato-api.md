@@ -1396,13 +1396,18 @@ Carga de exámenes de un alumno (HU-17, T-55), de la que depende la prioridad de
 
 ## Tablero
 
-HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
+HU-21 (T-61, decisiones T-112 a T-119) y HU-39 (T-112, decisión T-162). Indicadores del centro para el gerente, en dos secciones: **General** (`GET /tablero`) y **Asistencia** (`GET /tablero/asistencia`), cada una con su PDF (`GET /tablero/pdf?seccion=`). **Sólo lectura y sólo agregados:** no devuelve datos de un alumno, un pago ni una agenda puntual, y todo se calcula al consultarlo (nada se guarda). Las definiciones de negocio están en `dominio.md` → Tablero.
 
-**`GET /api/v1/tablero?desde&hasta`** — rol `GERENTE`.
+**Período común.** Los tres endpoints reciben el mismo período y lo validan igual:
 
 - `desde`, `hasta`: período `YYYY-MM-DD`, extremos incluidos, **los dos obligatorios** (la UI traduce "Hoy", "Esta semana", "Este mes" o un rango a estas dos fechas).
 - 400 `VALIDACION` si falta alguno o no es una fecha real (`details` en su campo), y con `details` sobre `hasta` si `hasta` es anterior a `desde` ("La fecha hasta no puede ser anterior a la fecha desde") o si el período supera los **366 días**, extremos incluidos ("El período no puede superar los 366 días").
 - Errores: 401 `NO_AUTENTICADO`; 403 `SIN_PERMISO` para cualquier rol que no sea `GERENTE`.
+- **Porcentajes:** número JSON de 0 a 100 redondeado a **un decimal** (1 de 3 → `33.3`), sin `%`; `0` si la base es 0. No se ajustan para que sumen 100 (tres tercios dan 99.9). Los importes van en pesos como número JSON, sin formato.
+
+### General
+
+**`GET /api/v1/tablero?desde&hasta`** — rol `GERENTE`.
 
 ```json
 {
@@ -1411,13 +1416,13 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
   "turnos": {
     "total": 48,
     "cancelados": { "cantidad": 6, "porcentaje": 12.5 },
-    "sinRegistrar": { "cantidad": 26, "porcentaje": 54.2 },
+    "sinRegistrar": { "cantidad": 6, "porcentaje": 12.5 },
     "agendados": { "cantidad": 16, "porcentaje": 33.3 },
-    "asistio": { "disponible": false },
-    "noAsistio": { "disponible": false }
+    "asistio": { "cantidad": 17, "porcentaje": 85 },
+    "noAsistio": { "cantidad": 3, "porcentaje": 15 }
   },
   "ocupacion": { "turnos": 42, "capacidad": 64, "porcentaje": 65.6 },
-  "alumnos": { "nuevos": 3, "atendidos": { "disponible": false } },
+  "alumnos": { "nuevos": 3, "atendidos": 14 },
   "materiasConMasDemanda": [
     { "materia": { "id": 2, "nombre": "Matemática" }, "cantidad": 15 },
     { "materia": { "id": 7, "nombre": "Física" }, "cantidad": 9 }
@@ -1426,26 +1431,96 @@ HU-21 (T-61, decisiones T-112 a T-119). Indicadores del centro para el gerente. 
     { "profesor": { "id": 3, "nombre": "Ana", "apellido": "Gómez" }, "cantidad": 14 },
     { "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" }, "cantidad": 11 }
   ],
-  "pagos": { "totalCobrado": 96000, "totalAdeudado": 296000.5 }
+  "pagos": {
+    "totalCobrado": 96000,
+    "cobradoPorForma": { "EFECTIVO": 40000, "TRANSFERENCIA": 38000, "DEBITO": 18000 },
+    "totalAdeudado": 296000.5
+  }
 }
 ```
 
 - `periodo`: el período pedido. `hoy`: la fecha de hoy en la zona del negocio con la que se calculó toda la respuesta; es la fecha de `pagos.totalAdeudado` y la que separa "sin registrar" de "agendados".
-- `turnos.total`: ocurrencias del período, **incluidas las canceladas**. `cancelados`, `sinRegistrar` y `agendados` traen `cantidad` y `porcentaje` sobre `total`. Los estados son sólo los de la definición F; van como claves, sin textos.
+- `turnos.total`: ocurrencias del período, **incluidas las canceladas**. `cancelados`, `sinRegistrar` y `agendados` traen `cantidad` y `porcentaje` sobre `total`. `sinRegistrar` son los pasados sin asistencia registrada (los que todavía están dentro del plazo y los que cerró el sistema); los que ya tienen asistencia no están en ninguno de los tres, sino en `asistio` y `noAsistio`.
 - **`turnos.agendados` es `null`** si el período no incluye fechas futuras (`hasta` anterior a `hoy`): la UI no muestra el indicador. Si `hasta` es hoy o posterior viene con su cantidad, que puede ser 0.
-- **Indicadores que dependen de la asistencia** (HU-22, próximo sprint; definición F): `turnos.asistio`, `turnos.noAsistio` y `alumnos.atendidos` son **exactamente `{ "disponible": false }`**, sin `valor` ni otra clave, y no se calculan con ningún sustituto.
+- **Asistencia** (HU-22, decisión T-162, reemplaza a T-116): `turnos.asistio` (asistencia "Presente", estado `REALIZADO`) y `turnos.noAsistio` (asistencia "Ausente", estado `AUSENTE`) traen `cantidad` y `porcentaje` **sobre los turnos con asistencia registrada** (`asistio` + `noAsistio`), **no sobre `turnos.total`**: los dos porcentajes suman 100 (salvo el redondeo) y, sin ninguna asistencia registrada, ambos son `{ cantidad: 0, porcentaje: 0 }`. `alumnos.atendidos` es un entero: los alumnos **distintos** con al menos un turno `REALIZADO` en el período.
 - `ocupacion`: `turnos` son las ocurrencias no canceladas del período y `capacidad` la suma de la capacidad efectiva de cada **clase** (una hora de un bloque en una fecha con al menos un turno no cancelado; las horas sin turnos no cuentan). `ocupacion.turnos` es lo mismo que `cupo.ocupados` de las agendas, sumado sobre todas las clases del período, y `capacidad` lo mismo que `cupo.capacidad`. El `porcentaje` **no se recorta a 100**: si a un profesor o a un aula le bajaron la capacidad, puede superarlo.
 - `alumnos.nuevos`: alumnos dados de alta en el período (en hora de Salta), aunque después se hayan dado de baja.
 - `profesoresConMasTurnos` (decisión T-121): hasta 5, por cantidad de turnos **no cancelados** del período en sus horas, es decir, por alumnos con turno con ese profesor; descendente y, en empate, por apellido, nombre y `id`. Trae `{ id, nombre, apellido }` del profesor y nunca datos de sus alumnos. `[]` si no hay ninguno.
 - `materiasConMasDemanda`: hasta 5, por cantidad de turnos **no cancelados** del período, descendente; en empate, por nombre y después por `id`. `[]` si no hay ninguno.
-- `pagos.totalCobrado`: suma de los pagos vigentes con **fecha de pago** dentro del período.
+- `pagos.totalCobrado`: suma de los pagos **vigentes** (los anulados no suman) con **fecha de pago** dentro del período.
+- **`pagos.cobradoPorForma`** (HU-23, HU-39): ese mismo total separado por forma de pago, con las tres claves siempre presentes (`EFECTIVO`, `TRANSFERENCIA`, `DEBITO`; la forma se decide por su código, nunca por el nombre) y `0` en la que no tuvo cobros. Es el mismo filtro que `totalCobrado` (sólo pagos vigentes, por fecha de pago): las tres suman `totalCobrado`.
 - **`pagos.totalAdeudado` es la deuda a la fecha (`hoy`), no la del período**: no cambia al cambiar `desde` y `hasta`, y coincide con el `totalAdeudado` de `GET /cuentas/adeudados` sin filtros (misma implementación, ver Cuentas).
-- **Porcentajes:** número JSON de 0 a 100 redondeado a **un decimal** (1 de 3 → `33.3`), sin `%`; `0` si la base es 0. No se ajustan para que sumen 100 (tres tercios dan 99.9). Los importes van en pesos como número JSON, sin formato.
 
-**`GET /api/v1/tablero/pdf?desde&hasta`** (rol `GERENTE`, decisión T-130): el tablero del período como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismo query, mismas reglas y mismos errores 400, 401 y 403 que `GET /tablero`, y los mismos indicadores (sale del mismo cálculo, no hay un segundo).
+### Asistencia
 
-- **Contenido:** una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), los alumnos nuevos y, al final, las materias y los profesores con más turnos en barras. No lleva los indicadores que dependen de la asistencia (`turnos.asistio`, `turnos.noAsistio` ni `alumnos.atendidos`), igual que la pantalla.
-- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` (`tablero-2026-09-28_2026-10-04.pdf`).
+**`GET /api/v1/tablero/asistencia?desde&hasta&paginaProfesores&paginaMaterias&orden&direccion&soloSinRegistrar`** — rol `GERENTE` (HU-39, T-112, decisión T-162). La pestaña "Asistencia": un resumen y dos tablas. **Sólo agregados por centro, profesor y materia: nunca un alumno con nombre.**
+
+- `desde`, `hasta`: el período común (arriba).
+- `paginaProfesores`, `paginaMaterias`: página de cada tabla (entero ≥ 1, por defecto `1`). Las dos tablas son **de a 10 filas** y no hay `pageSize`. Cada una tiene su página: cambiar la de profesores no mueve la de materias. Una página pasada del final devuelve `data: []` con su `meta`.
+- `orden`: columna por la que se ordena **la tabla de profesores**: `profesor` (apellido y nombre), `clasesRealizadas`, `ausencias`, `porcentajeAsistencia`, `cerradosSinRegistrar` (por defecto), `dentroDelPlazo` o `porcentajeSinRegistrar`. `direccion`: `asc` o `desc` (por defecto `desc`). En empate, siempre apellido, nombre e `id` ascendentes, así el orden es estable entre páginas. La tabla de materias no se reordena.
+- `soloSinRegistrar`: `true` o `false` (por defecto, `false`). Con `true`, la tabla de profesores trae sólo a los que tienen `noRegistraAsistencia`. **No cambia el resumen ni la tabla de materias**, que son siempre los del período entero.
+- 400 `VALIDACION` además por una página que no es un entero ≥ 1 y por un `orden`, una `direccion` o un `soloSinRegistrar` que no existen (`details` en su campo).
+
+```json
+{
+  "periodo": { "desde": "2026-09-28", "hasta": "2026-10-04" },
+  "hoy": "2026-10-02",
+  "resumen": {
+    "porcentajeAsistencia": 85,
+    "cerradosSinRegistrar": 5,
+    "profesoresSinRegistrar": 2,
+    "alumnosBajoElUmbral": 3
+  },
+  "profesores": {
+    "data": [
+      {
+        "profesor": { "id": 5, "nombre": "Luis", "apellido": "Pérez" },
+        "clasesRealizadas": 6,
+        "ausencias": 1,
+        "porcentajeAsistencia": 85.7,
+        "cerradosSinRegistrar": 3,
+        "dentroDelPlazo": 1,
+        "porcentajeSinRegistrar": 27.3,
+        "noRegistraAsistencia": true
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 10, "total": 1, "totalPages": 1 }
+  },
+  "materias": {
+    "data": [
+      {
+        "materia": { "id": 2, "nombre": "Matemática" },
+        "clasesRealizadas": 8,
+        "ausencias": 1,
+        "porcentajeAsistencia": 88.9,
+        "cerradosSinRegistrar": 3,
+        "dentroDelPlazo": 1,
+        "porcentajeSinRegistrar": 23.1
+      }
+    ],
+    "meta": { "page": 1, "pageSize": 10, "total": 1, "totalPages": 1 }
+  }
+}
+```
+
+- `hoy`: la fecha con la que se calculó la respuesta; separa los turnos cerrados de los que están dentro del plazo (plazo de 7 días, ver Asistencias).
+- `resumen` (los números principales):
+  - `porcentajeAsistencia`: asistencia del centro, los turnos `REALIZADO` sobre los que tienen asistencia registrada (`REALIZADO` + `AUSENTE`).
+  - `cerradosSinRegistrar`: turnos del período que cerró el sistema como "Sin registrar" (pasaron los 7 días sin que el profesor los registrara).
+  - `profesoresSinRegistrar`: profesores con al menos un turno cerrado sin registrar en el período (lo mismo que cuenta `noRegistraAsistencia`).
+  - `alumnosBajoElUmbral`: alumnos con **menos de 75 %** de asistencia, entre los que tienen algún turno con asistencia registrada en el período. **Sólo la cantidad:** el umbral es estricto (75 % justo no cuenta) y los alumnos sin ningún registro no entran.
+- `profesores`: un profesor por fila, sólo los que tienen turnos **no cancelados** en el período. `clasesRealizadas` son los turnos con asistencia "Presente" (cada hora de un alumno cuenta como un turno), `ausencias` los de "Ausente", `porcentajeAsistencia` las clases sobre ambos, `cerradosSinRegistrar` los que cerró el sistema, `dentroDelPlazo` los "Sin registrar" que todavía se pueden registrar y `porcentajeSinRegistrar` los cerrados sobre los turnos **no cancelados** del profesor en el período (los agendados están en la base). `noRegistraAsistencia` es `true` con al menos un cerrado: la UI muestra el distintivo "No registra asistencia". Orden por defecto: `cerradosSinRegistrar` de mayor a menor.
+- `materias`: las mismas cifras agrupadas por materia (sin `noRegistraAsistencia`: no es una persona que registre). Orden fijo: `cerradosSinRegistrar` de mayor a menor y, en empate, nombre e `id`.
+- Los cancelados no cuentan en ninguna cifra. Con todo en 0 (por ejemplo, un período sin turnos), los porcentajes son `0` y las tablas, `[]`.
+
+### PDF
+
+**`GET /api/v1/tablero/pdf?desde&hasta&seccion`** (rol `GERENTE`, decisiones T-130 y T-162): una sección del tablero como documento oficial en PDF, con el contrato común de [Documentos PDF](#documentos-pdf). Mismo período, mismas reglas y mismos errores 400, 401 y 403 que los otros endpoints, y los mismos números que el JSON de la sección (sale del mismo cálculo, no hay un segundo).
+
+- `seccion`: `general` (por defecto, así el enlace anterior a las secciones sigue funcionando) o `asistencia`. 400 `VALIDACION` con `details` sobre `seccion` si es otra.
+- **`general`** (reemplaza al PDF de HU-21): una hoja A4 con el encabezado del centro, un título según el período (`Tablero semanal` si va de lunes a domingo, `Tablero diario` si es un día, `Tablero mensual` si es un mes completo y `Tablero del período` en otro caso; es también el título del PDF) y debajo, de qué día a qué día son los datos (`Datos del lunes 28/09/2026 al domingo 04/10/2026`). Primero los pagos (total cobrado del período, con lo cobrado por forma de pago, y total adeudado a la fecha `hoy`), después los turnos del período (torta de activos y cancelados), la ocupación de las clases (lugares ocupados y libres), la asistencia (asistió y no asistió, con su porcentaje) con los alumnos atendidos y nuevos, y al final las materias y los profesores con más turnos en barras.
+- **`asistencia`**: el título es `Asistencia semanal`, `Asistencia diaria`, `Asistencia mensual` o `Asistencia del período` (según el período, igual que el de General) y debajo, de qué día a qué día son los datos. Trae los números principales del `resumen` y las **tablas completas** de profesores y de materias: **todas las filas** (sin las páginas de la pantalla y sin el filtro `soloSinRegistrar`), en el orden por defecto (cerrados sin registrar de mayor a menor), repitiendo el encabezado de la tabla en cada hoja, así que ocupa las hojas que hagan falta. Sin ningún dato de los alumnos. La tabla de profesores marca con "No registra" a los que tienen turnos cerrados sin registrar.
+- **Nombre del archivo:** `tablero-<desde>_<hasta>.pdf` para General (`tablero-2026-09-28_2026-10-04.pdf`) y `tablero-asistencia-<desde>_<hasta>.pdf` para Asistencia.
 
 ## Centro
 
@@ -1669,7 +1744,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 **`GET /api/v1/historiales/mis-materias/{materiaId}/{profesorId}?mes`** (portal, HU-33): el historial del alumno de la sesión en una materia con un profesor, **por mes** (`mes` es `AAAA-MM`; por defecto, el mes en curso; otro formato es 400 `VALIDACION`). Trae `indicacionesProximaClase` (`{ fecha, indicaciones }` de la última clase realizada con indicaciones, de **cualquier** fecha, también anterior al mes; `null` si no hay), el `resumen` **del mes** y sus `bloques`. Una materia y un profesor en los que no cursa ni cursó → 404 `NO_ENCONTRADO`.
 
-Lo que el alumno **no** ve (ver [Portal del alumno](#portal-del-alumno)): la `observacion` de la ausencia y la del cierre del sistema, la `cancelacion` (ni su motivo ni su detalle), el `plazoAsistencia`, `cerradaPorSistema` y datos de otros alumnos. Y las clases **`SIN_REGISTRAR` y `AGENDADO` no se le muestran**: se omiten del bloque, y un bloque que se queda sin ninguna no viene (HU-33 sólo nombra "Realizado", "Ausente" y "Cancelado"; decisión T-148). `horas` sigue siendo el total del bloque, así que puede ser mayor que la cantidad de `clases`.
+Lo que el alumno **no** ve (ver [Portal del alumno](#portal-del-alumno)): la `observacion` de la ausencia y la del cierre del sistema, la `cancelacion` (ni su motivo ni su detalle), el `plazoAsistencia`, `cerradaPorSistema` y datos de otros alumnos. Las clases **`SIN_REGISTRAR` sí se le muestran** (decisión T-167), sin el plazo ni el cierre del sistema, y **no cuentan** para el `resumen`; las **`AGENDADO`** (una de hoy todavía sin registrar) no: se omiten del bloque, y un bloque que se queda sin ninguna no viene (decisión T-148). `horas` sigue siendo el total del bloque, así que puede ser mayor que la cantidad de `clases`.
 
 ```json
 {
@@ -1708,20 +1783,21 @@ Lo que el alumno **no** ve (ver [Portal del alumno](#portal-del-alumno)): la `ob
 
 ## Adjuntos
 
-HU-24 (T-95). El **comprobante adjunto** es el archivo que trae la familia para respaldar un pago por transferencia o con débito (no confundir con el comprobante de pago en PDF que emite el centro, HU-15). Reglas en `dominio.md` → Comprobante adjunto.
+HU-24 (T-95) y HU-44 (T-123). El **comprobante adjunto** es el archivo que trae la familia para respaldar un pago por transferencia o con débito (no confundir con el comprobante de pago en PDF que emite el centro, HU-15). Con las mismas reglas, es también el comprobante **opcional** de la transferencia a un profesor al pagar su liquidación (HU-44). Reglas en `dominio.md` → Comprobante adjunto.
 
-| Endpoint                                 | Roles                      | Qué hace                                                                                                 |
-| ---------------------------------------- | -------------------------- | -------------------------------------------------------------------------------------------------------- |
-| `POST /api/v1/adjuntos`                  | `MESA_ENTRADAS`            | Sube el archivo **antes** de registrar el pago. 201 `{ id, nombre, tipo, bytes }`; 400                   |
-| `GET /api/v1/adjuntos/pagos/{pagoId}`    | `MESA_ENTRADAS`, `GERENTE` | El último adjunto activo del pago, con la URL para abrirlo. 200; 404                                     |
-| `PUT /api/v1/adjuntos/pagos/{pagoId}`    | `MESA_ENTRADAS`            | Reemplaza el comprobante (conserva el anterior) o lo adjunta a un débito sin adjunto. 200; 400; 404; 409 |
-| `DELETE /api/v1/adjuntos/pagos/{pagoId}` | `MESA_ENTRADAS`            | Quita el comprobante de un pago **con débito** (baja lógica). 204; 404; 409                              |
+| Endpoint                                             | Roles                      | Qué hace                                                                                                                |
+| ---------------------------------------------------- | -------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
+| `POST /api/v1/adjuntos`                              | `MESA_ENTRADAS`, `GERENTE` | Sube el archivo **antes** de registrar el pago o la transferencia a un profesor. 201 `{ id, nombre, tipo, bytes }`; 400 |
+| `GET /api/v1/adjuntos/pagos/{pagoId}`                | `MESA_ENTRADAS`, `GERENTE` | El último adjunto activo del pago, con la URL para abrirlo. 200; 404                                                    |
+| `GET /api/v1/adjuntos/liquidaciones/{liquidacionId}` | `GERENTE`                  | El último adjunto activo de la liquidación (el comprobante de la transferencia), con la URL. 200; 400; 404              |
+| `PUT /api/v1/adjuntos/pagos/{pagoId}`                | `MESA_ENTRADAS`            | Reemplaza el comprobante (conserva el anterior) o lo adjunta a un débito sin adjunto. 200; 400; 404; 409                |
+| `DELETE /api/v1/adjuntos/pagos/{pagoId}`             | `MESA_ENTRADAS`            | Quita el comprobante de un pago **con débito** (baja lógica). 204; 404; 409                                             |
 
-Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante adjunto** (HU-24).
+Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante adjunto** (HU-24) y el **profesor no ve el comprobante de la transferencia** (HU-45). El de una liquidación no se reemplaza ni se quita.
 
 **El archivo** (`POST` y `PUT`): multipart con un único campo `archivo`, JPG, PNG o PDF de hasta 5 MB. Además del tipo que declara el navegador se verifica el contenido (la firma): un PNG renombrado a `.pdf` se rechaza. Errores, 400 `VALIDACION` en `["archivo"]`: "El archivo debe ser JPG, PNG o PDF" o "El archivo supera los 5 MB". Se guarda con su nombre original (hasta 200 caracteres; vacío, "comprobante").
 
-**Respuesta 201 del `POST`:** `{ "id": 18, "nombre": "transferencia.pdf", "tipo": "application/pdf", "bytes": 248312 }`. El `id` es el que se manda como `comprobanteAdjuntoId` al registrar el pago (`POST /pagos`, T-96), que lo vincula **dentro de su transacción**: si el pago falla, el adjunto queda sin pago. Un adjunto sólo se vincula a un pago, y sólo lo puede vincular quien lo subió; si no, el `POST /pagos` responde 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]`. Uno que nunca se vincula queda guardado y no se muestra.
+**Respuesta 201 del `POST`:** `{ "id": 18, "nombre": "transferencia.pdf", "tipo": "application/pdf", "bytes": 248312 }`. El `id` es el que se manda como `comprobanteAdjuntoId` al registrar el pago (`POST /pagos`, T-96) o el pago de una liquidación (ver [Liquidaciones](#liquidaciones)), que lo vinculan **dentro de su transacción**: si el registro falla, el adjunto queda sin vincular. Un adjunto se vincula a un solo pago **o** a una sola liquidación, y sólo lo puede vincular quien lo subió; si no, el registro responde 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]`, con "El comprobante adjunto no existe o ya se usó en otro pago: volvé a subirlo" (pago) o "El comprobante de la transferencia no existe o ya se usó: volvé a subirlo" (liquidación). Uno que nunca se vincula queda guardado y no se muestra.
 
 **Respuesta 200 del `GET` (y del `PUT`):**
 
@@ -1740,6 +1816,8 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante ad
 - Es el **último activo** del pago: los reemplazados se conservan y no se muestran. Un pago anulado lo sigue mostrando.
 - `url`: prefirmada, vence a los 15 min. **Abre el archivo en otra pestaña** (`Content-Disposition: inline`) y, si se guarda, se guarda con su nombre. El frontend la usa como enlace (`target="_blank"`); no la guarda.
 - 404 si el pago no existe ("Pago no encontrado") o no tiene adjunto: nunca tuvo, o se quitó ("El pago no tiene comprobante adjunto").
+
+**`GET /adjuntos/liquidaciones/{liquidacionId}`:** la misma respuesta que el de un pago (`AdjuntoDeLiquidacion`), con el último adjunto activo de la liquidación; `adjuntadoPor` es el gerente que registró la transferencia. `liquidacionId` no numérico o menor a 1 → 400. 404 si la liquidación no existe ("Liquidación no encontrada") o no tiene comprobante, porque es opcional o porque es `DESCONTADA`, sin transferencia ("La liquidación no tiene comprobante adjunto").
 
 **`PUT` (reemplazar):** adjunta el archivo nuevo y conserva el anterior (la fila y el archivo); el `GET` muestra el nuevo, con quién lo adjuntó y cuándo. En un pago con débito sin adjunto, lo adjunta. Errores, en orden: 404 si el pago no existe; 409 `PAGO_ANULADO` si está anulado (conserva todo como estaba, HU-42); 409 `CONFLICTO` "Un pago en efectivo no lleva comprobante adjunto" si su forma de pago no lleva comprobante.
 
@@ -1896,7 +1974,168 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 ## Liquidaciones
 
-A completar por T-124 (HU-44). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
+
+| Endpoint                                                        | Roles     | Qué hace                                                                         |
+| --------------------------------------------------------------- | --------- | -------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                                     | `GERENTE` | Las liquidaciones del mes, una por profesor, con los totales del mes. 200; 400   |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE` | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404 |
+| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE` | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409            |
+
+Cualquier otro rol recibe 403 `SIN_PERMISO`.
+
+**El mes** (`AAAA-MM`, en el query del listado y en la ruta del detalle y del pago): formato inválido (`2026-13`, `2026-9`) → 400 `VALIDACION` en `["mes"]` "El mes debe tener el formato AAAA-MM". Un mes **posterior al de hoy** → 400 `VALIDACION` en `["mes"]` "El mes no puede ser futuro" en los dos `GET` (en el pago, un mes futuro es 409, ver abajo). El **mes en curso sí se puede pedir**: sus liquidaciones salen `EN_CURSO`.
+
+**Estados:** `EN_CURSO` (mes en curso), `PENDIENTE_DE_PAGO` (mes terminado con total > 0), `SALDO_A_DESCONTAR` (mes terminado con total de 0 o menos: pasa al mes siguiente como ajuste), `PAGADA` y `DESCONTADA` (su saldo lo absorbió la liquidación de `descontadaEnMes`). **Una liquidación cerrada (`PAGADA` o `DESCONTADA`) se muestra congelada**, con los importes guardados al pagarla, aunque después se anule un pago de sus turnos: eso genera un ajuste en otra liquidación (decisiones T-156 y T-163).
+
+**Importes** en pesos (número JSON), sumados en centavos: en cada fila y en los totales, `parteProfesor + totalAjustes = total` y `parteCentro + parteProfesor = totalCobrado`. Los ajustes son negativos.
+
+**`GET /liquidaciones?mes=2026-09&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy):
+
+```json
+{
+  "mes": "2026-09",
+  "totales": {
+    "cantidadTurnos": 19,
+    "totalCobrado": 152000,
+    "parteCentro": 22800,
+    "parteProfesor": 129200,
+    "totalAjustes": -6800,
+    "total": 122400
+  },
+  "data": [
+    {
+      "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+      "estado": "PAGADA",
+      "cantidadTurnos": 12,
+      "totalCobrado": 96000,
+      "parteCentro": 14400,
+      "parteProfesor": 81600,
+      "totalAjustes": 0,
+      "total": 81600,
+      "fechaTransferencia": "2026-10-05",
+      "descontadaEnMes": null
+    },
+    {
+      "profesor": { "id": 9, "nombre": "Carla", "apellido": "Ruiz" },
+      "estado": "SALDO_A_DESCONTAR",
+      "cantidadTurnos": 1,
+      "totalCobrado": 8000,
+      "parteCentro": 1200,
+      "parteProfesor": 6800,
+      "totalAjustes": -6800,
+      "total": 0,
+      "fechaTransferencia": null,
+      "descontadaEnMes": null
+    }
+  ],
+  "meta": { "page": 1, "pageSize": 10, "total": 2, "totalPages": 1 }
+}
+```
+
+- `mes`: el pedido o el por defecto (el front arma el selector con él).
+- Una fila por profesor **con turnos o ajustes en el mes, aunque esté inactivo**, por apellido y nombre. Un profesor sin movimientos no aparece. Sin ninguno: `data: []` y los totales en 0 ("No hay liquidaciones en …").
+- `totales`: la suma de cada columna de **todo el listado**, no de la página.
+- `fechaTransferencia`: sólo en una `PAGADA`; `descontadaEnMes`: sólo en una `DESCONTADA` ("Descontada en la liquidación de …"). Si no, `null`.
+
+**`GET /liquidaciones/profesores/{profesorId}/{mes}`**: el detalle, con el mismo cálculo del listado.
+
+```json
+{
+  "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+  "mes": "2026-09",
+  "estado": "PAGADA",
+  "turnos": [
+    {
+      "fecha": "2026-09-08",
+      "horaInicio": "15:00",
+      "horaFin": "16:00",
+      "alumno": { "id": 12, "nombre": "Juan", "apellido": "Pérez" },
+      "materia": { "id": 2, "nombre": "Matemática" },
+      "numeroComprobante": 123,
+      "importe": 8000,
+      "porcentaje": 15,
+      "parteProfesor": 6800
+    }
+  ],
+  "ajustes": [],
+  "cantidadTurnos": 1,
+  "totalCobrado": 8000,
+  "parteCentro": 1200,
+  "parteProfesor": 6800,
+  "totalAjustes": 0,
+  "total": 6800,
+  "cerrada": {
+    "liquidacionId": 31,
+    "fechaTransferencia": "2026-10-05",
+    "numeroOperacion": "0004829137",
+    "observaciones": null,
+    "descontadaEnMes": null,
+    "comprobanteAdjunto": {
+      "id": 44,
+      "nombre": "transferencia-gomez.pdf",
+      "tipo": "application/pdf",
+      "bytes": 248312,
+      "adjuntadoPor": { "id": "usr_gerente_01", "nombre": "Marta", "apellido": "Ríos" },
+      "adjuntadoEl": "2026-10-05T14:02:00.000Z"
+    },
+    "registradaPor": { "id": "usr_gerente_01", "nombre": "Marta", "apellido": "Ríos" },
+    "registradaEl": "2026-10-05T14:03:00.000Z"
+  },
+  "acciones": { "registrarPago": false }
+}
+```
+
+- `turnos`: cada turno liquidado (fecha, horario `HH:mm`, alumno, materia, número de comprobante del cobro, importe, porcentaje del centro de ese cobro y parte del profesor). La parte del centro por turno no viaja: está en los totales.
+- `ajustes`: `{ tipo, texto, importe }`, con `tipo` `ANULACION` ("Ajuste por anulación del comprobante N.º 123 (2 turnos)") o `SALDO_ANTERIOR` ("Saldo de la liquidación de agosto de 2026"). El texto lo arma la API.
+- `cerrada`: `null` si está abierta. En una cerrada, `liquidacionId`, la transferencia (`fechaTransferencia`, `numeroOperacion` y `observaciones`; `null` en una `DESCONTADA`), `descontadaEnMes`, el comprobante adjunto y quién registró el pago (`registradaPor`, `UsuarioAuditoria`) y cuándo (`registradaEl`, ISO 8601 UTC).
+- `comprobanteAdjunto`: el último activo de una `PAGADA` (opcional: puede ser `null`), **sin URL**. Para abrirlo ("Ver"), el front pide la URL a `GET /adjuntos/liquidaciones/{liquidacionId}` (ver [Adjuntos](#adjuntos)).
+- `acciones.registrarPago`: lo decide la API; `true` sólo en `PENDIENTE_DE_PAGO` (mes terminado y total > 0).
+- **Profesor sin movimientos en el mes** → 200 con la liquidación vacía: `estado: null`, `turnos: []`, `ajustes: []`, totales en 0, `cerrada: null` y `registrarPago: false`.
+- Errores, en orden: 400 `VALIDACION` si `profesorId` no es un entero positivo (`abc`, `0`) o el mes es inválido o futuro; 404 `NO_ENCONTRADO` "Profesor no encontrado" (un profesor inactivo sí se muestra).
+
+**`POST /liquidaciones/profesores/{profesorId}/{mes}/pago`**: registra la transferencia al profesor y cierra la liquidación. Sólo se paga una `PENDIENTE_DE_PAGO` (mes terminado y total > 0), **por el total que calcula la API: sin pagos parciales**. El comprobante (opcional) se sube antes con `POST /adjuntos` y acá se manda su `id` (ver [Adjuntos](#adjuntos)).
+
+```json
+{
+  "fechaTransferencia": "2026-10-05",
+  "numeroOperacion": "0004829137",
+  "comprobanteAdjuntoId": 44,
+  "observaciones": null,
+  "totalConfirmado": 81600
+}
+```
+
+- `fechaTransferencia`: `AAAA-MM-DD`, obligatoria.
+- `numeroOperacion`: obligatorio, hasta 50 caracteres.
+- `comprobanteAdjuntoId`: opcional (`null` u omitido = sin comprobante).
+- `observaciones`: opcional, hasta 500 caracteres; `""` o espacios = sin observaciones.
+- `totalConfirmado`: el `total` que mostró el detalle, mayor a 0. **El monto no se manda**: es un control de que la liquidación no cambió entre que se abrió y se confirmó.
+
+**Respuesta 201**, lo justo para "Pago registrado. La liquidación de septiembre de Gómez, Ana quedó pagada" (el front invalida el listado y el detalle):
+
+```json
+{
+  "liquidacionId": 31,
+  "profesor": { "id": 4, "nombre": "Ana", "apellido": "Gómez" },
+  "mes": "2026-09",
+  "total": 81600,
+  "fechaTransferencia": "2026-10-05"
+}
+```
+
+**Qué hace, en una transacción:** recalcula la liquidación con el motor, la guarda `PAGADA` con sus turnos, ajustes e importes congelados, la transferencia y quién la registró; cierra como `DESCONTADA` las de saldo negativo que absorbió (`descontadaEnMes` = este mes) y vincula el comprobante. Si algo falla, no se guarda nada. Desde ahí sus turnos no aparecen en otra liquidación, y una anulación posterior de uno de sus pagos no la cambia: se descuenta como ajuste en la siguiente (decisión T-163).
+
+**Errores, en orden:**
+
+1. 400 `VALIDACION` del body o de los parámetros, cada uno en su campo.
+2. 404 `NO_ENCONTRADO` "Profesor no encontrado".
+3. 409 `CONFLICTO` si el mes es el en curso o futuro: "La liquidación de noviembre de 2026 todavía no se puede pagar: el mes no terminó".
+4. 400 `VALIDACION` en `["fechaTransferencia"]`: "La fecha de la transferencia no puede ser futura" o "La transferencia no puede ser anterior al 31/10/2026" (el último día del mes liquidado sí vale).
+5. 409 `LIQUIDACION_PAGADA` "La liquidación de octubre de 2026 de Gómez, Ana ya está pagada".
+6. 409 `CONFLICTO` "No hay importe a pagar": sin movimientos, `SALDO_A_DESCONTAR` o `DESCONTADA`.
+7. 409 `LIQUIDACION_MODIFICADA` "La liquidación cambió desde que la abriste. Revisala antes de pagar": el total calculado no es `totalConfirmado` (por ejemplo, se anuló un pago de uno de sus turnos), o otro pago de la misma liquidación ganó la carrera. No se guarda nada; el front recarga el detalle (T-132).
+8. 400 `ADJUNTO_INVALIDO` en `["comprobanteAdjuntoId"]` "El comprobante de la transferencia no existe o ya se usó: volvé a subirlo" (ver [Adjuntos](#adjuntos)); no se guarda nada.
 
 ## Caja
 
@@ -1952,6 +2191,7 @@ Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que de
 | Historial académico   | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
 | Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
 | Tablero del gerente   | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
+
 
 Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas y Tablero.
 
@@ -2040,7 +2280,7 @@ Códigos específicos (reemplazan al `code` por defecto; uno nuevo se agrega ac�
 
 | Status | `code`                   | Mensaje / `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | ------ | ------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 400    | `ADJUNTO_INVALIDO`       | Registrar un pago con `comprobanteAdjuntoId` (T-95/T-96), si el adjunto no existe, ya está vinculado a otro pago, está dado de baja o lo subió otro usuario: "El comprobante adjunto no existe o ya se usó en otro pago: volvé a subirlo". `details`: `[{ "path": ["comprobanteAdjuntoId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| 400    | `ADJUNTO_INVALIDO`       | Registrar un pago con `comprobanteAdjuntoId` (T-95/T-96), si el adjunto no existe, ya está vinculado a un pago o a una liquidación, está dado de baja o lo subió otro usuario: "El comprobante adjunto no existe o ya se usó en otro pago: volvé a subirlo". En el pago de una liquidación (T-123/T-124), lo mismo con "El comprobante de la transferencia no existe o ya se usó: volvé a subirlo". `details`: `[{ "path": ["comprobanteAdjuntoId"], "message" }]`                                                                                                                                                                                                                                                                                                                                                                              |
 | 403    | `USUARIO_INHABILITADO`   | "Su usuario no está habilitado". Sin `details`. En `/api/v1`, si el usuario fue dado de baja con la sesión abierta; también en el login (ver Autenticación)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 | 409    | `BLOQUE_LLENO`           | Alta de turnos. Mensaje general: "No hay lugar: …" si alguna hora no tiene lugar en ninguna fecha (incluida una sesión única llena; se rechaza siempre, aun con `asignarDondeHayLugar`), o "Hay fechas sin lugar: …" si solo algunas fechas de un recurrente están llenas (se puede reenviar con `asignarDondeHayLugar: true`). `details`: una entrada por hora con problema, `{ "path": ["bloqueIds", <posición>], "message", "bloqueId", "horaInicio", "horaFin", "capacidadEfectiva", "fechas", "completoDesde", "sinLugar" }`. `fechas`: las fechas llenas (lista finita); `completoDesde`: la fecha desde la cual todas las siguientes están llenas, o `null`. `message` sigue la HU: "La hora de 9:00 a 10:00 está completa el lunes 26/10", "… está completa desde el lunes 02/11" o "… no tiene lugar en ninguna de las fechas pedidas" |
 | 409    | `PROFESOR_INACTIVO`      | El mensaje depende de la operación: "El profesor está inactivo: no se le pueden asignar materias" (materias), "… no se le puede cargar un bloque" (bloques) o "… no se le pueden asignar turnos" (turnos). Sin `details`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        |

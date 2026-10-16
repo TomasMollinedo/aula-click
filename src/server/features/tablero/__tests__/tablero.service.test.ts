@@ -32,7 +32,16 @@ function ocurrencia(
     bloqueAgendaId = 10,
     materiaId = 2,
     profesorId = 3,
-  }: { bloqueAgendaId?: number; materiaId?: number; profesorId?: number } = {},
+    alumnoId,
+    vencido,
+  }: {
+    bloqueAgendaId?: number
+    materiaId?: number
+    profesorId?: number
+    alumnoId?: number
+    /** El plazo de registro ya venció: un "Sin registrar" cerrado por el sistema. */
+    vencido?: boolean
+  } = {},
 ): Ocurrencia {
   turnoId += 1
   return {
@@ -44,15 +53,20 @@ function ocurrencia(
     horaFin: 600,
     profesorId,
     aulaId: 1,
-    alumnoId: turnoId,
+    alumnoId: alumnoId ?? turnoId,
     materiaId,
     tipo: 'SESION_UNICA',
     estado,
     pago: { estado: 'PENDIENTE' },
     asistencia: null,
-    plazoAsistencia: null,
+    plazoAsistencia: vencido === undefined ? null : { vence: '2026-10-05', vencido },
     serie: { serieId: null, fechaInicio: fecha, fechaFin: fecha, finEfectivo: fecha },
-    alumno: { id: turnoId, nombre: `Alumno${turnoId}`, apellido: 'Paz', busqueda: 'paz' },
+    alumno: {
+      id: alumnoId ?? turnoId,
+      nombre: `Alumno${turnoId}`,
+      apellido: 'Paz',
+      busqueda: 'paz',
+    },
     profesor: {
       id: profesorId,
       nombre: profesorId === 3 ? 'Ana' : 'Luis',
@@ -83,6 +97,9 @@ beforeEach(() => {
       .mockResolvedValue(new Map()),
     contarAlumnosNuevos: vi.fn<TableroRepository['contarAlumnosNuevos']>().mockResolvedValue(0),
     totalCobrado: vi.fn<TableroRepository['totalCobrado']>().mockResolvedValue(0),
+    totalCobradoPorForma: vi
+      .fn<TableroRepository['totalCobradoPorForma']>()
+      .mockResolvedValue({ EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 }),
     totalAdeudado: vi.fn<TableroRepository['totalAdeudado']>().mockResolvedValue(0),
   }
   service = crearTableroService({ repository, reloj })
@@ -123,14 +140,18 @@ describe('período y hoy', () => {
         cancelados: { cantidad: 0, porcentaje: 0 },
         sinRegistrar: { cantidad: 0, porcentaje: 0 },
         agendados: { cantidad: 0, porcentaje: 0 },
-        asistio: { disponible: false },
-        noAsistio: { disponible: false },
+        asistio: { cantidad: 0, porcentaje: 0 },
+        noAsistio: { cantidad: 0, porcentaje: 0 },
       },
       ocupacion: { turnos: 0, capacidad: 0, porcentaje: 0 },
-      alumnos: { nuevos: 0, atendidos: { disponible: false } },
+      alumnos: { nuevos: 0, atendidos: 0 },
       materiasConMasDemanda: [],
       profesoresConMasTurnos: [],
-      pagos: { totalCobrado: 0, totalAdeudado: 0 },
+      pagos: {
+        totalCobrado: 0,
+        cobradoPorForma: { EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 },
+        totalAdeudado: 0,
+      },
     })
     expect(repository.capacidadesDeBloques).toHaveBeenCalledExactlyOnceWith([])
   })
@@ -183,20 +204,48 @@ describe('turnos por estado', () => {
   })
 })
 
-describe('indicadores que dependen de la asistencia (HU-22)', () => {
-  it('los cuatro son exactamente `{ disponible: false }`, aunque haya turnos pasados no cancelados', async () => {
+describe('asistencia (HU-22, HU-39)', () => {
+  it('asistió y no asistió: cantidad y porcentaje sobre los turnos con asistencia registrada', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      ...repetir(3, () => ocurrencia('2026-09-28', 'REALIZADO')),
+      ocurrencia('2026-09-29', 'AUSENTE'),
+      // Fuera de la base del porcentaje, aunque sí están en `turnos.total`.
+      ocurrencia('2026-09-29', 'SIN_REGISTRAR', { vencido: true }),
+      ocurrencia('2026-10-03', 'AGENDADO'),
+      ocurrencia('2026-09-30', 'CANCELADO'),
+    ])
+
+    const { turnos } = await service.obtener(ESTA_SEMANA)
+
+    expect(turnos.asistio).toEqual({ cantidad: 3, porcentaje: 75 })
+    expect(turnos.noAsistio).toEqual({ cantidad: 1, porcentaje: 25 })
+    expect(turnos.total).toBe(7)
+    expect(turnos.sinRegistrar.cantidad).toBe(1)
+  })
+
+  it('sin ninguna asistencia registrada → 0 de 0, sin dividir por cero', async () => {
     repository.ocurrenciasDelPeriodo.mockResolvedValue(
-      repetir(4, () => ocurrencia('2026-09-22', 'SIN_REGISTRAR')),
+      repetir(4, () => ocurrencia('2026-09-22', 'SIN_REGISTRAR', { vencido: true })),
     )
-    repository.capacidadesDeBloques.mockResolvedValue(new Map([[10, 4]]))
 
-    const tablero = await service.obtener(SEMANA_PASADA)
+    const { turnos, alumnos } = await service.obtener(SEMANA_PASADA)
 
-    // Hay con qué armar un sustituto ("turnos pasados no cancelados"): no se usa.
-    expect(tablero.turnos.sinRegistrar.cantidad).toBe(4)
-    expect(tablero.turnos.asistio).toStrictEqual({ disponible: false })
-    expect(tablero.turnos.noAsistio).toStrictEqual({ disponible: false })
-    expect(tablero.alumnos.atendidos).toStrictEqual({ disponible: false })
+    expect(turnos.asistio).toEqual({ cantidad: 0, porcentaje: 0 })
+    expect(turnos.noAsistio).toEqual({ cantidad: 0, porcentaje: 0 })
+    expect(alumnos.atendidos).toBe(0)
+  })
+
+  it('alumnos atendidos: distintos con al menos un turno realizado', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      ocurrencia('2026-09-28', 'REALIZADO', { alumnoId: 7 }),
+      ocurrencia('2026-09-29', 'REALIZADO', { alumnoId: 7 }),
+      ocurrencia('2026-09-29', 'REALIZADO', { alumnoId: 8 }),
+      // Sólo ausente o cerrado: no se lo atendió.
+      ocurrencia('2026-09-29', 'AUSENTE', { alumnoId: 9 }),
+      ocurrencia('2026-09-29', 'SIN_REGISTRAR', { alumnoId: 10, vencido: true }),
+    ])
+
+    expect((await service.obtener(ESTA_SEMANA)).alumnos.atendidos).toBe(2)
   })
 })
 
@@ -351,6 +400,24 @@ describe('pagos', () => {
     expect(repository.totalCobrado).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA)
   })
 
+  it('`cobradoPorForma` trae las tres formas del repository para el período, con 0 en las que no hubo', async () => {
+    repository.totalCobrado.mockResolvedValue(30001.5)
+    repository.totalCobradoPorForma.mockResolvedValue({
+      EFECTIVO: 20000,
+      TRANSFERENCIA: 10001.5,
+      DEBITO: 0,
+    })
+
+    const { pagos } = await service.obtener(ESTA_SEMANA)
+
+    expect(pagos.cobradoPorForma).toStrictEqual({
+      EFECTIVO: 20000,
+      TRANSFERENCIA: 10001.5,
+      DEBITO: 0,
+    })
+    expect(repository.totalCobradoPorForma).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA)
+  })
+
   it('`totalAdeudado` se pide con exactamente `{ hoy }`: a la fecha, sin período ni filtros', async () => {
     repository.totalAdeudado.mockResolvedValue(296000.5)
 
@@ -359,5 +426,215 @@ describe('pagos', () => {
     expect(pagos.totalAdeudado).toBe(296000.5)
     expect(repository.totalAdeudado).toHaveBeenCalledTimes(1)
     expect(repository.totalAdeudado.mock.calls[0]).toStrictEqual([{ hoy: HOY }])
+  })
+})
+
+describe('asistencia: GET /tablero/asistencia', () => {
+  const PRIMERA_PAGINA = {
+    desde: '2026-09-28',
+    hasta: '2026-10-04',
+    paginaProfesores: 1,
+    paginaMaterias: 1,
+    orden: 'cerradosSinRegistrar',
+    direccion: 'desc',
+  } as const
+
+  /** Luis (7): 2 cerrados; Ana (3): 1 realizado y 1 pendiente; Marta (9): sólo cancelados. */
+  function cargarEjemplo() {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      ocurrencia('2026-09-22', 'SIN_REGISTRAR', { profesorId: 7, materiaId: 2, vencido: true }),
+      ocurrencia('2026-09-22', 'SIN_REGISTRAR', { profesorId: 7, materiaId: 3, vencido: true }),
+      ocurrencia('2026-09-28', 'REALIZADO', { profesorId: 3, materiaId: 2, vencido: false }),
+      ocurrencia('2026-10-01', 'SIN_REGISTRAR', { profesorId: 3, materiaId: 2, vencido: false }),
+      ocurrencia('2026-09-28', 'CANCELADO', { profesorId: 9, materiaId: 1 }),
+    ])
+  }
+
+  it('lee las ocurrencias una sola vez, del período entero, con el reloj del service, y nada más', async () => {
+    await service.obtenerAsistencia(PRIMERA_PAGINA)
+
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA, reloj)
+    expect(repository.capacidadesDeBloques).not.toHaveBeenCalled()
+    expect(repository.contarAlumnosNuevos).not.toHaveBeenCalled()
+    expect(repository.totalCobrado).not.toHaveBeenCalled()
+    expect(repository.totalCobradoPorForma).not.toHaveBeenCalled()
+    expect(repository.totalAdeudado).not.toHaveBeenCalled()
+  })
+
+  it('período sin turnos → resumen en 0 y las dos tablas vacías (base 0, sin dividir por cero)', async () => {
+    const respuesta = await service.obtenerAsistencia(PRIMERA_PAGINA)
+
+    expect(respuesta).toStrictEqual({
+      periodo: ESTA_SEMANA,
+      hoy: HOY,
+      resumen: {
+        porcentajeAsistencia: 0,
+        cerradosSinRegistrar: 0,
+        profesoresSinRegistrar: 0,
+        alumnosBajoElUmbral: 0,
+      },
+      profesores: { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } },
+      materias: { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } },
+    })
+  })
+
+  it('arma el resumen y las tablas; los profesores sin turnos no cancelados no aparecen', async () => {
+    cargarEjemplo()
+
+    const { resumen, profesores, materias } = await service.obtenerAsistencia(PRIMERA_PAGINA)
+
+    expect(resumen).toEqual({
+      porcentajeAsistencia: 100,
+      cerradosSinRegistrar: 2,
+      profesoresSinRegistrar: 1,
+      alumnosBajoElUmbral: 0,
+    })
+    // Por defecto, los de más cerrados sin registrar primero.
+    expect(profesores.data.map((f) => [f.profesor.nombre, f.cerradosSinRegistrar])).toEqual([
+      ['Luis', 2],
+      ['Ana', 0],
+    ])
+    expect(profesores.data[0]).toEqual({
+      profesor: { id: 7, nombre: 'Luis', apellido: 'Pérez' },
+      clasesRealizadas: 0,
+      ausencias: 0,
+      porcentajeAsistencia: 0,
+      cerradosSinRegistrar: 2,
+      dentroDelPlazo: 0,
+      porcentajeSinRegistrar: 100,
+      noRegistraAsistencia: true,
+    })
+    expect(profesores.data[1]).toMatchObject({
+      clasesRealizadas: 1,
+      dentroDelPlazo: 1,
+      porcentajeSinRegistrar: 0,
+      noRegistraAsistencia: false,
+    })
+    expect(materias.data.map((f) => f.materia.nombre)).toEqual(['Física', 'Matemática'])
+    expect(Object.keys(materias.data[0] ?? {})).not.toContain('noRegistraAsistencia')
+  })
+
+  it('`orden` y `direccion` reordenan sólo la tabla de profesores', async () => {
+    cargarEjemplo()
+
+    const { profesores, materias } = await service.obtenerAsistencia({
+      ...PRIMERA_PAGINA,
+      orden: 'profesor',
+      direccion: 'asc',
+    })
+
+    expect(profesores.data.map((f) => f.profesor.apellido)).toEqual(['Gómez', 'Pérez'])
+    // La de materias sigue en su orden fijo.
+    expect(materias.data.map((f) => f.materia.nombre)).toEqual(['Física', 'Matemática'])
+  })
+
+  it('`soloSinRegistrar: true` deja sólo a los que no registran y no toca el resumen ni las materias', async () => {
+    cargarEjemplo()
+
+    const completo = await service.obtenerAsistencia(PRIMERA_PAGINA)
+    const filtrado = await service.obtenerAsistencia({
+      ...PRIMERA_PAGINA,
+      soloSinRegistrar: 'true',
+    })
+
+    expect(filtrado.profesores.data.map((f) => f.profesor.nombre)).toEqual(['Luis'])
+    expect(filtrado.profesores.meta.total).toBe(1)
+    expect(filtrado.resumen).toEqual(completo.resumen)
+    expect(filtrado.materias).toEqual(completo.materias)
+  })
+
+  it('`soloSinRegistrar: false` no filtra', async () => {
+    cargarEjemplo()
+
+    const { profesores } = await service.obtenerAsistencia({
+      ...PRIMERA_PAGINA,
+      soloSinRegistrar: 'false',
+    })
+
+    expect(profesores.data).toHaveLength(2)
+  })
+
+  it('pagina de a 10, cada tabla con su página, y una página de más viene vacía con su meta', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue(
+      Array.from({ length: 25 }, (_, i) =>
+        ocurrencia('2026-09-28', 'REALIZADO', { profesorId: 100 + i, materiaId: 200 + i }),
+      ),
+    )
+
+    const primera = await service.obtenerAsistencia(PRIMERA_PAGINA)
+    const tercera = await service.obtenerAsistencia({
+      ...PRIMERA_PAGINA,
+      paginaProfesores: 3,
+      paginaMaterias: 2,
+    })
+    const cuarta = await service.obtenerAsistencia({ ...PRIMERA_PAGINA, paginaProfesores: 4 })
+
+    expect(primera.profesores.data).toHaveLength(10)
+    expect(primera.profesores.meta).toEqual({ page: 1, pageSize: 10, total: 25, totalPages: 3 })
+    expect(tercera.profesores.data).toHaveLength(5)
+    expect(tercera.profesores.meta.page).toBe(3)
+    expect(tercera.materias.data).toHaveLength(10)
+    expect(tercera.materias.meta).toEqual({ page: 2, pageSize: 10, total: 25, totalPages: 3 })
+    expect(cuarta.profesores.data).toEqual([])
+    expect(cuarta.profesores.meta).toEqual({ page: 4, pageSize: 10, total: 25, totalPages: 3 })
+  })
+
+  it('las páginas siguen el orden pedido sin repetir ni saltear a nadie (empates incluidos)', async () => {
+    // 15 profesores con los mismos números: el desempate por apellido, nombre e id es estable.
+    repository.ocurrenciasDelPeriodo.mockResolvedValue(
+      Array.from({ length: 15 }, (_, i) =>
+        ocurrencia('2026-09-28', 'REALIZADO', { profesorId: 100 + i }),
+      ),
+    )
+
+    const [uno, dos] = await Promise.all([
+      service.obtenerAsistencia(PRIMERA_PAGINA),
+      service.obtenerAsistencia({ ...PRIMERA_PAGINA, paginaProfesores: 2 }),
+    ])
+
+    const ids = [...uno.profesores.data, ...dos.profesores.data].map((f) => f.profesor.id)
+    expect(new Set(ids).size).toBe(15)
+  })
+
+  it('"hoy" es el de Salta y viaja en la respuesta', async () => {
+    const service = crearTableroService({
+      repository,
+      reloj: () => new Date('2026-10-03T02:00:00Z'),
+    })
+
+    expect((await service.obtenerAsistencia(PRIMERA_PAGINA)).hoy).toBe(HOY)
+  })
+
+  it('nunca trae a un alumno ni el campo interno `busqueda`', async () => {
+    cargarEjemplo()
+
+    const json = JSON.stringify(await service.obtenerAsistencia(PRIMERA_PAGINA))
+
+    expect(json).not.toContain('Alumno')
+    expect(json).not.toContain('alumnoId')
+    expect(json).not.toContain('"alumno"')
+    expect(json).not.toContain('busqueda')
+  })
+})
+
+describe('asistencia: tablas completas para el PDF', () => {
+  it('trae todas las filas, sin páginas ni filtro, en el orden por defecto', async () => {
+    repository.ocurrenciasDelPeriodo.mockResolvedValue([
+      ...Array.from({ length: 25 }, (_, i) =>
+        ocurrencia('2026-09-28', 'REALIZADO', { profesorId: 100 + i, materiaId: 200 + i }),
+      ),
+      ocurrencia('2026-09-22', 'SIN_REGISTRAR', { profesorId: 7, vencido: true }),
+    ])
+
+    const { periodo, hoy, resumen, profesores, materias } =
+      await service.asistenciaCompleta(ESTA_SEMANA)
+
+    expect(periodo).toEqual(ESTA_SEMANA)
+    expect(hoy).toBe(HOY)
+    expect(resumen.cerradosSinRegistrar).toBe(1)
+    expect(profesores).toHaveLength(26)
+    expect(profesores[0]?.profesor.id).toBe(7)
+    expect(materias).toHaveLength(26)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA, reloj)
   })
 })
