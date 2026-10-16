@@ -25,6 +25,19 @@ export function textoImporte(importe: number | null): string {
   return importe === null ? 'Sin precio' : formatearPesos(importe)
 }
 
+/**
+ * El subtotal de una materia en el resumen (HU-25): `'Inglés (2 turnos): $ 18.000,00'`, o
+ * `'… sin calcular'` si alguno de sus turnos no tiene precio.
+ */
+export function textoSubtotal(subtotal: {
+  materia: { nombre: string }
+  cantidad: number
+  total: number | null
+}): string {
+  const importe = subtotal.total === null ? 'sin calcular' : formatearPesos(subtotal.total)
+  return `${subtotal.materia.nombre} (${textoCantidad(subtotal.cantidad)}): ${importe}`
+}
+
 /** `'Total: $ 32.000,00'`, o `'Total: sin calcular'` si alguno no tiene precio. */
 export function textoTotal(total: number | null): string {
   return `Total: ${total === null ? 'sin calcular' : formatearPesos(total)}`

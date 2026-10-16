@@ -30,6 +30,7 @@ import {
   textoConfirmacion,
   textoExito,
   textoNumeroComprobante,
+  textoSubtotal,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
@@ -218,6 +219,17 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
             <form id={FORM_ID} onSubmit={continuar} noValidate className="space-y-5">
               <section aria-label="Turnos a cobrar" className="space-y-2">
                 <ResumenACobrarTabla ocurrencias={ocurrencias} />
+                {/* Con más de una materia, el subtotal de cada una (HU-25). */}
+                {resumen.porMateria.length > 1 && (
+                  <ul
+                    aria-label="Subtotal por materia"
+                    className="text-muted-foreground space-y-0.5 text-right text-sm"
+                  >
+                    {resumen.porMateria.map((subtotal) => (
+                      <li key={subtotal.materia.id}>{textoSubtotal(subtotal)}</li>
+                    ))}
+                  </ul>
+                )}
                 <p className="text-right text-base font-semibold">{textoTotal(resumen.total)}</p>
                 {resumen.sinPrecio > 0 && (
                   <Alert>

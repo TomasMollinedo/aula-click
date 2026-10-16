@@ -19,6 +19,7 @@ import {
   textoImporte,
   textoNumero,
   textoNumeroComprobante,
+  textoSubtotal,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
@@ -33,6 +34,17 @@ describe('textos del resumen', () => {
     expect(textoImporte(null)).toBe('Sin precio')
     expect(textoTotal(32000)).toBe(`Total: $${NBSP}32.000,00`)
     expect(textoTotal(null)).toBe('Total: sin calcular')
+  })
+})
+
+describe('textoSubtotal', () => {
+  it('la materia con su cantidad y su subtotal; sin precio, sin calcular', () => {
+    expect(textoSubtotal({ materia: { nombre: 'Inglés' }, cantidad: 2, total: 18000 })).toBe(
+      `Inglés (2 turnos): $${NBSP}18.000,00`,
+    )
+    expect(textoSubtotal({ materia: { nombre: 'Física' }, cantidad: 1, total: null })).toBe(
+      'Física (1 turno): sin calcular',
+    )
   })
 })
 

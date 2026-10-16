@@ -85,24 +85,42 @@ describe('aCobrarDesdeDetalle', () => {
 })
 
 describe('resumenACobrar', () => {
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const INGLES = { id: 5, nombre: 'Inglés' }
+  const de = (importe: number | null, materia = MATEMATICA) => ({ importe, materia })
+
   it('suma los importes que mandó la API, en centavos', () => {
-    expect(resumenACobrar([{ importe: 8000 }, { importe: 8000 }, { importe: 9500.25 }])).toEqual({
+    expect(resumenACobrar([de(8000), de(8000), de(9500.25)])).toMatchObject({
       cantidad: 3,
       total: 25500.25,
       sinPrecio: 0,
     })
-    expect(resumenACobrar([{ importe: 0.1 }, { importe: 0.2 }]).total).toBe(0.3)
+    expect(resumenACobrar([de(0.1), de(0.2)]).total).toBe(0.3)
   })
 
   it('con un importe null: sin total, y cuenta cuántas no tienen precio', () => {
-    expect(resumenACobrar([{ importe: 8000 }, { importe: null }, { importe: null }])).toEqual({
+    expect(resumenACobrar([de(8000), de(null), de(null)])).toMatchObject({
       cantidad: 3,
       total: null,
       sinPrecio: 2,
     })
   })
 
-  it('una sola', () => {
-    expect(resumenACobrar([{ importe: 8000 }])).toEqual({ cantidad: 1, total: 8000, sinPrecio: 0 })
+  it('una sola: una materia, con su subtotal', () => {
+    expect(resumenACobrar([de(8000)])).toEqual({
+      cantidad: 1,
+      total: 8000,
+      sinPrecio: 0,
+      porMateria: [{ materia: MATEMATICA, cantidad: 1, total: 8000 }],
+    })
+  })
+
+  it('Inglés y Matemática: el subtotal de cada una, por nombre (HU-25)', () => {
+    expect(
+      resumenACobrar([de(8000), de(9000, INGLES), de(8000), de(9000, INGLES)]).porMateria,
+    ).toEqual([
+      { materia: INGLES, cantidad: 2, total: 18000 },
+      { materia: MATEMATICA, cantidad: 2, total: 16000 },
+    ])
   })
 })
