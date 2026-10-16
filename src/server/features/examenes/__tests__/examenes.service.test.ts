@@ -36,7 +36,6 @@ function examen(campos: Partial<ExamenGuardado> = {}): ExamenGuardado {
     materiaId: 3,
     materia: { id: 3, nombre: 'Matemática' },
     fecha: '2026-10-15',
-    tipo: 'PARCIAL',
     observaciones: null,
     createdAt: '2026-09-22T13:45:00.000Z',
     updatedAt: '2026-09-22T13:45:00.000Z',
@@ -113,7 +112,6 @@ beforeEach(() => {
       materiaId: datos.materiaId,
       materia: { id: datos.materiaId, nombre: 'Matemática' },
       fecha: datos.fecha,
-      tipo: datos.tipo,
       observaciones: datos.observaciones ?? null,
       createdBy: { ...auditoriaMesa, id: actor.userId, role: actor.role },
       updatedBy: { ...auditoriaMesa, id: actor.userId, role: actor.role },
@@ -230,7 +228,7 @@ describe('materiasOfrecibles', () => {
 })
 
 describe('crear', () => {
-  const datos = { alumnoId: 12, materiaId: 3, fecha: '2026-10-20', tipo: 'PARCIAL' as const }
+  const datos = { alumnoId: 12, materiaId: 3, fecha: '2026-10-20' }
 
   it('alumno inexistente: 404', async () => {
     alumnosRepository.buscarPorId.mockResolvedValue(null)
@@ -277,13 +275,13 @@ describe('crear', () => {
   })
 
   it('ya hay un examen pendiente de esa materia: 409 EXAMEN_PENDIENTE con el existente', async () => {
-    repository.buscarPendiente.mockResolvedValue({ id: 9, tipo: 'FINAL', fecha: '2026-10-25' })
+    repository.buscarPendiente.mockResolvedValue({ id: 9, fecha: '2026-10-25' })
 
     const error = await service.crear(datos, actorMesa).catch((e) => e)
 
     expect(error).toBeInstanceOf(ConflictError)
     expect(error.code).toBe(CODIGO_EXAMEN_PENDIENTE)
-    expect(error.details).toEqual({ id: 9, tipo: 'FINAL', fecha: '2026-10-25' })
+    expect(error.details).toEqual({ id: 9, fecha: '2026-10-25' })
   })
 
   it('el anterior ya pasó: no cuenta como pendiente, se puede cargar el siguiente', async () => {
@@ -341,7 +339,7 @@ describe('editar', () => {
 
   it('cambia la fecha a una con otro examen pendiente en la materia: 409, sin contar el propio', async () => {
     repository.buscarPorId.mockResolvedValue(examen({ id: 1, materiaId: 3 }))
-    repository.buscarPendiente.mockResolvedValue({ id: 9, tipo: 'FINAL', fecha: '2026-10-25' })
+    repository.buscarPendiente.mockResolvedValue({ id: 9, fecha: '2026-10-25' })
 
     const error = await service.editar(1, { fecha: '2026-10-25' }, actorMesa).catch((e) => e)
 
@@ -577,7 +575,7 @@ describe('misExamenes (portal)', () => {
       examen({ id: 2, fecha: '2026-09-20', resultado: 'AUSENTE' }),
       examen({ id: 3, fecha: '2026-10-01', resultado: 'CON_NOTA', nota: 7.5 }),
       examen({ id: 4, fecha: '2026-10-03' }), // rendido sin nota
-      examen({ id: 5, fecha: '2026-10-13', tipo: 'FINAL' }),
+      examen({ id: 5, fecha: '2026-10-13' }),
       examen({ id: 6, fecha: '2026-10-20' }),
       examen({ id: 7, fecha: '2026-09-01', materiaId: 5 }), // otra materia
     ])
@@ -586,12 +584,12 @@ describe('misExamenes (portal)', () => {
 
     expect(repository.listarDelAlumno).toHaveBeenCalledWith(12)
     expect(mis).toEqual({
-      proximo: { fecha: '2026-10-13', tipo: 'FINAL', diasRestantes: 8 },
+      proximo: { fecha: '2026-10-13', diasRestantes: 8 },
       rendidos: [
-        { fecha: '2026-10-03', tipo: 'PARCIAL', resultado: null, nota: null },
-        { fecha: '2026-10-01', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 7.5 },
-        { fecha: '2026-09-20', tipo: 'PARCIAL', resultado: 'AUSENTE', nota: null },
-        { fecha: '2026-09-05', tipo: 'PARCIAL', resultado: 'CON_NOTA', nota: 9 },
+        { fecha: '2026-10-03', resultado: null, nota: null },
+        { fecha: '2026-10-01', resultado: 'CON_NOTA', nota: 7.5 },
+        { fecha: '2026-09-20', resultado: 'AUSENTE', nota: null },
+        { fecha: '2026-09-05', resultado: 'CON_NOTA', nota: 9 },
       ],
       promedio: 8.25,
     })
@@ -605,13 +603,8 @@ describe('misExamenes (portal)', () => {
 
     const mis = await service.misExamenes(3, actorAlumno)
 
-    expect(Object.keys(mis.rendidos[0] ?? {}).sort()).toEqual([
-      'fecha',
-      'nota',
-      'resultado',
-      'tipo',
-    ])
-    expect(Object.keys(mis.proximo ?? {}).sort()).toEqual(['diasRestantes', 'fecha', 'tipo'])
+    expect(Object.keys(mis.rendidos[0] ?? {}).sort()).toEqual(['fecha', 'nota', 'resultado'])
+    expect(Object.keys(mis.proximo ?? {}).sort()).toEqual(['diasRestantes', 'fecha'])
     expect(JSON.stringify(mis)).not.toContain('Interna')
   })
 

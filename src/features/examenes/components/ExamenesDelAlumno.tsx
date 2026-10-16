@@ -13,7 +13,6 @@ import { Skeleton } from '@/components/ui/skeleton'
 import type { Role } from '@/types'
 import type { ExamenItem } from '../examenes.types'
 import {
-  etiquetaTipo,
   fechaExamen,
   textoCargadoPor,
   textoDiasRestantes,
@@ -237,7 +236,6 @@ function SeccionExamenes({
                 <div className="min-w-0 space-y-1.5">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="font-medium">{examen.materia.nombre}</span>
-                    <Badge variant="outline">{etiquetaTipo(examen.tipo)}</Badge>
                     {examen.diasRestantes !== null && (
                       <Badge variant="accent">{textoDiasRestantes(examen.diasRestantes)}</Badge>
                     )}

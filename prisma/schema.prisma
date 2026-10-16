@@ -52,14 +52,6 @@ enum MotivoCancelacion {
   OTRO
 }
 
-enum TipoExamen {
-  PARCIAL
-  FINAL
-  RECUPERATORIO
-  TRABAJO_PRACTICO
-  OTRO
-}
-
 enum EstadoPago {
   VIGENTE
   ANULADO
@@ -545,7 +537,6 @@ model Examen {
   alumnoId      Int              @map("alumno_id")
   materiaId     Int              @map("materia_id")
   fecha         DateTime         @db.Date
-  tipo          TipoExamen
   observaciones String?          @db.VarChar(500)
   resultado     ResultadoExamen?
   nota          Decimal?         @db.Decimal(4, 2)

@@ -1,6 +1,6 @@
 'use client'
 
-import { useId } from 'react'
+import { useId, type ReactNode } from 'react'
 import { AlertCircle } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -50,6 +50,8 @@ type BarraFiltrosHistorialProps = {
   errores?: Partial<Record<CampoFiltro, string>>
   /** El 400 que no se pudo ubicar en un campo. */
   errorGeneral?: string | null
+  /** La acción que va a la derecha de "Limpiar filtros" (el "Generar PDF" de mesa de entradas). */
+  acciones?: ReactNode
 }
 
 /**
@@ -74,6 +76,7 @@ export function BarraFiltrosHistorial({
   puedeLimpiar,
   errores = {},
   errorGeneral,
+  acciones,
 }: BarraFiltrosHistorialProps) {
   const id = useId()
   const ids = {
@@ -92,19 +95,22 @@ export function BarraFiltrosHistorial({
   const materiaElegida = opciones.materias.find((m) => m.id === filtros.materiaId) ?? null
   const profesorElegido = opciones.profesores.find((p) => p.id === filtros.profesorId) ?? null
 
-  // Cinco campos en las dos opciones ("Mes" y "Año", o "Desde" y "Hasta"): la grilla declara **una
-  // columna por campo** más la del botón, así nada se pasa de renglón y "Limpiar filtros" queda en
-  // la fila, a la altura de los controles. Con cuatro columnas fijas, el quinto campo caía abajo y
-  // el botón con él, desfasado.
-  const columnas = 'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]'
+  // Cinco campos en las dos opciones ("Mes" y "Año", o "Desde" y "Hasta"). En `xl` entran los cinco
+  // en una fila y los botones ("Limpiar filtros" y "Generar PDF") van juntos en la de abajo, a la
+  // derecha; desde `2xl` hay lugar para todo en una sola fila: una columna por campo más la última
+  // (`auto`) para los dos botones, que se llevan el ancho que necesitan y dejan el resto a los
+  // campos. Con los botones metidos en la fila de `xl` los selects quedaban demasiado angostos.
+  const columnas =
+    'sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 2xl:grid-cols-[repeat(5,minmax(0,1fr))_auto]'
 
   return (
     <div className="space-y-3">
       <BarraFiltros
         hayFiltros={puedeLimpiar}
         onLimpiar={onLimpiar}
-        limpiarEnFila="xl"
+        limpiarEnFila="2xl"
         className={columnas}
+        acciones={acciones}
       >
         <Field label="Período" htmlFor={ids.opcion}>
           <Select value={periodo.opcion} onValueChange={(v) => onElegirOpcion(v as OpcionPeriodo)}>

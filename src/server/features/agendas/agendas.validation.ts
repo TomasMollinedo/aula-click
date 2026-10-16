@@ -14,7 +14,6 @@ import { diaSemana, fechaISO, horaHHmm } from '@/server/shared/zod'
 // `turnos.reglas.ts` fuera de un repository (lo prohíbe ESLint). `ESTADOS_PAGO` es el de
 // `Ocurrencia.pago.estado`.
 const ESTADOS_PAGO = ['PENDIENTE', 'PAGADO'] as const
-const TIPOS_EXAMEN = ['PARCIAL', 'FINAL', 'RECUPERATORIO', 'TRABAJO_PRACTICO', 'OTRO'] as const
 
 function idQuery(name: string, description: string, example: number) {
   return z.coerce
@@ -59,7 +58,6 @@ const examenQueDeterminaSchema = z
   .object({
     id: z.number().int(),
     fecha: fechaISO,
-    tipo: z.enum(TIPOS_EXAMEN),
     materiaNombre: z.string(),
     dias: z
       .number()

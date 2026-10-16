@@ -6,7 +6,6 @@ import { interpretarErrorExamen, interpretarErrorNota, mensajeErrorAccion } from
 import {
   MENSAJE_FECHA_OBLIGATORIA,
   MENSAJE_MATERIA_OBLIGATORIA,
-  MENSAJE_TIPO_OBLIGATORIO,
   OBSERVACIONES_MAX,
   MENSAJE_NOTA_FORMATO,
   MENSAJE_NOTA_OBLIGATORIA,
@@ -27,7 +26,6 @@ import {
 } from '../pagina-pasados'
 import {
   esFechaPasada,
-  etiquetaTipo,
   fechaExamen,
   resumenExamen,
   textoCargadoPor,
@@ -44,7 +42,6 @@ const examen: ExamenItem = {
   id: 5,
   materia: { id: 3, nombre: 'Matemática' },
   fecha: '2026-10-15',
-  tipo: 'PARCIAL',
   observaciones: 'Trae calculadora',
   pasado: false,
   diasRestantes: 10,
@@ -63,9 +60,9 @@ const examen: ExamenItem = {
 }
 
 describe('examenFormSchema', () => {
-  const valido = { materiaId: '3', fecha: '2026-10-15', tipo: 'PARCIAL', observaciones: '' }
+  const valido = { materiaId: '3', fecha: '2026-10-15', observaciones: '' }
 
-  it('acepta materia, fecha y tipo, sin observaciones', () => {
+  it('acepta materia y fecha, sin observaciones', () => {
     expect(examenFormSchema.safeParse(valido).success).toBe(true)
   })
 
@@ -73,16 +70,12 @@ describe('examenFormSchema', () => {
     expect(examenFormSchema.safeParse({ ...valido, fecha: '2020-01-01' }).success).toBe(true)
   })
 
-  it('exige materia, fecha y tipo', () => {
+  it('exige materia y fecha', () => {
     const resultado = examenFormSchema.safeParse(valoresIniciales())
     expect(resultado.success).toBe(false)
     const mensajes = resultado.error?.issues.map((i) => i.message)
     expect(mensajes).toEqual(
-      expect.arrayContaining([
-        MENSAJE_MATERIA_OBLIGATORIA,
-        MENSAJE_FECHA_OBLIGATORIA,
-        MENSAJE_TIPO_OBLIGATORIO,
-      ]),
+      expect.arrayContaining([MENSAJE_MATERIA_OBLIGATORIA, MENSAJE_FECHA_OBLIGATORIA]),
     )
   })
 
@@ -103,12 +96,11 @@ describe('bodies del alta y la edición', () => {
   const valores = {
     materiaId: '3',
     fecha: '2026-10-15',
-    tipo: 'PARCIAL',
     observaciones: 'Trae calculadora',
   } as const
 
   it('valoresIniciales: vacío en el alta, los del examen en la edición', () => {
-    expect(valoresIniciales()).toEqual({ materiaId: '', fecha: '', tipo: '', observaciones: '' })
+    expect(valoresIniciales()).toEqual({ materiaId: '', fecha: '', observaciones: '' })
     expect(valoresIniciales(examen)).toEqual(valores)
     expect(valoresIniciales({ ...examen, observaciones: null }).observaciones).toBe('')
   })
@@ -118,7 +110,6 @@ describe('bodies del alta y la edición', () => {
       alumnoId: 12,
       materiaId: 3,
       fecha: '2026-10-15',
-      tipo: 'PARCIAL',
       observaciones: 'Trae calculadora',
     })
   })
@@ -135,10 +126,7 @@ describe('bodies del alta y la edición', () => {
     expect(aBodyEditar(examen, { ...valores, fecha: '2026-10-20' })).toEqual({
       fecha: '2026-10-20',
     })
-    expect(aBodyEditar(examen, { ...valores, materiaId: '4', tipo: 'FINAL' })).toEqual({
-      materiaId: 4,
-      tipo: 'FINAL',
-    })
+    expect(aBodyEditar(examen, { ...valores, materiaId: '4' })).toEqual({ materiaId: 4 })
   })
 
   it("aBodyEditar: las observaciones vaciadas viajan como ''", () => {
@@ -153,12 +141,9 @@ describe('formato', () => {
     expect(textoDiasRestantes(5)).toBe('en 5 días')
   })
 
-  it('etiquetaTipo, fechaExamen y resumenExamen', () => {
-    expect(etiquetaTipo('TRABAJO_PRACTICO')).toBe('Trabajo práctico')
+  it('fechaExamen y resumenExamen', () => {
     expect(fechaExamen('2026-10-15')).toBe('jueves 15/10/2026')
-    expect(resumenExamen({ tipo: 'PARCIAL', fecha: '2026-10-15' })).toBe(
-      'Parcial del jueves 15/10/2026',
-    )
+    expect(resumenExamen({ fecha: '2026-10-15' })).toBe('Examen del jueves 15/10/2026')
   })
 
   it('textoCargadoPor: nombre, rol y el instante', () => {
@@ -195,7 +180,7 @@ describe('formato', () => {
 
 describe('interpretarErrorExamen', () => {
   it('409 EXAMEN_PENDIENTE: trae el existente (details es un objeto)', () => {
-    const existente = { id: 5, tipo: 'PARCIAL', fecha: '2026-10-15' }
+    const existente = { id: 5, fecha: '2026-10-15' }
     const error = new ApiError(409, 'EXAMEN_PENDIENTE', 'Ya hay un examen pendiente', existente)
     expect(interpretarErrorExamen(error)).toEqual({
       tipo: 'pendiente',

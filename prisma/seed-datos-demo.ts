@@ -219,8 +219,6 @@ const MATERIAS_DEMO = [
 
 const MATERIAS_INACTIVAS = ['Latín', 'Filosofía']
 
-const TIPOS_EXAMEN = ['PARCIAL', 'FINAL', 'RECUPERATORIO', 'TRABAJO_PRACTICO', 'OTRO'] as const
-
 const COLEGIOS = [
   'Colegio Nacional Dr. Manuel Belgrano',
   'Escuela Normal Gral. Manuel Belgrano',
@@ -891,7 +889,6 @@ async function crear(azar: Azar) {
     alumnoId: number
     materiaId: number
     fecha: string
-    tipo: (typeof TIPOS_EXAMEN)[number]
   }
   const examenes = new Map<string, ExamenNuevo>()
   const parDe = (e: { alumnoId: number; materiaId: number }) => `${e.alumnoId}|${e.materiaId}`
@@ -906,7 +903,6 @@ async function crear(azar: Azar) {
       alumnoId: (azar.de(alumnos) as (typeof alumnos)[number]).id,
       materiaId: (azar.de(materiasActivas) as (typeof materiasActivas)[number]).id,
       fecha: sumarDias(fechaHoy, azar.entero(-10, 45)),
-      tipo: azar.de(TIPOS_EXAMEN),
     }
     if (examen.fecha >= fechaHoy && tienePendiente(examen)) continue
     examenes.set(`${parDe(examen)}|${examen.fecha}`, examen)
@@ -922,7 +918,6 @@ async function crear(azar: Azar) {
       alumnoId: turno.alumnoId,
       materiaId: turno.materiaId,
       fecha: sumarDias(fechaStr(turno.fechaInicio), OFFSETS_PRIORIDAD[i] as number),
-      tipo: 'PARCIAL',
     }
     for (const [clave, otro] of examenes) {
       if (parDe(otro) === parDe(examen) && otro.fecha >= fechaHoy) examenes.delete(clave)
