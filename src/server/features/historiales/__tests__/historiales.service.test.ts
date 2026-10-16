@@ -499,7 +499,7 @@ describe('miMateria', () => {
     expect(mia.bloques.map((bloque) => bloque.fecha)).toEqual(['2026-09-29'])
   })
 
-  it('no muestra las clases "Sin registrar" ni las agendadas', async () => {
+  it('muestra las clases "Sin registrar" (sin el cierre) y no las agendadas', async () => {
     conOcurrencias(
       ocurrencia({ turnoId: 1, fecha: '2026-10-06', estado: 'REALIZADO' }),
       ocurrencia({
@@ -513,10 +513,14 @@ describe('miMateria', () => {
 
     const mia = await service.miMateria(3, 4, {}, actorAlumno)
 
-    expect(mia.bloques).toHaveLength(1)
-    expect(mia.bloques[0].clases.map((clase) => clase.estado)).toEqual(['REALIZADO'])
+    expect(mia.bloques.flatMap((bloque) => bloque.clases.map((clase) => clase.estado))).toEqual([
+      'SIN_REGISTRAR',
+      'REALIZADO',
+    ])
     expect(JSON.stringify(mia)).not.toContain(OBSERVACION_CIERRE_SISTEMA)
-    expect(JSON.stringify(mia)).not.toContain('SIN_REGISTRAR')
+    expect(JSON.stringify(mia)).not.toContain('AGENDADO')
+    // No cuenta para el porcentaje: sólo la realizada.
+    expect(mia.resumen).toEqual({ realizadas: 1, ausencias: 0, porcentaje: 100 })
   })
 
   it('no publica la observación interna ni el motivo de la cancelación', async () => {

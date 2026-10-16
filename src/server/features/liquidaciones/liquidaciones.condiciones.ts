@@ -4,6 +4,7 @@ import {
   plazoDeAsistencia,
   type EstadoAsistencia,
 } from '@/server/features/turnos/ocurrencias.condiciones'
+import { SELECT_USUARIO_AUDITORIA } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import { mesDe, primerDiaDelMes, ultimoDiaDelMes } from '@/server/shared/zod'
 import {
@@ -228,6 +229,7 @@ const SELECT_CERRADA = {
   numeroOperacion: true,
   observaciones: true,
   createdAt: true,
+  createdBy: { select: SELECT_USUARIO_AUDITORIA },
   profesor: { select: SELECT_PROFESOR },
   descontadaEn: { select: { mes: true } },
   turnos: {
@@ -331,6 +333,7 @@ function aCerrada(fila: FilaCerrada): Liquidacion {
       numeroOperacion: fila.numeroOperacion,
       observaciones: fila.observaciones,
       descontadaEnMes: fila.descontadaEn ? aMes(fila.descontadaEn.mes) : null,
+      registradaPor: fila.createdBy,
       registradaEl: fila.createdAt.toISOString(),
     },
   }

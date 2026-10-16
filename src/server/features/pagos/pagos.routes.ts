@@ -139,7 +139,7 @@ export const misPagosRoute = createRoute({
 })
 
 // Buscadores de los filtros de pagos realizados (HU-36, T-100): pagos publica los suyos, sin abrirle
-// al gerente `GET /alumnos` ni `GET /profesores` (decisión T-167). Se registran antes de `/{id}`,
+// al gerente `GET /alumnos` ni `GET /profesores` (decisión T-169). Se registran antes de `/{id}`,
 // como `/mis-pagos`: si no, `/alumnos` y `/profesores` caerían en ese path param.
 const descripcionBuscador =
   'Sin paginar, por apellido y nombre, hasta 20. `q`: búsqueda por palabras, como `GET /alumnos` (sin mayúsculas, tildes ni puntos). `id`: sólo esa opción si corresponde, o `[]` (para mostrar el nombre del filtro que viene en la URL). Cada opción trae sólo `id`, `nombre` y `apellido`.'

@@ -313,7 +313,7 @@ HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios n
 - **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
 - **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
 - **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
-- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Tampoco las clases "Sin registrar" (decisión T-148, _pendiente de confirmación de las PO_: punto 8 de "Puntos a confirmar" del Sprint 3).
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-167): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
 - **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
 - El PDF mensual del historial es HU-32 (T-110).
 
@@ -406,6 +406,7 @@ HU-44 (tarea T-121). Los términos y los textos son los del [Vocabulario de la a
 - **Saldo anterior:** una liquidación de un mes terminado con total de 0 o menos queda "Saldo a descontar" y entra entera como ajuste en el siguiente mes sin cerrar, aunque no tenga turnos; puede encadenarse. El mes en curso no arrastra nada (decisión T-164).
 - **Total** = parte del profesor de los turnos + ajustes, en centavos.
 - **Estados:** `EN_CURSO` (el mes de hoy, aunque dé negativo), `PENDIENTE_DE_PAGO` (mes terminado, total > 0), `SALDO_A_DESCONTAR` (mes terminado, total ≤ 0), `PAGADA` y `DESCONTADA` (cerrada porque su saldo lo absorbió la que se pagó). Sólo se paga una `PENDIENTE_DE_PAGO`; al pagarla se cierran con ella, como `DESCONTADA`, las de la cadena que absorbió.
+- **Pagar:** sólo una liquidación `PENDIENTE_DE_PAGO` de un mes terminado, y por el total que calcula el sistema: no hay pagos parciales. Al confirmar se vuelve a calcular; si el total no es el que el gerente vio, el pago se rechaza ("La liquidación cambió desde que la abriste. Revisala antes de pagar") y no se guarda nada. Pagar es todo o nada: la liquidación queda `PAGADA` y congelada con sus turnos, ajustes, la transferencia (fecha no futura y no anterior al último día del mes, número de operación, comprobante opcional y observaciones) y quién la registró, y las de saldo negativo que absorbió quedan `DESCONTADA`. Una anulación posterior de un pago de sus turnos no la cambia: se descuenta como ajuste en la siguiente.
 - **Saldo del profesor:** lo que se le debe hoy, la suma de sus liquidaciones `PENDIENTE_DE_PAGO` y `EN_CURSO`. Las `SALDO_A_DESCONTAR` no se suman: ya están dentro de la del mes siguiente. Puede ser negativo.
 
 ## Caja diaria

@@ -16,7 +16,6 @@ import { PagosRealizados } from '@/features/pagos/components/PagosRealizados'
 import { RegistrarPagoDialog } from '@/features/pagos/components/RegistrarPagoDialog'
 import { useDetallePagoEnUrl } from '@/features/pagos/hooks/use-detalle-pago-en-url'
 
-import { DetallePago } from './detalle-pago'
 import { DetalleTurno } from './detalle-turno'
 import { PagosConVistas } from './pagos-con-vistas'
 
@@ -39,9 +38,8 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
   // agendas (docs/arquitectura-frontend.md → Acciones sobre una ocurrencia). En el calendario de
   // "Turnos" `?fecha=` es la semana que se ve: al cerrar el detalle se conserva.
   const { detalle, cerrar } = useDetalleEnUrl({ fechaEsDeLaPantalla: true })
-  // El detalle de un pago abierto desde "Pagos realizados" (`?pago=<pagoId>`): se monta una sola vez,
-  // para todas las pestañas.
-  const { pagoId, abrir: abrirPago, cerrar: cerrarPago } = useDetallePagoEnUrl()
+  // "Pagos realizados" abre el detalle de un pago (`?pago=<pagoId>`); lo muestra el layout de mesa.
+  const { abrir: abrirPago } = useDetallePagoEnUrl()
   // Abierto desde "Pagos" (`?tab=pagos`), el detalle solo ofrece "Registrar pago".
   const enPagos = useSearchParams().get('tab') === 'pagos'
 
@@ -88,7 +86,6 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
         )}
       />
       {detalle && <DetalleTurno {...detalle} onCerrar={cerrar} soloPago={enPagos} />}
-      {pagoId !== null && <DetallePago pagoId={pagoId} onCerrar={cerrarPago} />}
     </>
   )
 }
