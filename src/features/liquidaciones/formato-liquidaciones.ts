@@ -1,12 +1,18 @@
 import type { VariantProps } from 'class-variance-authority'
 import { format, parseISO } from 'date-fns'
+import { es } from 'date-fns/locale/es'
 
 import type { badgeVariants } from '@/components/ui/badge'
 import type { UsuarioAuditoria } from '@/types'
 import { formatoInstante, nombreUsuarioAuditoria } from '@/utils/auditoria'
 import { textoMes } from '@/utils/formato-fechas'
+import { formatearPesos } from '@/utils/moneda'
 
-import type { FilaLiquidacion } from './liquidaciones.types'
+import type {
+  FilaLiquidacion,
+  LiquidacionDetalle,
+  PagoLiquidacionRegistrado,
+} from './liquidaciones.types'
 
 type VarianteBadge = NonNullable<VariantProps<typeof badgeVariants>['variant']>
 
@@ -76,4 +82,25 @@ export function textoAdjuntadoPor(usuario: UsuarioAuditoria, instante: string): 
 /** `'Registrado por Marta Ríos · 05/10/2026, 14:03'`: quién registró el pago y cuándo. */
 export function textoRegistradoPor(usuario: UsuarioAuditoria, instante: string): string {
   return `Registrado por ${nombreUsuarioAuditoria(usuario)} · ${formatoInstante(instante)}`
+}
+
+/**
+ * La pregunta del paso "confirmar": "¿Registrar el pago de $ 245.000,00 a Gómez, Ana por la
+ * liquidación de octubre de 2026?".
+ */
+export function textoConfirmacionPagoLiquidacion(
+  liquidacion: Pick<LiquidacionDetalle, 'total' | 'profesor' | 'mes'>,
+): string {
+  return `¿Registrar el pago de ${formatearPesos(liquidacion.total)} a ${nombreDeProfesor(liquidacion.profesor)} por la liquidación de ${textoMes(liquidacion.mes)}?`
+}
+
+/**
+ * El toast del pago registrado, con los datos del 201 y el mes sin año: "Pago registrado. La
+ * liquidación de octubre de Gómez, Ana quedó pagada".
+ */
+export function textoExitoPagoLiquidacion(
+  pago: Pick<PagoLiquidacionRegistrado, 'profesor' | 'mes'>,
+) {
+  const mes = format(parseISO(`${pago.mes}-01`), 'MMMM', { locale: es })
+  return `Pago registrado. La liquidación de ${mes} de ${nombreDeProfesor(pago.profesor)} quedó pagada`
 }

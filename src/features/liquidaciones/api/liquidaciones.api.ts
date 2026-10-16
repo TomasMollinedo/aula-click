@@ -6,6 +6,8 @@ import type {
   LiquidacionesDelMes,
   ListarLiquidacionesDelMesParams,
   MiLiquidacionDetalle,
+  PagoLiquidacionRegistrado,
+  RegistrarPagoLiquidacion,
 } from '../liquidaciones.types'
 
 const BASE = '/api/v1/liquidaciones'
@@ -30,6 +32,26 @@ export function obtenerLiquidacion({
 }): Promise<LiquidacionDetalle> {
   return fetchJson<LiquidacionDetalle>(
     `${BASE}/profesores/${encodeURIComponent(profesorId)}/${encodeURIComponent(mes)}`,
+  )
+}
+
+/** Registra la transferencia al profesor y cierra la liquidación (T-132). */
+export function registrarPagoLiquidacion({
+  profesorId,
+  mes,
+  body,
+}: {
+  profesorId: number
+  mes: string
+  body: RegistrarPagoLiquidacion
+}): Promise<PagoLiquidacionRegistrado> {
+  return fetchJson<PagoLiquidacionRegistrado>(
+    `${BASE}/profesores/${encodeURIComponent(String(profesorId))}/${encodeURIComponent(mes)}/pago`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
   )
 }
 
