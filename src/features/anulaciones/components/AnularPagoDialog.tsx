@@ -60,7 +60,8 @@ export type AnularPagoDialogProps = {
  * Diálogo de "Anular pago" (HU-42, `POST /anulaciones`): motivo (lista), detalle (obligatorio con
  * "Otro", contador de 500) y, como confirmación, el resumen y los avisos de `GET /anulaciones/previa`
  * tal como los manda la API. Los avisos informan, no bloquean. No calcula reglas. Si el pago ya
- * estaba anulado (409) o falla el POST, el diálogo queda abierto con el error.
+ * estaba anulado o tiene turnos ya dictados (409) o falla el POST, el diálogo queda abierto con el
+ * error.
  */
 export function AnularPagoDialog({ open, onCerrar, ...resto }: AnularPagoDialogProps) {
   return (

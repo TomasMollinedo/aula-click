@@ -65,6 +65,7 @@ export function crearPagosService({
     | 'listarRealizados'
     | 'listarDelAlumno'
     | 'buscarAdjunto'
+    | 'tieneTurnosDictados'
     | 'buscarAlumnos'
     | 'buscarProfesores'
     | 'buscarMaterias'
@@ -171,14 +172,19 @@ export function crearPagosService({
 
     /**
      * Detalle del pago (HU-36): el comprobante, la cantidad de turnos, el último adjunto activo y
-     * las acciones de quien lo pide (`accionesDelPago`). Sólo para el gerente, el reparto (HU-43,
-     * `repartoDelPago`), también de un pago anulado; para los demás la clave no existe. 404 si no
-     * existe.
+     * las acciones de quien lo pide (`accionesDelPago`, que también mira si algún turno ya se
+     * dictó, T-179). Sólo para el gerente, el reparto (HU-43, `repartoDelPago`), también de un
+     * pago anulado; para los demás la clave no existe. 404 si no existe.
      */
     async obtenerDetalle(id: number, actor: Actor): Promise<DetallePago> {
       const guardado = await leerGuardado(id)
       const comprobante = aComprobante(guardado)
-      const adjunto = await repository.buscarAdjunto(id)
+      const [adjunto, tieneTurnosDictados] = await Promise.all([
+        repository.buscarAdjunto(id),
+        repository.tieneTurnosDictados(
+          guardado.turnos.map(({ turnoId, fecha }) => ({ turnoId, fecha })),
+        ),
+      ])
       return {
         ...comprobante,
         cantidad: comprobante.turnos.length,
@@ -188,6 +194,7 @@ export function crearPagosService({
           estado: comprobante.estado,
           formaPago: comprobante.formaPago.codigo,
           tieneAdjunto: adjunto !== null,
+          tieneTurnosDictados,
         }),
         ...(actor.role === 'GERENTE' ? { reparto: repartoDelPago(guardado.turnos) } : {}),
       }

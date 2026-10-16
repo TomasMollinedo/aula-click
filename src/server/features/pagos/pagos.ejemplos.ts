@@ -132,7 +132,10 @@ export const ejemploErrorMonto = {
   },
 } satisfies ErrorResponse
 
-/** Detalle de un pago con débito y comprobante adjunto, visto por la mesa de entradas (HU-36). */
+/**
+ * Detalle de un pago con débito y comprobante adjunto, visto por la mesa de entradas (HU-36).
+ * Ninguno de sus turnos tiene asistencia todavía: con uno ya dictado, `anular` vendría `false`.
+ */
 export const ejemploDetalle = {
   ...ejemploComprobante,
   montoRecibido: null,

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
-import { ultimasIndicaciones } from '../asistencias.condiciones'
+import { asistenciasDeOcurrencias, ultimasIndicaciones } from '../asistencias.condiciones'
 
 type Cliente = Parameters<typeof ultimasIndicaciones>[0]
 
@@ -74,6 +74,45 @@ describe('ultimasIndicaciones', () => {
     const { client, findMany } = cliente([])
 
     expect(await ultimasIndicaciones(client, [])).toEqual([])
+    expect(findMany).not.toHaveBeenCalled()
+  })
+})
+
+// `asistenciasDeOcurrencias` (T-179): qué ocurrencias de un pago ya se dictaron. Una sola consulta
+// por el único `(turnoId, fechaOcurrencia)`.
+describe('asistenciasDeOcurrencias', () => {
+  it('una sola consulta por turno y fecha; devuelve sólo las que tienen asistencia, con su estado', async () => {
+    const { client, findMany } = cliente([
+      { turnoId: 41, fechaOcurrencia: fecha('2026-10-05'), estado: 'PRESENTE' },
+      { turnoId: 50, fechaOcurrencia: fecha('2026-10-06'), estado: 'AUSENTE' },
+    ])
+
+    const resultado = await asistenciasDeOcurrencias(client, [
+      { turnoId: 41, fecha: '2026-10-05' },
+      { turnoId: 41, fecha: '2026-10-12' },
+      { turnoId: 50, fecha: '2026-10-06' },
+    ])
+
+    expect(findMany).toHaveBeenCalledExactlyOnceWith({
+      where: {
+        OR: [
+          { turnoId: 41, fechaOcurrencia: fecha('2026-10-05') },
+          { turnoId: 41, fechaOcurrencia: fecha('2026-10-12') },
+          { turnoId: 50, fechaOcurrencia: fecha('2026-10-06') },
+        ],
+      },
+      select: { turnoId: true, fechaOcurrencia: true, estado: true },
+    })
+    expect(resultado).toEqual([
+      { turnoId: 41, fecha: '2026-10-05', estado: 'PRESENTE' },
+      { turnoId: 50, fecha: '2026-10-06', estado: 'AUSENTE' },
+    ])
+  })
+
+  it('sin ocurrencias no consulta', async () => {
+    const { client, findMany } = cliente([])
+
+    expect(await asistenciasDeOcurrencias(client, [])).toEqual([])
     expect(findMany).not.toHaveBeenCalled()
   })
 })

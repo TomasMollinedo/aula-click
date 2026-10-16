@@ -1,4 +1,5 @@
 import type { Prisma } from '@/generated/prisma/client'
+import { asistenciasDeOcurrencias } from '@/server/features/asistencias/asistencias.condiciones'
 import type { ClienteOcurrencias } from '@/server/features/turnos/ocurrencias.condiciones'
 import { SELECT_USUARIO_AUDITORIA, type UsuarioAuditoria } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
@@ -21,7 +22,7 @@ import type { CodigoFormaPago } from './pagos.validation'
 //   comprobante (`agruparPorMateria`).
 // - `anulaciones` (T-104): el pago a anular con sus turnos (`leerPagoParaAnular`) y los otros pagos
 //   vigentes de la misma transferencia (`pagosConMismaTransferencia`), para la confirmación y sus
-//   avisos.
+//   avisos. Cada turno trae su asistencia: un pago con turnos ya dictados no se anula (T-179).
 //
 // El tope, la suma y el agrupado sólo se re-exportan: la implementación es la de `pagos.reglas.ts`.
 
@@ -173,19 +174,22 @@ export async function totalCobradoPorForma(
   return totales
 }
 
-/** Una ocurrencia de un pago a anular: la fecha, la materia y lo que se cobró por ella. */
+/** Una ocurrencia de un pago a anular: la fecha, la materia, lo que se cobró y su asistencia. */
 export type TurnoDePagoAAnular = {
   turnoId: number
   fecha: string
   materia: { id: number; nombre: string }
   /** El importe cobrado (`importeAplicado`), en pesos: no cambia si después cambia el precio. */
   importe: number
+  /** La asistencia registrada de esa ocurrencia; `null` si no tiene (futura o sin registrar). */
+  asistencia: 'PRESENTE' | 'AUSENTE' | null
 }
 
 /**
  * Lo que la anulación (HU-42, T-104) necesita de un pago: el estado (un anulado no se anula de
  * nuevo), el alumno, el número y el total para la confirmación, los turnos (fecha, materia e
- * importe cobrado) para los avisos de deuda y de precio, y la operación y el banco de una
+ * importe cobrado) para los avisos de deuda y de precio, su asistencia (un turno ya dictado impide
+ * anular, decisión T-179), y la operación y el banco de una
  * transferencia para el aviso de transferencia compartida (`null` si es de otra forma).
  */
 export type PagoParaAnular = {
@@ -199,8 +203,10 @@ export type PagoParaAnular = {
 }
 
 /**
- * El pago `pagoId` para anularlo, o `null` si no existe. Una consulta. Los turnos van ordenados
- * por fecha y `turnoId`. Recibe `prisma` o el `tx` de la anulación (con el lock del alumno).
+ * El pago `pagoId` para anularlo, o `null` si no existe. Dos consultas: el pago con sus turnos y la
+ * asistencia de esos turnos (`asistenciasDeOcurrencias`), **con el mismo `client`**: con el `tx` de
+ * la anulación, las dos se leen bajo el lock del alumno, que también toma registrar asistencia. Los
+ * turnos van ordenados por fecha y `turnoId`.
  */
 export async function leerPagoParaAnular(
   client: ClienteOcurrencias,
@@ -228,18 +234,24 @@ export async function leerPagoParaAnular(
   })
   if (!fila) return null
   const { transferenciaOperacion: operacion, transferenciaBanco: banco } = fila
+  const turnos = fila.turnos.map((pt) => ({
+    turnoId: pt.turnoId,
+    fecha: dateAFecha(pt.fechaOcurrencia),
+    materia: pt.turno.materia,
+    importe: pt.importeAplicado.toNumber(),
+  }))
+  const asistencias = await asistenciasDeOcurrencias(client, turnos)
+  const asistenciaDe = new Map(asistencias.map((a) => [`${a.turnoId}|${a.fecha}`, a.estado]))
   return {
     id: fila.id,
     numeroComprobante: fila.numeroComprobante,
     estado: fila.estado,
     alumno: fila.alumno,
     total: fila.importeTotal.toNumber(),
-    turnos: fila.turnos
-      .map((pt) => ({
-        turnoId: pt.turnoId,
-        fecha: dateAFecha(pt.fechaOcurrencia),
-        materia: pt.turno.materia,
-        importe: pt.importeAplicado.toNumber(),
+    turnos: turnos
+      .map((turno) => ({
+        ...turno,
+        asistencia: asistenciaDe.get(`${turno.turnoId}|${turno.fecha}`) ?? null,
       }))
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.turnoId - b.turnoId),
     transferencia: operacion !== null && banco !== null ? { operacion, banco } : null,

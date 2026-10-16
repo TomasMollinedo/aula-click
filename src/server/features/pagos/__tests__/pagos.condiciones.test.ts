@@ -300,8 +300,19 @@ describe('leerPagoParaAnular', () => {
     }
   }
 
+  /** Un cliente con el pago y las asistencias que devuelve la base (T-179). */
+  function clienteConAsistencias(filaPago: unknown, asistencias: unknown[] = []) {
+    const findUnique = vi.fn(async () => filaPago)
+    const findMany = vi.fn(async () => asistencias)
+    const client = {
+      pago: { findUnique },
+      asistenciaTurno: { findMany },
+    } as unknown as Cliente
+    return { client, findUnique, findMany }
+  }
+
   it('el pago con su total, sus turnos por fecha (con lo cobrado) y la transferencia', async () => {
-    const { client, findUnique } = cliente(fila())
+    const { client, findUnique } = clienteConAsistencias(fila())
 
     expect(await leerPagoParaAnular(client, 171)).toEqual({
       id: 171,
@@ -310,16 +321,42 @@ describe('leerPagoParaAnular', () => {
       alumno: LORENZO,
       total: 15000,
       turnos: [
-        { turnoId: 419, fecha: '2026-09-12', materia: LENGUA, importe: 7000 },
-        { turnoId: 455, fecha: '2026-09-15', materia: ECONOMIA, importe: 8000 },
+        { turnoId: 419, fecha: '2026-09-12', materia: LENGUA, importe: 7000, asistencia: null },
+        { turnoId: 455, fecha: '2026-09-15', materia: ECONOMIA, importe: 8000, asistencia: null },
       ],
       transferencia: { operacion: '0004829137', banco: 'Banco Macro' },
     })
     expect(findUnique).toHaveBeenCalledTimes(1)
   })
 
+  it('cada turno trae su asistencia, leída en una sola consulta con el mismo cliente', async () => {
+    const { client, findMany } = clienteConAsistencias(fila(), [
+      { turnoId: 455, fechaOcurrencia: new Date('2026-09-15T00:00:00.000Z'), estado: 'AUSENTE' },
+      // Otra ocurrencia del mismo turno: no es de este pago.
+      { turnoId: 419, fechaOcurrencia: new Date('2026-09-19T00:00:00.000Z'), estado: 'PRESENTE' },
+    ])
+
+    const pago = await leerPagoParaAnular(client, 171)
+
+    expect(pago?.turnos.map((t) => [t.turnoId, t.asistencia])).toEqual([
+      [419, null],
+      [455, 'AUSENTE'],
+    ])
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { turnoId: 455, fechaOcurrencia: new Date('2026-09-15T00:00:00.000Z') },
+            { turnoId: 419, fechaOcurrencia: new Date('2026-09-12T00:00:00.000Z') },
+          ],
+        },
+      }),
+    )
+  })
+
   it('un pago que no es por transferencia: `transferencia: null`; un anulado lo dice', async () => {
-    const { client } = cliente(
+    const { client } = clienteConAsistencias(
       fila({ estado: 'ANULADO', transferenciaOperacion: null, transferenciaBanco: null }),
     )
 
@@ -329,9 +366,10 @@ describe('leerPagoParaAnular', () => {
     })
   })
 
-  it('el pago no existe → `null`', async () => {
-    const { client } = cliente(null)
+  it('el pago no existe → `null`, sin leer asistencias', async () => {
+    const { client, findMany } = clienteConAsistencias(null)
     expect(await leerPagoParaAnular(client, 99)).toBeNull()
+    expect(findMany).not.toHaveBeenCalled()
   })
 })
 

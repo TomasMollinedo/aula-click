@@ -394,11 +394,15 @@ export type AdjuntoDelPago = z.infer<typeof adjuntoDelPagoSchema>
 
 /**
  * Qué puede hacer quien pide el detalle sobre el pago (`PagoParaAcciones` del frontend): lo decide
- * la API con `accionesDelPago`, según el rol, el estado, la forma de pago y si tiene adjunto.
+ * la API con `accionesDelPago`, según el rol, el estado, la forma de pago, si tiene adjunto y si
+ * alguno de sus turnos ya se dictó.
  */
 export const accionesPagoSchema = z
   .object({
-    anular: z.boolean(),
+    anular: z.boolean().openapi({
+      description:
+        'Anular el pago: sólo la mesa de entradas, en un pago vigente y sin turnos ya dictados (con asistencia `PRESENTE` o `AUSENTE`)',
+    }),
     reemplazarAdjunto: z.boolean().openapi({
       description: 'Reemplazar el comprobante adjunto o, en un débito sin adjunto, adjuntar uno',
     }),

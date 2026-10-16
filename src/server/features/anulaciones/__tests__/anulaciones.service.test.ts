@@ -201,6 +201,92 @@ describe('anular', () => {
   })
 })
 
+// T-179: un pago con algún turno ya dictado (con asistencia) no se anula. El pago de siempre tiene
+// dos turnos pasados (05/10 y 12/10) y dos futuros (19/10 y 26/10).
+describe('turnos ya dictados', () => {
+  const MENSAJE = 'No se puede anular: el pago incluye turnos que ya se dictaron'
+
+  function sinEscrituras() {
+    expect(base[0]?.estado).toBe('VIGENTE')
+    expect(memoria.anulaciones.size).toBe(0)
+    expect(memoria.pagadas().size).toBe(4)
+  }
+
+  it.each(['PRESENTE', 'AUSENTE'] as const)(
+    'un turno %s → 409 TURNOS_DICTADOS en la previa y al anular, con el turno en details',
+    async (asistencia) => {
+      armar({ precios: new Map([[2, 8000]]), asistencias: [[41, '2026-10-05', asistencia]] })
+
+      for (const promesa of [service.previa(31), service.anular(pedido(), actor)]) {
+        const error = await errorDe(promesa)
+        expect(error).toBeInstanceOf(ConflictError)
+        expect(error.statusCode).toBe(409)
+        expect(error.code).toBe('TURNOS_DICTADOS')
+        expect(error.message).toBe(MENSAJE)
+        expect(error.details).toEqual([{ fecha: '2026-10-05', materia: matematica, asistencia }])
+      }
+      // El chequeo previo ya lo frena: ni siquiera llega al lock.
+      expect(memoria.repository.anular).not.toHaveBeenCalled()
+      sinEscrituras()
+    },
+  )
+
+  it('pago mixto (uno dictado y otros futuros) → 409 con sólo los dictados y no se escribe nada', async () => {
+    armar({
+      precios: new Map([[2, 8000]]),
+      asistencias: [
+        [41, '2026-10-05', 'PRESENTE'],
+        [41, '2026-10-12', 'AUSENTE'],
+      ],
+    })
+
+    const error = await errorDe(service.anular(pedido(), actor))
+
+    expect(error.code).toBe('TURNOS_DICTADOS')
+    expect(error.details).toEqual([
+      { fecha: '2026-10-05', materia: matematica, asistencia: 'PRESENTE' },
+      { fecha: '2026-10-12', materia: matematica, asistencia: 'AUSENTE' },
+    ])
+    sinEscrituras()
+  })
+
+  it('sin asistencias (pasados sin registrar y futuros) → se anula como siempre', async () => {
+    // Asistencia de otra ocurrencia del mismo turno, que no es de este pago: no cuenta.
+    armar({ precios: new Map([[2, 8000]]), asistencias: [[41, '2026-09-28', 'PRESENTE']] })
+
+    await expect(service.previa(31)).resolves.toMatchObject({ pago: { id: 31, cantidad: 4 } })
+    await expect(service.anular(pedido(), actor)).resolves.toEqual({ pagoId: 31, cantidad: 4 })
+    expect(base[0]?.estado).toBe('ANULADO')
+  })
+
+  it('asistencia registrada entre el chequeo previo y el lock → 409 y no se escribe nada', async () => {
+    // El profesor registra mientras la mesa confirma: entra en la cola del lock antes que la
+    // anulación, así que el chequeo previo no la ve y la relectura bajo el lock, sí.
+    const registrando = memoria.registrarAsistencia(41, '2026-10-12', 'PRESENTE')
+    const anulando = service.anular(pedido(), actor)
+
+    const error = await errorDe(anulando)
+    await registrando
+
+    const leido = await memoria.repository.leerPago.mock.results[0]?.value
+    expect(leido?.turnos.every((t: { asistencia: unknown }) => t.asistencia === null)).toBe(true)
+    expect(memoria.repository.anular).toHaveBeenCalledTimes(1)
+    expect(error.code).toBe('TURNOS_DICTADOS')
+    expect(error.details).toEqual([
+      { fecha: '2026-10-12', materia: matematica, asistencia: 'PRESENTE' },
+    ])
+    sinEscrituras()
+  })
+
+  it('un pago ya anulado sigue dando PAGO_ANULADO, aunque tenga turnos dictados', async () => {
+    await service.anular(pedido(), actor)
+    await memoria.registrarAsistencia(41, '2026-10-05', 'PRESENTE')
+
+    expect((await errorDe(service.previa(31))).code).toBe('PAGO_ANULADO')
+    expect((await errorDe(service.anular(pedido(), actor))).code).toBe('PAGO_ANULADO')
+  })
+})
+
 describe('previa', () => {
   it('el resumen del pago y, sin nada que avisar, los tres avisos vacíos', async () => {
     const res = await service.previa(31)

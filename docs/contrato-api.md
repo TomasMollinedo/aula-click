@@ -1014,13 +1014,13 @@ Un pago anulado trae `"estado": "ANULADO"` y su anulación:
 - `numeroComprobante` es correlativo y único, pero puede tener huecos (decisión T-62).
 - `cantidad`: cuántos turnos incluye (el largo de `turnos`).
 - `adjunto`: el último comprobante adjunto **activo** (ver Adjuntos), `{ id, nombre, tipo, bytes, adjuntadoPor, adjuntadoEl }`; `tipo` es `image/jpeg`, `image/png` o `application/pdf`. **No trae URL** ni la clave del archivo: para verlo, `GET /adjuntos/pagos/{pagoId}` da la URL prefirmada. `null` si no tiene (nunca tuvo, se quitó o es en efectivo).
-- `acciones`: qué puede hacer quien pide el detalle sobre el pago (`PagoParaAcciones` del frontend). **Las decide la API** según el rol, el estado, la forma de pago y si tiene adjunto, con las mismas reglas que aplican `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (decisión T-154). Un botón se muestra si su acción es `true`:
+- `acciones`: qué puede hacer quien pide el detalle sobre el pago (`PagoParaAcciones` del frontend). **Las decide la API** según el rol, el estado, la forma de pago, si tiene adjunto y si alguno de sus turnos ya se dictó, con las mismas reglas que aplican `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (decisión T-154). Un botón se muestra si su acción es `true`:
 
-  | Acción              | `true` sólo si…                                                                                                       |
-  | ------------------- | --------------------------------------------------------------------------------------------------------------------- |
-  | `anular`            | quien pide es `MESA_ENTRADAS` y el pago está `VIGENTE`                                                                |
-  | `reemplazarAdjunto` | `MESA_ENTRADAS`, `VIGENTE` y con transferencia o débito (en un débito sin adjunto, es "adjuntar" uno)                 |
-  | `quitarAdjunto`     | `MESA_ENTRADAS`, `VIGENTE`, con débito y con adjunto (con transferencia el adjunto es obligatorio: sólo se reemplaza) |
+  | Acción              | `true` sólo si…                                                                                                                         |
+  | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+  | `anular`            | quien pide es `MESA_ENTRADAS`, el pago está `VIGENTE` y ninguno de sus turnos tiene asistencia (`PRESENTE` o `AUSENTE`, decisión T-179) |
+  | `reemplazarAdjunto` | `MESA_ENTRADAS`, `VIGENTE` y con transferencia o débito (en un débito sin adjunto, es "adjuntar" uno)                                   |
+  | `quitarAdjunto`     | `MESA_ENTRADAS`, `VIGENTE`, con débito y con adjunto (con transferencia el adjunto es obligatorio: sólo se reemplaza)                   |
 
   El gerente las recibe todas en `false` (sólo lectura), y un pago anulado también, para cualquier rol: conserva todo como estaba.
 
@@ -1980,12 +1980,12 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`; el **alumno no ve el comprobante ad
 
 ## Anulaciones
 
-HU-42 (T-104). Anular un pago completo, nunca un turno suelto. Reglas en `dominio.md` → Anulación de pagos.
+HU-42 (T-104). Anular un pago completo, nunca un turno suelto, y sólo si ninguno de sus turnos se dictó todavía (decisión T-179). Reglas en `dominio.md` → Anulación de pagos.
 
-| Endpoint                         | Roles           | Qué hace                                                                              |
-| -------------------------------- | --------------- | ------------------------------------------------------------------------------------- |
-| `GET /api/v1/anulaciones/previa` | `MESA_ENTRADAS` | El resumen para confirmar y sus avisos. No escribe. 200; 400; 404; 409 `PAGO_ANULADO` |
-| `POST /api/v1/anulaciones`       | `MESA_ENTRADAS` | Anula el pago. 201 con `{ pagoId, cantidad }`; 400; 404; 409 `PAGO_ANULADO`           |
+| Endpoint                         | Roles           | Qué hace                                                                                                  |
+| -------------------------------- | --------------- | --------------------------------------------------------------------------------------------------------- |
+| `GET /api/v1/anulaciones/previa` | `MESA_ENTRADAS` | El resumen para confirmar y sus avisos. No escribe. 200; 400; 404; 409 `PAGO_ANULADO` o `TURNOS_DICTADOS` |
+| `POST /api/v1/anulaciones`       | `MESA_ENTRADAS` | Anula el pago. 201 con `{ pagoId, cantidad }`; 400; 404; 409 `PAGO_ANULADO` o `TURNOS_DICTADOS`           |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
@@ -2025,7 +2025,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 - `avisos.deuda`: el alumno quedaría con **deuda vencida** (HU-29). `cantidad` y `total` son su deuda vencida de hoy más los turnos del pago con fecha de 30 días o más (`fecha <= hoy - 30`), que al anular dejan de estar pagos, a precio **vigente** (un turno de una materia sin precio cuenta en `cantidad` pero no suma al `total`). `turnosDelPago` es cuántos de esos turnos son de este pago (puede ser 0 si el alumno ya tenía deuda vencida). `null` si no quedaría con ninguna.
 - `avisos.precios`: una entrada por materia (y precio cobrado) cuyo precio por hora **vigente** es distinto del que se cobró en el pago, por nombre de materia: "Los turnos se volverán a cobrar a $ 9.000 por hora; en este pago se cobraron a $ 8.000". `vigente` es `null` si la materia ya no tiene precio.
 - `avisos.transferenciaCompartida`: sólo si el pago es una transferencia. Los **otros pagos vigentes** con la misma operación y banco (una transferencia puede cubrir a varios alumnos), por número de comprobante. **No se anulan con éste.** `null` si no hay otros.
-- Errores, en orden: 400 (`pagoId`); 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` si ya está anulado (no hay nada que confirmar).
+- Errores, en orden: 400 (`pagoId`); 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` si ya está anulado; 409 `TURNOS_DICTADOS` si alguno de sus turnos ya se dictó (ver abajo). En los dos 409 no hay nada que confirmar.
 
 **Body de `POST /anulaciones`:**
 
@@ -2039,9 +2039,34 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 **Respuesta 201:** `{ "pagoId": 31, "cantidad": 4 }`: los turnos que volvieron a quedar pendientes de pago ("Pago anulado. Sus turnos volvieron a quedar pendientes de pago").
 
-**Errores, en orden:** 400 `VALIDACION`; 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` "Un pago anulado no se puede volver a activar" (sin `details`; también si dos anulaciones del mismo pago llegan a la vez: gana una).
+**Errores, en orden:** 400 `VALIDACION`; 404 `NO_ENCONTRADO` "Pago no encontrado"; 409 `PAGO_ANULADO` "Un pago anulado no se puede volver a activar" (sin `details`; también si dos anulaciones del mismo pago llegan a la vez: gana una); 409 `TURNOS_DICTADOS`.
 
-**Qué hace, en una transacción con el lock del alumno** (el mismo que pagar, cancelar y reprogramar, así que se serializan): `Pago.estado = ANULADO` (con `updatedById`/`updatedAt`), una `AnulacionPago` (motivo, detalle y quién la creó) y `vigente = null` en todos los `PagoTurno` del pago. **No se borra nada**: el pago conserva todos sus datos, su forma de pago y su comprobante adjunto, y su número no se reutiliza. Las ocurrencias vuelven a `PENDIENTE` en la siguiente lectura del motor (`Ocurrencia.pago`, `cuentas`, deuda) y se pueden cobrar de nuevo con `POST /pagos` **al precio vigente**. Si un pago nuevo de esas ocurrencias llega a la vez, el lock lo ordena: o entra después de la anulación, o recibe 409 `TURNOS_NO_COBRABLES` (`YA_PAGADO`).
+**409 `TURNOS_DICTADOS`** (previa y POST, decisión T-179): al menos una ocurrencia del pago tiene asistencia registrada (`PRESENTE` o `AUSENTE`). Se rechaza el pago entero: no hay anulación parcial. `details` trae un elemento por cada turno dictado, por fecha:
+
+```json
+{
+  "error": {
+    "code": "TURNOS_DICTADOS",
+    "message": "No se puede anular: el pago incluye turnos que ya se dictaron",
+    "details": [
+      {
+        "fecha": "2026-10-05",
+        "materia": { "id": 2, "nombre": "Matemática" },
+        "asistencia": "PRESENTE"
+      },
+      {
+        "fecha": "2026-10-12",
+        "materia": { "id": 2, "nombre": "Matemática" },
+        "asistencia": "AUSENTE"
+      }
+    ]
+  }
+}
+```
+
+Es definitivo: reintentar no cambia nada. En el POST también llega si alguien registra la asistencia de uno de los turnos mientras la mesa confirma (la anulación vuelve a leer la asistencia bajo el lock del alumno, que también toma registrar asistencia). Un pago sin ninguna asistencia (turnos futuros, o pasados todavía sin registrar) se anula como siempre. El detalle del pago ya lo refleja en `acciones.anular` (ver Pagos).
+
+**Qué hace, en una transacción con el lock del alumno** (el mismo que pagar, cancelar, reprogramar y registrar asistencia, así que se serializan), después de volver a leer el pago y la asistencia de sus turnos: `Pago.estado = ANULADO` (con `updatedById`/`updatedAt`), una `AnulacionPago` (motivo, detalle y quién la creó) y `vigente = null` en todos los `PagoTurno` del pago. **No se borra nada**: el pago conserva todos sus datos, su forma de pago y su comprobante adjunto, y su número no se reutiliza. Las ocurrencias vuelven a `PENDIENTE` en la siguiente lectura del motor (`Ocurrencia.pago`, `cuentas`, deuda) y se pueden cobrar de nuevo con `POST /pagos` **al precio vigente**. Si un pago nuevo de esas ocurrencias llega a la vez, el lock lo ordena: o entra después de la anulación, o recibe 409 `TURNOS_NO_COBRABLES` (`YA_PAGADO`).
 
 El pago anulado se sigue consultando con `GET /pagos/{id}` (`estado: "ANULADO"` y su `anulacion`) y su comprobante en PDF lleva la leyenda "ANULADO" (ver Pagos).
 

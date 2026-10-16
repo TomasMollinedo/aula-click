@@ -30,6 +30,7 @@ const {
   alumnoFindMany,
   profesorFindMany,
   materiaBuscadorFindMany,
+  asistenciaFindMany,
   ErrorConocido,
 } = vi.hoisted(() => ({
   alumnoFindMany: vi.fn(),
@@ -50,6 +51,7 @@ const {
   formaPagoFindMany: vi.fn(),
   adjuntoFindFirst: vi.fn(),
   porcentajeFindFirst: vi.fn(),
+  asistenciaFindMany: vi.fn(),
   ErrorConocido: class extends Error {
     constructor(
       message: string,
@@ -79,6 +81,7 @@ vi.mock('@/lib/prisma', () => ({
     alumno: { findMany: alumnoFindMany },
     profesor: { findMany: profesorFindMany },
     materia: { findMany: materiaBuscadorFindMany },
+    asistenciaTurno: { findMany: asistenciaFindMany },
   },
 }))
 vi.mock('@/generated/prisma/client', () => ({
@@ -136,6 +139,7 @@ beforeEach(() => {
   pagoCreate.mockResolvedValue({ id: 31, numeroComprobante: 1024 })
   adjuntoUpdateMany.mockResolvedValue({ count: 1 })
   porcentajeFindFirst.mockResolvedValue({ porcentaje: { toNumber: () => 18 } })
+  asistenciaFindMany.mockResolvedValue([])
 })
 
 describe('registrar', () => {
@@ -731,6 +735,36 @@ describe('pagos realizados', () => {
     it('sin adjunto activo → null', async () => {
       adjuntoFindFirst.mockResolvedValue(null)
       expect(await pagosRepository.buscarAdjunto(31)).toBeNull()
+    })
+  })
+
+  // T-179: un pago con algún turno ya dictado no se anula.
+  describe('tieneTurnosDictados', () => {
+    const ocurrencias = [
+      { turnoId: 41, fecha: '2026-10-05' },
+      { turnoId: 41, fecha: '2026-10-12' },
+    ]
+
+    it('true si alguna ocurrencia tiene asistencia, en una sola consulta', async () => {
+      asistenciaFindMany.mockResolvedValue([
+        { turnoId: 41, fechaOcurrencia: new Date('2026-10-05T00:00:00.000Z'), estado: 'AUSENTE' },
+      ])
+
+      expect(await pagosRepository.tieneTurnosDictados(ocurrencias)).toBe(true)
+      expect(asistenciaFindMany).toHaveBeenCalledTimes(1)
+      expect(asistenciaFindMany.mock.calls[0]?.[0].where).toEqual({
+        OR: [
+          { turnoId: 41, fechaOcurrencia: new Date('2026-10-05T00:00:00.000Z') },
+          { turnoId: 41, fechaOcurrencia: new Date('2026-10-12T00:00:00.000Z') },
+        ],
+      })
+    })
+
+    it('false si ninguna tiene asistencia, o si no hay ocurrencias (sin consultar)', async () => {
+      expect(await pagosRepository.tieneTurnosDictados(ocurrencias)).toBe(false)
+      asistenciaFindMany.mockClear()
+      expect(await pagosRepository.tieneTurnosDictados([])).toBe(false)
+      expect(asistenciaFindMany).not.toHaveBeenCalled()
     })
   })
 })

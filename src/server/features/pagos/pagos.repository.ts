@@ -2,6 +2,10 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
 import { ultimoAdjunto, vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import {
+  asistenciasDeOcurrencias,
+  type OcurrenciaConsultada,
+} from '@/server/features/asistencias/asistencias.condiciones'
 import { porcentajeVigente } from '@/server/features/reparto/reparto.condiciones'
 import {
   bloquearAlumno,
@@ -578,6 +582,15 @@ export const pagosRepository = {
         adjuntadoEl: adjunto.adjuntadoEl,
       }
     )
+  },
+
+  /**
+   * Si alguna de las ocurrencias (las de un pago) ya tiene asistencia `PRESENTE` o `AUSENTE`
+   * (`asistenciasDeOcurrencias`, de `asistencias`): un pago así no se anula (decisión T-179). Una
+   * consulta; ninguna si no hay ocurrencias.
+   */
+  async tieneTurnosDictados(ocurrencias: readonly OcurrenciaConsultada[]): Promise<boolean> {
+    return (await asistenciasDeOcurrencias(prisma, ocurrencias)).length > 0
   },
 }
 

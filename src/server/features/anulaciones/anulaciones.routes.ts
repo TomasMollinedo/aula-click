@@ -6,6 +6,7 @@ import * as anulacionesController from './anulaciones.controller'
 import {
   ejemploAnular,
   ejemploErrorPagoAnulado,
+  ejemploErrorTurnosDictados,
   ejemploPagoAnulado,
   ejemploPrevia,
 } from './anulaciones.ejemplos'
@@ -30,13 +31,28 @@ function respuestaError(description: string, example?: unknown) {
   }
 }
 
+/** El 409 de la previa y del POST: el pago ya está anulado o incluye turnos ya dictados (T-179). */
+const conflictoAnulacion = {
+  description:
+    'El pago ya está anulado (PAGO_ANULADO) o incluye turnos que ya se dictaron, con asistencia `PRESENTE` o `AUSENTE` (TURNOS_DICTADOS; en `details`, la fecha, la materia y la asistencia de cada uno)',
+  content: {
+    'application/json': {
+      schema: ErrorResponseSchema,
+      examples: {
+        pagoAnulado: { summary: 'Pago ya anulado', value: ejemploErrorPagoAnulado },
+        turnosDictados: { summary: 'Turnos ya dictados', value: ejemploErrorTurnosDictados },
+      },
+    },
+  },
+}
+
 export const previaAnulacionRoute = createRoute({
   method: 'get',
   path: '/previa',
   tags,
   summary: 'Confirmación de la anulación de un pago',
   description:
-    'El resumen para confirmar ("¿Anular el comprobante N.º 123 de Juan Pérez por $ 32.000 (4 turnos)?") y los avisos, que informan sin bloquear: `deuda` (el alumno quedaría con deuda vencida), `precios` (por materia, el precio vigente es distinto del cobrado) y `transferenciaCompartida` (otros pagos vigentes con la misma operación y banco, que no se anulan con éste). No escribe nada.',
+    'El resumen para confirmar ("¿Anular el comprobante N.º 123 de Juan Pérez por $ 32.000 (4 turnos)?") y los avisos, que informan sin bloquear: `deuda` (el alumno quedaría con deuda vencida), `precios` (por materia, el precio vigente es distinto del cobrado) y `transferenciaCompartida` (otros pagos vigentes con la misma operación y banco, que no se anulan con éste). Un pago con turnos ya dictados no se puede anular: 409 `TURNOS_DICTADOS`. No escribe nada.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: { query: previaQuerySchema },
   responses: {
@@ -48,7 +64,7 @@ export const previaAnulacionRoute = createRoute({
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
     403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
     404: respuestaError('El pago no existe (NO_ENCONTRADO)'),
-    409: respuestaError('El pago ya está anulado (PAGO_ANULADO)', ejemploErrorPagoAnulado),
+    409: conflictoAnulacion,
   },
 })
 
@@ -58,7 +74,7 @@ export const anularPagoRoute = createRoute({
   tags,
   summary: 'Anular un pago',
   description:
-    'Anula el pago completo, nunca un turno suelto: `Pago.estado = ANULADO`, una `AnulacionPago` y `vigente = null` en sus turnos, que vuelven a estar pendientes de pago y se pueden cobrar de nuevo al precio vigente. El pago conserva todos sus datos, su forma de pago y su comprobante adjunto; su número no se reutiliza. No se deshace.',
+    'Anula el pago completo, nunca un turno suelto, y sólo si ninguno de sus turnos se dictó todavía (sin asistencia `PRESENTE` ni `AUSENTE`): `Pago.estado = ANULADO`, una `AnulacionPago` y `vigente = null` en sus turnos, que vuelven a estar pendientes de pago y se pueden cobrar de nuevo al precio vigente. El pago conserva todos sus datos, su forma de pago y su comprobante adjunto; su número no se reutiliza. No se deshace.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
   request: {
     body: {
@@ -77,7 +93,7 @@ export const anularPagoRoute = createRoute({
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
     403: respuestaError('El rol no es mesa de entradas o el usuario está inhabilitado'),
     404: respuestaError('El pago no existe (NO_ENCONTRADO)'),
-    409: respuestaError('El pago ya está anulado (PAGO_ANULADO)', ejemploErrorPagoAnulado),
+    409: conflictoAnulacion,
   },
 })
 

@@ -16,16 +16,33 @@ import type { PreviaAnulacion } from './anulaciones.validation'
 export const CODIGO_PAGO_ANULADO = 'PAGO_ANULADO'
 export const MENSAJE_PAGO_ANULADO = 'Un pago anulado no se puede volver a activar'
 export const MENSAJE_PAGO_NO_ENCONTRADO = 'Pago no encontrado'
+export const CODIGO_TURNOS_DICTADOS = 'TURNOS_DICTADOS'
+export const MENSAJE_TURNOS_DICTADOS =
+  'No se puede anular: el pago incluye turnos que ya se dictaron'
 
 /**
- * El pago a anular, o el error que corresponde: no existe → 404; ya está anulado → 409
- * `PAGO_ANULADO` (no se deshace). Es el `verificar` que el repository corre bajo el lock del
- * alumno.
+ * El pago a anular, o el error que corresponde, en este orden (el primero que falla gana):
+ * 1. No existe → 404.
+ * 2. Ya está anulado → 409 `PAGO_ANULADO` (no se deshace).
+ * 3. Alguno de sus turnos ya se dictó (tiene asistencia `PRESENTE` o `AUSENTE`) → 409
+ *    `TURNOS_DICTADOS`, con un detalle por cada uno (fecha, materia y asistencia): el profesor
+ *    cobra lo que dictó y un turno sin pago vigente no se le devenga (decisión T-179). Todo o nada:
+ *    no hay anulación parcial.
+ *
+ * Es el chequeo de la previa, el previo de `anular` y el `verificar` que el repository corre bajo
+ * el lock del alumno, con la asistencia releída con su `tx`.
  */
 export function exigirAnulable(pago: PagoParaAnular | null): PagoParaAnular {
   if (!pago) throw new NotFoundError(MENSAJE_PAGO_NO_ENCONTRADO)
   if (pago.estado === 'ANULADO') {
     throw new ConflictError(MENSAJE_PAGO_ANULADO, { code: CODIGO_PAGO_ANULADO })
+  }
+  const dictados = pago.turnos.filter((turno) => turno.asistencia !== null)
+  if (dictados.length > 0) {
+    throw new ConflictError(MENSAJE_TURNOS_DICTADOS, {
+      code: CODIGO_TURNOS_DICTADOS,
+      details: dictados.map(({ fecha, materia, asistencia }) => ({ fecha, materia, asistencia })),
+    })
   }
   return pago
 }
