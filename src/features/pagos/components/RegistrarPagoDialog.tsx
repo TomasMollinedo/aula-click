@@ -197,7 +197,10 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
           )}
 
           {vista === 'confirmar' && (
-            <p className="text-base font-medium">{textoConfirmacion(resumen)}</p>
+            <p className="text-base font-medium">
+              {/* En "confirmar" el formulario ya pasó el schema: hay una forma de pago elegida. */}
+              {textoConfirmacion(resumen, getValues('formaPago') || 'EFECTIVO')}
+            </p>
           )}
 
           {vista === 'formulario' && (

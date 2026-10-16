@@ -153,6 +153,81 @@ describe('interpretarErrorPago: 409 TURNOS_NO_COBRABLES', () => {
   })
 })
 
+// HU-23 (T-96): los datos del medio vuelven anidados y van al campo plano del formulario.
+describe('interpretarErrorPago: datos del medio y comprobante adjunto', () => {
+  it('transferencia y débito anidados: cada uno en su campo del formulario', () => {
+    const error = new ApiError(400, 'VALIDACION', 'Datos de entrada inválidos', [
+      { path: ['transferencia', 'operacion'], message: 'No puede superar los 50 caracteres' },
+      { path: ['transferencia', 'titular'], message: 'No puede superar los 100 caracteres' },
+      { path: ['debito', 'cupon'], message: 'El cupón sólo puede tener números' },
+      { path: ['debito', 'ultimos4'], message: 'Tienen que ser exactamente 4 números' },
+    ])
+    expect(interpretarErrorPago(error, LISTA)).toEqual({
+      tipo: 'campos',
+      campos: [
+        { campo: 'transferenciaOperacion', mensaje: 'No puede superar los 50 caracteres' },
+        { campo: 'transferenciaTitular', mensaje: 'No puede superar los 100 caracteres' },
+        { campo: 'debitoCupon', mensaje: 'El cupón sólo puede tener números' },
+        { campo: 'debitoUltimos4', mensaje: 'Tienen que ser exactamente 4 números' },
+      ],
+      mensaje: null,
+    })
+  })
+
+  it('el medio entero sin sus datos: al primer campo del medio', () => {
+    const error = new ApiError(400, 'VALIDACION', 'Datos de entrada inválidos', [
+      { path: ['transferencia'], message: 'Faltan los datos de la transferencia' },
+      { path: ['debito'], message: 'Los datos del débito sólo van en un pago con débito' },
+    ])
+    expect(interpretarErrorPago(error, LISTA)).toMatchObject({
+      tipo: 'campos',
+      campos: [
+        { campo: 'transferenciaOperacion', mensaje: 'Faltan los datos de la transferencia' },
+        { campo: 'debitoRed', mensaje: 'Los datos del débito sólo van en un pago con débito' },
+      ],
+    })
+  })
+
+  it('forma de pago y comprobante obligatorio: en su campo', () => {
+    const error = new ApiError(400, 'VALIDACION', 'Datos de entrada inválidos', [
+      { path: ['formaPago'], message: 'La forma de pago es obligatoria' },
+      {
+        path: ['comprobanteAdjuntoId'],
+        message: 'El comprobante es obligatorio con transferencia',
+      },
+    ])
+    expect(interpretarErrorPago(error, LISTA)).toMatchObject({
+      tipo: 'campos',
+      campos: [
+        { campo: 'formaPago', mensaje: 'La forma de pago es obligatoria' },
+        {
+          campo: 'comprobanteAdjuntoId',
+          mensaje: 'El comprobante es obligatorio con transferencia',
+        },
+      ],
+    })
+  })
+
+  it('400 ADJUNTO_INVALIDO (el comprobante ya se usó o no es de quien cobra): en "Comprobante"', () => {
+    const mensaje = 'El comprobante adjunto no existe o ya se usó en otro pago: volvé a subirlo'
+    const error = new ApiError(400, 'ADJUNTO_INVALIDO', mensaje, [
+      { path: ['comprobanteAdjuntoId'], message: mensaje },
+    ])
+    expect(interpretarErrorPago(error, LISTA)).toEqual({
+      tipo: 'campos',
+      campos: [{ campo: 'comprobanteAdjuntoId', mensaje }],
+      mensaje: null,
+    })
+  })
+
+  it('un campo anidado que el formulario no tiene: general, con el message', () => {
+    const error = new ApiError(400, 'VALIDACION', 'Datos de entrada inválidos', [
+      { path: ['transferencia', 'cbu'], message: 'Desconocido' },
+    ])
+    expect(interpretarErrorPago(error, LISTA)).toEqual({ tipo: 'general', mensaje: 'Desconocido' })
+  })
+})
+
 describe('interpretarErrorPago: 400 VALIDACION', () => {
   it('montoRecibido menor al total: en el campo, con el message de la API tal cual', () => {
     const error = new ApiError(400, 'VALIDACION', MENSAJE_MONTO, [

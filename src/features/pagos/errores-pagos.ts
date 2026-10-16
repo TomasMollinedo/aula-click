@@ -13,6 +13,8 @@ import type { MotivoNoCobrable } from './pagos.types'
 // y no revisa códigos. Un `details` sin la forma esperada cae a `general` con el `message`.
 
 export const CODIGO_TURNOS_NO_COBRABLES = 'TURNOS_NO_COBRABLES'
+/** 400 del comprobante adjunto que no se puede vincular (T-95/T-96): va en su campo. */
+export const CODIGO_ADJUNTO_INVALIDO = 'ADJUNTO_INVALIDO'
 
 const MOTIVOS: readonly MotivoNoCobrable[] = [
   'NO_EXISTE',
@@ -64,6 +66,30 @@ function esFecha(valor: unknown): valor is string {
 }
 
 const camposValidos = new Set<string>(CAMPOS_PAGO_FORM)
+
+/**
+ * Los datos del medio van anidados en el body (`transferencia.operacion`, `debito.cupon`) y planos
+ * en el formulario (`transferenciaOperacion`, `debitoCupon`). Sin el dato (`['transferencia']`:
+ * "Faltan los datos de la transferencia"), al primer campo del medio.
+ */
+const CAMPO_DEL_MEDIO: Record<string, Record<string, CampoPagoForm>> = {
+  transferencia: {
+    '': 'transferenciaOperacion',
+    operacion: 'transferenciaOperacion',
+    banco: 'transferenciaBanco',
+    titular: 'transferenciaTitular',
+  },
+  debito: { '': 'debitoRed', red: 'debitoRed', cupon: 'debitoCupon', ultimos4: 'debitoUltimos4' },
+}
+
+/** El campo del formulario de un `path` de la API, o `null` si no es de un campo. */
+function campoDelPath(path: unknown[]): CampoPagoForm | null {
+  const [raiz, hijo] = path
+  if (typeof raiz !== 'string' || path.length > 2) return null
+  const delMedio = CAMPO_DEL_MEDIO[raiz]
+  if (delMedio) return delMedio[path.length === 1 ? '' : String(hijo)] ?? null
+  return path.length === 1 && camposValidos.has(raiz) ? (raiz as CampoPagoForm) : null
+}
 
 /** Un detalle con la forma de Zod: `path` arreglo y `message` texto. */
 function esDetalle(d: unknown): d is Registro & { path: unknown[]; message: string } {
@@ -162,11 +188,9 @@ function interpretarValidacion(
   const campos: { campo: CampoPagoForm; mensaje: string }[] = []
   let mensaje: string | null = null
   for (const d of details) {
-    const raiz = d.path[0]
-    if (d.path.length === 1 && typeof raiz === 'string' && camposValidos.has(raiz)) {
-      if (!campos.some((c) => c.campo === raiz)) {
-        campos.push({ campo: raiz as CampoPagoForm, mensaje: d.message })
-      }
+    const campo = campoDelPath(d.path)
+    if (campo) {
+      if (!campos.some((c) => c.campo === campo)) campos.push({ campo, mensaje: d.message })
     } else {
       // Por ejemplo `['ocurrencias']`: el total supera el máximo de un pago.
       mensaje = mensaje ?? d.message
@@ -210,7 +234,11 @@ export function interpretarErrorPago(
   if (error.status === 403 && error.code === 'SIN_PERMISO') {
     return { tipo: 'general', mensaje: MENSAJE_SIN_PERMISO }
   }
-  if (error.status === 400 && error.code === 'VALIDACION') {
+  if (
+    error.status === 400 &&
+    (error.code === 'VALIDACION' || error.code === CODIGO_ADJUNTO_INVALIDO)
+  ) {
+    // `ADJUNTO_INVALIDO` trae su detalle en `comprobanteAdjuntoId`: el campo "Comprobante".
     return interpretarValidacion(error, ocurrencias)
   }
   if (error.status === 409 && error.code === CODIGO_TURNOS_NO_COBRABLES) {

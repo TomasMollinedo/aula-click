@@ -2,11 +2,11 @@
 // T-51; formas de pago, HU-23, T-96). Los importes son números en pesos, con hasta dos decimales:
 // los calcula la API y la UI solo los muestra. Fechas: string `YYYY-MM-DD`. Horas: string `HH:mm`.
 
-/** La forma de pago, por su código fijo (nunca por el nombre). */
-export type CodigoFormaPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'DEBITO'
+import type { CodigoFormaPago, RedDebito } from './pago-detalle.types'
 
-/** La red de una tarjeta de débito. */
-export type RedDebito = 'VISA_DEBITO' | 'MASTERCARD_DEBITO' | 'MAESTRO' | 'CABAL_DEBITO' | 'OTRA'
+// La forma de pago (por su código fijo) y la red de débito son las mismas que las del detalle de
+// un pago: una sola definición, la de `pago-detalle.types.ts`.
+export type { CodigoFormaPago, RedDebito }
 
 /** Los datos de cada medio en el body: un pago, un medio (HU-23). */
 export type MedioRegistrarPago =
