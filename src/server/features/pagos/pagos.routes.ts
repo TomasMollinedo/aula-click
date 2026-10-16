@@ -11,6 +11,7 @@ import {
   ejemploErrorNoCobrables,
   ejemploErrorRango,
   ejemploListado,
+  ejemploMateriasDePagos,
   ejemploMisPagos,
   ejemploProfesoresDePagos,
   ejemploRegistrado,
@@ -20,10 +21,12 @@ import {
 } from './pagos.ejemplos'
 import {
   alumnosDePagosSchema,
+  buscadorAcotadoQuerySchema,
   buscadorPagosQuerySchema,
   detallePagoSchema,
   listadoPagosSchema,
   listarPagosQuerySchema,
+  materiasDePagosSchema,
   misPagosQuerySchema,
   misPagosSchema,
   pagoIdParamsSchema,
@@ -140,9 +143,13 @@ export const misPagosRoute = createRoute({
 
 // Buscadores de los filtros de pagos realizados (HU-36, T-100): pagos publica los suyos, sin abrirle
 // al gerente `GET /alumnos` ni `GET /profesores` (decisión T-169). Se registran antes de `/{id}`,
-// como `/mis-pagos`: si no, `/alumnos` y `/profesores` caerían en ese path param.
-const descripcionBuscador =
-  'Sin paginar, por apellido y nombre, hasta 20. `q`: búsqueda por palabras, como `GET /alumnos` (sin mayúsculas, tildes ni puntos). `id`: sólo esa opción si corresponde, o `[]` (para mostrar el nombre del filtro que viene en la URL). Cada opción trae sólo `id`, `nombre` y `apellido`.'
+// como `/mis-pagos`: si no, `/alumnos`, `/profesores` y `/materias` caerían en ese path param.
+// Profesores y materias se acotan con `alumnoId` a los de los pagos de ese alumno (decisión T-170).
+const descripcionBusqueda =
+  '`q`: búsqueda por palabras, como `GET /alumnos` (sin mayúsculas, tildes ni puntos). `id`: sólo esa opción si corresponde, o `[]` (para mostrar el nombre del filtro que viene en la URL).'
+const descripcionBuscador = `Sin paginar, por apellido y nombre, hasta 20. ${descripcionBusqueda} Cada opción trae sólo \`id\`, \`nombre\` y \`apellido\`.`
+const descripcionAlumnoId =
+  '`alumnoId`: sólo las de los pagos de ese alumno (el de la ficha o el del filtro).'
 
 export const buscarAlumnosRoute = createRoute({
   method: 'get',
@@ -173,9 +180,9 @@ export const buscarProfesoresRoute = createRoute({
   path: '/profesores',
   tags,
   summary: 'Buscador de profesores para el filtro de pagos realizados',
-  description: `Profesores que dictan algún turno incluido en un pago (el profesor actual del turno, como el filtro \`profesorId\`), incluidos los dados de baja. ${descripcionBuscador}`,
+  description: `Profesores que dictan algún turno incluido en un pago (el profesor actual del turno, como el filtro \`profesorId\`), incluidos los dados de baja. ${descripcionBuscador} ${descripcionAlumnoId}`,
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
-  request: { query: buscadorPagosQuerySchema },
+  request: { query: buscadorAcotadoQuerySchema },
   responses: {
     200: {
       description: 'Profesores con turnos pagados (arreglo vacío si no hay ninguno)',
@@ -184,7 +191,31 @@ export const buscarProfesoresRoute = createRoute({
       },
     },
     400: respuestaError(
-      'Query inválido (VALIDACION): `q` de más de 100 caracteres o `id` que no es un entero positivo',
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres, o `id` o `alumnoId` que no es un entero positivo',
+      ejemploErrorBuscador,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
+export const buscarMateriasRoute = createRoute({
+  method: 'get',
+  path: '/materias',
+  tags,
+  summary: 'Buscador de materias para el filtro de pagos realizados',
+  description: `Materias de algún turno incluido en un pago (como el filtro \`materiaId\`), incluidas las dadas de baja. Sin paginar, por nombre, hasta 20. ${descripcionBusqueda} ${descripcionAlumnoId} Cada opción trae sólo \`id\` y \`nombre\`.`,
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: buscadorAcotadoQuerySchema },
+  responses: {
+    200: {
+      description: 'Materias con turnos pagados (arreglo vacío si no hay ninguna)',
+      content: {
+        'application/json': { schema: materiasDePagosSchema, example: ejemploMateriasDePagos },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres, o `id` o `alumnoId` que no es un entero positivo',
       ejemploErrorBuscador,
     ),
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
@@ -242,5 +273,6 @@ export const pagosRoutes = createRouter()
   .openapi(misPagosRoute, pagosController.misPagos)
   .openapi(buscarAlumnosRoute, pagosController.buscarAlumnos)
   .openapi(buscarProfesoresRoute, pagosController.buscarProfesores)
+  .openapi(buscarMateriasRoute, pagosController.buscarMaterias)
   .openapi(obtenerComprobanteRoute, pagosController.obtenerComprobante)
   .openapi(obtenerComprobantePdfRoute, pagosController.obtenerComprobantePdf)

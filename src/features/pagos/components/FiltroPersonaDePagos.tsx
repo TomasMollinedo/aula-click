@@ -99,10 +99,17 @@ export function FiltroAlumnoDePagos(props: FiltroPersonaProps) {
   )
 }
 
-/** Filtro por profesor: los que dictaron algún turno pagado (`GET /pagos/profesores`). */
-export function FiltroProfesorDePagos(props: FiltroPersonaProps) {
+/**
+ * Filtro por profesor: los que dictaron algún turno pagado (`GET /pagos/profesores`). Con
+ * `alumnoId`, las opciones son solo las de los pagos de ese alumno (decisión T-170); el nombre del
+ * elegido se pide sin él, así no se pierde al cambiar de alumno.
+ */
+export function FiltroProfesorDePagos({
+  alumnoId,
+  ...props
+}: FiltroPersonaProps & { alumnoId?: number }) {
   const estado = useComboboxBuscador()
-  const busqueda = useProfesoresDePagos({ q: estado.q || undefined }, estado.abierto)
+  const busqueda = useProfesoresDePagos({ q: estado.q || undefined, alumnoId }, estado.abierto)
   const elegido = useProfesoresDePagos({ id: props.value ?? undefined }, props.value !== null)
   return (
     <ComboboxPersona

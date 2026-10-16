@@ -16,11 +16,14 @@ import {
 } from './pagos.reglas'
 import type {
   AlumnoDePagos,
+  BuscadorAcotadoQuery,
   BuscadorPagosQuery,
+  BusquedaAcotadaDePagos,
   Comprobante,
   DetallePago,
   ListadoPagos,
   ListarPagosQuery,
+  MateriaDePagos,
   MisPagos,
   MisPagosQuery,
   PagoRegistrado,
@@ -36,6 +39,11 @@ import type {
 
 /** 403 del PDF de un pago de otro alumno (HU-37). */
 export const MENSAJE_PAGO_AJENO = 'El pago no es suyo'
+
+/** El query de un buscador acotado, con `q` ya partido en términos. */
+function busquedaAcotada(query: BuscadorAcotadoQuery): BusquedaAcotadaDePagos {
+  return { terminos: terminosDeBusqueda(query.q), id: query.id, alumnoId: query.alumnoId }
+}
 
 /**
  * Crea el service con sus dependencias. El controller arma la instancia con los repositories
@@ -57,6 +65,7 @@ export function crearPagosService({
     | 'buscarAdjunto'
     | 'buscarAlumnos'
     | 'buscarProfesores'
+    | 'buscarMaterias'
   >
   alumnosRepository: Pick<AlumnosRepository, 'buscarPorId'>
   reloj?: Reloj
@@ -199,9 +208,17 @@ export function crearPagosService({
       return repository.buscarAlumnos({ terminos: terminosDeBusqueda(query.q), id: query.id })
     },
 
-    /** Lo mismo con los profesores que dictan algún turno incluido en un pago (T-100). */
-    async buscarProfesores(query: BuscadorPagosQuery): Promise<ProfesorDePagos[]> {
-      return repository.buscarProfesores({ terminos: terminosDeBusqueda(query.q), id: query.id })
+    /**
+     * Lo mismo con los profesores que dictan algún turno incluido en un pago (T-100); con
+     * `alumnoId`, en un pago de ese alumno (decisión T-170).
+     */
+    async buscarProfesores(query: BuscadorAcotadoQuery): Promise<ProfesorDePagos[]> {
+      return repository.buscarProfesores(busquedaAcotada(query))
+    },
+
+    /** Lo mismo con las materias de algún turno incluido en un pago (decisión T-170). */
+    async buscarMaterias(query: BuscadorAcotadoQuery): Promise<MateriaDePagos[]> {
+      return repository.buscarMaterias(busquedaAcotada(query))
     },
   }
 }

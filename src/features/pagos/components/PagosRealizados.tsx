@@ -80,6 +80,7 @@ export function PagosRealizados({
         <FiltrosPagosRealizados
           filtros={filtros}
           conAlumno={conAlumno}
+          alumnoIdFicha={alumnoId}
           onCambiar={cambiar}
           onLimpiar={limpiar}
           puedeLimpiar={hayFiltros(filtros, hoy)}

@@ -1,37 +1,41 @@
 'use client'
 
 import { ComboboxBuscador, useComboboxBuscador } from '@/components/ui/combobox-buscador'
-import { useMateria } from '@/features/materias/hooks/use-materia'
-import { useMaterias } from '@/features/materias/hooks/use-materias'
+
+import { useMateriasDePagos } from '../hooks/use-buscadores-de-pagos'
 
 type FiltroMateriaDePagosProps = {
   id: string
   value: number | null
   onChange: (value: number | null) => void
+  /** Acota las opciones a las materias de los pagos de este alumno (decisión T-170). */
+  alumnoId?: number
   'aria-invalid'?: boolean
   'aria-describedby'?: string
 }
 
 /**
- * Filtro por una materia de "Pagos realizados": busca con el hook de `materias` (hasta 10 por
- * búsqueda, solo con el menú abierto) con `estado: 'TODOS'`, porque un pago puede ser de una
- * materia que después se dio de baja. El nombre de la elegida sale de `useMateria`; si no existe,
- * "Materia no encontrada". Mesa de entradas y el gerente pueden usar los dos.
+ * Filtro por una materia de "Pagos realizados", sobre el buscador de `pagos` (`GET
+ * /pagos/materias`): las materias de algún turno pagado, incluidas las dadas de baja, y con
+ * `alumnoId` solo las de los pagos de ese alumno. Las opciones se piden con `q` solo con el menú
+ * abierto; el nombre de la elegida, con `?id=` y sin `alumnoId` (así no se pierde al cambiar de
+ * alumno): si vuelve `[]`, "Materia no encontrada". Mesa de entradas y el gerente pueden usar los dos.
  */
-export function FiltroMateriaDePagos({ id, value, onChange, ...aria }: FiltroMateriaDePagosProps) {
+export function FiltroMateriaDePagos({
+  id,
+  value,
+  onChange,
+  alumnoId,
+  ...aria
+}: FiltroMateriaDePagosProps) {
   const estado = useComboboxBuscador()
-  const { data, isFetching, isError } = useMaterias(
-    { estado: 'TODOS', q: estado.q || undefined, pageSize: 10 },
-    estado.abierto,
-  )
-  const elegida = useMateria(value ?? 0)
+  const busqueda = useMateriasDePagos({ q: estado.q || undefined, alumnoId }, estado.abierto)
+  const elegida = useMateriasDePagos({ id: value ?? undefined }, value !== null)
 
   let textoValor: string | null = null
-  if (value !== null) {
-    if (elegida.data) textoValor = elegida.data.nombre
-    else if (elegida.isError) {
-      textoValor = elegida.error.status === 404 ? 'Materia no encontrada' : 'Materia no disponible'
-    }
+  if (value !== null && elegida.data) {
+    const [materia] = elegida.data
+    textoValor = materia ? materia.nombre : 'Materia no encontrada'
   }
 
   return (
@@ -42,10 +46,13 @@ export function FiltroMateriaDePagos({ id, value, onChange, ...aria }: FiltroMat
       textoValor={textoValor}
       textoTodos="Todas"
       placeholderBusqueda="Buscar materia…"
-      textoSinResultados="No se encontraron materias."
-      opciones={(data?.data ?? []).map((materia) => ({ id: materia.id, etiqueta: materia.nombre }))}
-      buscando={isFetching}
-      error={isError ? 'No se pudieron buscar las materias.' : null}
+      textoSinResultados="No se encontraron materias con turnos pagados."
+      opciones={(busqueda.data ?? []).map((materia) => ({
+        id: materia.id,
+        etiqueta: materia.nombre,
+      }))}
+      buscando={busqueda.isFetching}
+      error={busqueda.isError ? 'No se pudieron buscar las materias.' : null}
       onElegir={onChange}
       aria-invalid={aria['aria-invalid']}
       aria-describedby={aria['aria-describedby']}

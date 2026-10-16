@@ -7,6 +7,7 @@ import { nombreArchivoComprobante } from './pagos.formato'
 import { renderizarComprobantePdf } from './pagos.pdf'
 import type {
   buscarAlumnosRoute,
+  buscarMateriasRoute,
   buscarProfesoresRoute,
   listarPagosRoute,
   misPagosRoute,
@@ -38,6 +39,9 @@ export const buscarAlumnos: RouteHandler<typeof buscarAlumnosRoute, AppEnv> = as
 
 export const buscarProfesores: RouteHandler<typeof buscarProfesoresRoute, AppEnv> = async (c) =>
   c.json(await pagosService.buscarProfesores(c.req.valid('query')), 200)
+
+export const buscarMaterias: RouteHandler<typeof buscarMateriasRoute, AppEnv> = async (c) =>
+  c.json(await pagosService.buscarMaterias(c.req.valid('query')), 200)
 
 export const obtenerComprobante: RouteHandler<typeof obtenerComprobanteRoute, AppEnv> = async (c) =>
   c.json(await pagosService.obtenerDetalle(c.req.valid('param').id, c.get('actor')), 200)

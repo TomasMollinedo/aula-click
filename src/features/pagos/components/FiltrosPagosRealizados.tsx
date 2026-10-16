@@ -16,7 +16,11 @@ import {
 } from '@/components/ui/select'
 
 import type { CampoFiltroPagos } from '../errores-pagos-realizados'
-import { FORMAS_PAGO, type FiltrosPagosRealizados } from '../filtros-pagos-realizados'
+import {
+  alumnoDeLosBuscadores,
+  FORMAS_PAGO,
+  type FiltrosPagosRealizados,
+} from '../filtros-pagos-realizados'
 import { textoFormaPago } from '../formato-pagos'
 import type { CodigoFormaPago } from '../pago-detalle.types'
 import { FiltroMateriaDePagos } from './FiltroMateriaDePagos'
@@ -29,6 +33,8 @@ type FiltrosPagosRealizadosProps = {
   filtros: FiltrosPagosRealizados
   /** Con el filtro por alumno: la vista global (en la ficha, el alumno ya está elegido). */
   conAlumno: boolean
+  /** El alumno de la ficha: con él (o con el del filtro) se acotan profesor y materia (T-170). */
+  alumnoIdFicha?: number
   onCambiar: (cambios: Partial<FiltrosPagosRealizados>) => void
   onLimpiar: () => void
   puedeLimpiar: boolean
@@ -40,13 +46,15 @@ type FiltrosPagosRealizadosProps = {
 
 /**
  * Los filtros de "Pagos realizados" (HU-36): alumno (solo en la vista global), período por fecha
- * de pago, materia, profesor y forma de pago. No guarda estado: muestra los de la URL y avisa cada
+ * de pago, materia, profesor y forma de pago. Con un alumno (el de la ficha o el elegido), materia
+ * y profesor solo ofrecen los de sus pagos (decisión T-170). No guarda estado: muestra los de la URL y avisa cada
  * cambio, que se aplica enseguida. Las dos fechas son obligatorias (no se pueden vaciar) y no se
  * validan: un "Hasta" anterior al "Desde" se manda igual y el error de la API sale junto al campo.
  */
 export function FiltrosPagosRealizados({
   filtros,
   conAlumno,
+  alumnoIdFicha,
   onCambiar,
   onLimpiar,
   puedeLimpiar,
@@ -54,6 +62,7 @@ export function FiltrosPagosRealizados({
   errorGeneral,
 }: FiltrosPagosRealizadosProps) {
   const id = useId()
+  const alumnoId = alumnoDeLosBuscadores(filtros, alumnoIdFicha)
   const ids = {
     alumno: `${id}-alumno`,
     desde: `${id}-desde`,
@@ -114,6 +123,7 @@ export function FiltrosPagosRealizados({
           <FiltroMateriaDePagos
             id={ids.materia}
             value={filtros.materiaId}
+            alumnoId={alumnoId}
             onChange={(materiaId) => onCambiar({ materiaId })}
             {...aria('materiaId', ids.materia)}
           />
@@ -123,6 +133,7 @@ export function FiltrosPagosRealizados({
           <FiltroProfesorDePagos
             id={ids.profesor}
             value={filtros.profesorId}
+            alumnoId={alumnoId}
             onChange={(profesorId) => onCambiar({ profesorId })}
             {...aria('profesorId', ids.profesor)}
           />

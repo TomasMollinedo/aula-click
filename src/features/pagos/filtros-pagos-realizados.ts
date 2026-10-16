@@ -166,6 +166,18 @@ export function filtraPorTurno(filtros: FiltrosPagosRealizados): boolean {
 }
 
 /**
+ * El alumno que acota los buscadores de profesor y materia (decisión T-170): el de la ficha
+ * (`alumnoIdFicha`) o, en la vista global, el elegido en el filtro. Sin alumno, `undefined`: los
+ * buscadores ofrecen todos los que aparecen en algún pago.
+ */
+export function alumnoDeLosBuscadores(
+  filtros: Pick<FiltrosPagosRealizados, 'alumnoId'>,
+  alumnoIdFicha?: number,
+): number | undefined {
+  return alumnoIdFicha ?? filtros.alumnoId ?? undefined
+}
+
+/**
  * El query de `GET /pagos`: el período siempre, los vacíos no se mandan. En la ficha, el alumno es
  * `alumnoIdFicha` (el de la prop), nunca uno de la URL.
  */

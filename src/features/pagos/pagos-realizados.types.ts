@@ -53,5 +53,14 @@ export type ListarPagosRealizadosParams = {
 /** Una opción de un buscador de los filtros: solo id, nombre y apellido (ni DNI ni foto). */
 export type OpcionBuscadorPagos = { id: number; nombre: string; apellido: string }
 
+/** Una opción del buscador de materias: solo id y nombre. */
+export type OpcionMateriaDePagos = { id: number; nombre: string }
+
 /** Query de un buscador: `q` por palabras y/o una sola opción por su `id`. */
 export type BuscadorPagosParams = { q?: string; id?: number }
+
+/**
+ * Query de los buscadores de profesores y materias: además, `alumnoId` acota las opciones a las de
+ * los pagos de ese alumno (decisión T-170).
+ */
+export type BuscadorAcotadoParams = BuscadorPagosParams & { alumnoId?: number }

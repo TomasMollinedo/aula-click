@@ -4,6 +4,7 @@ import type {
   Comprobante,
   DetallePago,
   ListadoPagos,
+  MateriaDePagos,
   MisPagos,
   PagoRegistrado,
   ProfesorDePagos,
@@ -240,6 +241,12 @@ export const ejemploAlumnosDePagos = [
 export const ejemploProfesoresDePagos = [
   { id: 3, nombre: 'Ana', apellido: 'Gómez' },
 ] satisfies ProfesorDePagos[]
+
+/** Buscador de materias del filtro (`?q=mat&alumnoId=12`): las de los turnos pagados por ese alumno. */
+export const ejemploMateriasDePagos = [
+  { id: 2, nombre: 'Matemática' },
+  { id: 9, nombre: 'Matemática financiera' },
+] satisfies MateriaDePagos[]
 
 export const ejemploErrorBuscador = {
   error: {

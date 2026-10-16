@@ -4,6 +4,7 @@ import {
   FORMAS_PAGO,
   type FiltrosPagosRealizados,
   aParams,
+  alumnoDeLosBuscadores,
   filtraPorTurno,
   filtrosPorDefecto,
   hayFiltros,
@@ -247,5 +248,22 @@ describe('aParams', () => {
       alumnoId: 12,
     })
     expect(aParams(leer('alumnoId=99', FICHA), 1, 12).alumnoId).toBe(12)
+  })
+})
+
+describe('alumnoDeLosBuscadores (T-170)', () => {
+  it('en la ficha, el de la ficha, aunque la URL traiga otro', () => {
+    expect(alumnoDeLosBuscadores({ alumnoId: null }, 12)).toBe(12)
+    expect(alumnoDeLosBuscadores({ alumnoId: 99 }, 12)).toBe(12)
+    expect(alumnoDeLosBuscadores(leer('alumnoId=99', FICHA), 12)).toBe(12)
+  })
+
+  it('en la vista global, el elegido en el filtro', () => {
+    expect(alumnoDeLosBuscadores(leer('alumnoId=27'))).toBe(27)
+  })
+
+  it('sin alumno: undefined (los buscadores no se acotan)', () => {
+    expect(alumnoDeLosBuscadores(filtrosPorDefecto(HOY))).toBeUndefined()
+    expect(alumnoDeLosBuscadores(leer('alumnoId=abc'))).toBeUndefined()
   })
 })

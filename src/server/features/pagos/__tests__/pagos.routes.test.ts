@@ -18,6 +18,7 @@ const { repository, alumnosRepository, getSession } = vi.hoisted(() => ({
     buscarAdjunto: vi.fn(),
     buscarAlumnos: vi.fn(),
     buscarProfesores: vi.fn(),
+    buscarMaterias: vi.fn(),
   },
   alumnosRepository: { buscarPorId: vi.fn() },
   getSession: vi.fn(),
@@ -346,13 +347,16 @@ describe('GET /pagos/mis-pagos', () => {
   })
 })
 
-describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', () => {
+describe('GET /pagos/alumnos, /pagos/profesores y /pagos/materias (buscadores de los filtros)', () => {
   const LUCIA = { id: 12, nombre: 'Lucía', apellido: 'Álvarez' }
   const ANA = { id: 3, nombre: 'Ana', apellido: 'Gómez' }
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const BUSCADORES = ['/alumnos', '/profesores', '/materias']
 
   beforeEach(() => {
     repository.buscarAlumnos.mockResolvedValue([LUCIA])
     repository.buscarProfesores.mockResolvedValue([ANA])
+    repository.buscarMaterias.mockResolvedValue([MATEMATICA])
   })
 
   it.each(['MESA_ENTRADAS', 'GERENTE'])(
@@ -374,9 +378,34 @@ describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', (
       expect(repository.buscarProfesores).toHaveBeenCalledExactlyOnceWith({
         terminos: ['gomez'],
         id: undefined,
+        alumnoId: undefined,
+      })
+
+      const materias = await pedir('/materias?q=mat&id=2')
+      expect(materias.status).toBe(200)
+      expect(await materias.json()).toEqual([MATEMATICA])
+      expect(repository.buscarMaterias).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['mat'],
+        id: 2,
+        alumnoId: undefined,
       })
 
       expect(repository.buscarComprobante).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['/profesores', '/materias'])(
+    '%s?alumnoId=12 → acota al alumno (T-170)',
+    async (path) => {
+      await pedir(`${path}?q=a&alumnoId=12`)
+
+      const buscar =
+        path === '/profesores' ? repository.buscarProfesores : repository.buscarMaterias
+      expect(buscar).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['a'],
+        id: undefined,
+        alumnoId: 12,
+      })
     },
   )
 
@@ -386,18 +415,19 @@ describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', (
   ])('%s → 403', async (rol, alumnoId) => {
     getSession.mockResolvedValue(sesion(rol, alumnoId))
 
-    for (const path of ['/alumnos', '/profesores']) {
+    for (const path of BUSCADORES) {
       const res = await pedir(path)
       expect(res.status).toBe(403)
       expect((await res.json()).error.code).toBe('SIN_PERMISO')
     }
     expect(repository.buscarAlumnos).not.toHaveBeenCalled()
     expect(repository.buscarProfesores).not.toHaveBeenCalled()
+    expect(repository.buscarMaterias).not.toHaveBeenCalled()
   })
 
   it('sin sesión → 401', async () => {
     getSession.mockResolvedValue({ headers: new Headers(), response: null })
-    for (const path of ['/alumnos', '/profesores']) {
+    for (const path of BUSCADORES) {
       expect((await pedir(path)).status).toBe(401)
     }
   })
@@ -407,6 +437,10 @@ describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', (
     ['/alumnos', 'id=0', 'id'],
     ['/profesores', 'id=abc', 'id'],
     ['/profesores', 'id=1.5', 'id'],
+    ['/profesores', 'alumnoId=0', 'alumnoId'],
+    ['/materias', `q=${'a'.repeat(101)}`, 'q'],
+    ['/materias', 'id=abc', 'id'],
+    ['/materias', 'alumnoId=x', 'alumnoId'],
   ])('%s?%s → 400 VALIDACION en `%s`', async (path, query, campo) => {
     const res = await pedir(`${path}?${query}`)
 
@@ -416,6 +450,7 @@ describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', (
     expect(error.details).toEqual([expect.objectContaining({ path: [campo] })])
     expect(repository.buscarAlumnos).not.toHaveBeenCalled()
     expect(repository.buscarProfesores).not.toHaveBeenCalled()
+    expect(repository.buscarMaterias).not.toHaveBeenCalled()
   })
 
   it('la respuesta trae sólo id, nombre y apellido: ni dni ni fotoUrl', async () => {
@@ -427,6 +462,11 @@ describe('GET /pagos/alumnos y /pagos/profesores (buscadores de los filtros)', (
       expect(opcion).not.toHaveProperty('dni')
       expect(opcion).not.toHaveProperty('fotoUrl')
     }
+  })
+
+  it('las materias traen sólo id y nombre', async () => {
+    const [opcion] = await (await pedir('/materias')).json()
+    expect(Object.keys(opcion).sort()).toEqual(['id', 'nombre'])
   })
 })
 

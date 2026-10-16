@@ -28,10 +28,13 @@ const {
   adjuntoFindFirst,
   alumnoFindMany,
   profesorFindMany,
+  materiaBuscadorFindMany,
   ErrorConocido,
 } = vi.hoisted(() => ({
   alumnoFindMany: vi.fn(),
   profesorFindMany: vi.fn(),
+  // `prisma.materia` del buscador (T-170); el `materiaFindMany` de arriba es el de la transacción.
+  materiaBuscadorFindMany: vi.fn(),
   transaction: vi.fn(),
   queryRaw: vi.fn(),
   turnoFindMany: vi.fn(),
@@ -73,6 +76,7 @@ vi.mock('@/lib/prisma', () => ({
     comprobanteAdjunto: { findFirst: adjuntoFindFirst },
     alumno: { findMany: alumnoFindMany },
     profesor: { findMany: profesorFindMany },
+    materia: { findMany: materiaBuscadorFindMany },
   },
 }))
 vi.mock('@/generated/prisma/client', () => ({
@@ -925,7 +929,11 @@ describe('buscadores de los filtros (T-100)', () => {
     it('por el camino del turno pagado (bloque → turno → PagoTurno), con la búsqueda sobre su usuario y sin filtro de estado', async () => {
       profesorFindMany.mockResolvedValue([{ id: 3, usuario: { nombre: 'Ana', apellido: 'Gómez' } }])
 
-      const res = await pagosRepository.buscarProfesores({ terminos: ['gomez'], id: 3 })
+      const res = await pagosRepository.buscarProfesores({
+        terminos: ['gomez'],
+        id: 3,
+        alumnoId: undefined,
+      })
 
       expect(res).toEqual([{ id: 3, nombre: 'Ana', apellido: 'Gómez' }])
       expect(profesorFindMany).toHaveBeenCalledExactlyOnceWith({
@@ -943,10 +951,67 @@ describe('buscadores de los filtros (T-100)', () => {
     it('sin términos ni id: todos los que tienen turnos pagados, sin `id` en el where', async () => {
       profesorFindMany.mockResolvedValue([])
 
-      expect(await pagosRepository.buscarProfesores({ terminos: [], id: undefined })).toEqual([])
+      expect(
+        await pagosRepository.buscarProfesores({
+          terminos: [],
+          id: undefined,
+          alumnoId: undefined,
+        }),
+      ).toEqual([])
       expect(profesorFindMany.mock.calls[0]?.[0].where).toEqual({
         bloques: { some: { turnos: { some: { pagoTurnos: { some: {} } } } } },
         usuario: { AND: [] },
+      })
+    })
+
+    it('con alumnoId: sólo por los turnos de los pagos de ese alumno (T-170)', async () => {
+      profesorFindMany.mockResolvedValue([])
+
+      await pagosRepository.buscarProfesores({ terminos: [], id: undefined, alumnoId: 12 })
+
+      expect(profesorFindMany.mock.calls[0]?.[0].where).toEqual({
+        bloques: {
+          some: { turnos: { some: { pagoTurnos: { some: { pago: { alumnoId: 12 } } } } } },
+        },
+        usuario: { AND: [] },
+      })
+    })
+  })
+
+  describe('buscarMaterias (T-170)', () => {
+    it('por el camino del turno pagado (turno → PagoTurno), un contains por término, sin filtro de estado, por nombre, hasta 20', async () => {
+      materiaBuscadorFindMany.mockResolvedValue([{ id: 2, nombre: 'Matemática' }])
+
+      const res = await pagosRepository.buscarMaterias({
+        terminos: ['mat', 'fin'],
+        id: 2,
+        alumnoId: undefined,
+      })
+
+      expect(res).toEqual([{ id: 2, nombre: 'Matemática' }])
+      expect(materiaBuscadorFindMany).toHaveBeenCalledExactlyOnceWith({
+        where: {
+          AND: [
+            { turnos: { some: { pagoTurnos: { some: {} } } } },
+            { busqueda: { contains: 'mat' } },
+            { busqueda: { contains: 'fin' } },
+            { id: 2 },
+          ],
+        },
+        select: { id: true, nombre: true },
+        orderBy: [{ busqueda: 'asc' }, { id: 'asc' }],
+        take: LIMITE_BUSCADOR,
+      })
+    })
+
+    it('con alumnoId: sólo las de los turnos de los pagos de ese alumno', async () => {
+      materiaBuscadorFindMany.mockResolvedValue([])
+
+      expect(
+        await pagosRepository.buscarMaterias({ terminos: [], id: undefined, alumnoId: 12 }),
+      ).toEqual([])
+      expect(materiaBuscadorFindMany.mock.calls[0]?.[0].where).toEqual({
+        AND: [{ turnos: { some: { pagoTurnos: { some: { pago: { alumnoId: 12 } } } } } }],
       })
     })
   })
