@@ -3,7 +3,7 @@ import { format, parseISO } from 'date-fns'
 import { fechaCorta, textoMes } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
 
-import type { CodigoFormaPago, Movimiento, MotivoAnulacion, TipoMovimiento } from './caja.types'
+import type { CodigoFormaPago, Movimiento, TipoMovimiento } from './caja.types'
 
 // Los textos de la caja diaria (HU-46). Son los mismos que los del PDF que arma la API
 // (`caja.formato.ts` del backend, que el frontend no puede importar). Funciones puras: ningún
@@ -25,12 +25,6 @@ export const NOMBRE_TIPO_MOVIMIENTO: Record<TipoMovimiento, string> = {
   COBRO: 'Cobro',
   ANULACION: 'Anulación',
   PAGO_PROFESOR: 'Pago a profesor',
-}
-
-const NOMBRE_MOTIVO: Record<MotivoAnulacion, string> = {
-  ERROR_CARGA: 'Error de carga',
-  FORMA_PAGO_EQUIVOCADA: 'Forma de pago equivocada',
-  OTRO: 'Otro motivo',
 }
 
 /** El movimiento entra dinero: el cobro suma y los otros dos restan (lo decide el `tipo`). */
@@ -75,20 +69,6 @@ export function apellidoYNombre({
 /** `'Comprobante N° 1024'`. */
 export function textoNumeroComprobante(numeroComprobante: number): string {
   return `Comprobante N° ${numeroComprobante}`
-}
-
-/**
- * El motivo de la anulación, con el detalle si lo hay: `'Error de carga: se cargó dos veces'` o
- * `'Forma de pago equivocada'`.
- */
-export function textoMotivoAnulacion({
-  motivo,
-  detalle,
-}: {
-  motivo: MotivoAnulacion
-  detalle: string | null
-}): string {
-  return detalle ? `${NOMBRE_MOTIVO[motivo]}: ${detalle}` : NOMBRE_MOTIVO[motivo]
 }
 
 /** `'Operación 0048213'`, o `null` si la transferencia no tiene número cargado. */

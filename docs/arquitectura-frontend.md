@@ -319,7 +319,7 @@ src/
 │ ├── AccesoPortalAlta.tsx, AccesoPortalFicha.tsx # "Acceso al portal" del alta ({ nombre, apellido, dni }) y de la ficha ({ alumno, puedeEditar }) (T-90)
 │ ├── AlumnoNuevo.tsx, AlumnoEditar.tsx # alta y edición en un <Panel> (modal)
 │ ├── FotoAlumnoCampo.tsx # la foto en el alta y la edición (CampoArchivo), espejo de FotoProfesorCampo
-│ ├── MisAlumnosListado.tsx, MisAlumnosTable.tsx # "Mis alumnos" del profesor: sigue siendo tabla, con la foto en el avatar
+│ ├── MisAlumnosListado.tsx # "Mis alumnos" del profesor: la misma grilla de tarjetas que mesa (AlumnosGrid), sin lápiz y con las materias en la tarjeta
 │ └── AlumnoForm.tsx, AlumnoPanelEstado.tsx, AvisoMenorDeEdad.tsx, BotonNuevoAlumno.tsx
 │
 ├── components/
