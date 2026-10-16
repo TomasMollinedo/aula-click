@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { Eye } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
-import { Button } from '@/components/ui/button'
 import {
   Table,
   TableBody,
@@ -21,6 +20,10 @@ import type { PagoRealizado } from '../pagos-realizados.types'
 import { hrefPagosRealizadosDelAlumno } from '../rutas-pagos'
 
 const CELDA = 'px-3 first:pl-6 last:pr-6'
+
+/** "Ver detalle" de cada fila: solo el ícono, sin relleno, como en el listado de alumnos. */
+const accionDeFila =
+  'focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2'
 
 type PagosRealizadosTablaProps = {
   pagos: readonly PagoRealizado[]
@@ -121,16 +124,15 @@ export function PagosRealizadosTabla({
               </TableCell>
               <TableCell className={CELDA}>{nombreUsuarioAuditoria(pago.registradoPor)}</TableCell>
               <TableCell className={cn(CELDA, 'text-right')}>
-                <Button
+                <button
                   type="button"
-                  variant="ghost"
-                  size="sm"
                   onClick={() => onAbrirPago(pago.id)}
                   aria-label={`Ver detalle del pago ${textoNumero(pago.numeroComprobante)}`}
+                  title="Ver detalle"
+                  className={cn(accionDeFila, 'text-cobalto hover:bg-cobalto/10')}
                 >
-                  <Eye />
-                  Ver detalle
-                </Button>
+                  <Eye className="size-5" />
+                </button>
               </TableCell>
             </TableRow>
           )
