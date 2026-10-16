@@ -78,3 +78,39 @@ export type HistorialParams = {
   materiaId?: number
   profesorId?: number
 }
+
+/**
+ * Una materia de "Mis materias" (`GET /historiales/mis-materias`, HU-33): el próximo turno no
+ * cancelado (`null` si no tiene) y el porcentaje de asistencia de todo su historial, de la API.
+ */
+export type MateriaDelPortal = {
+  materia: { id: number; nombre: string }
+  profesor: { id: number; nombre: string; apellido: string }
+  proximoTurno: { fecha: string; horaInicio: string; horaFin: string } | null
+  porcentaje: number
+}
+
+/**
+ * Una clase del historial del portal: sin plazo, cierre del sistema, observación ni cancelación
+ * (el alumno no los ve). "Realizado", "Ausente", "Cancelado" y "Sin registrar" (que no cuenta para
+ * el porcentaje); la API omite las agendadas (decisión T-167).
+ */
+export type ClaseDelPortal = Pick<
+  ClaseDelHistorial,
+  'turnoId' | 'fecha' | 'horaInicio' | 'horaFin' | 'estado' | 'textosPropios'
+>
+
+/** Un bloque del portal. `horas` es el total del bloque: puede ser mayor que `clases.length`. */
+export type BloqueDelPortal = Omit<BloqueDelHistorial, 'clases'> & { clases: ClaseDelPortal[] }
+
+/** `GET /historiales/mis-materias/{materiaId}/{profesorId}?mes` (HU-33). */
+export type MiHistorialDeMateria = {
+  materia: { id: number; nombre: string }
+  profesor: { id: number; nombre: string; apellido: string }
+  /** `AAAA-MM`. */
+  mes: string
+  /** Las de la última clase realizada con indicaciones, de cualquier mes. */
+  indicacionesProximaClase: { fecha: string; indicaciones: string } | null
+  resumen: ResumenDelHistorial
+  bloques: BloqueDelPortal[]
+}

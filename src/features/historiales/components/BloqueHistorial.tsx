@@ -11,8 +11,17 @@ import type {
   TextosDelHistorial,
 } from '../historiales.types'
 
-/** "Qué se trabajó" e indicaciones, del bloque (una sola vez) o propios de una hora. */
-function Textos({ textos, propios = false }: { textos: TextosDelHistorial; propios?: boolean }) {
+/**
+ * "Qué se trabajó" e indicaciones, del bloque (una sola vez) o propios de una hora. Lo usa también
+ * el historial del portal (`BloqueMiMateria`).
+ */
+export function TextosHistorial({
+  textos,
+  propios = false,
+}: {
+  textos: TextosDelHistorial
+  propios?: boolean
+}) {
   if (textos.trabajado === null && textos.indicaciones === null) return null
   return (
     <dl className="space-y-2 text-sm">
@@ -84,7 +93,7 @@ function Clase({ clase, href, onAbrir }: ClaseProps) {
 
           {clase.textosPropios && (
             <span className="border-border block border-l-2 pl-3">
-              <Textos textos={clase.textosPropios} propios />
+              <TextosHistorial textos={clase.textosPropios} propios />
             </span>
           )}
         </span>
@@ -114,7 +123,7 @@ export function BloqueHistorial({ bloque, hrefDetalle, onAbrirDetalle }: BloqueH
 
       {bloque.textos && (
         <div className="px-4 pt-3 sm:px-6">
-          <Textos textos={bloque.textos} />
+          <TextosHistorial textos={bloque.textos} />
         </div>
       )}
 
