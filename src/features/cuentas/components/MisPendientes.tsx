@@ -1,12 +1,14 @@
 'use client'
 
-import { AlertCircle, CalendarClock, Wallet } from 'lucide-react'
+import { useId, useState } from 'react'
+import { AlertCircle, CalendarClock, ChevronDown, Wallet } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
+import { cn } from '@/utils/cn'
 import { fechaConAnio, fechaConDia } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
@@ -20,7 +22,9 @@ import { useMiCuenta } from '../hooks/use-mi-cuenta'
  * /cuentas/mi-cuenta`): el total adeudado y, aparte, los turnos adeudados y los próximos (hasta el
  * tope de cobro), cada uno agrupado por materia con su subtotal. Los importes y los totales son los
  * de la API, los mismos que ve la mesa de entrada; acá no se suma nada. De sólo lectura (se paga
- * en la mesa de entrada). Pensado para el celular: tarjetas, una debajo de la otra.
+ * en la mesa de entrada). Pensado para el celular: tarjetas, una debajo de la otra. Los próximos
+ * pueden ser muchos (un alumno con varias clases por semana): sus tarjetas van **plegadas**, con la
+ * materia, la cantidad y el subtotal, y se despliegan al tocarlas.
  */
 export function MisPendientes() {
   const query = useMiCuenta()
@@ -77,25 +81,31 @@ export function MisPendientes() {
         <SeccionPendiente
           id="mis-proximos"
           titulo="Próximos turnos"
-          descripcion={`Podés pagarlos por adelantado hasta el ${fechaConAnio(limiteCobro)}.`}
+          descripcion={`Podés pagarlos por adelantado hasta el ${fechaConAnio(limiteCobro)}. Tocá una materia para ver sus turnos.`}
           grupos={proximos}
+          plegadas
         />
       )}
     </div>
   )
 }
 
-/** Una sección ("Turnos adeudados" o "Próximos turnos"): una tarjeta por materia. */
+/**
+ * Una sección ("Turnos adeudados" o "Próximos turnos"): una tarjeta por materia. Con `plegadas`,
+ * cada tarjeta arranca cerrada y se abre al tocar su encabezado.
+ */
 function SeccionPendiente({
   id,
   titulo,
   descripcion,
   grupos,
+  plegadas = false,
 }: {
   id: string
   titulo: string
   descripcion?: string
   grupos: GrupoDeCuenta[]
+  plegadas?: boolean
 }) {
   return (
     <section aria-labelledby={id} className="space-y-3">
@@ -109,7 +119,7 @@ function SeccionPendiente({
       <ul className="space-y-3">
         {grupos.map((grupo) => (
           <li key={grupo.materia.id}>
-            <TarjetaDeMateria grupo={grupo} />
+            <TarjetaDeMateria grupo={grupo} plegable={plegadas} />
           </li>
         ))}
       </ul>
@@ -117,43 +127,81 @@ function SeccionPendiente({
   )
 }
 
-/** Una materia con su subtotal y sus turnos: fecha, horario, profesor e importe. */
-function TarjetaDeMateria({ grupo }: { grupo: GrupoDeCuenta }) {
+/**
+ * Una materia con su subtotal y sus turnos: fecha, horario, profesor e importe. Si es `plegable`,
+ * el encabezado es un botón (`aria-expanded`) que muestra u oculta los turnos, y arranca cerrada.
+ */
+function TarjetaDeMateria({ grupo, plegable }: { grupo: GrupoDeCuenta; plegable: boolean }) {
+  const [abierta, setAbierta] = useState(!plegable)
+  const listaId = useId()
+
+  const encabezado = (
+    <>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-semibold">{grupo.materia.nombre}</span>
+        <span className="text-muted-foreground block text-xs">
+          {textoCantidadDeTurnos(grupo.ocurrencias.length)}
+        </span>
+      </span>
+      <span className="shrink-0 text-right">
+        <span className="text-muted-foreground block text-xs">Subtotal</span>
+        <span className="text-lg font-semibold tabular-nums">{formatearPesos(grupo.subtotal)}</span>
+      </span>
+      {plegable && (
+        <ChevronDown
+          aria-hidden
+          className={cn(
+            'text-muted-foreground size-4 shrink-0 transition-transform',
+            abierta && 'rotate-180',
+          )}
+        />
+      )}
+    </>
+  )
+  const claseEncabezado = cn(
+    'flex w-full items-center gap-3 px-4 py-3 text-left sm:px-5',
+    abierta && 'border-border border-b',
+  )
+
   return (
-    <Card className="gap-0 p-0">
-      <div className="border-border flex items-baseline justify-between gap-3 border-b px-4 py-3 sm:px-5">
-        <div className="min-w-0">
-          <p className="truncate font-semibold">{grupo.materia.nombre}</p>
-          <p className="text-muted-foreground text-xs">
-            {textoCantidadDeTurnos(grupo.ocurrencias.length)}
-          </p>
-        </div>
-        <p className="shrink-0 text-right">
-          <span className="text-muted-foreground block text-xs">Subtotal</span>
-          <span className="text-lg font-semibold tabular-nums">
-            {formatearPesos(grupo.subtotal)}
-          </span>
-        </p>
-      </div>
-      <ul className="divide-border divide-y">
-        {grupo.ocurrencias.map((o) => (
-          <li
-            key={`${o.turnoId}|${o.fecha}`}
-            className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5"
-          >
-            <div className="min-w-0 space-y-0.5">
-              <p className="text-sm font-medium first-letter:uppercase">{fechaConDia(o.fecha)}</p>
-              <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
-                <CalendarClock aria-hidden className="size-3.5 shrink-0" />
-                {rangoHoras(o.horaInicio, o.horaFin)} · {o.profesor.nombre} {o.profesor.apellido}
+    <Card className="gap-0 overflow-hidden p-0">
+      {plegable ? (
+        <button
+          type="button"
+          aria-expanded={abierta}
+          aria-controls={listaId}
+          onClick={() => setAbierta((actual) => !actual)}
+          className={cn(
+            claseEncabezado,
+            'hover:bg-canvas focus-visible:ring-ring outline-none focus-visible:ring-2 focus-visible:ring-inset',
+          )}
+        >
+          {encabezado}
+        </button>
+      ) : (
+        <div className={claseEncabezado}>{encabezado}</div>
+      )}
+      {abierta && (
+        <ul id={listaId} className="divide-border divide-y">
+          {grupo.ocurrencias.map((o) => (
+            <li
+              key={`${o.turnoId}|${o.fecha}`}
+              className="flex items-start justify-between gap-3 px-4 py-3 sm:px-5"
+            >
+              <div className="min-w-0 space-y-0.5">
+                <p className="text-sm font-medium first-letter:uppercase">{fechaConDia(o.fecha)}</p>
+                <p className="text-muted-foreground flex items-center gap-1.5 text-xs">
+                  <CalendarClock aria-hidden className="size-3.5 shrink-0" />
+                  {rangoHoras(o.horaInicio, o.horaFin)} · {o.profesor.nombre} {o.profesor.apellido}
+                </p>
+              </div>
+              <p className="shrink-0 text-sm font-semibold tabular-nums">
+                {o.importe === null ? 'Sin precio' : formatearPesos(o.importe)}
               </p>
-            </div>
-            <p className="shrink-0 text-sm font-semibold tabular-nums">
-              {o.importe === null ? 'Sin precio' : formatearPesos(o.importe)}
-            </p>
-          </li>
-        ))}
-      </ul>
+            </li>
+          ))}
+        </ul>
+      )}
     </Card>
   )
 }

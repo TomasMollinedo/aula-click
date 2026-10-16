@@ -218,7 +218,7 @@ src/
 │ │ ├── OcurrenciasTabla.tsx, ImporteDeCuenta.tsx # filas con casilla y "Ver detalle"; el importe destacado
 │ │ ├── BarraSeleccion.tsx # "Seleccionar todo", cantidad, total y subtotal por materia; envuelve las listas y flota abajo cuando deja de verse
 │ │ ├── TotalDestacado.tsx # el total con su etiqueta y los filtros activos
-│ │ └── MisPendientes.tsx # portal (HU-37, T-103): total adeudado y adeudados y próximos en tarjetas por materia, con su subtotal
+│ │ └── MisPendientes.tsx # portal (HU-37, T-103): total adeudado y adeudados y próximos en tarjetas por materia, con su subtotal (las de próximos, plegadas)
 │ ├── asistencias/ # HU-22 (andamiaje T-79; la completa T-82): la pantalla "Asistencia" del profesor
 │ │ ├── api/asistencias.keys.ts, hooks/use-invalidar-asistencias.ts
 │ │ └── components/
