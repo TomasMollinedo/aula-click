@@ -5,7 +5,7 @@ import { formatearPesos } from '@/utils/moneda'
 
 import type { ResumenACobrar } from './a-cobrar'
 import type { DetallePago, MotivoAnulacion, RedDebito } from './pago-detalle.types'
-import type { PagoRegistrado } from './pagos.types'
+import type { CodigoFormaPago, PagoRegistrado } from './pagos.types'
 
 // Textos del registro de un pago (HU-15). Los importes del éxito y del vuelto son los que devolvió
 // la API, nunca los del resumen local.
@@ -25,23 +25,59 @@ export function textoImporte(importe: number | null): string {
   return importe === null ? 'Sin precio' : formatearPesos(importe)
 }
 
+/**
+ * El subtotal de una materia en el resumen (HU-25): `'Inglés (2 turnos): $ 18.000,00'`, o
+ * `'… sin calcular'` si alguno de sus turnos no tiene precio.
+ */
+export function textoSubtotal(subtotal: {
+  materia: { nombre: string }
+  cantidad: number
+  total: number | null
+}): string {
+  const importe = subtotal.total === null ? 'sin calcular' : formatearPesos(subtotal.total)
+  return `${subtotal.materia.nombre} (${textoCantidad(subtotal.cantidad)}): ${importe}`
+}
+
 /** `'Total: $ 32.000,00'`, o `'Total: sin calcular'` si alguno no tiene precio. */
 export function textoTotal(total: number | null): string {
   return `Total: ${total === null ? 'sin calcular' : formatearPesos(total)}`
 }
 
-/**
- * `'¿Registrar el pago de 4 turnos por $ 32.000,00 en efectivo?'`. Sin total (alguna sin precio):
- * `'¿Registrar el pago de 4 turnos en efectivo?'`.
- */
-export function textoConfirmacion(resumen: Pick<ResumenACobrar, 'cantidad' | 'total'>): string {
-  const importe = resumen.total === null ? '' : ` por ${formatearPesos(resumen.total)}`
-  return `¿Registrar el pago de ${textoCantidad(resumen.cantidad)}${importe} en efectivo?`
+const NOMBRE_FORMA: Record<CodigoFormaPago, string> = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+  DEBITO: 'Tarjeta de débito',
 }
 
-/** `'Pago registrado: 4 turnos por $ 32.000,00'`, con la cantidad y el total de la respuesta. */
-export function textoExito(pago: Pick<PagoRegistrado, 'cantidad' | 'total'>): string {
-  return `Pago registrado: ${textoCantidad(pago.cantidad)} por ${formatearPesos(pago.total)}`
+/** El nombre de una forma de pago para elegirla: `'Tarjeta de débito'` (el del catálogo). */
+export function textoFormaPago(formaPago: CodigoFormaPago): string {
+  return NOMBRE_FORMA[formaPago]
+}
+
+const FRASE_MEDIO: Record<CodigoFormaPago, string> = {
+  EFECTIVO: 'en efectivo',
+  TRANSFERENCIA: 'por transferencia',
+  DEBITO: 'con débito',
+}
+
+/**
+ * `'¿Registrar el pago de 4 turnos por $ 32.000,00 por transferencia?'`, con el medio elegido. Sin
+ * total (alguna sin precio): `'¿Registrar el pago de 4 turnos en efectivo?'`.
+ */
+export function textoConfirmacion(
+  resumen: Pick<ResumenACobrar, 'cantidad' | 'total'>,
+  formaPago: CodigoFormaPago,
+): string {
+  const importe = resumen.total === null ? '' : ` por ${formatearPesos(resumen.total)}`
+  return `¿Registrar el pago de ${textoCantidad(resumen.cantidad)}${importe} ${FRASE_MEDIO[formaPago]}?`
+}
+
+/**
+ * `'Pago registrado: 4 turnos por $ 32.000,00 por transferencia'`, con la cantidad, el total y el
+ * medio de la respuesta.
+ */
+export function textoExito(pago: Pick<PagoRegistrado, 'cantidad' | 'total' | 'formaPago'>): string {
+  return `Pago registrado: ${textoCantidad(pago.cantidad)} por ${formatearPesos(pago.total)} ${FRASE_MEDIO[pago.formaPago]}`
 }
 
 /** `'N° 1024'`. */

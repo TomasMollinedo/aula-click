@@ -172,21 +172,24 @@ src/
 │ │ ├── AsistenciaDelTurno.tsx # la sección "Asistencia": la del detalle del personal y la del portal
 │ │ ├── SeccionDetalle.tsx # una sección del detalle (título con ícono)
 │ │ └── OcurrenciaDetallePortal.tsx # ({ turnoId, fecha, onCerrar }): el detalle de solo lectura del portal
-│ ├── pagos/ # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52); su detalle (HU-36, T-99)
-│ │ ├── pagos.types.ts, pagos.schema.ts # schema del formulario, parsearMonto y armarRegistrarPago (el body)
+│ ├── pagos/ # registrar el pago de una o varias ocurrencias y su comprobante (HU-15, T-52; formas de pago y adjunto, HU-23/24, T-97); su detalle (HU-36, T-99)
+│ │ ├── pagos.types.ts, pagos.schema.ts # el body por forma de pago y AdjuntoSubido; schema del formulario (cada medio con sus campos), parsearMonto y armarRegistrarPago (solo los datos del medio elegido)
 │ │ ├── pago-detalle.types.ts # DetallePago (GET /pagos/{id}), AdjuntoDelPago y AdjuntoConUrl (GET y PUT /adjuntos/pagos/{pagoId})
 │ │ ├── pago-detalle.ts # pagoParaAcciones: el PagoParaAcciones del pie, armado de la respuesta (con test)
 │ │ ├── comprobante-adjunto.ts # tipos aceptados, 5 MB y mensajes de HU-24; errorDeAdjunto (400 en el campo, el resto con su message) (con test)
-│ │ ├── a-cobrar.ts # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar
-│ │ ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts # textos (también los del detalle: motivo, red, "**** 1234", datosDelMedio); errores del POST; URL del PDF
+│ │ ├── a-cobrar.ts # aCobrarDesdeDetalle (único que conoce OcurrenciaDetalle) y resumenACobrar (con el subtotal por materia)
+│ │ ├── formato-pagos.ts, errores-pagos.ts, rutas-pagos.ts # textos (confirmación y éxito con el medio, subtotal; también los del detalle: motivo, red, "**** 1234", datosDelMedio); errores del POST (los del medio y ADJUNTO_INVALIDO en su campo); URL del PDF
 │ │ ├── detalle-pago-url.ts # `?pago=<pagoId>`: el único archivo que conoce el parámetro, y el registro de aperturas (con test)
-│ │ ├── api/{pagos.api.ts, pagos.keys.ts, adjuntos.api.ts} # adjuntos: ver, reemplazar (multipart) y quitar el comprobante adjunto
+│ │ ├── api/{pagos.api.ts, pagos.keys.ts, adjuntos.api.ts} # adjuntos: subir antes de registrar el pago, ver, reemplazar (multipart) y quitar el comprobante adjunto
 │ │ ├── hooks/{use-registrar-pago.ts, use-invalidar-pagos.ts, use-detalle-pago-en-url.ts,
+│ │ │ use-subir-adjunto.ts, # el comprobante del cobro, que se sube al elegirlo (no invalida nada)
 │ │ │ use-pago.ts, use-adjunto-de-pago.ts, # el detalle; la URL prefirmada del adjunto (solo si tiene, se renueva cada 10 min)
 │ │ │ use-reemplazar-adjunto.ts, use-quitar-adjunto.ts} # invalidan el detalle al terminar y ante un 404 o 409
 │ │ └── components/
-│ │ ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar → éxito o rechazo
+│ │ ├── RegistrarPagoDialog.tsx # un diálogo por pasos: formulario → confirmar (o rechazo); al registrar, se cierra y abre el detalle del pago
 │ │ │ # (ResumenACobrarTabla.tsx, TurnosRechazados.tsx)
+│ │ ├── CamposFormaPago.tsx # SelectorFormaPago (sin opción al abrir; vacía el medio anterior) y CamposDelMedio (solo los del elegido)
+│ │ ├── CampoComprobantePago.tsx # "Comprobante": CampoArchivo que sube al elegirlo (POST /adjuntos); vale el último elegido
 │ │ ├── AccionRegistrarPago.tsx # slot del pie del detalle del turno
 │ │ ├── EnlaceComprobante.tsx # "Ver comprobante" de un turno pagado (slot renderComprobante del detalle); enlaza al PDF
 │ │ ├── PagoDetalle.tsx # ({ pagoId, onCerrar, renderAcciones? }): el detalle del pago, modal con `?pago=` (T-99)
@@ -316,7 +319,7 @@ src/
 │ ├── pago.ts # OcurrenciaACobrar, SolicitudRegistrarPago y PagoParaAcciones: lo que pagos, cuentas y anulaciones comparten
 │ └── agenda.ts # FiltrosAgenda (profesor, incluir cancelados y prioridad)
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts,
-moneda.ts, porcentaje.ts, vista-en-url.ts, busqueda.ts} # busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas; porcentaje: formatearPorcentaje (15 %, 15,5 %; hasta dos decimales)
+moneda.ts, porcentaje.ts, vista-en-url.ts, busqueda.ts} # busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null) y subtotalesPorMateria (HU-25): lo usan pagos y cuentas; porcentaje: formatearPorcentaje (15 %, 15,5 %; hasta dos decimales)
 
 ## Anatomía de una feature de UI
 

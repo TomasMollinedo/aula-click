@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
+import { subtotalesPorMateria } from '@/utils/moneda'
+
 import { aCobrar } from '../a-cobrar'
 import {
   SELECCION_VACIA,
   estadoSeleccionarTodo,
-  subtotalesPorMateria,
   alternar,
   estaSeleccionada,
   ordenarComoSeMuestran,
@@ -200,43 +201,6 @@ describe('ordenarPorFecha', () => {
   })
 })
 
-describe('subtotalesPorMateria', () => {
-  const fila = (
-    turnoId: number,
-    fecha: string,
-    materia: { id: number; nombre: string },
-    importe: number | null,
-  ) => ({ ...CUENTA.adeudados[0], turnoId, fecha, materia, importe })
-  const MATEMATICA = { id: 2, nombre: 'Matemática' }
-  const INGLES = { id: 5, nombre: 'Inglés' }
-
-  it('una entrada por materia, por nombre, con su cantidad y subtotal', () => {
-    const sel = seleccionarTodos(SELECCION_VACIA, [
-      fila(41, '2026-09-21', MATEMATICA, 8000),
-      fila(52, '2026-09-22', INGLES, 9000),
-      fila(41, '2026-09-28', MATEMATICA, 8000.5),
-    ])
-
-    expect(subtotalesPorMateria(sel)).toEqual([
-      { materia: INGLES, cantidad: 1, total: 9000 },
-      { materia: MATEMATICA, cantidad: 2, total: 16000.5 },
-    ])
-  })
-
-  it('una materia con un turno sin precio queda sin subtotal', () => {
-    const sel = seleccionarTodos(SELECCION_VACIA, [
-      fila(41, '2026-09-21', MATEMATICA, 8000),
-      fila(41, '2026-09-28', MATEMATICA, null),
-    ])
-
-    expect(subtotalesPorMateria(sel)).toEqual([{ materia: MATEMATICA, cantidad: 2, total: null }])
-  })
-
-  it('vacía: sin materias', () => {
-    expect(subtotalesPorMateria(SELECCION_VACIA)).toEqual([])
-  })
-})
-
 describe('resumenSeleccion', () => {
   it('cantidad y total con los importes de la API, y el subtotal por materia', () => {
     const sel = seleccionarTodos(SELECCION_VACIA, MOSTRADA)
@@ -244,7 +208,7 @@ describe('resumenSeleccion', () => {
       cantidad: 4,
       total: 33000,
       sinPrecio: 0,
-      porMateria: subtotalesPorMateria(sel),
+      porMateria: subtotalesPorMateria(sel.values()),
     })
   })
 
