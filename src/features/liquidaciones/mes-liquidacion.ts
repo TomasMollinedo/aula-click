@@ -81,9 +81,10 @@ export function paramsConEstado(
   return nuevos
 }
 
-/** Copia de `params` sin los filtros (profesor y estado): el mes se conserva y la página vuelve a la 1. */
+/** Copia de `params` sin filtros: sin profesor ni estado y otra vez en el mes en curso (el mes por defecto). */
 export function paramsSinFiltros(params: URLSearchParams): URLSearchParams {
   const nuevos = new URLSearchParams(params)
+  nuevos.delete(PARAMETRO_MES)
   nuevos.delete(PARAMETRO_PROFESOR)
   nuevos.delete(PARAMETRO_ESTADO)
   nuevos.delete(PARAMETRO_PAGINA)
@@ -100,11 +101,6 @@ export function paramsConPagina(params: URLSearchParams, page: number): URLSearc
 
 function sumarAlMes(mes: string, meses: number): string {
   return sumarMeses(`${mes}-01`, meses).slice(0, 7)
-}
-
-/** `'2026-01'` → `'2025-12'`. */
-export function mesAnterior(mes: string): string {
-  return sumarAlMes(mes, -1)
 }
 
 /** `'2026-12'` → `'2027-01'`. */

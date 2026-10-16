@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useRef } from 'react'
 import Link from 'next/link'
-import { AlertCircle, ChevronLeft, ChevronRight, HandCoins, RotateCw } from 'lucide-react'
+import { AlertCircle, HandCoins, RotateCw } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { BarraFiltros, claseControlFiltro } from '@/components/ui/barra-filtros'
@@ -31,6 +31,15 @@ import {
 import { cn } from '@/utils/cn'
 import type { ApiError } from '@/utils/fetch-json'
 import { textoMes } from '@/utils/formato-fechas'
+import {
+  anioDe,
+  aniosOfrecidos,
+  esMesFuturo,
+  etiquetaNumeroMes,
+  MESES_DEL_ANIO,
+  mesDeAnioYNumero,
+  numeroDeMes,
+} from '@/utils/meses'
 import { formatearPesos } from '@/utils/moneda'
 
 import { nombreDeProfesor, TEXTO_ESTADO_FILTRO } from '../formato-liquidaciones'
@@ -42,7 +51,6 @@ import {
   type LiquidacionesDelMes as Listado,
   type TotalesLiquidacion,
 } from '../liquidaciones.types'
-import { mesAnterior, mesSiguiente } from '../mes-liquidacion'
 import { EstadoLiquidacionBadge } from './EstadoLiquidacionBadge'
 import { FiltroProfesorDeLiquidaciones } from './FiltroProfesorDeLiquidaciones'
 
@@ -54,16 +62,13 @@ export type LiquidacionesDelMesProps = {
   rutaBase: string
 }
 
-const EN_CURSO = { estado: 'EN_CURSO', fechaTransferencia: null, descontadaEnMes: null } as const
-
 // Importes a la derecha, con cifras del mismo ancho y sin cortarse.
 const IMPORTE = 'text-right tabular-nums whitespace-nowrap'
 
 /**
- * Listado de liquidaciones del mes (HU-44), en `/gerente/liquidaciones`: el mes va en la URL
- * (`?mes=`; sin él, el último terminado, que decide la API) y se recorre con las flechas. Todo se
- * rotula con el `mes` de la respuesta, no con el pedido: mientras llega el mes nuevo se ve el
- * anterior atenuado. Se puede filtrar por profesor (`?profesorId=`, con un buscador) y por estado
+ * Listado de liquidaciones del mes (HU-44), en `/gerente/liquidaciones`: el mes se elige con dos
+ * selectores, mes y año, que van juntos en la URL como un solo `?mes=AAAA-MM` (sin él, el mes en
+ * curso). Cambiar uno conserva el otro. Mientras llega el mes nuevo se ve el anterior atenuado. Se puede filtrar por profesor (`?profesorId=`, con un buscador) y por estado
  * (`?estado=`), y los dos se combinan. Los totales son de todo lo que devuelve el filtro, no de la
  * página.
  */
@@ -96,42 +101,33 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
     if (page > ultima) corregir.current(ultima)
   }, [totalPages, page])
 
-  const hayFiltros = profesorId !== undefined || estado !== undefined
-
-  // Las flechas parten del mes pedido; sin mes en la URL, del que devolvió la API.
-  const base = mes ?? data?.mes
+  const hayFiltros = mes !== mesEnCurso || profesorId !== undefined || estado !== undefined
 
   return (
     <div className="space-y-6">
-      {!query.isError && (
-        <div className="space-y-4">
-          <SelectorMes
-            mes={data?.mes}
-            enCurso={data?.mes === mesEnCurso}
-            onAnterior={base ? () => elegirMes(mesAnterior(base)) : undefined}
-            onSiguiente={
-              base && base < mesEnCurso ? () => elegirMes(mesSiguiente(base)) : undefined
-            }
+      <BarraFiltros
+        hayFiltros={hayFiltros}
+        onLimpiar={limpiarFiltros}
+        limpiarEnFila="lg"
+        className="sm:grid-cols-2 lg:grid-cols-[minmax(0,10rem)_minmax(0,7rem)_minmax(0,18rem)_minmax(0,14rem)_auto]"
+      >
+        <Field label="Mes" htmlFor={`${id}-mes`}>
+          <FiltroMes id={`${id}-mes`} mes={mes} mesEnCurso={mesEnCurso} onElegir={elegirMes} />
+        </Field>
+        <Field label="Año" htmlFor={`${id}-anio`}>
+          <FiltroAnio id={`${id}-anio`} mes={mes} mesEnCurso={mesEnCurso} onElegir={elegirMes} />
+        </Field>
+        <Field label="Profesor" htmlFor={`${id}-profesor`}>
+          <FiltroProfesorDeLiquidaciones
+            id={`${id}-profesor`}
+            value={profesorId ?? null}
+            onChange={elegirProfesor}
           />
-          <BarraFiltros
-            hayFiltros={hayFiltros}
-            onLimpiar={limpiarFiltros}
-            limpiarEnFila="lg"
-            className="sm:grid-cols-2 lg:grid-cols-[minmax(0,18rem)_minmax(0,14rem)_auto]"
-          >
-            <Field label="Profesor" htmlFor={`${id}-profesor`}>
-              <FiltroProfesorDeLiquidaciones
-                id={`${id}-profesor`}
-                value={profesorId ?? null}
-                onChange={elegirProfesor}
-              />
-            </Field>
-            <Field label="Estado" htmlFor={`${id}-estado`}>
-              <FiltroEstado id={`${id}-estado`} value={estado ?? null} onChange={elegirEstado} />
-            </Field>
-          </BarraFiltros>
-        </div>
-      )}
+        </Field>
+        <Field label="Estado" htmlFor={`${id}-estado`}>
+          <FiltroEstado id={`${id}-estado`} value={estado ?? null} onChange={elegirEstado} />
+        </Field>
+      </BarraFiltros>
 
       {query.isError ? (
         <ErrorListado
@@ -197,54 +193,62 @@ function FiltroEstado({
   )
 }
 
-function SelectorMes({
-  mes,
-  enCurso,
-  onAnterior,
-  onSiguiente,
-}: {
-  /** El mes de la respuesta; sin respuesta todavía, un esqueleto. */
-  mes: string | undefined
-  enCurso: boolean
-  /** Sin callback, la flecha queda deshabilitada. */
-  onAnterior?: () => void
-  onSiguiente?: () => void
-}) {
+type SelectorDeMesProps = {
+  id: string
+  /** El mes elegido, `YYYY-MM`. */
+  mes: string
+  /** El mes actual, `YYYY-MM`: no se ofrecen meses posteriores. */
+  mesEnCurso: string
+  /** Recibe el mes completo (`YYYY-MM`): cambiar uno de los dos selectores conserva el otro. */
+  onElegir: (mes: string) => void
+}
+
+/** El selector del mes del año; los que todavía no llegaron aparecen deshabilitados. */
+function FiltroMes({ id, mes, mesEnCurso, onElegir }: SelectorDeMesProps) {
+  const anio = anioDe(mes)
   return (
-    <div role="group" aria-label="Mes" className="flex items-center gap-3">
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        aria-label="Mes anterior"
-        disabled={!onAnterior}
-        onClick={onAnterior}
-      >
-        <ChevronLeft />
-      </Button>
-      <div className="flex min-w-48 items-center justify-center gap-2">
-        {mes ? (
-          <>
-            <h2 aria-live="polite" className="text-lg font-semibold first-letter:uppercase">
-              {textoMes(mes)}
-            </h2>
-            {enCurso && <EstadoLiquidacionBadge liquidacion={EN_CURSO} />}
-          </>
-        ) : (
-          <Skeleton className="h-6 w-36" />
-        )}
-      </div>
-      <Button
-        type="button"
-        variant="outline"
-        size="icon"
-        aria-label="Mes siguiente"
-        disabled={!onSiguiente}
-        onClick={onSiguiente}
-      >
-        <ChevronRight />
-      </Button>
-    </div>
+    <Select
+      value={String(numeroDeMes(mes))}
+      onValueChange={(numero) => onElegir(mesDeAnioYNumero(anio, Number(numero)))}
+    >
+      <SelectTrigger id={id} className={cn(claseControlFiltro(false), 'capitalize')}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {MESES_DEL_ANIO.map((numero) => (
+          <SelectItem
+            key={numero}
+            value={String(numero)}
+            className="capitalize"
+            disabled={esMesFuturo(mesDeAnioYNumero(anio, numero), `${mesEnCurso}-01`)}
+          >
+            {etiquetaNumeroMes(numero)}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  )
+}
+
+/** El selector del año: el actual y los anteriores (más el de un mes viejo que venga en la URL). */
+function FiltroAnio({ id, mes, mesEnCurso, onElegir }: SelectorDeMesProps) {
+  const numero = numeroDeMes(mes)
+  return (
+    <Select
+      value={String(anioDe(mes))}
+      onValueChange={(anio) => onElegir(mesDeAnioYNumero(Number(anio), numero))}
+    >
+      <SelectTrigger id={id} className={claseControlFiltro(false)}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {aniosOfrecidos(`${mesEnCurso}-01`, mes).map((anio) => (
+          <SelectItem key={anio} value={String(anio)}>
+            {anio}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -396,7 +400,7 @@ function ErrorListado({
           <>
             {error?.message}
             <Link href={rutaBase} className="font-medium underline underline-offset-4">
-              Ver el último mes terminado
+              Ver el mes actual
             </Link>
           </>
         ) : status === 403 ? (

@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import {
   leerMesLiquidacion,
-  mesAnterior,
   mesSiguiente,
   paramsConEstado,
   paramsConMes,
@@ -89,11 +88,11 @@ describe('paramsConEstado', () => {
 })
 
 describe('paramsSinFiltros', () => {
-  it('saca el profesor, el estado y la página; conserva el mes', () => {
+  it('saca el profesor, el estado, la página y el mes (vuelve al mes en curso)', () => {
     const params = paramsSinFiltros(
-      new URLSearchParams('mes=2026-09&profesorId=4&estado=PAGADA&page=2'),
+      new URLSearchParams('mes=2026-09&profesorId=4&estado=PAGADA&page=2&otro=x'),
     )
-    expect(params.toString()).toBe('mes=2026-09')
+    expect(params.toString()).toBe('otro=x')
   })
 })
 
@@ -150,14 +149,9 @@ describe('paramsConPagina', () => {
   })
 })
 
-describe('mesAnterior y mesSiguiente', () => {
-  it('dentro del año', () => {
-    expect(mesAnterior('2026-10')).toBe('2026-09')
+describe('mesSiguiente', () => {
+  it('dentro del año y con cruce de año', () => {
     expect(mesSiguiente('2026-10')).toBe('2026-11')
-  })
-
-  it('cruce de año', () => {
-    expect(mesAnterior('2026-01')).toBe('2025-12')
     expect(mesSiguiente('2026-12')).toBe('2027-01')
   })
 })

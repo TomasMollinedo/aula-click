@@ -27,10 +27,15 @@ export function useMesLiquidacionEnUrl() {
   const router = useRouter()
 
   const texto = searchParams.toString()
-  const { mes, profesorId, estado, page } = useMemo(
-    () => leerMesLiquidacion(new URLSearchParams(texto)),
-    [texto],
-  )
+  const {
+    mes: mesDeLaUrl,
+    profesorId,
+    estado,
+    page,
+  } = useMemo(() => leerMesLiquidacion(new URLSearchParams(texto)), [texto])
+  // Sin `?mes=`, el mes en curso (el del navegador, solo para proponerlo: la API valida).
+  const mesEnCurso = format(new Date(), 'yyyy-MM')
+  const mes = mesDeLaUrl ?? mesEnCurso
 
   const ir = useCallback(
     (params: URLSearchParams) => {
@@ -40,9 +45,11 @@ export function useMesLiquidacionEnUrl() {
     [pathname, router],
   )
 
+  // Un mes posterior al actual (al cambiar de año con un mes que todavía no llegó) se recorta al actual.
   const elegirMes = useCallback(
-    (nuevo: string) => ir(paramsConMes(new URLSearchParams(texto), nuevo)),
-    [ir, texto],
+    (nuevo: string) =>
+      ir(paramsConMes(new URLSearchParams(texto), nuevo > mesEnCurso ? mesEnCurso : nuevo)),
+    [ir, texto, mesEnCurso],
   )
 
   const elegirProfesor = useCallback(
@@ -70,7 +77,7 @@ export function useMesLiquidacionEnUrl() {
     profesorId,
     estado,
     page,
-    mesEnCurso: format(new Date(), 'yyyy-MM'),
+    mesEnCurso,
     elegirMes,
     elegirProfesor,
     elegirEstado,
