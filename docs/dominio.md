@@ -313,9 +313,9 @@ HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios n
 - **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
 - **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
 - **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
-- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Tampoco las clases "Sin registrar" (decisión T-148, _pendiente de confirmación de las PO_: punto 8 de "Puntos a confirmar" del Sprint 3).
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-167): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
 - **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
-- El PDF mensual del historial es HU-32 (T-110).
+- **El PDF del historial es HU-32** (T-110): lo saca mesa de entrada desde la ficha y el profesor desde "Mis alumnos" (con el mismo criterio con el que ve el historial), **del período que se está viendo**, un mes o un rango (decisión T-163, _pendiente de confirmación de las PO_: HU-32 pedía sólo el mes y sólo mesa de entrada). No lleva las observaciones internas.
 
 ## Portal del alumno
 

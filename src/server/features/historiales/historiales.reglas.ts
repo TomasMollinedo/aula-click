@@ -290,17 +290,21 @@ export function opcionesDeLosGrupos(
 // Portal del alumno (HU-33)
 // ---------------------------------------------------------------------------------------------
 
-/** Los estados que el alumno ve de una clase: HU-33 no lista los "Sin registrar" ni los agendados. */
+/**
+ * Los estados que el alumno ve de una clase (decisión T-167): también los "Sin registrar", para que
+ * vea la hora que el profesor no registró (no cuenta para su porcentaje). Los agendados de hoy, no.
+ */
 const ESTADOS_DEL_PORTAL: readonly ClaseDelHistorial['estado'][] = [
   'REALIZADO',
   'AUSENTE',
   'CANCELADO',
+  'SIN_REGISTRAR',
 ]
 
 /**
  * Los bloques del portal: los mismos bloques y los mismos textos, **sin** la observación interna,
- * el motivo de la cancelación, el plazo ni el cierre del sistema, y sin las clases "Sin registrar"
- * ni agendadas, que el alumno no ve (punto 8 de "Puntos a confirmar" del Sprint 3, decisión T-148).
+ * el motivo de la cancelación, el plazo ni el cierre del sistema, y sin las clases agendadas (una de
+ * hoy todavía sin registrar, decisión T-148). Las "Sin registrar" sí se muestran (decisión T-167).
  * Un bloque que se queda sin clases no se muestra.
  */
 export function bloquesDelPortal(bloques: readonly BloqueDelHistorial[]): BloqueDelPortal[] {

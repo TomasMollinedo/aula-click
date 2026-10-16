@@ -1,6 +1,11 @@
 import { fetchJson } from '@/utils/fetch-json'
 
-import type { HistorialDelAlumno, HistorialParams } from '../historiales.types'
+import type {
+  HistorialDelAlumno,
+  HistorialParams,
+  MateriaDelPortal,
+  MiHistorialDeMateria,
+} from '../historiales.types'
 
 const BASE = '/api/v1/historiales'
 
@@ -18,4 +23,21 @@ export function obtenerHistorialDelAlumno(
   if (materiaId !== undefined) params.set('materiaId', String(materiaId))
   if (profesorId !== undefined) params.set('profesorId', String(profesorId))
   return fetchJson<HistorialDelAlumno>(`${BASE}/alumnos/${alumnoId}?${params.toString()}`)
+}
+
+/** "Mis materias" del alumno de la sesión, con su próximo turno y su porcentaje (HU-33). */
+export function listarMisMaterias(): Promise<MateriaDelPortal[]> {
+  return fetchJson<MateriaDelPortal[]>(`${BASE}/mis-materias`)
+}
+
+/** El historial del alumno de la sesión en una materia con un profesor, en un mes `AAAA-MM`. */
+export function obtenerMiMateria(
+  materiaId: number,
+  profesorId: number,
+  mes: string,
+): Promise<MiHistorialDeMateria> {
+  const params = new URLSearchParams({ mes })
+  return fetchJson<MiHistorialDeMateria>(
+    `${BASE}/mis-materias/${materiaId}/${profesorId}?${params.toString()}`,
+  )
 }

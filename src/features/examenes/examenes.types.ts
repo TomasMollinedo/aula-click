@@ -89,3 +89,19 @@ export type ExamenEditar = Partial<Omit<ExamenCrear, 'alumnoId'>>
 
 /** El existente de un 409 `EXAMEN_PENDIENTE` (`details`). */
 export type ExamenPendiente = { id: number; tipo: TipoExamen; fecha: string }
+
+/**
+ * `GET /examenes/mis-examenes?materiaId` (portal, HU-35): el próximo examen (a lo sumo uno, con los
+ * días que faltan), los rendidos del más reciente al más antiguo y el promedio de las notas, todo de
+ * la API. Una materia sin exámenes viene vacía.
+ */
+export type MisExamenesDeMateria = {
+  proximo: { fecha: string; tipo: TipoExamen; diasRestantes: number } | null
+  rendidos: {
+    fecha: string
+    tipo: TipoExamen
+    resultado: ResultadoExamen | null
+    nota: number | null
+  }[]
+  promedio: number | null
+}
