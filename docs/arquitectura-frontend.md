@@ -318,7 +318,7 @@ src/
 │ ├── pago.ts # OcurrenciaACobrar, SolicitudRegistrarPago y PagoParaAcciones: lo que pagos, cuentas y anulaciones comparten
 │ └── agenda.ts # FiltrosAgenda (profesor, incluir cancelados y prioridad)
 └── utils/{cn.ts, fetch-json.ts, page-range.ts, initials.ts, caracteres.ts, dias-semana.ts, horas.ts, calendario.ts, formato-fechas.ts, auditoria.ts,
-moneda.ts, porcentaje.ts, vista-en-url.ts, busqueda.ts} # busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas; porcentaje: formatearPorcentaje (15 %, 15,5 %; hasta dos decimales)
+moneda.ts, porcentaje.ts, vista-en-url.ts, busqueda.ts, turnos.ts} # turnos: textoCantidadDeTurnos ('1 turno' / '8 turnos'); formato-fechas: fechaConAnio ('01/10/2026'); busqueda: coincideConBusqueda (sin tildes, todas las palabras), la de los buscadores sobre una lista ya cargada; vista-en-url: leerVista y paramsConVista (las subpestañas); moneda: formatearPesos ($ 7.500,00, $ 30.000,50), el mismo formato que la API, # y sumarImportes (en centavos; sin total si alguno es null): lo usan pagos y cuentas; porcentaje: formatearPorcentaje (15 %, 15,5 %; hasta dos decimales)
 
 ## Anatomía de una feature de UI
 

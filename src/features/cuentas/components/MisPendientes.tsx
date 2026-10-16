@@ -10,6 +10,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { fechaConAnio, fechaConDia } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
+import { textoCantidadDeTurnos } from '@/utils/turnos'
 
 import type { GrupoDeCuenta } from '../cuentas.types'
 import { useMiCuenta } from '../hooks/use-mi-cuenta'
@@ -118,14 +119,13 @@ function SeccionPendiente({
 
 /** Una materia con su subtotal y sus turnos: fecha, horario, profesor e importe. */
 function TarjetaDeMateria({ grupo }: { grupo: GrupoDeCuenta }) {
-  const cantidad = grupo.ocurrencias.length
   return (
     <Card className="gap-0 p-0">
       <div className="border-border flex items-baseline justify-between gap-3 border-b px-4 py-3 sm:px-5">
         <div className="min-w-0">
           <p className="truncate font-semibold">{grupo.materia.nombre}</p>
           <p className="text-muted-foreground text-xs">
-            {cantidad === 1 ? '1 turno' : `${cantidad} turnos`}
+            {textoCantidadDeTurnos(grupo.ocurrencias.length)}
           </p>
         </div>
         <p className="shrink-0 text-right">

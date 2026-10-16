@@ -10,11 +10,6 @@ import type { ResumenSeleccion } from './seleccion'
 
 type Periodo = Pick<FiltrosCuenta, 'desde' | 'hasta'>
 
-/** `'1 turno'` / `'8 turnos'`: la cantidad de lo tildado, junto al total (`'8 turnos · $ …'`). */
-export function textoCantidadDeTurnos(cantidad: number): string {
-  return cantidad === 1 ? '1 turno' : `${cantidad} turnos`
-}
-
 /**
  * El aviso de una selección que no entra en un pago: `'Un pago puede tener hasta 200 turnos:
  * destildá 12'`. Con `MAX_TURNOS_POR_PAGO` o menos, `null`.

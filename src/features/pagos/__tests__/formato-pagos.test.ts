@@ -11,7 +11,6 @@ import {
   textoRegistradoPor,
   textoTarjeta,
   textoTituloComprobante,
-  textoCantidad,
   textoConfirmacion,
   textoExito,
   textoMateriasDelPago,
@@ -40,13 +39,6 @@ describe('textos del comprobante', () => {
   it('número del comprobante', () => {
     expect(textoNumero(1024)).toBe('N° 1024')
     expect(textoNumeroComprobante(1024)).toBe('Comprobante N° 1024')
-  })
-})
-
-describe('textoCantidad', () => {
-  it('singular y plural', () => {
-    expect(textoCantidad(1)).toBe('1 turno')
-    expect(textoCantidad(4)).toBe('4 turnos')
   })
 })
 

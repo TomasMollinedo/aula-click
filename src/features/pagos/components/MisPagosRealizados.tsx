@@ -13,8 +13,9 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/utils/cn'
 import { fechaConAnio } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
+import { textoCantidadDeTurnos } from '@/utils/turnos'
 
-import { textoCantidad, textoMateriasDelPago, textoNumeroComprobante } from '../formato-pagos'
+import { textoMateriasDelPago, textoNumeroComprobante } from '../formato-pagos'
 import { useMisPagos } from '../hooks/use-mis-pagos'
 import type { MiPago } from '../pagos.types'
 import { hrefComprobante } from '../rutas-pagos'
@@ -102,7 +103,7 @@ function TarjetaDePago({ pago }: { pago: MiPago }) {
       </div>
       <p className="text-sm">
         {textoMateriasDelPago(pago.materias)}{' '}
-        <span className="text-muted-foreground">({textoCantidad(pago.cantidad)})</span>
+        <span className="text-muted-foreground">({textoCantidadDeTurnos(pago.cantidad)})</span>
       </p>
       <div>
         <Button asChild variant="outline" size="sm">
