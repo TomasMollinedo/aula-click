@@ -706,7 +706,85 @@ describe('obtenerDetalle: cantidad, adjunto y acciones', () => {
   })
 })
 
+// T-122 (HU-43): el reparto del detalle, sólo para el gerente, con el porcentaje guardado al cobrar.
+describe('obtenerDetalle: reparto', () => {
+  it('cada pago reparte con el porcentaje vigente al cobrarse: cambiarlo no toca los anteriores', async () => {
+    const primero = await service.registrar(pago(), actor)
+    memoria.vigente.porcentaje = 18
+    const segundo = await service.registrar(
+      pago({ ocurrencias: [{ turnoId: 41, fecha: '2026-10-19' }] }),
+      actor,
+    )
+
+    expect((await service.obtenerDetalle(primero.pagoId, gerente)).reparto).toEqual({
+      turnos: [
+        {
+          turnoId: 41,
+          fecha: '2026-10-12',
+          profesor: ANA,
+          importe: 8000,
+          porcentaje: 15,
+          parteCentro: 1200,
+          parteProfesor: 6800,
+        },
+      ],
+      totales: { importe: 8000, parteCentro: 1200, parteProfesor: 6800 },
+    })
+    expect((await service.obtenerDetalle(segundo.pagoId, gerente)).reparto).toEqual({
+      turnos: [
+        {
+          turnoId: 41,
+          fecha: '2026-10-19',
+          profesor: ANA,
+          importe: 8000,
+          porcentaje: 18,
+          parteCentro: 1440,
+          parteProfesor: 6560,
+        },
+      ],
+      totales: { importe: 8000, parteCentro: 1440, parteProfesor: 6560 },
+    })
+  })
+
+  it('la mesa de entradas: sin la clave reparto y sin el porcentaje en los turnos', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    const detalle = await service.obtenerDetalle(pagoId, actor)
+
+    expect(detalle).not.toHaveProperty('reparto')
+    for (const turno of detalle.turnos) expect(turno).not.toHaveProperty('porcentaje')
+  })
+
+  it('el gerente, un pago anulado: el reparto de lo que se cobró', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+    const guardado = await memoria.repository.buscarComprobante(pagoId)
+    memoria.repository.buscarComprobante.mockResolvedValueOnce(
+      guardado && { ...guardado, estado: 'ANULADO' },
+    )
+
+    const detalle = await service.obtenerDetalle(pagoId, gerente)
+
+    expect(detalle.estado).toBe('ANULADO')
+    expect(detalle.reparto?.totales).toEqual({
+      importe: 8000,
+      parteCentro: 1200,
+      parteProfesor: 6800,
+    })
+    for (const turno of detalle.turnos) expect(turno).not.toHaveProperty('porcentaje')
+  })
+})
+
 describe('comprobanteParaDocumento', () => {
+  it('el gerente: lo que recibe el PDF no trae el reparto ni el porcentaje de los turnos', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    const comprobante = await service.comprobanteParaDocumento(pagoId, gerente)
+
+    expect(comprobante).not.toHaveProperty('reparto')
+    expect(comprobante.turnos).toHaveLength(1)
+    for (const turno of comprobante.turnos) expect(turno).not.toHaveProperty('porcentaje')
+  })
+
   it('la mesa y el gerente: el comprobante con el vuelto, sin leer el adjunto', async () => {
     const { pagoId } = await service.registrar(pago(), actor)
 
@@ -815,5 +893,69 @@ describe('misPagos', () => {
       ForbiddenError,
     )
     expect(memoria.repository.listarDelAlumno).not.toHaveBeenCalled()
+  })
+})
+
+describe('buscadores de los filtros (T-100)', () => {
+  const LUCIA = { id: 12, nombre: 'Lucía', apellido: 'Álvarez' }
+
+  it.each([
+    ['sin q ni id: todos los que tienen pagos', {}, { terminos: [], id: undefined }],
+    [
+      'q: normalizado y partido en palabras, sin puntos ni tildes',
+      { q: 'Álva. JUAN' },
+      { terminos: ['alva', 'juan'], id: undefined },
+    ],
+    ['q con DNI con puntos', { q: '52.345' }, { terminos: ['52345'], id: undefined }],
+    ['id solo', { id: 12 }, { terminos: [], id: 12 }],
+    ['q e id juntos', { q: 'lucia', id: 12 }, { terminos: ['lucia'], id: 12 }],
+  ])('alumnos, %s', async (_caso, query, esperado) => {
+    memoria.repository.buscarAlumnos.mockResolvedValue([LUCIA])
+
+    expect(await service.buscarAlumnos(query)).toEqual([LUCIA])
+    expect(memoria.repository.buscarAlumnos).toHaveBeenCalledExactlyOnceWith(esperado)
+  })
+
+  it.each([
+    ['q', { q: 'Gómez' }, { terminos: ['gomez'], id: undefined, alumnoId: undefined }],
+    ['id', { id: 3 }, { terminos: [], id: 3, alumnoId: undefined }],
+    ['q e id juntos', { q: 'ana', id: 3 }, { terminos: ['ana'], id: 3, alumnoId: undefined }],
+    [
+      'acotado al alumno (T-170)',
+      { q: 'ana', alumnoId: 12 },
+      { terminos: ['ana'], id: undefined, alumnoId: 12 },
+    ],
+  ])('profesores, %s', async (_caso, query, esperado) => {
+    memoria.repository.buscarProfesores.mockResolvedValue([ANA])
+
+    expect(await service.buscarProfesores(query)).toEqual([ANA])
+    expect(memoria.repository.buscarProfesores).toHaveBeenCalledExactlyOnceWith(esperado)
+  })
+
+  it.each([
+    ['sin q ni id', {}, { terminos: [], id: undefined, alumnoId: undefined }],
+    [
+      'q: normalizado y partido en palabras',
+      { q: 'Matemática Fin' },
+      { terminos: ['matematica', 'fin'], id: undefined, alumnoId: undefined },
+    ],
+    ['id', { id: 2 }, { terminos: [], id: 2, alumnoId: undefined }],
+    [
+      'acotado al alumno (T-170)',
+      { q: 'mat', alumnoId: 12 },
+      { terminos: ['mat'], id: undefined, alumnoId: 12 },
+    ],
+  ])('materias, %s', async (_caso, query, esperado) => {
+    const MATEMATICA = { id: 2, nombre: 'Matemática' }
+    memoria.repository.buscarMaterias.mockResolvedValue([MATEMATICA])
+
+    expect(await service.buscarMaterias(query)).toEqual([MATEMATICA])
+    expect(memoria.repository.buscarMaterias).toHaveBeenCalledExactlyOnceWith(esperado)
+  })
+
+  it('sin coincidencias, o un id sin pagos: [] (no es un error)', async () => {
+    expect(await service.buscarAlumnos({ id: 999 })).toEqual([])
+    expect(await service.buscarProfesores({ q: 'nadie' })).toEqual([])
+    expect(await service.buscarMaterias({ alumnoId: 999 })).toEqual([])
   })
 })

@@ -59,6 +59,30 @@ export type ProximosGlobal = PaginatedResponse<OcurrenciaDeCuentaGlobal> & {
   limiteCobro: string
 }
 
+/** Las ocurrencias de una materia en `mi-cuenta`, con su subtotal (`GrupoDeCuenta` de la API). */
+export type GrupoDeCuenta = {
+  materia: { id: number; nombre: string }
+  /** Suma de los importes del grupo (los `null` no suman). */
+  subtotal: number
+  /** Por fecha, hora de inicio y `turnoId`. */
+  ocurrencias: OcurrenciaDeCuenta[]
+}
+
+/**
+ * `GET /cuentas/mi-cuenta` (portal, HU-37): la cuenta del alumno de la sesión, sin filtros, con los
+ * mismos importes y el mismo total que ve mesa de entradas, cada sección agrupada por materia (por
+ * nombre). Sin período, las dos secciones siempre aplican: `[]` si no hay nada.
+ */
+export type MiCuenta = {
+  /** Suma de los adeudados. Los próximos nunca suman. */
+  totalAdeudado: number
+  adeudados: GrupoDeCuenta[]
+  /** Hasta `limiteCobro`. */
+  proximos: GrupoDeCuenta[]
+  /** Última fecha que se puede pagar por adelantado (hoy + 56 días). */
+  limiteCobro: string
+}
+
 /** Los filtros comunes a los tres endpoints, como van en el query: sin los vacíos. */
 export type FiltrosCuentaParams = {
   desde?: string

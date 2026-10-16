@@ -250,7 +250,6 @@ const PAGOS: PagoDemo[] = [
 ]
 
 type ExamenDemo = {
-  tipo: 'PARCIAL' | 'FINAL' | 'RECUPERATORIO' | 'TRABAJO_PRACTICO' | 'OTRO'
   dias: number
   /** `null` = "Sin nota". */
   resultado: 'CON_NOTA' | 'AUSENTE' | null
@@ -260,11 +259,11 @@ type ExamenDemo = {
 
 // Todos de Matemática, la materia de los turnos de Lucía. Un solo examen pendiente (HU-17).
 const EXAMENES: ExamenDemo[] = [
-  { tipo: 'PARCIAL', dias: -27, resultado: 'CON_NOTA', nota: '4.00' },
-  { tipo: 'RECUPERATORIO', dias: -20, resultado: 'CON_NOTA', nota: '8.50' },
-  { tipo: 'TRABAJO_PRACTICO', dias: -9, resultado: 'AUSENTE' },
-  { tipo: 'PARCIAL', dias: -4, resultado: null, observaciones: 'Rindió, falta cargar la nota' },
-  { tipo: 'FINAL', dias: 14, resultado: null },
+  { dias: -27, resultado: 'CON_NOTA', nota: '4.00' },
+  { dias: -20, resultado: 'CON_NOTA', nota: '8.50' },
+  { dias: -9, resultado: 'AUSENTE' },
+  { dias: -4, resultado: null, observaciones: 'Rindió, falta cargar la nota' },
+  { dias: 14, resultado: null },
 ]
 
 /** Importe en centavos → texto con dos decimales para el `Decimal`. */
@@ -596,7 +595,6 @@ async function crear() {
         alumnoId: alumnoIds.lucia,
         materiaId: materia.id,
         fecha: fechaADate(sumarDias(fechaHoy, datos.dias)),
-        tipo: datos.tipo,
         observaciones: datos.observaciones ?? null,
         resultado: datos.resultado,
         nota: datos.nota ?? null,

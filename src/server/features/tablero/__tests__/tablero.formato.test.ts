@@ -9,6 +9,8 @@ import {
   textoRangoConDias,
   tipoDePeriodo,
   tituloTablero,
+  tituloTableroAsistencia,
+  tituloTableroFinanzas,
 } from '../tablero.formato'
 
 describe('formatearPorcentaje', () => {
@@ -50,10 +52,39 @@ describe('nombreProfesor', () => {
 })
 
 describe('nombreArchivoTablero', () => {
+  const periodo = { desde: '2026-09-28', hasta: '2026-10-04' }
+
   it('las dos fechas separadas por un guion bajo', () => {
-    expect(nombreArchivoTablero({ desde: '2026-09-28', hasta: '2026-10-04' })).toBe(
-      'tablero-2026-09-28_2026-10-04',
+    expect(nombreArchivoTablero(periodo)).toBe('tablero-2026-09-28_2026-10-04')
+  })
+
+  it('"General" (por defecto) conserva el nombre de siempre; "Asistencia" lleva el suyo', () => {
+    expect(nombreArchivoTablero(periodo, 'general')).toBe('tablero-2026-09-28_2026-10-04')
+    expect(nombreArchivoTablero(periodo, 'asistencia')).toBe(
+      'tablero-asistencia-2026-09-28_2026-10-04',
     )
+  })
+
+  it('"Finanzas" lleva el suyo', () => {
+    expect(nombreArchivoTablero(periodo, 'finanzas')).toBe('tablero-finanzas-2026-09-28_2026-10-04')
+  })
+})
+
+describe('tituloTableroFinanzas', () => {
+  it('según el tipo de período', () => {
+    expect(tituloTableroFinanzas('2026-10-02', '2026-10-02')).toBe('Finanzas diaria')
+    expect(tituloTableroFinanzas('2026-09-28', '2026-10-04')).toBe('Finanzas semanal')
+    expect(tituloTableroFinanzas('2026-10-01', '2026-10-31')).toBe('Finanzas mensual')
+    expect(tituloTableroFinanzas('2026-09-15', '2026-10-20')).toBe('Finanzas del período')
+  })
+})
+
+describe('tituloTableroAsistencia', () => {
+  it('según el tipo de período', () => {
+    expect(tituloTableroAsistencia('2026-10-02', '2026-10-02')).toBe('Asistencia diaria')
+    expect(tituloTableroAsistencia('2026-09-28', '2026-10-04')).toBe('Asistencia semanal')
+    expect(tituloTableroAsistencia('2026-10-01', '2026-10-31')).toBe('Asistencia mensual')
+    expect(tituloTableroAsistencia('2026-09-15', '2026-10-20')).toBe('Asistencia del período')
   })
 })
 

@@ -4,6 +4,10 @@ import {
   type IndicacionesAnteriores,
 } from '@/server/features/asistencias/asistencias.condiciones'
 import {
+  leerExamenesDelPeriodo,
+  type ExamenDelPeriodo,
+} from '@/server/features/examenes/examenes.condiciones'
+import {
   leerOcurrencias,
   materiasDelProfesorConAlumno,
   type FiltroOcurrencias,
@@ -12,11 +16,12 @@ import {
 import { dateAFecha, type Reloj } from '@/server/shared/fechas'
 
 // Único lugar de la feature que usa Prisma. `historiales` no tiene tabla propia (HU-31, HU-33): es
-// una lectura sobre el motor de ocurrencias de `turnos` (T-74) más las indicaciones de la última
-// clase de `asistencias` (T-81). Un repository no puede importar otro repository (ESLint): la fecha
-// del primer turno del alumno, que no publica ninguna otra feature, se consulta acá directo.
+// una lectura sobre el motor de ocurrencias de `turnos` (T-74), las indicaciones de la última clase
+// de `asistencias` (T-81) y los exámenes del período de `examenes` (T-106, para el PDF de HU-32).
+// Un repository no puede importar otro repository (ESLint): la fecha del primer turno del alumno,
+// que no publica ninguna otra feature, se consulta acá directo.
 
-export type { IndicacionesAnteriores, Ocurrencia }
+export type { ExamenDelPeriodo, IndicacionesAnteriores, Ocurrencia }
 
 export const historialesRepository = {
   /**
@@ -64,6 +69,20 @@ export const historialesRepository = {
   }): Promise<IndicacionesAnteriores | null> {
     const [indicaciones] = await ultimasIndicaciones(prisma, [consulta])
     return indicaciones ?? null
+  },
+
+  /**
+   * Los exámenes `ACTIVO` del alumno en `[desde, hasta]` con su resultado y su nota, y sólo de esas
+   * materias si se pasan (HU-34): los que lista el PDF del historial (HU-32). Una sola consulta, la
+   * de `examenes` (T-106).
+   */
+  async leerExamenesDelPeriodo(filtro: {
+    alumnoId: number
+    desde: string
+    hasta: string
+    materiaIds?: number[]
+  }): Promise<ExamenDelPeriodo[]> {
+    return leerExamenesDelPeriodo(prisma, filtro)
   },
 }
 

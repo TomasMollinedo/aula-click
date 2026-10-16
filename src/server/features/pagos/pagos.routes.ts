@@ -4,25 +4,35 @@ import { requireAuth, requireRole } from '@/server/middlewares/auth'
 import { createRouter } from '@/server/router'
 import * as pagosController from './pagos.controller'
 import {
+  ejemploAlumnosDePagos,
   ejemploDetalle,
+  ejemploDetalleGerente,
+  ejemploErrorBuscador,
   ejemploErrorMonto,
   ejemploErrorNoCobrables,
   ejemploErrorRango,
   ejemploListado,
+  ejemploMateriasDePagos,
   ejemploMisPagos,
+  ejemploProfesoresDePagos,
   ejemploRegistrado,
   ejemploRegistrar,
   ejemploRegistrarDebito,
   ejemploRegistrarTransferencia,
 } from './pagos.ejemplos'
 import {
+  alumnosDePagosSchema,
+  buscadorAcotadoQuerySchema,
+  buscadorPagosQuerySchema,
   detallePagoSchema,
   listadoPagosSchema,
   listarPagosQuerySchema,
+  materiasDePagosSchema,
   misPagosQuerySchema,
   misPagosSchema,
   pagoIdParamsSchema,
   pagoRegistradoSchema,
+  profesoresDePagosSchema,
   registrarPagoSchema,
 } from './pagos.validation'
 
@@ -132,19 +142,112 @@ export const misPagosRoute = createRoute({
   },
 })
 
+// Buscadores de los filtros de pagos realizados (HU-36, T-100): pagos publica los suyos, sin abrirle
+// al gerente `GET /alumnos` ni `GET /profesores` (decisión T-169). Se registran antes de `/{id}`,
+// como `/mis-pagos`: si no, `/alumnos`, `/profesores` y `/materias` caerían en ese path param.
+// Profesores y materias se acotan con `alumnoId` a los de los pagos de ese alumno (decisión T-170).
+const descripcionBusqueda =
+  '`q`: búsqueda por palabras, como `GET /alumnos` (sin mayúsculas, tildes ni puntos). `id`: sólo esa opción si corresponde, o `[]` (para mostrar el nombre del filtro que viene en la URL).'
+const descripcionBuscador = `Sin paginar, por apellido y nombre, hasta 20. ${descripcionBusqueda} Cada opción trae sólo \`id\`, \`nombre\` y \`apellido\`.`
+const descripcionAlumnoId =
+  '`alumnoId`: sólo las de los pagos de ese alumno (el de la ficha o el del filtro).'
+
+export const buscarAlumnosRoute = createRoute({
+  method: 'get',
+  path: '/alumnos',
+  tags,
+  summary: 'Buscador de alumnos para el filtro de pagos realizados',
+  description: `Alumnos con al menos un pago, vigente o anulado. La búsqueda también encuentra por DNI, que no se devuelve. ${descripcionBuscador}`,
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: buscadorPagosQuerySchema },
+  responses: {
+    200: {
+      description: 'Alumnos con pagos (arreglo vacío si no hay ninguno)',
+      content: {
+        'application/json': { schema: alumnosDePagosSchema, example: ejemploAlumnosDePagos },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres o `id` que no es un entero positivo',
+      ejemploErrorBuscador,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
+export const buscarProfesoresRoute = createRoute({
+  method: 'get',
+  path: '/profesores',
+  tags,
+  summary: 'Buscador de profesores para el filtro de pagos realizados',
+  description: `Profesores que dictan algún turno incluido en un pago (el profesor actual del turno, como el filtro \`profesorId\`), incluidos los dados de baja. ${descripcionBuscador} ${descripcionAlumnoId}`,
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: buscadorAcotadoQuerySchema },
+  responses: {
+    200: {
+      description: 'Profesores con turnos pagados (arreglo vacío si no hay ninguno)',
+      content: {
+        'application/json': { schema: profesoresDePagosSchema, example: ejemploProfesoresDePagos },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres, o `id` o `alumnoId` que no es un entero positivo',
+      ejemploErrorBuscador,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
+export const buscarMateriasRoute = createRoute({
+  method: 'get',
+  path: '/materias',
+  tags,
+  summary: 'Buscador de materias para el filtro de pagos realizados',
+  description: `Materias de algún turno incluido en un pago (como el filtro \`materiaId\`), incluidas las dadas de baja. Sin paginar, por nombre, hasta 20. ${descripcionBusqueda} ${descripcionAlumnoId} Cada opción trae sólo \`id\` y \`nombre\`.`,
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
+  request: { query: buscadorAcotadoQuerySchema },
+  responses: {
+    200: {
+      description: 'Materias con turnos pagados (arreglo vacío si no hay ninguna)',
+      content: {
+        'application/json': { schema: materiasDePagosSchema, example: ejemploMateriasDePagos },
+      },
+    },
+    400: respuestaError(
+      'Query inválido (VALIDACION): `q` de más de 100 caracteres, o `id` o `alumnoId` que no es un entero positivo',
+      ejemploErrorBuscador,
+    ),
+    401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
+    403: respuestaError('El rol no es mesa de entradas ni gerente, o el usuario está inhabilitado'),
+  },
+})
+
 export const obtenerComprobanteRoute = createRoute({
   method: 'get',
   path: '/{id}',
   tags,
   summary: 'Detalle de un pago',
   description:
-    'Datos del comprobante: número, fecha, alumno, cada turno con los datos actuales de su turno y el importe cobrado, total, monto recibido y vuelto (recalculado), forma de pago, observaciones y quién lo registró. Además, `cantidad` de turnos, el último comprobante adjunto activo (`adjunto`, sin URL: la da `GET /adjuntos/pagos/{pagoId}`; `null` si no tiene) y `acciones` según el rol, el estado y la forma de pago. El gerente lo ve en sólo lectura: todas sus acciones en `false`.',
+    'Datos del comprobante: número, fecha, alumno, cada turno con los datos actuales de su turno y el importe cobrado, total, monto recibido y vuelto (recalculado), forma de pago, observaciones y quién lo registró. Además, `cantidad` de turnos, el último comprobante adjunto activo (`adjunto`, sin URL: la da `GET /adjuntos/pagos/{pagoId}`; `null` si no tiene) y `acciones` según el rol, el estado y la forma de pago. El gerente lo ve en sólo lectura (todas sus acciones en `false`) y, sólo para él, con `reparto`: por turno, el importe cobrado, el porcentaje del centro que guardó el cobro y las partes del centro y del profesor, con sus totales (también en un pago anulado). Para la mesa de entradas la clave `reparto` no viene.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
   request: { params: pagoIdParamsSchema },
   responses: {
     200: {
       description: 'Detalle del pago',
-      content: { 'application/json': { schema: detallePagoSchema, example: ejemploDetalle } },
+      content: {
+        'application/json': {
+          schema: detallePagoSchema,
+          examples: {
+            mesa: { summary: 'Visto por la mesa de entradas', value: ejemploDetalle },
+            gerente: {
+              summary: 'Visto por el gerente, con el reparto',
+              value: ejemploDetalleGerente,
+            },
+          },
+        },
+      },
     },
     400: respuestaError('Id inválido (VALIDACION)'),
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
@@ -180,5 +283,8 @@ export const pagosRoutes = createRouter()
   .openapi(registrarPagoRoute, pagosController.registrar)
   .openapi(listarPagosRoute, pagosController.listar)
   .openapi(misPagosRoute, pagosController.misPagos)
+  .openapi(buscarAlumnosRoute, pagosController.buscarAlumnos)
+  .openapi(buscarProfesoresRoute, pagosController.buscarProfesores)
+  .openapi(buscarMateriasRoute, pagosController.buscarMaterias)
   .openapi(obtenerComprobanteRoute, pagosController.obtenerComprobante)
   .openapi(obtenerComprobantePdfRoute, pagosController.obtenerComprobantePdf)

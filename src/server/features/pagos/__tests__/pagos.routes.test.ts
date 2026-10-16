@@ -16,6 +16,9 @@ const { repository, alumnosRepository, getSession } = vi.hoisted(() => ({
     listarRealizados: vi.fn(),
     listarDelAlumno: vi.fn(),
     buscarAdjunto: vi.fn(),
+    buscarAlumnos: vi.fn(),
+    buscarProfesores: vi.fn(),
+    buscarMaterias: vi.fn(),
   },
   alumnosRepository: { buscarPorId: vi.fn() },
   getSession: vi.fn(),
@@ -344,6 +347,129 @@ describe('GET /pagos/mis-pagos', () => {
   })
 })
 
+describe('GET /pagos/alumnos, /pagos/profesores y /pagos/materias (buscadores de los filtros)', () => {
+  const LUCIA = { id: 12, nombre: 'Lucía', apellido: 'Álvarez' }
+  const ANA = { id: 3, nombre: 'Ana', apellido: 'Gómez' }
+  const MATEMATICA = { id: 2, nombre: 'Matemática' }
+  const BUSCADORES = ['/alumnos', '/profesores', '/materias']
+
+  beforeEach(() => {
+    repository.buscarAlumnos.mockResolvedValue([LUCIA])
+    repository.buscarProfesores.mockResolvedValue([ANA])
+    repository.buscarMaterias.mockResolvedValue([MATEMATICA])
+  })
+
+  it.each(['MESA_ENTRADAS', 'GERENTE'])(
+    '%s → 200 con las opciones; no caen en `/{id}`',
+    async (rol) => {
+      getSession.mockResolvedValue(sesion(rol))
+
+      const alumnos = await pedir('/alumnos?q=alva&id=12')
+      expect(alumnos.status).toBe(200)
+      expect(await alumnos.json()).toEqual([LUCIA])
+      expect(repository.buscarAlumnos).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['alva'],
+        id: 12,
+      })
+
+      const profesores = await pedir('/profesores?q=G%C3%B3mez')
+      expect(profesores.status).toBe(200)
+      expect(await profesores.json()).toEqual([ANA])
+      expect(repository.buscarProfesores).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['gomez'],
+        id: undefined,
+        alumnoId: undefined,
+      })
+
+      const materias = await pedir('/materias?q=mat&id=2')
+      expect(materias.status).toBe(200)
+      expect(await materias.json()).toEqual([MATEMATICA])
+      expect(repository.buscarMaterias).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['mat'],
+        id: 2,
+        alumnoId: undefined,
+      })
+
+      expect(repository.buscarComprobante).not.toHaveBeenCalled()
+    },
+  )
+
+  it.each(['/profesores', '/materias'])(
+    '%s?alumnoId=12 → acota al alumno (T-170)',
+    async (path) => {
+      await pedir(`${path}?q=a&alumnoId=12`)
+
+      const buscar =
+        path === '/profesores' ? repository.buscarProfesores : repository.buscarMaterias
+      expect(buscar).toHaveBeenCalledExactlyOnceWith({
+        terminos: ['a'],
+        id: undefined,
+        alumnoId: 12,
+      })
+    },
+  )
+
+  it.each([
+    ['PROFESOR', undefined],
+    ['ALUMNO', 12],
+  ])('%s → 403', async (rol, alumnoId) => {
+    getSession.mockResolvedValue(sesion(rol, alumnoId))
+
+    for (const path of BUSCADORES) {
+      const res = await pedir(path)
+      expect(res.status).toBe(403)
+      expect((await res.json()).error.code).toBe('SIN_PERMISO')
+    }
+    expect(repository.buscarAlumnos).not.toHaveBeenCalled()
+    expect(repository.buscarProfesores).not.toHaveBeenCalled()
+    expect(repository.buscarMaterias).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    for (const path of BUSCADORES) {
+      expect((await pedir(path)).status).toBe(401)
+    }
+  })
+
+  it.each([
+    ['/alumnos', `q=${'a'.repeat(101)}`, 'q'],
+    ['/alumnos', 'id=0', 'id'],
+    ['/profesores', 'id=abc', 'id'],
+    ['/profesores', 'id=1.5', 'id'],
+    ['/profesores', 'alumnoId=0', 'alumnoId'],
+    ['/materias', `q=${'a'.repeat(101)}`, 'q'],
+    ['/materias', 'id=abc', 'id'],
+    ['/materias', 'alumnoId=x', 'alumnoId'],
+  ])('%s?%s → 400 VALIDACION en `%s`', async (path, query, campo) => {
+    const res = await pedir(`${path}?${query}`)
+
+    expect(res.status).toBe(400)
+    const { error } = await res.json()
+    expect(error.code).toBe('VALIDACION')
+    expect(error.details).toEqual([expect.objectContaining({ path: [campo] })])
+    expect(repository.buscarAlumnos).not.toHaveBeenCalled()
+    expect(repository.buscarProfesores).not.toHaveBeenCalled()
+    expect(repository.buscarMaterias).not.toHaveBeenCalled()
+  })
+
+  it('la respuesta trae sólo id, nombre y apellido: ni dni ni fotoUrl', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE'))
+
+    for (const path of ['/alumnos', '/profesores']) {
+      const [opcion] = await (await pedir(path)).json()
+      expect(Object.keys(opcion).sort()).toEqual(['apellido', 'id', 'nombre'])
+      expect(opcion).not.toHaveProperty('dni')
+      expect(opcion).not.toHaveProperty('fotoUrl')
+    }
+  })
+
+  it('las materias traen sólo id y nombre', async () => {
+    const [opcion] = await (await pedir('/materias')).json()
+    expect(Object.keys(opcion).sort()).toEqual(['id', 'nombre'])
+  })
+})
+
 describe('POST /pagos', () => {
   it('201 con el total, el monto recibido y el vuelto', async () => {
     const res = await pedir('', 'POST', body)
@@ -621,6 +747,58 @@ describe('GET /pagos/{id}', () => {
     expect(detalle.acciones).toEqual({ anular: true, reemplazarAdjunto: true, quitarAdjunto: true })
   })
 
+  describe('reparto (HU-43)', () => {
+    const turno = {
+      turnoId: 41,
+      fecha: HOY,
+      horaInicio: '09:00',
+      horaFin: '10:00',
+      materia: { id: 2, nombre: 'Matemática' },
+      profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+      importe: 8000,
+    }
+
+    beforeEach(() => {
+      repository.buscarComprobante.mockResolvedValue({
+        ...comprobante,
+        turnos: [{ ...turno, porcentaje: 15 }],
+      })
+    })
+
+    it('GERENTE → 200 con el reparto, y los turnos sin el porcentaje', async () => {
+      getSession.mockResolvedValue(sesion('GERENTE'))
+
+      const res = await pedir('/31')
+
+      expect(res.status).toBe(200)
+      const detalle = await res.json()
+      expect(detalle.turnos).toEqual([turno])
+      expect(detalle.reparto).toEqual({
+        turnos: [
+          {
+            turnoId: 41,
+            fecha: HOY,
+            profesor: turno.profesor,
+            importe: 8000,
+            porcentaje: 15,
+            parteCentro: 1200,
+            parteProfesor: 6800,
+          },
+        ],
+        totales: { importe: 8000, parteCentro: 1200, parteProfesor: 6800 },
+      })
+    })
+
+    it('MESA_ENTRADAS → 200 sin la clave reparto', async () => {
+      const res = await pedir('/31')
+
+      expect(res.status).toBe(200)
+      const detalle = await res.json()
+      expect('reparto' in detalle).toBe(false)
+      expect(detalle.turnos).toEqual([turno])
+    })
+  })
+
   it('inexistente → 404 NO_ENCONTRADO', async () => {
     repository.buscarComprobante.mockResolvedValue(null)
     const res = await pedir('/99')
@@ -722,6 +900,14 @@ describe('OpenAPI', () => {
     expect(
       Object.keys(doc.paths?.['/api/v1/pagos/mis-pagos']?.get?.responses ?? {}).sort(),
     ).toEqual(['200', '400', '401', '403'])
+    for (const path of ['/api/v1/pagos/alumnos', '/api/v1/pagos/profesores']) {
+      expect(Object.keys(doc.paths?.[path]?.get?.responses ?? {}).sort()).toEqual([
+        '200',
+        '400',
+        '401',
+        '403',
+      ])
+    }
     expect(Object.keys(doc.paths?.['/api/v1/pagos/{id}']?.get?.responses ?? {}).sort()).toEqual([
       '200',
       '400',
@@ -732,6 +918,16 @@ describe('OpenAPI', () => {
     expect(Object.keys(doc.paths?.['/api/v1/pagos/{id}/pdf']?.get?.responses ?? {}).sort()).toEqual(
       ['200', '400', '401', '403', '404'],
     )
+  })
+
+  it('el detalle declara el reparto opcional como RepartoPago', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    expect(doc.components?.schemas).toHaveProperty('RepartoPago')
+    expect(doc.components?.schemas).toHaveProperty('RepartoTurnoPago')
+    // `DetallePago` extiende `Comprobante` (`allOf`): el reparto está en la parte propia.
+    const detalle = JSON.stringify(doc.components?.schemas?.DetallePago)
+    expect(detalle).toContain('"reparto":{"$ref":"#/components/schemas/RepartoPago"')
+    expect(detalle).not.toMatch(/"required":[[^]]*"reparto"/)
   })
 
   it('el PDF se declara como binario `application/pdf`', () => {

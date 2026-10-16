@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useForm, useWatch } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { format } from 'date-fns'
-import { AlertCircle, CircleCheck, Info, Receipt } from 'lucide-react'
+import { AlertCircle, CircleCheck, FileSearch, Info, Receipt } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -30,17 +30,20 @@ import {
   textoConfirmacion,
   textoExito,
   textoNumeroComprobante,
+  textoSubtotal,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
+import { useDetallePagoEnUrl } from '../hooks/use-detalle-pago-en-url'
 import { useRegistrarPago } from '../hooks/use-registrar-pago'
+import type { PagoRegistrado } from '../pagos.types'
 import {
   type PagoFormValues,
   armarRegistrarPago,
   pagoFormSchema,
   valoresInicialesPago,
 } from '../pagos.schema'
-import { hrefComprobante } from '../rutas-pagos'
+import { CamposDelMedio, SelectorFormaPago } from './CamposFormaPago'
 import { ResumenACobrarTabla } from './ResumenACobrarTabla'
 import { TurnosRechazados } from './TurnosRechazados'
 
@@ -50,20 +53,48 @@ const FORM_ID = 'registrar-pago-form'
 type Paso = 'formulario' | 'confirmar'
 
 /**
- * Registrar el pago en efectivo de una o varias ocurrencias de un alumno (HU-15). Un solo diálogo
- * por pasos: formulario → confirmar → éxito (o el rechazo de la API). Lo abren `AccionRegistrarPago`
- * (desde el detalle del turno) y `cuentas` (con `renderRegistrarPago`, compuesto en `app/`).
+ * Registrar el pago de una o varias ocurrencias de un alumno (HU-15), en efectivo, por
+ * transferencia o con débito (HU-23), con el comprobante adjunto que se sube al elegirlo (HU-24).
+ * Un solo diálogo por pasos: formulario → confirmar (o el rechazo de la API). Lo abren
+ * `AccionRegistrarPago` (desde el detalle del turno) y `cuentas` (con `renderRegistrarPago`,
+ * compuesto en `app/`).
  *
+ * - La forma de pago se elige siempre (no hay una por defecto) y el formulario muestra solo los
+ *   campos de esa (`CamposFormaPago`). Mientras se sube el comprobante no se puede continuar.
+ *
+ * - **Al registrar, se cierra y abre el detalle del pago** (`useDetallePagoEnUrl`, `?pago=`; lo
+ *   monta el layout de mesa; salvo con `abrirDetalleAlRegistrar={false}`, desde el detalle del
+ *   turno): ahí están "Ver comprobante", la forma de pago con sus datos (el vuelto,
+ *   en efectivo), los turnos y el adjunto. Un toast confirma el pago con la cantidad, el total, el
+ *   medio y, en efectivo, el vuelto, todo de la respuesta. **En efectivo, el diálogo primero se
+ *   queda mostrando el vuelto, destacado**, con "Cerrar" y, desde "Por cobrar", "Ver detalle del
+ *   pago".
  * - Los importes que muestra son los que mandó la API a quien lo abre; el cliente solo los suma
- *   para el resumen (`resumenACobrar`). Cantidad, total y vuelto del éxito salen de la respuesta.
+ *   para el resumen (`resumenACobrar`).
  * - Queda abierto hasta que el usuario lo cierra, aunque la invalidación haga desaparecer lo que lo
  *   abrió: por eso quien lo abre guarda su copia de `ocurrencias` (ver `SolicitudRegistrarPago`).
  * - Mientras envía no se puede cerrar, y nunca se cierra con un clic afuera (hay un formulario).
  */
-export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: SolicitudRegistrarPago) {
+export type RegistrarPagoDialogProps = SolicitudRegistrarPago & {
+  /**
+   * Si al registrar se abre el detalle del pago (por defecto, sí: "Por cobrar" de `cuentas`).
+   * Desde el detalle del turno, no: ese detalle ya muestra el pago con su comprobante al
+   * refrescarse, y abrir el del pago dejaría dos detalles superpuestos.
+   */
+  abrirDetalleAlRegistrar?: boolean
+}
+
+export function RegistrarPagoDialog({
+  alumnoId,
+  ocurrencias,
+  onCerrar,
+  abrirDetalleAlRegistrar = true,
+}: RegistrarPagoDialogProps) {
   const mutation = useRegistrarPago()
   const toast = useToast()
+  const { abrir: abrirDetallePago } = useDetallePagoEnUrl()
   const [paso, setPaso] = useState<Paso>('formulario')
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false)
   // `isPending` se actualiza después del próximo tick: un doble clic rápido llegaría a mandar dos
   // veces. El ref lo corta en el mismo evento.
   const enviando = useRef(false)
@@ -90,10 +121,12 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
     () => (mutation.error ? interpretarErrorPago(mutation.error, ocurrencias) : null),
     [mutation.error, ocurrencias],
   )
-  const pagoRegistrado = mutation.data ?? null
   const bloqueado = rechazo?.tipo === 'turnos' || rechazo?.tipo === 'yaPagado'
+  // El pago registrado que todavía se muestra: el efectivo, para dar el vuelto (con transferencia o
+  // débito el diálogo se cierra al registrar).
+  const [vuelto, setVuelto] = useState<PagoRegistrado | null>(null)
   const vista =
-    ocurrencias.length === 0 ? 'vacio' : pagoRegistrado ? 'exito' : bloqueado ? 'rechazo' : paso
+    ocurrencias.length === 0 ? 'vacio' : vuelto ? 'vuelto' : bloqueado ? 'rechazo' : paso
 
   const cerrar = () => {
     if (enviando.current) return
@@ -118,6 +151,8 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
   }, [vista, primerCampoConError, setFocus])
 
   const continuar = handleSubmit(() => {
+    // El botón ya está deshabilitado; esto corta un Enter en un campo mientras sube.
+    if (subiendoComprobante) return
     mutation.reset()
     setPaso('confirmar')
   })
@@ -126,7 +161,18 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
     if (enviando.current) return
     enviando.current = true
     mutation.mutate(armarRegistrarPago(alumnoId, ocurrencias, getValues()), {
-      onSuccess: (pago) => toast.success(textoExito(pago)),
+      onSuccess: (pago) => {
+        toast.success([textoExito(pago), textoVuelto(pago)].filter(Boolean).join(' · '))
+        // En efectivo, el diálogo se queda con el vuelto a la vista (el toast se va solo, y ni el
+        // detalle del turno ni, destacado, el del pago lo muestran).
+        if (pago.vuelto !== null) {
+          setVuelto(pago)
+          return
+        }
+        // El pago ya está: se ve su detalle, con "Ver comprobante" (ver el JSDoc del diálogo).
+        if (abrirDetalleAlRegistrar) abrirDetallePago(pago.pagoId)
+        onCerrar()
+      },
       onError: (error) => {
         const interpretado = interpretarErrorPago(error, ocurrencias)
         if (interpretado.tipo === 'campos') {
@@ -158,10 +204,30 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
       >
         <DialogHeader>
           <DialogTitle>Registrar pago</DialogTitle>
-          <DialogDescription>Pago en efectivo de los turnos del alumno.</DialogDescription>
+          <DialogDescription>
+            Pago de los turnos del alumno, con la forma de pago que elijas.
+          </DialogDescription>
         </DialogHeader>
 
         <div ref={contenidoRef} tabIndex={-1} className="space-y-5 outline-none">
+          {vista === 'vuelto' && vuelto && (
+            <div role="status" className="space-y-4">
+              <div className="flex items-start gap-3">
+                <CircleCheck className="text-confirmado mt-0.5 size-5 shrink-0" aria-hidden />
+                <div className="space-y-1">
+                  <p className="font-semibold">{textoExito(vuelto)}</p>
+                  <p className="text-muted-foreground text-sm">
+                    {textoNumeroComprobante(vuelto.numeroComprobante)}
+                  </p>
+                </div>
+              </div>
+              {/* Lo que hay que devolver, destacado como el total a pagar de la barra. */}
+              <p className="bg-confirmado rounded-lg px-4 py-3 text-center text-2xl font-bold text-white tabular-nums">
+                {textoVuelto(vuelto)}
+              </p>
+            </div>
+          )}
+
           {vista === 'vacio' && (
             <EmptyState
               icon={Receipt}
@@ -169,21 +235,6 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               description="Cerrá y elegí los turnos de nuevo."
               className="py-8"
             />
-          )}
-
-          {vista === 'exito' && pagoRegistrado && (
-            <div role="status" className="flex items-start gap-3">
-              <CircleCheck className="text-confirmado mt-0.5 size-5 shrink-0" aria-hidden />
-              <div className="space-y-1">
-                <p className="font-semibold">{textoExito(pagoRegistrado)}</p>
-                <p className="text-muted-foreground text-sm">
-                  {textoNumeroComprobante(pagoRegistrado.numeroComprobante)}
-                </p>
-                {textoVuelto(pagoRegistrado) && (
-                  <p className="text-lg font-semibold">{textoVuelto(pagoRegistrado)}</p>
-                )}
-              </div>
-            </div>
           )}
 
           {vista === 'rechazo' && rechazo?.tipo === 'turnos' && (
@@ -197,13 +248,27 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
           )}
 
           {vista === 'confirmar' && (
-            <p className="text-base font-medium">{textoConfirmacion(resumen)}</p>
+            <p className="text-base font-medium">
+              {/* En "confirmar" el formulario ya pasó el schema: hay una forma de pago elegida. */}
+              {textoConfirmacion(resumen, getValues('formaPago') || 'EFECTIVO')}
+            </p>
           )}
 
           {vista === 'formulario' && (
             <form id={FORM_ID} onSubmit={continuar} noValidate className="space-y-5">
               <section aria-label="Turnos a cobrar" className="space-y-2">
                 <ResumenACobrarTabla ocurrencias={ocurrencias} />
+                {/* Con más de una materia, el subtotal de cada una (HU-25). */}
+                {resumen.porMateria.length > 1 && (
+                  <ul
+                    aria-label="Subtotal por materia"
+                    className="text-muted-foreground space-y-0.5 text-right text-sm"
+                  >
+                    {resumen.porMateria.map((subtotal) => (
+                      <li key={subtotal.materia.id}>{textoSubtotal(subtotal)}</li>
+                    ))}
+                  </ul>
+                )}
                 <p className="text-right text-base font-semibold">{textoTotal(resumen.total)}</p>
                 {resumen.sinPrecio > 0 && (
                   <Alert>
@@ -214,10 +279,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               </section>
 
               <div className="grid gap-5 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Forma de pago</p>
-                  <p className="text-sm">Efectivo</p>
-                </div>
+                <SelectorFormaPago form={form} />
                 <Field
                   label="Fecha de pago"
                   htmlFor="pago-fechaPago"
@@ -235,28 +297,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
                 </Field>
               </div>
 
-              <Field
-                label="Monto recibido"
-                htmlFor="pago-montoRecibido"
-                required
-                error={errors.montoRecibido?.message}
-              >
-                <Input
-                  id="pago-montoRecibido"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="Por ejemplo 35.000"
-                  aria-invalid={!!errors.montoRecibido}
-                  aria-describedby={cn(
-                    fieldErrorId('pago-montoRecibido'),
-                    'pago-montoRecibido-ayuda',
-                  )}
-                  {...register('montoRecibido')}
-                />
-                <p id="pago-montoRecibido-ayuda" className="text-muted-foreground text-xs">
-                  Lo que entrega el alumno: con eso calculamos el vuelto
-                </p>
-              </Field>
+              <CamposDelMedio form={form} onSubiendo={setSubiendoComprobante} />
 
               <Field
                 label="Observaciones"
@@ -299,8 +340,8 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               <Button type="button" variant="outline" onClick={cerrar}>
                 Cancelar
               </Button>
-              <Button type="submit" form={FORM_ID}>
-                Continuar
+              <Button type="submit" form={FORM_ID} disabled={subiendoComprobante}>
+                {subiendoComprobante ? 'Subiendo comprobante…' : 'Continuar'}
               </Button>
             </>
           )}
@@ -324,28 +365,36 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               </Button>
             </>
           )}
-          {vista === 'exito' && pagoRegistrado && (
-            <>
-              <Button type="button" variant="outline" onClick={cerrar}>
-                Cerrar
-              </Button>
-              <Button asChild>
-                <a
-                  href={hrefComprobante(pagoRegistrado.pagoId)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  aria-label={`Ver comprobante: ${textoNumeroComprobante(pagoRegistrado.numeroComprobante)} (abre el PDF en otra pestaña)`}
-                >
-                  <Receipt />
-                  Ver comprobante
-                </a>
-              </Button>
-            </>
-          )}
           {(vista === 'rechazo' || vista === 'vacio') && (
             <Button type="button" variant="outline" onClick={cerrar}>
               Cerrar
             </Button>
+          )}
+          {/*
+            Desde el detalle del turno, un solo botón: "Ver comprobante" ya está en ese detalle, que
+            queda abajo. Desde "Por cobrar", además, el detalle del pago.
+          */}
+          {vista === 'vuelto' && vuelto && !abrirDetalleAlRegistrar && (
+            <Button type="button" onClick={cerrar}>
+              Cerrar
+            </Button>
+          )}
+          {vista === 'vuelto' && vuelto && abrirDetalleAlRegistrar && (
+            <>
+              <Button type="button" variant="outline" onClick={cerrar}>
+                Cerrar
+              </Button>
+              <Button
+                type="button"
+                onClick={() => {
+                  abrirDetallePago(vuelto.pagoId)
+                  onCerrar()
+                }}
+              >
+                <FileSearch />
+                Ver detalle del pago
+              </Button>
+            </>
           )}
         </DialogFooter>
       </DialogContent>

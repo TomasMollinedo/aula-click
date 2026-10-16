@@ -5,10 +5,10 @@ import { Banknote, ListChecks, ListX, X } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { cn } from '@/utils/cn'
+import { textoCantidadDeTurnos } from '@/utils/turnos'
 
 import {
   avisoMaximoDeTurnos,
-  textoCantidadDeTurnos,
   textoSeleccionTodo,
   textoSinPrecio,
   textoTotalAPagar,

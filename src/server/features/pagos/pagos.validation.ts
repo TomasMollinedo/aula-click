@@ -1,5 +1,6 @@
 import { z } from '@hono/zod-openapi'
 import { usuarioAuditoriaSchema } from '@/server/shared/auditoria'
+import { qBusqueda } from '@/server/shared/busqueda'
 import { paginacionQuerySchema, paginatedSchema } from '@/server/shared/paginacion'
 import {
   fechaISO,
@@ -357,8 +358,16 @@ export const comprobanteSchema = z
   .openapi('Comprobante')
 
 export type Comprobante = z.infer<typeof comprobanteSchema>
-/** Lo que devuelve el repository: el comprobante sin el vuelto (lo calcula el service). */
-export type ComprobanteGuardado = Omit<Comprobante, 'vuelto'>
+export type TurnoComprobante = z.infer<typeof turnoComprobanteSchema>
+/** Un turno como lo lee el repository: con el porcentaje del centro que guardó el cobro. */
+export type TurnoGuardado = TurnoComprobante & { porcentaje: number }
+/**
+ * Lo que devuelve el repository: el comprobante sin el vuelto (lo calcula el service) y con el
+ * porcentaje de cada turno, que sólo usa el reparto del gerente (nunca va en el comprobante).
+ */
+export type ComprobanteGuardado = Omit<Comprobante, 'vuelto' | 'turnos'> & {
+  turnos: TurnoGuardado[]
+}
 
 /**
  * El último comprobante adjunto **activo** del pago (HU-24), sin la clave del archivo ni la URL:
@@ -400,8 +409,41 @@ export const accionesPagoSchema = z
 export type AccionesPago = z.infer<typeof accionesPagoSchema>
 
 /**
- * Respuesta de `GET /pagos/{id}`: el comprobante, la cantidad de turnos, el último adjunto activo
- * y las acciones (HU-36).
+ * El reparto de un turno cobrado (HU-43), con el porcentaje que guardó el cobro. `turnoId` y
+ * `fecha` identifican la fila; la materia y el horario están en `turnos` del comprobante.
+ */
+export const repartoTurnoPagoSchema = z
+  .object({
+    turnoId: z.number().int(),
+    fecha: fechaISO,
+    profesor: persona,
+    importe: z.number().openapi({ description: 'Importe cobrado', example: 8000 }),
+    porcentaje: z.number().openapi({
+      description: 'Porcentaje del centro guardado al cobrar (15 = 15 %)',
+      example: 15,
+    }),
+    parteCentro: z.number().openapi({ example: 1200 }),
+    parteProfesor: z.number().openapi({ example: 6800 }),
+  })
+  .openapi('RepartoTurnoPago')
+
+/** El reparto de un pago: una fila por turno, en el orden de `turnos`, y sus totales. */
+export const repartoPagoSchema = z
+  .object({
+    turnos: z.array(repartoTurnoPagoSchema),
+    totales: z.object({
+      importe: z.number(),
+      parteCentro: z.number(),
+      parteProfesor: z.number(),
+    }),
+  })
+  .openapi('RepartoPago')
+
+export type RepartoPago = z.infer<typeof repartoPagoSchema>
+
+/**
+ * Respuesta de `GET /pagos/{id}`: el comprobante, la cantidad de turnos, el último adjunto activo,
+ * las acciones (HU-36) y, sólo para el gerente, el reparto (HU-43).
  */
 export const detallePagoSchema = comprobanteSchema
   .extend({
@@ -410,6 +452,10 @@ export const detallePagoSchema = comprobanteSchema
       description: 'El último comprobante adjunto activo; `null` si no tiene',
     }),
     acciones: accionesPagoSchema,
+    reparto: repartoPagoSchema.optional().openapi({
+      description:
+        'Sólo para el `GERENTE`; para los demás roles el campo no viene. Un pago anulado muestra lo que se cobró',
+    }),
   })
   .openapi('DetallePago')
 
@@ -555,6 +601,61 @@ export type MiPago = z.infer<typeof miPagoSchema>
 export const misPagosSchema = paginatedSchema(miPagoSchema)
 
 export type MisPagos = z.infer<typeof misPagosSchema>
+
+// --- Buscadores de los filtros de pagos realizados (HU-36, T-100) ---
+
+/**
+ * Query de `GET /pagos/alumnos` y `GET /pagos/profesores`: la búsqueda por palabras (`q`) y, para
+ * mostrar el nombre del filtro que viene en la URL, una sola opción por su `id`. Los dos juntos se
+ * combinan.
+ */
+export const buscadorPagosQuerySchema = z.object({
+  q: qBusqueda,
+  id: idQuery('id', 'Sólo esta opción, si tiene pagos (para mostrar el filtro elegido)', 12),
+})
+
+export type BuscadorPagosQuery = z.infer<typeof buscadorPagosQuerySchema>
+
+/**
+ * Query de `GET /pagos/profesores` y `GET /pagos/materias`: además, `alumnoId` acota las opciones a
+ * las de los pagos de ese alumno (el de la ficha o el del filtro, decisión T-170).
+ */
+export const buscadorAcotadoQuerySchema = buscadorPagosQuerySchema.extend({
+  alumnoId: idQuery('alumnoId', 'Sólo las opciones de los pagos de este alumno', 12),
+})
+
+export type BuscadorAcotadoQuery = z.infer<typeof buscadorAcotadoQuerySchema>
+
+/**
+ * Una opción de un buscador de pagos: sólo el id, el nombre y el apellido. Nunca el DNI, la foto,
+ * el estado ni la auditoría: el gerente no ve la ficha del alumno (HU-36).
+ */
+const personaDePagos = z.object({
+  id: z.number().int(),
+  nombre: z.string(),
+  apellido: z.string(),
+})
+
+export const alumnoDePagosSchema = personaDePagos.openapi('AlumnoDePagos')
+export const alumnosDePagosSchema = z.array(alumnoDePagosSchema)
+export type AlumnoDePagos = z.infer<typeof alumnoDePagosSchema>
+
+export const profesorDePagosSchema = personaDePagos.openapi('ProfesorDePagos')
+export const profesoresDePagosSchema = z.array(profesorDePagosSchema)
+export type ProfesorDePagos = z.infer<typeof profesorDePagosSchema>
+
+/** Una opción del buscador de materias: sólo el id y el nombre. */
+export const materiaDePagosSchema = z
+  .object({ id: z.number().int(), nombre: z.string() })
+  .openapi('MateriaDePagos')
+export const materiasDePagosSchema = z.array(materiaDePagosSchema)
+export type MateriaDePagos = z.infer<typeof materiaDePagosSchema>
+
+/** Lo que el service le pasa al repository de un buscador: `q` ya partido en términos. */
+export type BusquedaDePagos = { terminos: string[]; id: number | undefined }
+
+/** Lo mismo, en los buscadores que se acotan a un alumno (profesores y materias, decisión T-170). */
+export type BusquedaAcotadaDePagos = BusquedaDePagos & { alumnoId: number | undefined }
 
 /** El medio de un pago, ya validado: cada forma de pago con sus datos y sólo con ellos (HU-23). */
 export type MedioPago =

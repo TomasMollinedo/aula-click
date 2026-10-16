@@ -1,10 +1,13 @@
 import type { ErrorResponse } from '@/server/errors'
 import type {
+  AlumnoDePagos,
   Comprobante,
   DetallePago,
   ListadoPagos,
+  MateriaDePagos,
   MisPagos,
   PagoRegistrado,
+  ProfesorDePagos,
   RegistrarPago,
 } from './pagos.validation'
 
@@ -148,6 +151,35 @@ export const ejemploDetalle = {
   acciones: { anular: true, reemplazarAdjunto: true, quitarAdjunto: true },
 } satisfies DetallePago
 
+/** El mismo pago visto por el gerente (HU-43): sólo lectura y con el reparto de cada turno. */
+export const ejemploDetalleGerente = {
+  ...ejemploDetalle,
+  acciones: { anular: false, reemplazarAdjunto: false, quitarAdjunto: false },
+  reparto: {
+    turnos: [
+      {
+        turnoId: 41,
+        fecha: '2026-10-05',
+        profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+        importe: 8000,
+        porcentaje: 15,
+        parteCentro: 1200,
+        parteProfesor: 6800,
+      },
+      {
+        turnoId: 57,
+        fecha: '2026-10-07',
+        profesor: { id: 5, nombre: 'Juan', apellido: 'Ruiz' },
+        importe: 8000,
+        porcentaje: 15,
+        parteCentro: 1200,
+        parteProfesor: 6800,
+      },
+    ],
+    totales: { importe: 16000, parteCentro: 2400, parteProfesor: 13600 },
+  },
+} satisfies DetallePago
+
 /** Pagos realizados de octubre: uno vigente por transferencia y uno anulado, que no suma. */
 export const ejemploListado = {
   data: [
@@ -225,5 +257,30 @@ export const ejemploErrorRango = {
     details: [
       { path: ['hasta'], message: 'La fecha hasta no puede ser anterior a la fecha desde' },
     ],
+  },
+} satisfies ErrorResponse
+
+/** Buscador de alumnos del filtro (`?q=alv`): sólo id, nombre y apellido, sin DNI ni foto. */
+export const ejemploAlumnosDePagos = [
+  { id: 12, nombre: 'Lucía', apellido: 'Álvarez' },
+  { id: 27, nombre: 'Martín', apellido: 'Alvear' },
+] satisfies AlumnoDePagos[]
+
+/** Buscador de profesores del filtro (`?q=gom`): también los dados de baja que dictaron turnos pagados. */
+export const ejemploProfesoresDePagos = [
+  { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+] satisfies ProfesorDePagos[]
+
+/** Buscador de materias del filtro (`?q=mat&alumnoId=12`): las de los turnos pagados por ese alumno. */
+export const ejemploMateriasDePagos = [
+  { id: 2, nombre: 'Matemática' },
+  { id: 9, nombre: 'Matemática financiera' },
+] satisfies MateriaDePagos[]
+
+export const ejemploErrorBuscador = {
+  error: {
+    code: 'VALIDACION',
+    message: 'Datos de entrada inválidos',
+    details: [{ path: ['q'], message: 'No puede superar los 100 caracteres' }],
   },
 } satisfies ErrorResponse

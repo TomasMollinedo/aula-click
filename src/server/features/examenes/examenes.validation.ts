@@ -7,18 +7,6 @@ import { fechaISO, textoOpcional } from '@/server/shared/zod'
 
 const OBSERVACIONES_MAX = 500
 
-/** Mismos valores que el enum `TipoExamen` de Prisma (T-29): no se importa de Prisma acá (como
- * `TIPOS_TURNO` en `turnos.validation.ts`), así `shared`/`validation` no dependen del cliente generado. */
-export const TIPOS_EXAMEN = [
-  'PARCIAL',
-  'FINAL',
-  'RECUPERATORIO',
-  'TRABAJO_PRACTICO',
-  'OTRO',
-] as const
-
-export type TipoExamen = (typeof TIPOS_EXAMEN)[number]
-
 /** Mismos valores que el enum `ResultadoExamen` de Prisma (T-72). */
 export const RESULTADOS_EXAMEN = ['CON_NOTA', 'AUSENTE'] as const
 
@@ -65,9 +53,6 @@ export const crearExamenSchema = z
     alumnoId: idPositivo('Id del alumno', 12),
     materiaId: idPositivo('Id de la materia', 3),
     fecha: fechaISO,
-    tipo: z
-      .enum(TIPOS_EXAMEN, { error: `Tipo inválido: debe ser ${TIPOS_EXAMEN.join(', ')}` })
-      .openapi({ description: 'Tipo de examen', example: 'PARCIAL' }),
     observaciones: textoOpcional(
       OBSERVACIONES_MAX,
       'Observaciones del examen',
@@ -177,7 +162,6 @@ export type ExamenGuardado = {
   materiaId: number
   materia: { id: number; nombre: string }
   fecha: string
-  tipo: TipoExamen
   observaciones: string | null
   createdAt: string
   updatedAt: string
@@ -222,7 +206,6 @@ export const examenItemSchema = z
     id: z.number().int(),
     materia: materiaExamen,
     fecha: fechaISO,
-    tipo: z.enum(TIPOS_EXAMEN),
     observaciones: z.string().nullable(),
     pasado: z.boolean().openapi({ description: 'La fecha ya pasó' }),
     diasRestantes: z.number().int().nullable().openapi({
@@ -268,7 +251,6 @@ export const examenDetalleSchema = z
     alumnoId: z.number().int(),
     materia: materiaExamen,
     fecha: fechaISO,
-    tipo: z.enum(TIPOS_EXAMEN),
     observaciones: z.string().nullable(),
     pasado: z.boolean().openapi({
       description: 'La fecha ya pasó: una fecha pasada se acepta, pero se avisa en el front',
@@ -296,13 +278,12 @@ export const materiasExamenSelectorSchema = z.array(materiaExamenSelectorItemSch
 export type MateriasExamenSelector = z.infer<typeof materiasExamenSelectorSchema>
 
 /** El existente de un 409 `EXAMEN_PENDIENTE` (`details`), para ofrecer editarlo. */
-export type ExamenPendiente = { id: number; tipo: TipoExamen; fecha: string }
+export type ExamenPendiente = { id: number; fecha: string }
 
 /** Un examen rendido en el portal: sin observaciones ni auditoría (HU-35). */
 export const miExamenRendidoSchema = z
   .object({
     fecha: fechaISO,
-    tipo: z.enum(TIPOS_EXAMEN),
     resultado: z.enum(RESULTADOS_EXAMEN).nullable().openapi({
       description: 'CON_NOTA (con `nota`), AUSENTE, o `null` si todavía no tiene nota ("Sin nota")',
     }),
@@ -316,7 +297,6 @@ export const misExamenesSchema = z
     proximo: z
       .object({
         fecha: fechaISO,
-        tipo: z.enum(TIPOS_EXAMEN),
         diasRestantes: z.number().int().openapi({ description: 'Días que faltan (0 = hoy)' }),
       })
       .nullable()

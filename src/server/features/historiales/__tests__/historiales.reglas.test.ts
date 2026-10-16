@@ -391,7 +391,7 @@ describe('opcionesDeLosGrupos', () => {
 // ---------------------------------------------------------------------------------------------
 
 describe('bloquesDelPortal', () => {
-  it('saca las clases "Sin registrar" y agendadas, y el bloque que se queda vacío', () => {
+  it('muestra las "Sin registrar", saca las agendadas y el bloque que se queda vacío', () => {
     const [grupo] = armarGrupos([
       hora({ turnoId: 1, fecha: '2026-10-13', horaInicio: 480, horaFin: 540 }),
       hora({
@@ -405,9 +405,10 @@ describe('bloquesDelPortal', () => {
     ])
 
     const bloques = bloquesDelPortal(grupo.bloques)
-    // El bloque de hoy (agendado) desaparece; del otro queda sólo la hora realizada.
+    // El bloque de hoy (agendado) desaparece; el otro queda con sus dos horas (decisión T-169).
     expect(bloques).toHaveLength(1)
-    expect(bloques[0].clases.map((clase) => clase.turnoId)).toEqual([1])
+    expect(bloques[0].clases.map((clase) => clase.turnoId)).toEqual([1, 2])
+    expect(bloques[0].clases[1].estado).toBe('SIN_REGISTRAR')
     expect(bloques[0].horas).toBe(2)
   })
 
