@@ -10,7 +10,6 @@ import { CeldaPdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pd
 import type { HistorialDocumento } from './historiales.documentos'
 import {
   etiquetaNivelEscolaridad,
-  etiquetaTipoExamen,
   fechaDelBloque,
   horarioDelBloque,
   nombreProfesor,
@@ -67,8 +66,7 @@ const COLUMNAS_CANCELADOS: ColumnaPdf[] = [
 
 const COLUMNAS_EXAMENES: ColumnaPdf[] = [
   { titulo: 'Fecha', ancho: 88 },
-  { titulo: 'Materia', ancho: 152 },
-  { titulo: 'Tipo', ancho: 128 },
+  { titulo: 'Materia', ancho: 280 },
   { titulo: 'Nota', ancho: 72 },
 ]
 
@@ -174,7 +172,6 @@ export function HistorialPdf({ documento, ...encabezado }: DatosHistorialPdf) {
                 <FilaPdf key={examen.id}>
                   <CeldaPdf>{fechaDocumento(examen.fecha)}</CeldaPdf>
                   <CeldaPdf>{examen.materiaNombre}</CeldaPdf>
-                  <CeldaPdf>{etiquetaTipoExamen(examen.tipo)}</CeldaPdf>
                   <CeldaPdf>{textoNotaDelExamen(examen)}</CeldaPdf>
                 </FilaPdf>
               ))}

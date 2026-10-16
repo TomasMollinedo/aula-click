@@ -1720,7 +1720,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`.
 
 - **Período (decisión T-163):** un `mes` (`AAAA-MM`; otro formato es 400 `VALIDACION`) o un rango `desde`/`hasta`, el mismo que acepta el historial JSON. Si vienen **los dos**, manda el rango; el extremo que falte lo completa el mes, y sin `mes` ni fechas, el **mes en curso**. `hasta` anterior a `desde`, o un período de más de **366 días**, es 400 con `details` sobre `hasta`, igual que el JSON. Las clases llegan **hasta hoy**.
 - **Filtros:** `materiaId` y `profesorId`, los mismos del historial de la ficha. El de materia se aplica también a los exámenes; el de profesor no, porque un examen es del alumno y de la materia. El documento dice qué filtros se aplicaron.
-- **Contenido**, en este orden: el encabezado oficial; el alumno (apellido, nombre, DNI y nivel de escolaridad), el período (rotulado "Mes" si es un mes completo y "Período" si no) y los filtros; por cada **materia y profesor**, su resumen y sus clases en bloques de horas seguidas (fecha y horario del bloque, el estado de **cada** hora con su plazo o su cierre del sistema, y "Qué se trabajó" e indicaciones **una sola vez**, con los de la hora que los tenga distintos aparte); los **turnos cancelados** del período con fecha, horario, materia, profesor y motivo; y los **exámenes** del período con su tipo y su nota (`7,5`, `Ausente` o `Sin nota`). Un período sin clases lo dice. Los cancelados y los exámenes sólo se listan si hay.
+- **Contenido**, en este orden: el encabezado oficial; el alumno (apellido, nombre, DNI y nivel de escolaridad), el período (rotulado "Mes" si es un mes completo y "Período" si no) y los filtros; por cada **materia y profesor**, su resumen y sus clases en bloques de horas seguidas (fecha y horario del bloque, el estado de **cada** hora con su plazo o su cierre del sistema, y "Qué se trabajó" e indicaciones **una sola vez**, con los de la hora que los tenga distintos aparte); los **turnos cancelados** del período con fecha, horario, materia, profesor y motivo; y los **exámenes** del período con su fecha, su materia y su nota (`7,5`, `Ausente` o `Sin nota`). Un período sin clases lo dice. Los cancelados y los exámenes sólo se listan si hay.
 - **Sin observaciones internas:** no lleva las del alumno ni las de los turnos (tampoco la de una ausencia).
 - **Roles:** los mismos del historial JSON y con el mismo criterio (decisión T-163): `MESA_ENTRADAS`, y `PROFESOR` sólo si el alumno **tiene o tuvo** turnos con él (si no, 403 `SIN_PERMISO`); `GERENTE` y `ALUMNO`, 403.
 - **Errores:** 400 (`mes` o una fecha inválidos, período invertido o de más de 366 días, `alumnoId`, `materiaId` o `profesorId` inválidos), 401, 403 y 404 (el alumno no existe), en JSON. Mismo orden que el JSON: período, alumno y después el permiso del profesor.
@@ -2180,16 +2180,15 @@ Como el portal, lo propio del profesor vive en la feature dueña del concepto y 
 
 Los documentos oficiales los genera la API: cada uno es un endpoint `GET` que devuelve el PDF ya armado, en A4, con el encabezado del centro. El frontend no pide el endpoint con `fetchJson`: lo enlaza con `<a href="/api/v1/…/pdf" target="_blank" rel="noopener noreferrer">` y el navegador lo abre en su visor, en otra pestaña, desde donde se descarga. Todos cumplen este contrato:
 
-| Documento             | Endpoint                                                     | Roles                                               |
-| --------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
-| Comprobante de pago   | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
-| Detalle de un turno   | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Turnos de un alumno   | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
-| Historial académico   | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
-| Agenda de un profesor | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
-| Tablero del gerente   | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
-
-Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas y Tablero.
+| Documento                                                                                                                                 | Endpoint                                                     | Roles                                               |
+| ----------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------ | --------------------------------------------------- |
+| Comprobante de pago                                                                                                                       | `GET /pagos/{id}/pdf`                                        | `MESA_ENTRADAS`, `GERENTE`, `ALUMNO` (sólo el suyo) |
+| Detalle de un turno                                                                                                                       | `GET /ocurrencias/{turnoId}/{fecha}/pdf`                     | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Turnos de un alumno                                                                                                                       | `GET /ocurrencias/pdf?alumnoId&…`                            | `MESA_ENTRADAS`                                     |
+| Historial académico                                                                                                                       | `GET /historiales/alumnos/{alumnoId}/pdf?mes\|desde&hasta&…` | `MESA_ENTRADAS`, `PROFESOR`                         |
+| Agenda de un profesor                                                                                                                     | `GET /agendas/diaria/pdf?profesorId&…`                       | `MESA_ENTRADAS`                                     |
+| Tablero del gerente                                                                                                                       | `GET /tablero/pdf?desde&hasta`                               | `GERENTE`                                           |
+| Lo propio de cada uno (parámetros, contenido y nombre de archivo) está en su sección: Pagos, Ocurrencias, Historiales, Agendas y Tablero. |
 
 - **200** con el cuerpo binario del PDF y estos headers:
 
