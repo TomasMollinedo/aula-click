@@ -11,13 +11,15 @@ import {
   textoRegistradoPor,
   textoTarjeta,
   textoTituloComprobante,
-  textoCantidad,
   textoConfirmacion,
   textoExito,
+  textoMateriasDelPago,
+  textoFormaPago,
   textoHorario,
   textoImporte,
   textoNumero,
   textoNumeroComprobante,
+  textoSubtotal,
   textoTotal,
   textoVuelto,
 } from '../formato-pagos'
@@ -35,6 +37,17 @@ describe('textos del resumen', () => {
   })
 })
 
+describe('textoSubtotal', () => {
+  it('la materia con su cantidad y su subtotal; sin precio, sin calcular', () => {
+    expect(textoSubtotal({ materia: { nombre: 'Inglés' }, cantidad: 2, total: 18000 })).toBe(
+      `Inglés (2 turnos): $${NBSP}18.000,00`,
+    )
+    expect(textoSubtotal({ materia: { nombre: 'Física' }, cantidad: 1, total: null })).toBe(
+      'Física (1 turno): sin calcular',
+    )
+  })
+})
+
 describe('textos del comprobante', () => {
   it('número del comprobante', () => {
     expect(textoNumero(1024)).toBe('N° 1024')
@@ -42,40 +55,47 @@ describe('textos del comprobante', () => {
   })
 })
 
-describe('textoCantidad', () => {
-  it('singular y plural', () => {
-    expect(textoCantidad(1)).toBe('1 turno')
-    expect(textoCantidad(4)).toBe('4 turnos')
-  })
-})
-
 describe('textoConfirmacion', () => {
-  it('con total', () => {
-    expect(textoConfirmacion({ cantidad: 4, total: 32000 })).toBe(
+  it('con total y el medio elegido', () => {
+    expect(textoConfirmacion({ cantidad: 4, total: 32000 }, 'EFECTIVO')).toBe(
       `¿Registrar el pago de 4 turnos por $${NBSP}32.000,00 en efectivo?`,
     )
-    expect(textoConfirmacion({ cantidad: 1, total: 8000.5 })).toBe(
-      `¿Registrar el pago de 1 turno por $${NBSP}8.000,50 en efectivo?`,
+    expect(textoConfirmacion({ cantidad: 4, total: 32000 }, 'TRANSFERENCIA')).toBe(
+      `¿Registrar el pago de 4 turnos por $${NBSP}32.000,00 por transferencia?`,
+    )
+    expect(textoConfirmacion({ cantidad: 1, total: 8000.5 }, 'DEBITO')).toBe(
+      `¿Registrar el pago de 1 turno por $${NBSP}8.000,50 con débito?`,
     )
   })
 
   it('sin total (alguno sin precio)', () => {
-    expect(textoConfirmacion({ cantidad: 4, total: null })).toBe(
+    expect(textoConfirmacion({ cantidad: 4, total: null }, 'EFECTIVO')).toBe(
       '¿Registrar el pago de 4 turnos en efectivo?',
     )
-    expect(textoConfirmacion({ cantidad: 1, total: null })).toBe(
-      '¿Registrar el pago de 1 turno en efectivo?',
+    expect(textoConfirmacion({ cantidad: 1, total: null }, 'TRANSFERENCIA')).toBe(
+      '¿Registrar el pago de 1 turno por transferencia?',
     )
   })
 })
 
+describe('textoFormaPago', () => {
+  it('el nombre de cada forma, el del catálogo', () => {
+    expect(textoFormaPago('EFECTIVO')).toBe('Efectivo')
+    expect(textoFormaPago('TRANSFERENCIA')).toBe('Transferencia')
+    expect(textoFormaPago('DEBITO')).toBe('Tarjeta de débito')
+  })
+})
+
 describe('textoExito', () => {
-  it('con la cantidad y el total de la respuesta', () => {
-    expect(textoExito({ cantidad: 4, total: 32000 })).toBe(
-      `Pago registrado: 4 turnos por $${NBSP}32.000,00`,
+  it('con la cantidad, el total y el medio de la respuesta', () => {
+    expect(textoExito({ cantidad: 4, total: 32000, formaPago: 'TRANSFERENCIA' })).toBe(
+      `Pago registrado: 4 turnos por $${NBSP}32.000,00 por transferencia`,
     )
-    expect(textoExito({ cantidad: 1, total: 8000 })).toBe(
-      `Pago registrado: 1 turno por $${NBSP}8.000,00`,
+    expect(textoExito({ cantidad: 1, total: 8000, formaPago: 'EFECTIVO' })).toBe(
+      `Pago registrado: 1 turno por $${NBSP}8.000,00 en efectivo`,
+    )
+    expect(textoExito({ cantidad: 2, total: 16000, formaPago: 'DEBITO' })).toBe(
+      `Pago registrado: 2 turnos por $${NBSP}16.000,00 con débito`,
     )
   })
 })
@@ -178,5 +198,14 @@ describe('datosDelMedio', () => {
       { label: 'Red', valor: 'Visa Débito' },
       { label: 'Cupón', valor: '000123' },
     ])
+  })
+})
+
+describe('textos de Mis pagos (portal, HU-37)', () => {
+  it('las materias del pago, separadas por coma', () => {
+    expect(textoMateriasDelPago([{ nombre: 'Física' }, { nombre: 'Matemática' }])).toBe(
+      'Física, Matemática',
+    )
+    expect(textoMateriasDelPago([{ nombre: 'Inglés' }])).toBe('Inglés')
   })
 })

@@ -35,7 +35,7 @@ export type AgendaOcurrencia = {
   estadoPago: EstadoPagoOcurrencia
   prioridad: PrioridadOcurrencia | null
   /** El examen que determina la prioridad, si lo hay. */
-  examen: { id: number; fecha: string; tipo: string; materiaNombre: string; dias: number } | null
+  examen: { id: number; fecha: string; materiaNombre: string; dias: number } | null
   /** El cupo de la clase (`fecha` + `bloqueAgendaId`): el mismo para todas sus ocurrencias. */
   cupo: CupoClase
 }

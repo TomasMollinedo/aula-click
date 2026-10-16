@@ -4,13 +4,11 @@ import type { FiltrosCuenta } from '../filtros-cuenta'
 import {
   avisoDelTope,
   etiquetaTotal,
-  textoFecha,
   textoFiltrosActivos,
   textoOcurrencia,
   textoPeriodo,
   textoSinPrecio,
   textoTotalAPagar,
-  textoCantidadDeTurnos,
   avisoMaximoDeTurnos,
   textoSinFilas,
   textoMaterias,
@@ -23,13 +21,6 @@ const SEPTIEMBRE = { desde: '2026-09-01', hasta: '2026-09-30' }
 
 // Intl separa el `$` del número con un espacio duro (U+00A0).
 const NBSP = ' '
-
-describe('textoCantidadDeTurnos', () => {
-  it('singular y plural', () => {
-    expect(textoCantidadDeTurnos(1)).toBe('1 turno')
-    expect(textoCantidadDeTurnos(8)).toBe('8 turnos')
-  })
-})
 
 describe('avisoMaximoDeTurnos', () => {
   it('hasta el máximo, sin aviso', () => {
@@ -59,12 +50,6 @@ describe('textoSinPrecio', () => {
     expect(textoSinPrecio({ sinPrecio: 0 })).toBeNull()
     expect(textoSinPrecio({ sinPrecio: 1 })).toBe('1 turno sin precio')
     expect(textoSinPrecio({ sinPrecio: 2 })).toBe('2 turnos sin precio')
-  })
-})
-
-describe('textoFecha', () => {
-  it('dd/MM/yyyy', () => {
-    expect(textoFecha('2026-10-01')).toBe('01/10/2026')
   })
 })
 

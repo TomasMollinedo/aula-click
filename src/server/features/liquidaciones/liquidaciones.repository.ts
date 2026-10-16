@@ -6,13 +6,20 @@ import {
   vincularAdjuntoALiquidacion,
   type UltimoAdjunto,
 } from '@/server/features/adjuntos/adjuntos.condiciones'
+import {
+  leerOcurrencias,
+  type EstadoOcurrencia,
+  type EstadoPagoOcurrencia,
+  type PlazoAsistencia,
+} from '@/server/features/turnos/ocurrencias.condiciones'
 import type { Actor } from '@/server/shared/actor'
-import { fechaADate } from '@/server/shared/fechas'
+import { fechaADate, type Reloj } from '@/server/shared/fechas'
 import { primerDiaDelMes } from '@/server/shared/zod'
 import {
   cierreDeLiquidacion,
   liquidacionDe,
   liquidacionesDelMes,
+  liquidacionesDelProfesor,
   type Liquidacion,
   type ProfesorRef,
 } from './liquidaciones.condiciones'
@@ -25,7 +32,8 @@ import {
 } from './liquidaciones.validation'
 
 // Único lugar de la feature que usa Prisma. Sin reglas de negocio: el cálculo es del motor
-// (`liquidaciones.condiciones.ts`, T-121) y el adjunto, de `adjuntos.condiciones` (T-123).
+// (`liquidaciones.condiciones.ts`, T-121), el adjunto, de `adjuntos.condiciones` (T-123), y las
+// clases de "Mis ingresos", del motor de ocurrencias de `turnos` (`leerOcurrencias`, T-126).
 
 // El recálculo del motor son varias consultas: el mismo margen que el pago de un alumno.
 const TRANSACCION_PAGO = { timeout: 10_000 } as const
@@ -49,6 +57,23 @@ export type PagoDeLiquidacion = {
 const errorModificada = (cause?: unknown) =>
   new ConflictError(MENSAJE_LIQUIDACION_MODIFICADA, { code: CODIGO_LIQUIDACION_MODIFICADA, cause })
 
+/**
+ * Una clase (una hora) del profesor con lo que necesita "Mis ingresos": la ocurrencia del motor
+ * (horas en minutos), su estado, si tiene pago vigente y asistencia, y su plazo.
+ */
+export type ClaseLeida = {
+  turnoId: number
+  fecha: string
+  horaInicio: number
+  horaFin: number
+  alumno: { id: number; nombre: string; apellido: string }
+  materia: { id: number; nombre: string }
+  estado: EstadoOcurrencia
+  pago: EstadoPagoOcurrencia
+  conAsistencia: boolean
+  plazoAsistencia: PlazoAsistencia | null
+}
+
 export const liquidacionesRepository = {
   /** Una liquidación por profesor con movimientos en `mes` (aunque esté inactivo), por apellido y nombre. */
   async delMes({ mes, hoy }: { mes: string; hoy: string }): Promise<Liquidacion[]> {
@@ -62,6 +87,40 @@ export const liquidacionesRepository = {
     hoy: string
   }): Promise<Liquidacion | null> {
     return liquidacionDe(prisma, datos)
+  },
+
+  /** Todas las liquidaciones de `profesorId` hasta el mes de `hoy`, una por mes con movimientos. */
+  async todasDelProfesor(datos: { profesorId: number; hoy: string }): Promise<Liquidacion[]> {
+    return liquidacionesDelProfesor(prisma, datos)
+  },
+
+  /**
+   * Las clases de `profesorId` en `[desde, hasta]` (`leerOcurrencias`, incluidas las canceladas),
+   * con el reloj del service, que decide el estado y el plazo de asistencia.
+   */
+  async clasesDelProfesor(
+    filtro: { profesorId: number; desde: string; hasta: string },
+    reloj?: Reloj,
+  ): Promise<ClaseLeida[]> {
+    const ocurrencias = await leerOcurrencias(prisma, filtro, reloj)
+    return ocurrencias.map((o) => ({
+      turnoId: o.turnoId,
+      fecha: o.fecha,
+      horaInicio: o.horaInicio,
+      horaFin: o.horaFin,
+      alumno: { id: o.alumno.id, nombre: o.alumno.nombre, apellido: o.alumno.apellido },
+      materia: o.materia,
+      estado: o.estado,
+      pago: o.pago.estado,
+      conAsistencia: o.asistencia !== null,
+      plazoAsistencia: o.plazoAsistencia,
+    }))
+  },
+
+  /** El id del profesor del usuario de la sesión, o `null` si no tiene ficha de profesor. */
+  async profesorIdDeUsuario(usuarioId: string): Promise<number | null> {
+    const fila = await prisma.profesor.findUnique({ where: { usuarioId }, select: { id: true } })
+    return fila?.id ?? null
   },
 
   /** El profesor con su nombre, sin mirar su estado; `null` si no existe. */

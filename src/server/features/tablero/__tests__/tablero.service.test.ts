@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { Ocurrencia, TableroRepository } from '../tablero.repository'
+import { repartoDeTurno } from '@/server/features/reparto/reparto.condiciones'
+import type { CobroConReparto, Ocurrencia, TableroRepository } from '../tablero.repository'
 import { crearTableroService } from '../tablero.service'
 
 // Service del tablero (T-61) con el repository mockeado y reloj fijo: viernes 02/10/2026 al
@@ -101,6 +102,9 @@ beforeEach(() => {
       .fn<TableroRepository['totalCobradoPorForma']>()
       .mockResolvedValue({ EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 }),
     totalAdeudado: vi.fn<TableroRepository['totalAdeudado']>().mockResolvedValue(0),
+    cobrosConReparto: vi.fn<TableroRepository['cobrosConReparto']>().mockResolvedValue([]),
+    saldosDeProfesores: vi.fn<TableroRepository['saldosDeProfesores']>().mockResolvedValue([]),
+    liquidacionesPagadas: vi.fn<TableroRepository['liquidacionesPagadas']>().mockResolvedValue([]),
   }
   service = crearTableroService({ repository, reloj })
 })
@@ -674,5 +678,213 @@ describe('asistencia: tablas completas para el PDF', () => {
     expect(materias).toHaveLength(26)
     expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(2)
     expect(repository.ocurrenciasDelPeriodo).toHaveBeenNthCalledWith(1, ESTA_SEMANA, reloj)
+  })
+})
+
+describe('finanzas: GET /tablero/finanzas', () => {
+  const PRIMERA_PAGINA = {
+    ...ESTA_SEMANA,
+    page: 1,
+    orden: 'totalCobrado',
+    direccion: 'desc',
+  } as const
+
+  const PROFESORES: Record<number, { nombre: string; apellido: string }> = {
+    3: { nombre: 'Ana', apellido: 'Gómez' },
+    5: { nombre: 'Luis', apellido: 'Pérez' },
+  }
+  const profesor = (id: number) => ({
+    id,
+    ...(PROFESORES[id] ?? { nombre: `Nombre${id}`, apellido: `Apellido${id}` }),
+  })
+
+  let pagoTurnoId = 0
+  function cobro(
+    importe: number,
+    {
+      profesorId = 3,
+      fechaPago = '2026-09-30',
+      cerradaSinRegistrar = false,
+    }: { profesorId?: number; fechaPago?: string; cerradaSinRegistrar?: boolean } = {},
+  ): CobroConReparto {
+    pagoTurnoId += 1
+    return {
+      pagoTurnoId,
+      pagoId: pagoTurnoId,
+      numeroComprobante: pagoTurnoId,
+      fechaPago,
+      fechaOcurrencia: fechaPago,
+      profesor: profesor(profesorId),
+      reparto: repartoDeTurno(importe, 15),
+      cerradaSinRegistrar,
+    }
+  }
+
+  it('pide cada lectura una vez: total cobrado del período, cobros y pagadas desde el inicio de la evolución, saldos a hoy', async () => {
+    await service.obtenerFinanzas(PRIMERA_PAGINA)
+
+    expect(repository.totalCobrado).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA)
+    // La evolución de una semana de octubre arranca en mayo: anterior a `desde`.
+    expect(repository.cobrosConReparto).toHaveBeenCalledExactlyOnceWith({
+      desde: '2026-05-01',
+      hasta: ESTA_SEMANA.hasta,
+      hoy: HOY,
+    })
+    expect(repository.liquidacionesPagadas).toHaveBeenCalledExactlyOnceWith({
+      desde: '2026-05-01',
+      hasta: ESTA_SEMANA.hasta,
+    })
+    expect(repository.saldosDeProfesores).toHaveBeenCalledExactlyOnceWith({ hoy: HOY })
+    expect(repository.ocurrenciasDelPeriodo).not.toHaveBeenCalled()
+    expect(repository.totalCobradoPorForma).not.toHaveBeenCalled()
+    expect(repository.totalAdeudado).not.toHaveBeenCalled()
+  })
+
+  it('con `desde` anterior al primer mes de la evolución, lee desde `desde`', async () => {
+    const largo = { desde: '2025-10-10', hasta: '2026-10-04' }
+    await service.finanzasCompleta(largo)
+
+    expect(repository.cobrosConReparto).toHaveBeenCalledExactlyOnceWith({ ...largo, hoy: HOY })
+    expect(repository.liquidacionesPagadas).toHaveBeenCalledExactlyOnceWith(largo)
+  })
+
+  it('el total cobrado del resumen es el de `totalCobrado`, el mismo de "General"', async () => {
+    repository.totalCobrado.mockResolvedValue(24000)
+    repository.cobrosConReparto.mockResolvedValue([cobro(8000), cobro(8000)])
+
+    const finanzas = await service.obtenerFinanzas(PRIMERA_PAGINA)
+    const general = await service.obtener(ESTA_SEMANA)
+
+    expect(finanzas.resumen.totalCobrado).toBe(24000)
+    expect(finanzas.resumen.totalCobrado).toBe(general.pagos.totalCobrado)
+  })
+
+  it('resumen y tabla con lo del período; la evolución con todo lo leído', async () => {
+    repository.totalCobrado.mockResolvedValue(12000)
+    repository.cobrosConReparto.mockResolvedValue([
+      cobro(8000, { fechaPago: '2026-09-10' }),
+      cobro(8000),
+      cobro(4000, { profesorId: 5, cerradaSinRegistrar: true }),
+    ])
+    repository.liquidacionesPagadas.mockResolvedValue([
+      { profesor: profesor(3), fechaTransferencia: '2026-09-05', total: 6800 },
+      { profesor: profesor(5), fechaTransferencia: '2026-10-01', total: 13600 },
+    ])
+    repository.saldosDeProfesores.mockResolvedValue([
+      { profesor: profesor(3), saldo: 6800 },
+      { profesor: profesor(7), saldo: -1200 },
+    ])
+
+    const respuesta = await service.obtenerFinanzas(PRIMERA_PAGINA)
+
+    expect(respuesta.periodo).toEqual(ESTA_SEMANA)
+    expect(respuesta.hoy).toBe(HOY)
+    expect(respuesta.resumen).toEqual({
+      totalCobrado: 12000,
+      margenCentro: { importe: 5200, porcentaje: 43.3 },
+      incluyeSinRegistrar: 4000,
+      pagadoAProfesores: 13600,
+      saldoAPagarAProfesores: 6800,
+    })
+    expect(respuesta.profesores.data).toEqual([
+      {
+        profesor: profesor(3),
+        turnosCobrados: 1,
+        totalCobrado: 8000,
+        parteCentro: 1200,
+        parteProfesor: 6800,
+        pagado: 0,
+        saldoPendiente: 6800,
+      },
+      {
+        profesor: profesor(5),
+        turnosCobrados: 1,
+        totalCobrado: 4000,
+        parteCentro: 4000,
+        parteProfesor: 0,
+        pagado: 13600,
+        saldoPendiente: 0,
+      },
+      {
+        profesor: profesor(7),
+        turnosCobrados: 0,
+        totalCobrado: 0,
+        parteCentro: 0,
+        parteProfesor: 0,
+        pagado: 0,
+        saldoPendiente: -1200,
+      },
+    ])
+    expect(respuesta.evolucion.map((m) => m.mes)).toEqual([
+      '2026-05',
+      '2026-06',
+      '2026-07',
+      '2026-08',
+      '2026-09',
+      '2026-10',
+    ])
+    expect(respuesta.evolucion[4]).toEqual({
+      mes: '2026-09',
+      totalCobrado: 20000,
+      margenCentro: 6400,
+      pagadoAProfesores: 6800,
+    })
+    expect(respuesta.evolucion[5]).toEqual({
+      mes: '2026-10',
+      totalCobrado: 0,
+      margenCentro: 0,
+      pagadoAProfesores: 13600,
+    })
+  })
+
+  it('pagina de a 10 y una página de más viene vacía con su meta', async () => {
+    repository.cobrosConReparto.mockResolvedValue(
+      Array.from({ length: 23 }, (_, i) => cobro(1000 * (i + 1), { profesorId: 100 + i })),
+    )
+
+    const primera = await service.obtenerFinanzas(PRIMERA_PAGINA)
+    const tercera = await service.obtenerFinanzas({ ...PRIMERA_PAGINA, page: 3 })
+    const cuarta = await service.obtenerFinanzas({ ...PRIMERA_PAGINA, page: 4 })
+
+    expect(primera.profesores.data).toHaveLength(10)
+    expect(primera.profesores.data[0]?.totalCobrado).toBe(23000)
+    expect(primera.profesores.meta).toEqual({ page: 1, pageSize: 10, total: 23, totalPages: 3 })
+    expect(tercera.profesores.data).toHaveLength(3)
+    expect(cuarta.profesores).toEqual({
+      data: [],
+      meta: { page: 4, pageSize: 10, total: 23, totalPages: 3 },
+    })
+    expect(primera.evolucion).toHaveLength(6)
+  })
+
+  it('`orden` y `direccion` reordenan la tabla', async () => {
+    repository.cobrosConReparto.mockResolvedValue([
+      cobro(8000, { profesorId: 3 }),
+      cobro(4000, { profesorId: 5 }),
+    ])
+
+    const porDefecto = await service.obtenerFinanzas(PRIMERA_PAGINA)
+    const asc = await service.obtenerFinanzas({ ...PRIMERA_PAGINA, direccion: 'asc' })
+    const porNombre = await service.obtenerFinanzas({
+      ...PRIMERA_PAGINA,
+      orden: 'profesor',
+      direccion: 'desc',
+    })
+
+    expect(porDefecto.profesores.data.map((f) => f.profesor.id)).toEqual([3, 5])
+    expect(asc.profesores.data.map((f) => f.profesor.id)).toEqual([5, 3])
+    expect(porNombre.profesores.data.map((f) => f.profesor.id)).toEqual([5, 3])
+  })
+
+  it('para el PDF: la tabla completa, sin páginas, en el orden por defecto', async () => {
+    repository.cobrosConReparto.mockResolvedValue(
+      Array.from({ length: 25 }, (_, i) => cobro(1000 * (i + 1), { profesorId: 100 + i })),
+    )
+
+    const { profesores, evolucion } = await service.finanzasCompleta(ESTA_SEMANA)
+
+    expect(profesores).toHaveLength(25)
+    expect(profesores[0]?.totalCobrado).toBe(25000)
+    expect(evolucion).toHaveLength(6)
   })
 })

@@ -120,7 +120,7 @@ export const crearExamenRoute = createRoute({
   tags,
   summary: 'Cargar un examen',
   description:
-    'Alumno, materia, fecha y tipo son obligatorios; las observaciones son opcionales (hasta 500 caracteres). La fecha puede ser pasada: la respuesta trae `pasado: true` para que el front avise. Un profesor sólo puede cargarlo en una materia que le dicte a ese alumno. La materia tiene que ser una de las ofrecibles (`GET /examenes/materias`): el alumno tiene que tener algún turno próximo en ella. No se puede cargar un segundo examen pendiente (fecha de hoy en adelante) de la misma materia: se ofrece editar el existente.',
+    'Alumno, materia y fecha son obligatorios; las observaciones son opcionales (hasta 500 caracteres). La fecha puede ser pasada: la respuesta trae `pasado: true` para que el front avise. Un profesor sólo puede cargarlo en una materia que le dicte a ese alumno. La materia tiene que ser una de las ofrecibles (`GET /examenes/materias`): el alumno tiene que tener algún turno próximo en ella. No se puede cargar un segundo examen pendiente (fecha de hoy en adelante) de la misma materia: se ofrece editar el existente.',
   middleware: [requireAuth(), requireRole(...roles)] as const,
   request: {
     body: {

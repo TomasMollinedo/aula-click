@@ -70,7 +70,6 @@ function prioridades(
 const examen: NonNullable<PrioridadDeTurno['examen']> = {
   id: 5,
   fecha: '2026-09-25',
-  tipo: 'PARCIAL',
   materiaNombre: 'Matemática',
   dias: 3,
 }

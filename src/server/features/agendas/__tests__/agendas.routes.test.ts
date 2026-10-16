@@ -31,7 +31,6 @@ app.route('/agendas', agendasRoutes)
 const EXAMEN = {
   id: 5,
   fecha: '2099-01-20',
-  tipo: 'PARCIAL',
   materiaNombre: 'Matemática',
   dias: 15,
 }

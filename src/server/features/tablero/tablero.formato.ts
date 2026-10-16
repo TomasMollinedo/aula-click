@@ -116,6 +116,20 @@ export function tituloTableroAsistencia(desde: string, hasta: string): string {
   }
 }
 
+/** El título del documento de finanzas según el período: "Finanzas semanal"… */
+export function tituloTableroFinanzas(desde: string, hasta: string): string {
+  switch (tipoDePeriodo(desde, hasta)) {
+    case 'diario':
+      return 'Finanzas diaria'
+    case 'semanal':
+      return 'Finanzas semanal'
+    case 'mensual':
+      return 'Finanzas mensual'
+    case 'otro':
+      return 'Finanzas del período'
+  }
+}
+
 /** Cómo se escribe cada forma de pago en el documento. */
 export const NOMBRE_FORMA_DE_PAGO = {
   EFECTIVO: 'Efectivo',
@@ -124,12 +138,13 @@ export const NOMBRE_FORMA_DE_PAGO = {
 } as const
 
 /**
- * El nombre del archivo (sin extensión): `tablero-2026-09-28_2026-10-04` para "General" y
- * `tablero-asistencia-2026-09-28_2026-10-04` para "Asistencia". El guion bajo separa las dos fechas.
+ * El nombre del archivo (sin extensión): `tablero-2026-09-28_2026-10-04` para "General",
+ * `tablero-asistencia-2026-09-28_2026-10-04` para "Asistencia" y `tablero-finanzas-…` para
+ * "Finanzas". El guion bajo separa las dos fechas.
  */
 export function nombreArchivoTablero(
   { desde, hasta }: { desde: string; hasta: string },
-  seccion: 'general' | 'asistencia' = 'general',
+  seccion: 'general' | 'asistencia' | 'finanzas' = 'general',
 ): string {
-  return `${seccion === 'asistencia' ? 'tablero-asistencia' : 'tablero'}-${desde}_${hasta}`
+  return `${seccion === 'general' ? 'tablero' : `tablero-${seccion}`}-${desde}_${hasta}`
 }

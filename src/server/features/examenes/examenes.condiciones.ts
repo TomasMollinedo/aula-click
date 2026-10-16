@@ -1,4 +1,4 @@
-import type { Prisma, TipoExamen } from '@/generated/prisma/client'
+import type { Prisma } from '@/generated/prisma/client'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 
 // Regla y lectura de la **prioridad del turno** (HU-18, docs/dominio.md → Prioridad) y lectura de
@@ -8,8 +8,6 @@ import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 // Prisma solo importa tipos.
 //
 // De otra feature solo se importan `*.repository` y `*.condiciones` (lo hace cumplir ESLint).
-
-export type { TipoExamen }
 
 /** Cliente con el que se consulta: `prisma` o el `tx` de una transacción. */
 export type ClienteExamenes = Prisma.TransactionClient
@@ -31,7 +29,6 @@ export interface PrioridadDeTurno {
   examen?: {
     id: number
     fecha: string
-    tipo: TipoExamen
     materiaNombre: string
     dias: number
   }
@@ -106,7 +103,6 @@ export async function leerPrioridades(
       alumnoId: true,
       materiaId: true,
       fecha: true,
-      tipo: true,
       materia: { select: { nombre: true } },
     },
     orderBy: [{ fecha: 'asc' }, { id: 'asc' }],
@@ -114,17 +110,13 @@ export async function leerPrioridades(
 
   // El `in × in` trae exámenes de pares alumno-materia que no se pidieron: se agrupa por par.
   // Cada grupo queda ordenado por fecha e id, como la consulta.
-  const porPar = new Map<
-    string,
-    { id: number; fecha: string; tipo: TipoExamen; materiaNombre: string }[]
-  >()
+  const porPar = new Map<string, { id: number; fecha: string; materiaNombre: string }[]>()
   for (const examen of examenes) {
     const par = `${examen.alumnoId}-${examen.materiaId}`
     const grupo = porPar.get(par) ?? []
     grupo.push({
       id: examen.id,
       fecha: dateAFecha(examen.fecha),
-      tipo: examen.tipo,
       materiaNombre: examen.materia.nombre,
     })
     porPar.set(par, grupo)
@@ -153,7 +145,6 @@ export interface ExamenDelPeriodo {
   materiaId: number
   materiaNombre: string
   fecha: string
-  tipo: TipoExamen
   resultado: 'CON_NOTA' | 'AUSENTE' | null
   nota: number | null
 }
@@ -180,7 +171,6 @@ export async function leerExamenesDelPeriodo(
       id: true,
       materiaId: true,
       fecha: true,
-      tipo: true,
       resultado: true,
       nota: true,
       materia: { select: { nombre: true } },
@@ -192,7 +182,6 @@ export async function leerExamenesDelPeriodo(
     materiaId: e.materiaId,
     materiaNombre: e.materia.nombre,
     fecha: dateAFecha(e.fecha),
-    tipo: e.tipo,
     resultado: e.resultado,
     nota: e.nota === null ? null : e.nota.toNumber(),
   }))

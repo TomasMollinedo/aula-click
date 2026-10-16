@@ -243,7 +243,7 @@ HU-16 (T-53). La deuda se calcula en cada consulta, no se guarda. La misma regla
 
 ## Tablero
 
-HU-21 (T-61) y HU-39 (T-112). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días), en dos secciones con el mismo período: **General** y **Asistencia**. Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
+HU-21 (T-61), HU-39 (T-112) y HU-47 (T-128). Indicadores del centro para el gerente, de un período (desde y hasta, obligatorios, de hasta 366 días), en tres secciones con el mismo período: **General**, **Asistencia** y **Finanzas**. Es de sólo lectura y sólo muestra agregados: nunca la agenda, la ficha de un alumno ni un pago puntual. Nada se guarda: cada número se calcula al consultarlo.
 
 ### General
 
@@ -264,16 +264,27 @@ HU-39 (T-112, decisión T-162). La pestaña para ver **qué profesores no regist
 
 - **Turno con asistencia registrada:** "Realizado" (presente) o "Ausente". Cada hora de un alumno cuenta como un turno. Los cancelados no cuentan en ninguna cifra de esta pestaña.
 - **Turno cerrado sin registrar:** un turno pasado "Sin registrar" cuyo plazo de 7 días venció: lo cerró el sistema (HU-22). **Turno dentro del plazo:** "Sin registrar" que el profesor todavía puede registrar. Un turno dentro del plazo no es una falta del profesor.
-- **Torta de asistencia del centro** (decisión T-169): los turnos del período que ya pasaron, en cuatro partes: **presentes** ("Realizado"), **ausentes**, **sin registrar** (los que todavía están dentro del plazo de 7 días: el profesor aún puede marcarlos) y **cerrados por el sistema** (pasaron los 7 días sin registrar). Cada una con su porcentaje sobre las cuatro juntas y, aparte, el total de turnos. Los cancelados y los agendados no entran. Junto con la cantidad de cerrados se informa **de qué clases son** (la más antigua y la más reciente); si el sistema no cerró ninguno (por ejemplo, en una semana en curso), se dice. Las clases de los últimos 7 días no se cierran todavía: aparecen como "sin registrar".
+- **Torta de asistencia del centro** (decisión T-175): los turnos del período que ya pasaron, en cuatro partes: **presentes** ("Realizado"), **ausentes**, **sin registrar** (los que todavía están dentro del plazo de 7 días: el profesor aún puede marcarlos) y **cerrados por el sistema** (pasaron los 7 días sin registrar). Cada una con su porcentaje sobre las cuatro juntas y, aparte, el total de turnos. Los cancelados y los agendados no entran. Junto con la cantidad de cerrados se informa **de qué clases son** (la más antigua y la más reciente); si el sistema no cerró ninguno (por ejemplo, en una semana en curso), se dice. Las clases de los últimos 7 días no se cierran todavía: aparecen como "sin registrar".
 - **Total de turnos** (de un profesor o una materia): los que ya pasaron y no se cancelaron. Se reparten en tres estados que suman el total: **asistencias registradas** ("Realizado" o "Ausente"), **cerrados por el sistema** y **sin registrar** (dentro de los 7 días del plazo). Cada estado se escribe "12 de 20" y con su porcentaje sobre el total. El porcentaje de registradas no mide si el alumno vino: sólo si el profesor marcó.
 - **Profesor que no registra asistencia:** el que tiene al menos un turno cerrado sin registrar en el período. Es un dato del período consultado: no se arrastra de un período a otro.
 - **Profesores sin registrar** (número principal): los que tienen al menos un turno "Sin registrar" **dentro del plazo**, es decir, en las clases de los últimos 7 días hasta hoy. **No depende del período elegido:** es siempre la ventana que termina hoy, porque el profesor tiene 7 días para marcar.
 - **Tabla de profesores:** un profesor por fila, con sus asistencias registradas, sus turnos cerrados por el sistema y sus turnos sin registrar, cada uno "de" el total y con su porcentaje. Por defecto, primero los que más turnos cerrados tienen; se puede reordenar por cualquier columna y filtrar para ver sólo a los que no registran. **Tabla de materias:** las mismas cifras por materia, siempre ordenadas por turnos cerrados por el sistema. No se informan las ausencias ni los alumnos con baja asistencia.
 - Cada tabla se ve de a 10 filas, pero el **PDF** de la sección trae las tablas completas.
 
+### Finanzas
+
+HU-47 (T-128, decisión T-169). Cuánto se cobró, cuánto le queda al centro y cuánto se les pagó y se les debe a los profesores. Sólo agregados por centro, por profesor y por mes. El reparto de cada cobro, qué se le debe a cada profesor y su saldo son los de [Reparto](#reparto) y [Liquidaciones](#liquidaciones): el tablero no los calcula de nuevo. **Los pagos anulados no suman en ningún número.**
+
+- **Total cobrado:** el mismo número de General: los pagos vigentes con fecha de pago dentro del período.
+- **Margen del centro:** la parte del centro de los turnos cobrados en el período (cada uno con el porcentaje que guardó su cobro), con su porcentaje sobre el total cobrado. Un turno cobrado que el sistema cerró "Sin registrar" no se le debe al profesor: entra **entero** en el margen (una sola vez, no su parte del centro más el resto). Ese importe se informa aparte: "Incluye $ 13.600 de turnos sin asistencia registrada".
+- **Pagado a profesores:** el total de las liquidaciones pagadas con **fecha de transferencia** dentro del período. Una liquidación descontada no es una transferencia y no suma.
+- **Saldo a pagar a profesores:** lo que se les debe **a hoy**, sin período (como el total adeudado de General): la suma de los saldos **positivos**. Un profesor con saldo negativo (un saldo a descontar el mes próximo) no lo resta.
+- **Tabla por profesor:** un profesor por fila (activo o no) con algo en el período o un saldo a hoy: turnos cobrados en el período, total cobrado de esos turnos, parte del centro y parte del profesor (un turno cerrado sin registrar va entero a la del centro, así la columna suma el margen), pagado en el período y saldo pendiente a hoy, **negativo incluido**. Por defecto, primero los que más cobraron; se puede reordenar por cualquier columna. Se ve de a 10 filas; el PDF la trae completa.
+- **Evolución mensual:** los 6 meses que terminan en el del fin del período, con el total cobrado y el margen del centro (por fecha de pago) y lo pagado a profesores (por fecha de transferencia) de cada mes. El último mes llega hasta el fin del período, no hasta fin de mes; un mes sin movimientos va en 0.
+
 ## Exámenes
 
-HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia, con `tipo` (`PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
+HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia y una fecha. **No tiene tipo**: no se distingue parcial, final, recuperatorio ni trabajo práctico (decisión T-170); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
 
 - **Un examen pendiente por materia:** el alumno no puede tener dos exámenes `ACTIVO` de la misma materia con fecha `>= hoy` a la vez. Al intentar cargar o mover uno a esa situación, la API responde 409 `EXAMEN_PENDIENTE` con el existente, para ofrecer editarlo en vez de duplicarlo. Un examen pasado no cuenta: pasada su fecha, se puede cargar el siguiente de la misma materia sin límite.
 - **Fecha pasada:** se acepta igual (por ejemplo, para dejar registrado un examen que ya se tomó); la API lo marca con `pasado: true` para que el front avise, pero no lo rechaza.
@@ -313,9 +324,9 @@ HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios n
 - **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
 - **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
 - **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
-- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-167): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-169): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
 - **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
-- El PDF mensual del historial es HU-32 (T-110).
+- **El PDF del historial es HU-32** (T-110): lo saca mesa de entrada desde la ficha y el profesor desde "Mis alumnos" (con el mismo criterio con el que ve el historial), **del período que se está viendo**, un mes o un rango (decisión T-163, _pendiente de confirmación de las PO_: HU-32 pedía sólo el mes y sólo mesa de entrada). No lleva las observaciones internas.
 
 ## Portal del alumno
 

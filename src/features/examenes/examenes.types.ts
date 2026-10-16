@@ -2,8 +2,6 @@ import type { Role } from '@/types'
 
 // Tipos de la API de exámenes (docs/contrato-api.md → Exámenes; OpenAPI de /api/v1/examenes).
 
-export type TipoExamen = 'PARCIAL' | 'FINAL' | 'RECUPERATORIO' | 'TRABAJO_PRACTICO' | 'OTRO'
-
 export type MateriaExamen = { id: number; nombre: string }
 
 /**
@@ -23,7 +21,6 @@ export type ExamenItem = {
   materia: MateriaExamen
   /** `YYYY-MM-DD`. */
   fecha: string
-  tipo: TipoExamen
   observaciones: string | null
   pasado: boolean
   /** Días de calendario hasta el examen (0 = hoy), calculados por la API. `null` en los pasados. */
@@ -80,7 +77,6 @@ export type ExamenCrear = {
   alumnoId: number
   materiaId: number
   fecha: string
-  tipo: TipoExamen
   observaciones?: string
 }
 
@@ -88,7 +84,7 @@ export type ExamenCrear = {
 export type ExamenEditar = Partial<Omit<ExamenCrear, 'alumnoId'>>
 
 /** El existente de un 409 `EXAMEN_PENDIENTE` (`details`). */
-export type ExamenPendiente = { id: number; tipo: TipoExamen; fecha: string }
+export type ExamenPendiente = { id: number; fecha: string }
 
 /**
  * `GET /examenes/mis-examenes?materiaId` (portal, HU-35): el próximo examen (a lo sumo uno, con los
@@ -96,10 +92,9 @@ export type ExamenPendiente = { id: number; tipo: TipoExamen; fecha: string }
  * la API. Una materia sin exámenes viene vacía.
  */
 export type MisExamenesDeMateria = {
-  proximo: { fecha: string; tipo: TipoExamen; diasRestantes: number } | null
+  proximo: { fecha: string; diasRestantes: number } | null
   rendidos: {
     fecha: string
-    tipo: TipoExamen
     resultado: ResultadoExamen | null
     nota: number | null
   }[]

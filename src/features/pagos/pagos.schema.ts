@@ -3,15 +3,38 @@ import { z } from 'zod'
 
 import type { OcurrenciaACobrar } from '@/types/pago'
 
-import type { RegistrarPago } from './pagos.types'
+import type { CodigoFormaPago, MedioRegistrarPago, RedDebito, RegistrarPago } from './pagos.types'
 
 // Schema del formulario de registrar un pago: solo formato y campos obligatorios
 // (docs/arquitectura-frontend.md → Formularios). Que la fecha de pago no sea futura, que el monto
 // recibido alcance el total y qué turnos se pueden cobrar los decide la API, y sus 400 se muestran
 // en el campo. Las ocurrencias no son campos: llegan de quien abre el diálogo.
+//
+// Formas de pago (HU-23): un pago, un medio. Cada forma pide sus campos (`camposDelPago`) y el
+// body lleva solo los suyos (`armarRegistrarPago`): los de otro medio no se mandan nunca, aunque
+// hayan quedado escritos. Los límites son los de la API (`registrarPagoSchema`, T-96).
 
 const FECHA_FORMATO = /^\d{4}-\d{2}-\d{2}$/
 const MAX_OBSERVACIONES = 500
+const MAX_OPERACION = 50
+const MAX_BANCO = 100
+const MAX_TITULAR = 100
+const MAX_CUPON = 20
+const CAMPO_OBLIGATORIO = 'Campo obligatorio'
+
+/** Las formas de pago y las redes de débito que se pueden elegir. */
+export const FORMAS_PAGO = [
+  'EFECTIVO',
+  'TRANSFERENCIA',
+  'DEBITO',
+] as const satisfies readonly CodigoFormaPago[]
+export const REDES_DEBITO = [
+  'VISA_DEBITO',
+  'MASTERCARD_DEBITO',
+  'MAESTRO',
+  'CABAL_DEBITO',
+  'OTRA',
+] as const satisfies readonly RedDebito[]
 // `parsearMonto`: los formatos que acepta. El primer grupo de miles no empieza con 0 y los
 // centavos son uno o dos dígitos.
 const SOLO_DIGITOS = /^\d+$/
@@ -59,33 +82,30 @@ export function parsearMonto(texto: string): number | null {
   return normalizado === null ? null : Number(normalizado)
 }
 
-/** Fecha `YYYY-MM-DD` obligatoria y válida (mismo criterio que `turnos.schema.ts`). */
-const fechaPagoSchema = z
-  .string({ message: 'Campo obligatorio' })
-  .min(1, { message: 'Campo obligatorio' })
-  .pipe(
-    z
-      .string()
-      .regex(FECHA_FORMATO, {
-        message: 'Fecha inválida: debe tener formato AAAA-MM-DD',
-        abort: true,
-      })
-      .refine((v) => isValid(parseISO(v)), { message: 'La fecha no es válida' }),
-  )
+/**
+ * Fecha `YYYY-MM-DD` obligatoria y válida (mismo criterio que `turnos.schema.ts`). Devuelve el
+ * mensaje del error, o `null`. Se revisa en `camposDelPago` y no con un `pipe`: un `pipe` que falla
+ * corta el objeto entero y el resto del formulario no se revisaría hasta corregir la fecha.
+ */
+function errorFechaPago(texto: string): string | null {
+  if (texto === '') return CAMPO_OBLIGATORIO
+  if (!FECHA_FORMATO.test(texto)) return 'Fecha inválida: debe tener formato AAAA-MM-DD'
+  return isValid(parseISO(texto)) ? null : 'La fecha no es válida'
+}
 
 /**
- * Obligatorio: el pago es en efectivo y con el monto recibido la API calcula el vuelto. Se lee con
- * `parsearMonto` (que ya exige hasta dos decimales) y tiene que ser mayor a 0. No se compara con el
- * total: ese 400 lo da la API en el campo.
+ * El monto recibido, en efectivo: obligatorio, legible con `parsearMonto` (que ya exige hasta dos
+ * decimales) y mayor a 0. No se compara con el total: ese 400 lo da la API en el campo. Devuelve
+ * el mensaje del error, o `null` si está bien.
  */
-const montoRecibidoSchema = z
-  .string({ message: 'Campo obligatorio' })
-  .refine((v) => v.trim() !== '', { message: 'Campo obligatorio', abort: true })
-  .refine((v) => parsearMonto(v) !== null, {
-    message: 'Monto inválido: usá números con hasta dos decimales (por ejemplo 32.000 o 32000,50)',
-    abort: true,
-  })
-  .refine((v) => (parsearMonto(v) ?? 0) > 0, { message: 'Debe ser mayor a 0' })
+function errorMontoRecibido(texto: string): string | null {
+  if (texto.trim() === '') return CAMPO_OBLIGATORIO
+  const monto = parsearMonto(texto)
+  if (monto === null) {
+    return 'Monto inválido: usá números con hasta dos decimales (por ejemplo 32.000 o 32000,50)'
+  }
+  return monto > 0 ? null : 'Debe ser mayor a 0'
+}
 
 const observacionesSchema = z
   .string()
@@ -93,49 +113,197 @@ const observacionesSchema = z
   .optional()
   .or(z.literal(''))
 
-export const pagoFormSchema = z.object({
-  fechaPago: fechaPagoSchema,
-  montoRecibido: montoRecibidoSchema,
-  observaciones: observacionesSchema,
-})
+const textoLibre = z.string()
+
+/**
+ * La fecha de pago y los campos de cada medio (HU-23): los obligatorios del medio elegido y su
+ * formato. Los de los otros medios no se miran (no viajan). Todo en un solo paso, así el
+ * formulario muestra de una vez todo lo que falta.
+ */
+function camposDelPago(valores: PagoFormValues, ctx: z.RefinementCtx) {
+  const error = (campo: CampoPagoForm, mensaje: string) =>
+    ctx.addIssue({ code: 'custom', path: [campo], message: mensaje })
+  const texto = (campo: keyof PagoFormValues) => String(valores[campo] ?? '').trim()
+
+  const fecha = errorFechaPago(valores.fechaPago)
+  if (fecha) error('fechaPago', fecha)
+
+  switch (valores.formaPago) {
+    case 'EFECTIVO': {
+      const mensaje = errorMontoRecibido(String(valores.montoRecibido ?? ''))
+      if (mensaje) error('montoRecibido', mensaje)
+      return
+    }
+    case 'TRANSFERENCIA': {
+      const operacion = texto('transferenciaOperacion')
+      if (!operacion) error('transferenciaOperacion', CAMPO_OBLIGATORIO)
+      else if (operacion.length > MAX_OPERACION) {
+        error('transferenciaOperacion', `No puede superar los ${MAX_OPERACION} caracteres`)
+      }
+      const banco = texto('transferenciaBanco')
+      if (!banco) error('transferenciaBanco', CAMPO_OBLIGATORIO)
+      else if (banco.length > MAX_BANCO) {
+        error('transferenciaBanco', `No puede superar los ${MAX_BANCO} caracteres`)
+      }
+      if (texto('transferenciaTitular').length > MAX_TITULAR) {
+        error('transferenciaTitular', `No puede superar los ${MAX_TITULAR} caracteres`)
+      }
+      if (valores.comprobanteAdjuntoId == null) {
+        error('comprobanteAdjuntoId', 'El comprobante es obligatorio con transferencia')
+      }
+      return
+    }
+    case 'DEBITO': {
+      if (!valores.debitoRed) error('debitoRed', 'Elegí la red de la tarjeta')
+      const cupon = texto('debitoCupon')
+      if (!cupon) error('debitoCupon', CAMPO_OBLIGATORIO)
+      else if (!/^\d+$/.test(cupon)) error('debitoCupon', 'El cupón sólo puede tener números')
+      else if (cupon.length > MAX_CUPON) {
+        error('debitoCupon', `No puede superar los ${MAX_CUPON} números`)
+      }
+      const ultimos4 = texto('debitoUltimos4')
+      if (ultimos4 && !/^\d{4}$/.test(ultimos4)) {
+        error('debitoUltimos4', 'Tienen que ser exactamente 4 números')
+      }
+      return
+    }
+    default:
+      error('formaPago', 'Elegí la forma de pago')
+  }
+}
+
+export const pagoFormSchema = z
+  .object({
+    /** Sin opción elegida al abrir (`''`): no hay una forma de pago por defecto. */
+    formaPago: z.union([z.enum(FORMAS_PAGO), z.literal('')]),
+    fechaPago: textoLibre,
+    montoRecibido: textoLibre,
+    transferenciaOperacion: textoLibre,
+    transferenciaBanco: textoLibre,
+    transferenciaTitular: textoLibre,
+    debitoRed: z.union([z.enum(REDES_DEBITO), z.literal('')]),
+    debitoCupon: textoLibre,
+    debitoUltimos4: textoLibre,
+    /** El comprobante ya subido (`POST /adjuntos`), o `null`: lo pone el campo "Comprobante". */
+    comprobanteAdjuntoId: z.number().int().positive().nullable(),
+    observaciones: observacionesSchema,
+  })
+  .superRefine(camposDelPago)
 
 export type PagoFormValues = z.input<typeof pagoFormSchema>
 
 /** Campos del formulario que un 400 de la API puede marcar. */
-export const CAMPOS_PAGO_FORM = ['fechaPago', 'montoRecibido', 'observaciones'] as const
+export const CAMPOS_PAGO_FORM = [
+  'formaPago',
+  'fechaPago',
+  'montoRecibido',
+  'transferenciaOperacion',
+  'transferenciaBanco',
+  'transferenciaTitular',
+  'debitoRed',
+  'debitoCupon',
+  'debitoUltimos4',
+  'comprobanteAdjuntoId',
+  'observaciones',
+] as const
+
+/**
+ * Los campos de cada medio: al cambiar de forma de pago, los del medio anterior se vacían (quedan
+ * en `valoresInicialesPago`). La fecha y las observaciones no son de ningún medio.
+ */
+export const CAMPOS_DEL_MEDIO = [
+  'montoRecibido',
+  'transferenciaOperacion',
+  'transferenciaBanco',
+  'transferenciaTitular',
+  'debitoRed',
+  'debitoCupon',
+  'debitoUltimos4',
+  'comprobanteAdjuntoId',
+] as const satisfies readonly CampoPagoForm[]
 
 export type CampoPagoForm = (typeof CAMPOS_PAGO_FORM)[number]
 
 /**
- * Valores iniciales: la fecha de pago es `hoy` (la fecha local del navegador, `YYYY-MM-DD`, que
- * pasa quien monta el formulario). Qué es "hoy" para la regla lo decide la API.
+ * Valores iniciales: sin forma de pago elegida y la fecha de pago en `hoy` (la fecha local del
+ * navegador, `YYYY-MM-DD`, que pasa quien monta el formulario). Qué es "hoy" para la regla lo
+ * decide la API.
  */
 export function valoresInicialesPago(hoy: string): PagoFormValues {
-  return { fechaPago: hoy, montoRecibido: '', observaciones: '' }
+  return {
+    formaPago: '',
+    fechaPago: hoy,
+    montoRecibido: '',
+    transferenciaOperacion: '',
+    transferenciaBanco: '',
+    transferenciaTitular: '',
+    debitoRed: '',
+    debitoCupon: '',
+    debitoUltimos4: '',
+    comprobanteAdjuntoId: null,
+    observaciones: '',
+  }
+}
+
+/** Los datos del medio elegido, como van en el body (sin los de los otros medios). */
+function medioDelFormulario(valores: PagoFormValues): MedioRegistrarPago {
+  const opcional = (texto: string | undefined) => {
+    const limpio = (texto ?? '').trim()
+    return limpio ? limpio : undefined
+  }
+  switch (valores.formaPago) {
+    case 'TRANSFERENCIA': {
+      const titular = opcional(valores.transferenciaTitular)
+      return {
+        formaPago: 'TRANSFERENCIA',
+        transferencia: {
+          operacion: valores.transferenciaOperacion.trim(),
+          banco: valores.transferenciaBanco.trim(),
+          ...(titular ? { titular } : {}),
+        },
+        // Ya pasó por `pagoFormSchema`: hay comprobante. Si no, viaja 0 y la API da su 400.
+        comprobanteAdjuntoId: valores.comprobanteAdjuntoId ?? 0,
+      }
+    }
+    case 'DEBITO': {
+      const ultimos4 = opcional(valores.debitoUltimos4)
+      return {
+        formaPago: 'DEBITO',
+        debito: {
+          red: valores.debitoRed as RedDebito,
+          cupon: valores.debitoCupon.trim(),
+          ...(ultimos4 ? { ultimos4 } : {}),
+        },
+        ...(valores.comprobanteAdjuntoId != null
+          ? { comprobanteAdjuntoId: valores.comprobanteAdjuntoId }
+          : {}),
+      }
+    }
+    default:
+      // Efectivo (la forma ya pasó por el schema). Un monto que no se pudiera leer viaja `0`: la
+      // API lo rechaza con su 400 en el campo y nunca se registra un pago sin monto.
+      return { formaPago: 'EFECTIVO', montoRecibido: parsearMonto(valores.montoRecibido) ?? 0 }
+  }
 }
 
 /**
  * Body del `POST /pagos`. Las ocurrencias van como pares `(turnoId, fecha)` **en el mismo orden en
  * que se muestran**: la API devuelve sus errores por posición (`path: ['ocurrencias', i]`) y
- * `errores-pagos.ts` los resuelve contra esa misma lista. Las observaciones van sin espacios
- * alrededor, omitidas si quedan vacías.
- *
- * `valores` ya pasó por `pagoFormSchema`, así que el monto se puede leer. Si no se pudiera, viaja
- * `0`: la API lo rechaza con su 400 en el campo y nunca se registra un pago sin monto.
+ * `errores-pagos.ts` los resuelve contra esa misma lista. Los textos van sin espacios alrededor y
+ * los opcionales vacíos se omiten. Del medio, solo los datos del elegido (`medioDelFormulario`).
  */
 export function armarRegistrarPago(
   alumnoId: number,
   ocurrencias: readonly Pick<OcurrenciaACobrar, 'turnoId' | 'fecha'>[],
   valores: PagoFormValues,
 ): RegistrarPago {
-  const montoRecibido = parsearMonto(valores.montoRecibido) ?? 0
   const observaciones = valores.observaciones?.trim()
 
   return {
     alumnoId,
     ocurrencias: ocurrencias.map(({ turnoId, fecha }) => ({ turnoId, fecha })),
     fechaPago: valores.fechaPago,
-    montoRecibido,
     ...(observaciones ? { observaciones } : {}),
+    ...medioDelFormulario(valores),
   }
 }

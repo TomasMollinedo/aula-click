@@ -35,6 +35,12 @@ type BarraFiltrosProps = {
    * que todos los campos entren en una fila en pantallas angostas.
    */
   limpiarSoloIcono?: boolean
+  /**
+   * Lo que va **a la derecha de "Limpiar filtros"**, en su misma fila: una acción que trabaja con
+   * los filtros que se ven (el "Generar PDF" de la pestaña "Historial académico"). Casi ninguna
+   * pantalla la usa; sin esto, la fila queda igual que siempre.
+   */
+  acciones?: ReactNode
 }
 
 /**
@@ -49,6 +55,7 @@ function BarraFiltros({
   limpiarEnFila,
   className,
   limpiarSoloIcono = false,
+  acciones,
 }: BarraFiltrosProps) {
   return (
     <section
@@ -57,7 +64,12 @@ function BarraFiltros({
       className={cn('grid items-start gap-3', className)}
     >
       {children}
-      <div className={cn('col-span-full flex justify-end', LIMPIAR_EN_FILA[limpiarEnFila])}>
+      <div
+        className={cn(
+          'col-span-full flex items-center justify-end gap-2',
+          LIMPIAR_EN_FILA[limpiarEnFila],
+        )}
+      >
         {limpiarSoloIcono ? (
           <LimpiarFiltros hayFiltros={hayFiltros} onClick={onLimpiar} title="Limpiar filtros">
             <span className="max-xl:sr-only">Limpiar filtros</span>
@@ -65,6 +77,7 @@ function BarraFiltros({
         ) : (
           <LimpiarFiltros hayFiltros={hayFiltros} onClick={onLimpiar} />
         )}
+        {acciones}
       </div>
     </section>
   )

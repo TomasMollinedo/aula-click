@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   type ClienteExamenes,
   type PedidoPrioridad,
-  type TipoExamen,
   clavePrioridad,
   leerExamenesDelPeriodo,
   leerPrioridades,
@@ -17,7 +16,6 @@ interface FilaExamen {
   alumnoId: number
   materiaId: number
   fecha: string
-  tipo: TipoExamen
   estado: 'ACTIVO' | 'INACTIVO'
 }
 
@@ -49,7 +47,6 @@ const findMany = vi.fn(({ where }: { where: WhereExamen }) =>
         alumnoId: fila.alumnoId,
         materiaId: fila.materiaId,
         fecha: fila.fecha,
-        tipo: fila.tipo,
         materia: { nombre: MATERIAS[fila.materiaId] },
       })),
   ),
@@ -58,7 +55,7 @@ const findMany = vi.fn(({ where }: { where: WhereExamen }) =>
 const client = { examen: { findMany } } as unknown as ClienteExamenes
 
 function examen(fila: Partial<FilaExamen> & Pick<FilaExamen, 'id' | 'fecha'>): FilaExamen {
-  return { alumnoId: 1, materiaId: 10, tipo: 'PARCIAL', estado: 'ACTIVO', ...fila }
+  return { alumnoId: 1, materiaId: 10, estado: 'ACTIVO', ...fila }
 }
 
 const TURNO: PedidoPrioridad = { alumnoId: 1, materiaId: 10, fecha: '2026-10-05' }
@@ -117,11 +114,11 @@ describe('leerPrioridades', () => {
   })
 
   it('un examen el mismo día del turno es ALTA y trae el examen completo', async () => {
-    tabla = [examen({ id: 7, fecha: '2026-10-05', tipo: 'FINAL' })]
+    tabla = [examen({ id: 7, fecha: '2026-10-05' })]
 
     expect(await prioridadDe()).toStrictEqual({
       prioridad: 'ALTA',
-      examen: { id: 7, fecha: '2026-10-05', tipo: 'FINAL', materiaNombre: 'Matemática', dias: 0 },
+      examen: { id: 7, fecha: '2026-10-05', materiaNombre: 'Matemática', dias: 0 },
     })
   })
 
@@ -161,10 +158,7 @@ describe('leerPrioridades', () => {
   })
 
   it('con dos exámenes futuros toma el más cercano', async () => {
-    tabla = [
-      examen({ id: 1, fecha: '2026-10-20', tipo: 'FINAL' }),
-      examen({ id: 2, fecha: '2026-10-12', tipo: 'RECUPERATORIO' }),
-    ]
+    tabla = [examen({ id: 1, fecha: '2026-10-20' }), examen({ id: 2, fecha: '2026-10-12' })]
 
     const resultado = await prioridadDe()
 
@@ -226,7 +220,6 @@ describe('leerPrioridades', () => {
         alumnoId: true,
         materiaId: true,
         fecha: true,
-        tipo: true,
         materia: { select: { nombre: true } },
       },
       orderBy: [{ fecha: 'asc' }, { id: 'asc' }],
@@ -261,7 +254,6 @@ describe('leerExamenesDelPeriodo', () => {
         id: 1,
         materiaId: 10,
         fecha: fecha('2026-09-05'),
-        tipo: 'PARCIAL',
         resultado: 'CON_NOTA',
         nota: decimal(7.5),
         materia: { nombre: 'Matemática' },
@@ -270,7 +262,6 @@ describe('leerExamenesDelPeriodo', () => {
         id: 2,
         materiaId: 10,
         fecha: fecha('2026-09-20'),
-        tipo: 'FINAL',
         resultado: 'AUSENTE',
         nota: null,
         materia: { nombre: 'Matemática' },
@@ -297,7 +288,6 @@ describe('leerExamenesDelPeriodo', () => {
         materiaId: 10,
         materiaNombre: 'Matemática',
         fecha: '2026-09-05',
-        tipo: 'PARCIAL',
         resultado: 'CON_NOTA',
         nota: 7.5,
       },
@@ -306,7 +296,6 @@ describe('leerExamenesDelPeriodo', () => {
         materiaId: 10,
         materiaNombre: 'Matemática',
         fecha: '2026-09-20',
-        tipo: 'FINAL',
         resultado: 'AUSENTE',
         nota: null,
       },

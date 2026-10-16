@@ -1,12 +1,15 @@
 import { z } from '@hono/zod-openapi'
 import { metaPaginacionSchema } from '@/server/shared/paginacion'
-import { fechaISO } from '@/server/shared/zod'
+import { fechaISO, mesISO } from '@/server/shared/zod'
 import {
+  COLUMNAS_FINANZAS,
   COLUMNAS_PROFESORES,
   FILAS_POR_PAGINA_ASISTENCIA,
   MAX_DIAS_TABLERO,
   MAX_MATERIAS_TABLERO,
   MAX_PROFESORES_TABLERO,
+  MESES_EVOLUCION,
+  ORDEN_FINANZAS_POR_DEFECTO,
   ORDEN_PROFESORES_POR_DEFECTO,
   problemaDelPeriodo,
 } from './tablero.reglas'
@@ -244,7 +247,7 @@ export const tableroAsistenciaQuerySchema = z
 export type TableroAsistenciaQuery = z.infer<typeof tableroAsistenciaQuerySchema>
 
 /** Secciones del tablero que se pueden pedir en PDF. */
-export const SECCIONES_TABLERO = ['general', 'asistencia'] as const
+export const SECCIONES_TABLERO = ['general', 'asistencia', 'finanzas'] as const
 export type SeccionTablero = (typeof SECCIONES_TABLERO)[number]
 
 /**
@@ -260,7 +263,7 @@ export const tableroPdfQuerySchema = z
       .openapi({
         param: { name: 'seccion', in: 'query' },
         description:
-          'Sección del tablero: `general` (por defecto) o `asistencia`. El PDF de asistencia trae las tablas completas, no una página',
+          'Sección del tablero: `general` (por defecto), `asistencia` o `finanzas`. Los PDF de asistencia y de finanzas traen las tablas completas, no una página',
         example: 'asistencia',
       }),
   })
@@ -385,4 +388,144 @@ export type TableroAsistencia = z.infer<typeof tableroAsistenciaSchema>
 export type TableroAsistenciaCompleta = Omit<TableroAsistencia, 'profesores' | 'materias'> & {
   profesores: TableroAsistencia['profesores']['data']
   materias: TableroAsistencia['materias']['data']
+}
+
+// ---------------------------------------------------------------------------------------------
+// Pestaña "Finanzas" (HU-47, T-128)
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * Query de `GET /tablero/finanzas`: el mismo período (obligatorio y con las mismas validaciones)
+ * más la página y el orden de la tabla por profesor, de a `FILAS_POR_PAGINA_ASISTENCIA` filas.
+ */
+export const tableroFinanzasQuerySchema = z
+  .object({
+    ...periodoShape,
+    page: paginaQuery('page', 'Página de la tabla por profesor (desde 1)'),
+    orden: z
+      .enum(COLUMNAS_FINANZAS)
+      .default(ORDEN_FINANZAS_POR_DEFECTO.orden)
+      .openapi({
+        param: { name: 'orden', in: 'query' },
+        description: `Columna por la que se ordena la tabla por profesor (por defecto \`${ORDEN_FINANZAS_POR_DEFECTO.orden}\`). \`profesor\` ordena por apellido y nombre. En empate, siempre apellido, nombre e id ascendentes. La evolución mensual no se reordena`,
+        example: 'totalCobrado',
+      }),
+    direccion: z
+      .enum(['asc', 'desc'])
+      .default(ORDEN_FINANZAS_POR_DEFECTO.direccion)
+      .openapi({
+        param: { name: 'direccion', in: 'query' },
+        description: `Dirección de \`orden\` (por defecto \`${ORDEN_FINANZAS_POR_DEFECTO.direccion}\`)`,
+        example: 'desc',
+      }),
+  })
+  .superRefine(validarPeriodo)
+
+export type TableroFinanzasQuery = z.infer<typeof tableroFinanzasQuerySchema>
+
+const profesorFinanzasSchema = z
+  .object({
+    profesor: z.object({ id: z.number().int(), nombre: z.string(), apellido: z.string() }),
+    turnosCobrados: z.number().int().min(0).openapi({
+      description: 'Turnos del profesor cobrados en el período (por fecha de pago, sin anulados)',
+    }),
+    totalCobrado: importe('Lo cobrado de esos turnos', 80000),
+    parteCentro: importe(
+      'La parte del centro de esos cobros. Un turno cerrado sin registrar va **entero** acá (no se le debe al profesor): así la columna suma `resumen.margenCentro.importe`',
+      12000,
+    ),
+    parteProfesor: importe(
+      'La parte del profesor de esos cobros (0 en los cerrados sin registrar). Con `parteCentro`, suma `totalCobrado`',
+      68000,
+    ),
+    pagado: importe(
+      'Lo transferido al profesor en el período: el total de sus liquidaciones pagadas con fecha de transferencia en el período',
+      40800,
+    ),
+    saldoPendiente: importe(
+      'Lo que se le debe **a hoy** (no depende del período). **Puede ser negativo** (un saldo a descontar)',
+      27200,
+    ),
+  })
+  .openapi('TableroFinanzasProfesor')
+
+const mesFinanzasSchema = z
+  .object({
+    mes: mesISO.openapi({ description: 'Mes `YYYY-MM`', example: '2026-10' }),
+    totalCobrado: importe('Lo cobrado en el mes, por fecha de pago, sin anulados', 128000),
+    margenCentro: importe(
+      'La parte del centro de esos cobros, con los cerrados sin registrar enteros',
+      26000,
+    ),
+    pagadoAProfesores: importe(
+      'Las liquidaciones pagadas con fecha de transferencia en el mes',
+      40800,
+    ),
+  })
+  .openapi('TableroFinanzasMes')
+
+/**
+ * Respuesta de `GET /tablero/finanzas`: sólo agregados del centro, por profesor y por mes; nunca un
+ * alumno ni un pago puntual.
+ */
+export const tableroFinanzasSchema = z
+  .object({
+    periodo: z.object({ desde: fechaISO, hasta: fechaISO }).openapi({
+      description: 'El período pedido, extremos incluidos',
+    }),
+    hoy: fechaISO.openapi({
+      description:
+        'Fecha de hoy en la zona del negocio: la del saldo a pagar a los profesores y la que decide qué turnos cobrados quedaron cerrados sin registrar',
+      example: '2026-10-15',
+    }),
+    resumen: z.object({
+      totalCobrado: importe(
+        'Suma de los pagos vigentes con fecha de pago dentro del período: el mismo número que `pagos.totalCobrado` de `GET /tablero`',
+        128000,
+      ),
+      margenCentro: z
+        .object({
+          importe: importe(
+            'La parte del centro de los turnos cobrados en el período más el importe **completo** de los cobrados y cerrados sin registrar (no se le deben al profesor)',
+            26000,
+          ),
+          porcentaje: z.number().openapi({
+            description: `\`importe\` sobre \`totalCobrado\`: ${PORCENTAJE}`,
+            example: 20.3,
+          }),
+        })
+        .openapi({ description: 'Margen del centro en el período' }),
+      incluyeSinRegistrar: importe(
+        'Cuánto de `margenCentro.importe` son turnos cobrados y cerrados sin registrar (su importe completo); 0 si no hay. La UI arma el aviso',
+        8000,
+      ),
+      pagadoAProfesores: importe(
+        'Suma de las liquidaciones pagadas con fecha de transferencia dentro del período (las descontadas no son transferencias)',
+        40800,
+      ),
+      saldoAPagarAProfesores: importe(
+        'Lo que se les debe a los profesores **a hoy** (no depende del período): la suma de los `saldoPendiente` **positivos**. Un profesor con saldo negativo no lo resta',
+        47600,
+      ),
+    }),
+    profesores: tablaPaginada(profesorFinanzasSchema).openapi({
+      description: `Un profesor por fila, de a ${FILAS_POR_PAGINA_ASISTENCIA}: los que tienen cobros o pagos en el período o un saldo distinto de 0 a hoy, activos o inactivos. Por defecto, los que más cobraron primero`,
+    }),
+    evolucion: z
+      .array(mesFinanzasSchema)
+      .length(MESES_EVOLUCION)
+      .openapi({
+        description: `Los últimos ${MESES_EVOLUCION} meses hasta el de \`hasta\`, del más viejo al más nuevo, sin paginar. Los anteriores son completos; **el último llega hasta \`hasta\`**. Un mes sin movimientos va en 0`,
+      }),
+  })
+  .openapi('TableroFinanzas')
+
+export type TableroFinanzas = z.infer<typeof tableroFinanzasSchema>
+
+/**
+ * La pestaña "Finanzas" con la tabla por profesor **completa** (sin páginas), en el orden por
+ * defecto: es lo que lleva el PDF. No es una respuesta de la API.
+ */
+export type TableroFinanzasCompleta = Omit<TableroFinanzas, 'profesores'> & {
+  profesores: TableroFinanzas['profesores']['data']
 }

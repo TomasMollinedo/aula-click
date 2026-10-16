@@ -1,21 +1,28 @@
 import { hoy, type Reloj } from '@/server/shared/fechas'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
+import { primerDiaDelMes } from '@/server/shared/zod'
 import type { TableroRepository } from './tablero.repository'
 import {
   FILAS_POR_PAGINA_ASISTENCIA,
+  ORDEN_FINANZAS_POR_DEFECTO,
   ORDEN_PROFESORES_POR_DEFECTO,
   alumnosAtendidos,
   clasesDelPeriodo,
   conteosDeAsistencia,
+  evolucionMensual,
+  filasDeFinanzasPorProfesor,
   filasDeMaterias,
   filasDeProfesores,
   instantesDelPeriodo,
   materiasConMasDemanda,
+  mesesDeEvolucion,
   ocupacion,
+  ordenarFinanzas,
   ordenarProfesores,
   profesoresConMasTurnos,
   profesoresConTurnosPorRegistrar,
   resumenDeAsistencia,
+  resumenDeFinanzas,
   soloQueNoRegistran,
   turnosPorEstado,
   ventanaDeRegistro,
@@ -25,6 +32,9 @@ import type {
   TableroAsistencia,
   TableroAsistenciaCompleta,
   TableroAsistenciaQuery,
+  TableroFinanzas,
+  TableroFinanzasCompleta,
+  TableroFinanzasQuery,
   TableroQuery,
 } from './tablero.validation'
 
@@ -79,8 +89,53 @@ export function crearTableroService({
     }
   }
 
+  /**
+   * La pestaña "Finanzas" con la tabla por profesor **completa**, en el orden por defecto (los que
+   * más cobraron primero). Es lo que lleva el PDF; no es una respuesta del JSON. Una sola lectura de
+   * cobros y una de liquidaciones pagadas, desde el inicio de la evolución (o desde `desde`, si es
+   * anterior) hasta `hasta`: el resumen y la tabla se quedan en memoria con las del período. El
+   * total cobrado es el de `totalCobradoEntre`, el mismo de "General"; el saldo, a `hoy`.
+   */
+  async function finanzasCompleta({
+    desde,
+    hasta,
+  }: Pick<TableroQuery, 'desde' | 'hasta'>): Promise<TableroFinanzasCompleta> {
+    const fechaHoy = hoy(reloj)
+    const meses = mesesDeEvolucion(hasta)
+    const inicioEvolucion = primerDiaDelMes(meses[0] as string)
+    const inicio = desde < inicioEvolucion ? desde : inicioEvolucion
+    const [totalCobrado, cobros, pagadas, saldos] = await Promise.all([
+      repository.totalCobrado({ desde, hasta }),
+      repository.cobrosConReparto({ desde: inicio, hasta, hoy: fechaHoy }),
+      repository.liquidacionesPagadas({ desde: inicio, hasta }),
+      repository.saldosDeProfesores({ hoy: fechaHoy }),
+    ])
+    const cobrosDelPeriodo = cobros.filter((c) => c.fechaPago >= desde)
+    const pagadasDelPeriodo = pagadas.filter((p) => p.fechaTransferencia >= desde)
+    return {
+      periodo: { desde, hasta },
+      hoy: fechaHoy,
+      resumen: resumenDeFinanzas({
+        totalCobrado,
+        cobros: cobrosDelPeriodo,
+        pagadas: pagadasDelPeriodo,
+        saldos,
+      }),
+      profesores: ordenarFinanzas(
+        filasDeFinanzasPorProfesor({
+          cobros: cobrosDelPeriodo,
+          pagadas: pagadasDelPeriodo,
+          saldos,
+        }),
+        ORDEN_FINANZAS_POR_DEFECTO,
+      ),
+      evolucion: evolucionMensual({ meses, hasta, cobros, pagadas }),
+    }
+  }
+
   return {
     asistenciaCompleta,
+    finanzasCompleta,
 
     /**
      * Indicadores del período `[desde, hasta]` (ya validado): la sección "General". Las cinco
@@ -164,6 +219,19 @@ export function crearTableroService({
         profesores: paginar(deProfesores, query.paginaProfesores),
         materias: paginar(materias, query.paginaMaterias),
       }
+    },
+
+    /**
+     * La pestaña "Finanzas" del período, con la tabla por profesor reordenada con `orden` y
+     * `direccion` y **paginada**. El resumen y la evolución (6 filas, sin paginar) no cambian.
+     */
+    async obtenerFinanzas(query: TableroFinanzasQuery): Promise<TableroFinanzas> {
+      const { profesores, ...resto } = await finanzasCompleta(query)
+      const ordenadas = ordenarFinanzas(profesores, {
+        orden: query.orden,
+        direccion: query.direccion,
+      })
+      return { ...resto, profesores: paginar(ordenadas, query.page) }
     },
   }
 }
