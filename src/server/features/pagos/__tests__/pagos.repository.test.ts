@@ -26,6 +26,7 @@ const {
   pagoGroupBy,
   formaPagoFindMany,
   adjuntoFindFirst,
+  porcentajeFindFirst,
   alumnoFindMany,
   profesorFindMany,
   materiaBuscadorFindMany,
@@ -48,6 +49,7 @@ const {
   pagoGroupBy: vi.fn(),
   formaPagoFindMany: vi.fn(),
   adjuntoFindFirst: vi.fn(),
+  porcentajeFindFirst: vi.fn(),
   ErrorConocido: class extends Error {
     constructor(
       message: string,
@@ -91,6 +93,7 @@ const tx = {
   formaPago: { findFirst: formaPagoFindFirst },
   pago: { create: pagoCreate },
   comprobanteAdjunto: { updateMany: adjuntoUpdateMany },
+  porcentajeCentro: { findFirst: porcentajeFindFirst },
 }
 
 const entrada: EntradaPago = {
@@ -132,6 +135,7 @@ beforeEach(() => {
   formaPagoFindFirst.mockResolvedValue({ id: 1 })
   pagoCreate.mockResolvedValue({ id: 31, numeroComprobante: 1024 })
   adjuntoUpdateMany.mockResolvedValue({ count: 1 })
+  porcentajeFindFirst.mockResolvedValue({ porcentaje: { toNumber: () => 18 } })
 })
 
 describe('registrar', () => {
@@ -172,8 +176,7 @@ describe('registrar', () => {
               turnoId: 41,
               fechaOcurrencia: new Date('2026-10-12T00:00:00.000Z'),
               importeAplicado: '8000.50',
-              // Provisorio: T-122 guarda el porcentaje vigente
-              porcentajeCentro: 15,
+              porcentajeCentro: '18',
             },
           ],
         },
@@ -182,6 +185,42 @@ describe('registrar', () => {
     })
     // Efectivo: sin comprobante adjunto.
     expect(adjuntoUpdateMany).not.toHaveBeenCalled()
+    // El porcentaje vigente (T-122): una lectura, con el tx, después del lock y antes del create.
+    expect(porcentajeFindFirst).toHaveBeenCalledTimes(1)
+    expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+      porcentajeFindFirst.mock.invocationCallOrder[0] ?? 0,
+    )
+    expect(porcentajeFindFirst.mock.invocationCallOrder[0]).toBeLessThan(
+      pagoCreate.mock.invocationCallOrder[0] ?? 0,
+    )
+  })
+
+  it('un pago de dos turnos: los dos PagoTurno con el mismo porcentaje, leído una sola vez', async () => {
+    const dosTurnos: PlanPago = {
+      lineas: [
+        { turnoId: 41, fecha: '2026-10-12', importe: 8000 },
+        { turnoId: 57, fecha: '2026-10-14', importe: 9000 },
+      ],
+      total: 17000,
+      vuelto: null,
+    }
+
+    await pagosRepository.registrar(entrada, () => dosTurnos, actor)
+
+    expect(porcentajeFindFirst).toHaveBeenCalledTimes(1)
+    const { create } = pagoCreate.mock.calls[0]?.[0].data.turnos as {
+      create: { porcentajeCentro: string }[]
+    }
+    expect(create.map((t) => t.porcentajeCentro)).toEqual(['18', '18'])
+  })
+
+  it('sin porcentaje del centro configurado: rechaza y no crea el pago (decisión T-161)', async () => {
+    porcentajeFindFirst.mockResolvedValue(null)
+
+    await expect(pagosRepository.registrar(entrada, () => plan, actor)).rejects.toThrow(
+      /PorcentajeCentro/,
+    )
+    expect(pagoCreate).not.toHaveBeenCalled()
   })
 
   it('transferencia: la forma por su código, sus datos sin monto recibido, y vincula el adjunto con el tx', async () => {
@@ -460,6 +499,36 @@ describe('buscarComprobante', () => {
     expect(error).toBeInstanceOf(AppError)
     expect(error.statusCode).toBe(500)
     expect(error.message).toMatch(/pnpm db:seed/)
+  })
+
+  it('cada turno con el porcentaje del centro que guardó el cobro', async () => {
+    pagoFindUnique.mockResolvedValue(
+      fila({
+        turnos: [
+          {
+            turnoId: 41,
+            fechaOcurrencia: new Date('2026-10-12T00:00:00.000Z'),
+            importeAplicado: decimal(8000),
+            porcentajeCentro: decimal(15),
+            turno: {
+              materia: { id: 2, nombre: 'Matemática' },
+              bloqueAgenda: {
+                horaInicio: 540,
+                horaFin: 600,
+                profesor: { id: 3, usuario: { nombre: 'Ana', apellido: 'Gómez' } },
+              },
+            },
+          },
+        ],
+      }),
+    )
+
+    const comprobante = await pagosRepository.buscarComprobante(31)
+
+    expect(comprobante?.turnos).toEqual([
+      expect.objectContaining({ importe: 8000, porcentaje: 15 }),
+    ])
+    expect(pagoFindUnique.mock.calls[0]?.[0].select.turnos.select.porcentajeCentro).toBe(true)
   })
 
   it('inexistente → null', async () => {

@@ -6,6 +6,7 @@ import * as pagosController from './pagos.controller'
 import {
   ejemploAlumnosDePagos,
   ejemploDetalle,
+  ejemploDetalleGerente,
   ejemploErrorBuscador,
   ejemploErrorMonto,
   ejemploErrorNoCobrables,
@@ -229,13 +230,24 @@ export const obtenerComprobanteRoute = createRoute({
   tags,
   summary: 'Detalle de un pago',
   description:
-    'Datos del comprobante: número, fecha, alumno, cada turno con los datos actuales de su turno y el importe cobrado, total, monto recibido y vuelto (recalculado), forma de pago, observaciones y quién lo registró. Además, `cantidad` de turnos, el último comprobante adjunto activo (`adjunto`, sin URL: la da `GET /adjuntos/pagos/{pagoId}`; `null` si no tiene) y `acciones` según el rol, el estado y la forma de pago. El gerente lo ve en sólo lectura: todas sus acciones en `false`.',
+    'Datos del comprobante: número, fecha, alumno, cada turno con los datos actuales de su turno y el importe cobrado, total, monto recibido y vuelto (recalculado), forma de pago, observaciones y quién lo registró. Además, `cantidad` de turnos, el último comprobante adjunto activo (`adjunto`, sin URL: la da `GET /adjuntos/pagos/{pagoId}`; `null` si no tiene) y `acciones` según el rol, el estado y la forma de pago. El gerente lo ve en sólo lectura (todas sus acciones en `false`) y, sólo para él, con `reparto`: por turno, el importe cobrado, el porcentaje del centro que guardó el cobro y las partes del centro y del profesor, con sus totales (también en un pago anulado). Para la mesa de entradas la clave `reparto` no viene.',
   middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'GERENTE')] as const,
   request: { params: pagoIdParamsSchema },
   responses: {
     200: {
       description: 'Detalle del pago',
-      content: { 'application/json': { schema: detallePagoSchema, example: ejemploDetalle } },
+      content: {
+        'application/json': {
+          schema: detallePagoSchema,
+          examples: {
+            mesa: { summary: 'Visto por la mesa de entradas', value: ejemploDetalle },
+            gerente: {
+              summary: 'Visto por el gerente, con el reparto',
+              value: ejemploDetalleGerente,
+            },
+          },
+        },
+      },
     },
     400: respuestaError('Id inválido (VALIDACION)'),
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),

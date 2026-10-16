@@ -151,6 +151,35 @@ export const ejemploDetalle = {
   acciones: { anular: true, reemplazarAdjunto: true, quitarAdjunto: true },
 } satisfies DetallePago
 
+/** El mismo pago visto por el gerente (HU-43): sólo lectura y con el reparto de cada turno. */
+export const ejemploDetalleGerente = {
+  ...ejemploDetalle,
+  acciones: { anular: false, reemplazarAdjunto: false, quitarAdjunto: false },
+  reparto: {
+    turnos: [
+      {
+        turnoId: 41,
+        fecha: '2026-10-05',
+        profesor: { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+        importe: 8000,
+        porcentaje: 15,
+        parteCentro: 1200,
+        parteProfesor: 6800,
+      },
+      {
+        turnoId: 57,
+        fecha: '2026-10-07',
+        profesor: { id: 5, nombre: 'Juan', apellido: 'Ruiz' },
+        importe: 8000,
+        porcentaje: 15,
+        parteCentro: 1200,
+        parteProfesor: 6800,
+      },
+    ],
+    totales: { importe: 16000, parteCentro: 2400, parteProfesor: 13600 },
+  },
+} satisfies DetallePago
+
 /** Pagos realizados de octubre: uno vigente por transferencia y uno anulado, que no suma. */
 export const ejemploListado = {
   data: [

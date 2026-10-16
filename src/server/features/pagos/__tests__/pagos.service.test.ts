@@ -706,7 +706,85 @@ describe('obtenerDetalle: cantidad, adjunto y acciones', () => {
   })
 })
 
+// T-122 (HU-43): el reparto del detalle, sólo para el gerente, con el porcentaje guardado al cobrar.
+describe('obtenerDetalle: reparto', () => {
+  it('cada pago reparte con el porcentaje vigente al cobrarse: cambiarlo no toca los anteriores', async () => {
+    const primero = await service.registrar(pago(), actor)
+    memoria.vigente.porcentaje = 18
+    const segundo = await service.registrar(
+      pago({ ocurrencias: [{ turnoId: 41, fecha: '2026-10-19' }] }),
+      actor,
+    )
+
+    expect((await service.obtenerDetalle(primero.pagoId, gerente)).reparto).toEqual({
+      turnos: [
+        {
+          turnoId: 41,
+          fecha: '2026-10-12',
+          profesor: ANA,
+          importe: 8000,
+          porcentaje: 15,
+          parteCentro: 1200,
+          parteProfesor: 6800,
+        },
+      ],
+      totales: { importe: 8000, parteCentro: 1200, parteProfesor: 6800 },
+    })
+    expect((await service.obtenerDetalle(segundo.pagoId, gerente)).reparto).toEqual({
+      turnos: [
+        {
+          turnoId: 41,
+          fecha: '2026-10-19',
+          profesor: ANA,
+          importe: 8000,
+          porcentaje: 18,
+          parteCentro: 1440,
+          parteProfesor: 6560,
+        },
+      ],
+      totales: { importe: 8000, parteCentro: 1440, parteProfesor: 6560 },
+    })
+  })
+
+  it('la mesa de entradas: sin la clave reparto y sin el porcentaje en los turnos', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    const detalle = await service.obtenerDetalle(pagoId, actor)
+
+    expect(detalle).not.toHaveProperty('reparto')
+    for (const turno of detalle.turnos) expect(turno).not.toHaveProperty('porcentaje')
+  })
+
+  it('el gerente, un pago anulado: el reparto de lo que se cobró', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+    const guardado = await memoria.repository.buscarComprobante(pagoId)
+    memoria.repository.buscarComprobante.mockResolvedValueOnce(
+      guardado && { ...guardado, estado: 'ANULADO' },
+    )
+
+    const detalle = await service.obtenerDetalle(pagoId, gerente)
+
+    expect(detalle.estado).toBe('ANULADO')
+    expect(detalle.reparto?.totales).toEqual({
+      importe: 8000,
+      parteCentro: 1200,
+      parteProfesor: 6800,
+    })
+    for (const turno of detalle.turnos) expect(turno).not.toHaveProperty('porcentaje')
+  })
+})
+
 describe('comprobanteParaDocumento', () => {
+  it('el gerente: lo que recibe el PDF no trae el reparto ni el porcentaje de los turnos', async () => {
+    const { pagoId } = await service.registrar(pago(), actor)
+
+    const comprobante = await service.comprobanteParaDocumento(pagoId, gerente)
+
+    expect(comprobante).not.toHaveProperty('reparto')
+    expect(comprobante.turnos).toHaveLength(1)
+    for (const turno of comprobante.turnos) expect(turno).not.toHaveProperty('porcentaje')
+  })
+
   it('la mesa y el gerente: el comprobante con el vuelto, sin leer el adjunto', async () => {
     const { pagoId } = await service.registrar(pago(), actor)
 

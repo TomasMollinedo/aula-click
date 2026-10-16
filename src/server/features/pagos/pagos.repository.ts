@@ -2,6 +2,7 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
 import { ultimoAdjunto, vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import { porcentajeVigente } from '@/server/features/reparto/reparto.condiciones'
 import {
   bloquearAlumno,
   leerOcurrencias,
@@ -147,9 +148,6 @@ function traducirPagoDoble(error: unknown): never {
   throw error
 }
 
-// Provisorio: T-122 guarda el porcentaje vigente
-const PORCENTAJE_CENTRO = 15
-
 /** Importe `number` → texto con dos decimales para el `Decimal` (no pasa por un float de la base). */
 const aDecimal = (importe: number) => importe.toFixed(2)
 
@@ -184,6 +182,7 @@ const SELECT_COMPROBANTE = {
       turnoId: true,
       fechaOcurrencia: true,
       importeAplicado: true,
+      porcentajeCentro: true,
       turno: {
         select: {
           materia: { select: { id: true, nombre: true } },
@@ -298,12 +297,15 @@ export const pagosRepository = {
    * 2. Relee con el `tx` las ocurrencias pedidas, los precios vigentes y la forma de pago activa
    *    por su código (`tipoFormaPago`; si falta, 500: es un error de configuración, falta el seed).
    * 3. `verificar(snapshot)`: si lanza, no se escribe nada.
-   * 4. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con los datos de su medio
+   * 4. Lee una vez el porcentaje del centro vigente (`porcentajeVigente`, de `reparto`): todos los
+   *    turnos del pago guardan el mismo. Sin `PorcentajeCentro` lanza y la transacción se deshace
+   *    (500, decisión T-161).
+   * 5. Crea el `Pago` (`VIGENTE` por defecto, auditoría del actor) con los datos de su medio
    *    (`columnasDelMedio`) y un `PagoTurno` por línea (`fechaOcurrencia` = la fecha de la
-   *    ocurrencia, `importeAplicado` = el precio vigente).
-   * 5. Con comprobante adjunto, lo vincula al pago (`vincularAdjunto`, de `adjuntos`): si no es
+   *    ocurrencia, `importeAplicado` = el precio vigente, `porcentajeCentro` = el leído en 4).
+   * 6. Con comprobante adjunto, lo vincula al pago (`vincularAdjunto`, de `adjuntos`): si no es
    *    un adjunto disponible de quien cobra, 400 `ADJUNTO_INVALIDO` y la transacción se deshace.
-   * 6. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
+   * 7. Una P2002 del único de `pago_turno` es la última red contra el pago doble: 409
    *    `TURNOS_NO_COBRABLES` sin detalle por ocurrencia (la transacción ya se abortó).
    *
    * Devuelve el id, el número de comprobante y el plan con el que se registró (el decidido bajo
@@ -328,6 +330,7 @@ export const pagosRepository = {
         if (!formaPago) throw errorFormasDePago(medio.formaPago)
 
         const plan = verificar(snapshot)
+        const porcentaje = await porcentajeVigente(tx)
 
         const pago = await tx.pago.create({
           data: {
@@ -344,7 +347,7 @@ export const pagosRepository = {
                 turnoId: linea.turnoId,
                 fechaOcurrencia: fechaADate(linea.fecha),
                 importeAplicado: aDecimal(linea.importe),
-                porcentajeCentro: PORCENTAJE_CENTRO,
+                porcentajeCentro: String(porcentaje),
               })),
             },
           },
@@ -369,7 +372,7 @@ export const pagosRepository = {
    * consulta, con la forma de pago por su código, los datos de su medio, el estado y, si está
    * anulado, la anulación (se lee junto con el pago, decisión T-120). Los turnos llevan los datos
    * **actuales** de su turno (fecha, horario, materia y profesor; decisión T-63) y el importe
-   * cobrado (`importeAplicado`), ordenados por fecha, hora de inicio y `turnoId`.
+   * cobrado (`importeAplicado`) con el porcentaje del centro que guardó el cobro, ordenados por fecha, hora de inicio y `turnoId`.
    */
   async buscarComprobante(id: number): Promise<ComprobanteGuardado | null> {
     const fila = await prisma.pago.findUnique({ where: { id }, select: SELECT_COMPROBANTE })
@@ -389,6 +392,7 @@ export const pagosRepository = {
           apellido: pt.turno.bloqueAgenda.profesor.usuario.apellido,
         },
         importe: pt.importeAplicado.toNumber(),
+        porcentaje: pt.porcentajeCentro.toNumber(),
       }))
       // `HH:mm` con ceros a la izquierda: el orden de texto es el de la hora.
       .sort(
