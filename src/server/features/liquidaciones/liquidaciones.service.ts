@@ -68,6 +68,11 @@ function sumarTotales(filas: readonly TotalesLiquidacion[]): TotalesLiquidacion 
   }
 }
 
+/** Lo que hay que transferir: la suma de los totales mayores a 0, en centavos. */
+function sumarAPagar(filas: readonly TotalesLiquidacion[]): number {
+  return filas.reduce((suma, fila) => suma + Math.max(aCentavos(fila.total), 0), 0) / 100
+}
+
 function aFila(liquidacion: Liquidacion): FilaLiquidacion {
   return {
     profesor: liquidacion.profesor,
@@ -290,7 +295,7 @@ export function crearLiquidacionesService({
       const { skip, take } = calcularSkipTake(query)
       return {
         mes,
-        totales: sumarTotales(filas),
+        totales: { ...sumarTotales(filas), totalAPagar: sumarAPagar(filas) },
         data: filas.slice(skip, skip + take),
         meta: armarMeta(query, filas.length),
       }

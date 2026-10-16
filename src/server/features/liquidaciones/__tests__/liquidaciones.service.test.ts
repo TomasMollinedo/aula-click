@@ -250,7 +250,27 @@ describe('listar', () => {
       parteProfesor: 20400.3,
       totalAjustes: -6800,
       total: 13600.3,
+      totalAPagar: 13600.3,
     })
+  })
+
+  it('totalAPagar suma sólo los totales positivos: un saldo negativo no se paga', async () => {
+    repository.delMes.mockResolvedValue([
+      liquidacion({ profesor: GOMEZ, importe: 8000, parteProfesor: 6800 }),
+      liquidacion({
+        profesor: RUIZ,
+        estado: 'SALDO_A_DESCONTAR',
+        importe: 8000,
+        parteProfesor: 6800,
+        totalAjustes: -21120,
+      }),
+    ])
+
+    const { totales, data } = await service.listar({ ...pagina, mes: '2026-09' })
+
+    expect(data[1]!.total).toBe(-14320)
+    expect(totales.total).toBe(-7520)
+    expect(totales.totalAPagar).toBe(6800)
   })
 
   it('sin movimientos → data vacía y totales en 0', async () => {
@@ -265,6 +285,7 @@ describe('listar', () => {
         parteProfesor: 0,
         totalAjustes: 0,
         total: 0,
+        totalAPagar: 0,
       },
       data: [],
       meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 },

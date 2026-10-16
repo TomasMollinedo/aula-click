@@ -2137,7 +2137,8 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
     "parteCentro": 22800,
     "parteProfesor": 129200,
     "totalAjustes": -6800,
-    "total": 122400
+    "total": 122400,
+    "totalAPagar": 122400
   },
   "data": [
     {
@@ -2171,7 +2172,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
 
 - `mes`: el pedido o el por defecto (el front arma el selector con él).
 - Una fila por profesor **con turnos o ajustes en el mes, aunque esté inactivo**, por apellido y nombre. Un profesor sin movimientos no aparece. Sin ninguno: `data: []` y los totales en 0 ("No hay liquidaciones en …").
-- `totales`: la suma de cada columna de **todo el listado**, no de la página.
+- `totales`: la suma de cada columna de **todo el listado**, no de la página. Suma además **`totalAPagar`**: lo que hay que transferir, la suma de los `total` **mayores a 0**. El `total` de una fila conserva su signo (un saldo negativo es lo que se descuenta del mes siguiente) y entra en `totales.total`; la UI nunca lo muestra como "a pagar" (ver `arquitectura-frontend.md`).
 - `fechaTransferencia`: sólo en una `PAGADA`; `descontadaEnMes`: sólo en una `DESCONTADA` ("Descontada en la liquidación de …"). Si no, `null`.
 
 **`GET /liquidaciones/profesores/{profesorId}/{mes}`**: el detalle, con el mismo cálculo del listado.

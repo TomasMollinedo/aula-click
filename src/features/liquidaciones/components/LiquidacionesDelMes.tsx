@@ -42,7 +42,12 @@ import {
 } from '@/utils/meses'
 import { formatearPesos } from '@/utils/moneda'
 
-import { nombreDeProfesor, TEXTO_ESTADO_FILTRO } from '../formato-liquidaciones'
+import {
+  nombreDeProfesor,
+  saldoADescontar,
+  TEXTO_ESTADO_FILTRO,
+  totalAPagar,
+} from '../formato-liquidaciones'
 import { useLiquidacionesDelMes } from '../hooks/use-liquidaciones-del-mes'
 import { useMesLiquidacionEnUrl } from '../hooks/use-mes-liquidacion-en-url'
 import {
@@ -306,9 +311,10 @@ function TablaLiquidaciones({
                   {nombreDeProfesor(fila.profesor)}
                 </Link>
               </TableCell>
-              <Importes totales={fila} />
+              <Importes totales={fila} aPagar={totalAPagar(fila.total)} />
               <TableCell className="whitespace-nowrap">
                 <EstadoLiquidacionBadge liquidacion={fila} />
+                <SaldoADescontar total={fila.total} />
               </TableCell>
             </TableRow>
           ))}
@@ -318,7 +324,7 @@ function TablaLiquidaciones({
             <TableCell className="font-semibold whitespace-nowrap">
               {conFiltro ? 'Total filtrado' : 'Total del mes'}
             </TableCell>
-            <Importes totales={totales} />
+            <Importes totales={totales} aPagar={totales.totalAPagar} />
             <TableCell />
           </TableRow>
         </TableFooter>
@@ -349,7 +355,7 @@ function TablaLiquidaciones({
  * los ajustes son una alerta, en rojo si descuentan y apagados si son $ 0; y el total cobrado y la
  * parte del profesor son contexto, sin énfasis.
  */
-function Importes({ totales }: { totales: TotalesLiquidacion }) {
+function Importes({ totales, aPagar }: { totales: TotalesLiquidacion; aPagar: number }) {
   return (
     <>
       <TableCell className={IMPORTE}>{totales.cantidadTurnos}</TableCell>
@@ -369,11 +375,25 @@ function Importes({ totales }: { totales: TotalesLiquidacion }) {
         {formatearPesos(totales.totalAjustes)}
       </TableCell>
       <TableCell
-        className={cn(IMPORTE, 'text-base font-bold', totales.total <= 0 && 'text-cancelado')}
+        className={cn(IMPORTE, aPagar > 0 ? 'text-base font-bold' : 'text-muted-foreground')}
       >
-        {formatearPesos(totales.total)}
+        {formatearPesos(aPagar)}
       </TableCell>
     </>
+  )
+}
+
+/**
+ * Bajo el estado de una liquidación con total negativo: el saldo que se descuenta del mes
+ * siguiente. No es lo que hay que pagar (eso queda en $ 0): es un ajuste que se traslada.
+ */
+function SaldoADescontar({ total }: { total: number }) {
+  const saldo = saldoADescontar(total)
+  if (saldo === null) return null
+  return (
+    <p className="text-cancelado mt-1 text-xs font-medium tabular-nums">
+      Saldo: {formatearPesos(saldo)}
+    </p>
   )
 }
 

@@ -71,6 +71,20 @@ export const TEXTO_ESTADO_FILTRO: Record<EstadoLiquidacion, string> = {
   DESCONTADA: 'Descontada',
 }
 
+/**
+ * Lo que hay que transferir de una liquidación: un total de 0 o menos no se paga, es un saldo que
+ * pasa al mes siguiente (no una deuda del profesor con el centro). El `total` de la API conserva
+ * el signo porque es lo que se arrastra.
+ */
+export function totalAPagar(total: number): number {
+  return Math.max(total, 0)
+}
+
+/** El saldo negativo que se descuenta más adelante, o `null` si el total no es negativo. */
+export function saldoADescontar(total: number): number | null {
+  return total < 0 ? total : null
+}
+
 /** "Gómez, Ana". */
 export function nombreDeProfesor({ apellido, nombre }: { apellido: string; nombre: string }) {
   return `${apellido}, ${nombre}`

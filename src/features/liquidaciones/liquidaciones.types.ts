@@ -44,7 +44,10 @@ export type FilaLiquidacion = TotalesLiquidacion & {
 export type LiquidacionesDelMes = PaginatedResponse<FilaLiquidacion> & {
   /** `YYYY-MM`: el pedido o, sin `mes`, el último terminado. */
   mes: string
-  totales: TotalesLiquidacion
+  totales: TotalesLiquidacion & {
+    /** Lo que hay que transferir: la suma de los totales mayores a 0 (un saldo negativo no se paga). */
+    totalAPagar: number
+  }
 }
 
 export type ListarLiquidacionesDelMesParams = {
