@@ -372,6 +372,22 @@ describe('renderizarTableroFinanzasPdf (Finanzas)', { timeout: 60_000 }, () => {
     expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
   })
 
+  it('la evolución con su gráfico sale aunque todos los meses estén en 0 o falten datos', async () => {
+    const enCero = await renderizarFinanzas({
+      ...FINANZAS,
+      evolucion: FINANZAS.evolucion.map(({ mes }) => ({
+        mes,
+        totalCobrado: 0,
+        margenCentro: 0,
+        pagadoAProfesores: 0,
+      })),
+    })
+    const sinMeses = await renderizarFinanzas({ ...FINANZAS, evolucion: [] })
+
+    expect(enCero.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(sinMeses.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+  })
+
   it('la tabla por profesor sale completa: con muchas filas ocupa más hojas', async () => {
     const chico = await renderizarFinanzas(finanzasConFilas(5))
     const grande = await renderizarFinanzas(finanzasConFilas(60))
