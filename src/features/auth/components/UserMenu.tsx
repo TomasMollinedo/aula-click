@@ -1,5 +1,6 @@
 'use client'
 
+import { useSyncExternalStore } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { LogOut, MoreHorizontal, UserRound } from 'lucide-react'
 import { useRouter } from 'next/navigation'
@@ -16,16 +17,27 @@ import { rolLabel } from '@/features/auth/roles'
 import { useMiPerfil } from '@/features/alumnos/hooks/use-mi-perfil'
 import { getInitials } from '@/utils/initials'
 
+/** Sin suscripción: el valor sólo cambia entre el servidor y el cliente, no con el tiempo. */
+const suscribirNada = () => () => {}
+
 export function UserMenu() {
   const router = useRouter()
   const queryClient = useQueryClient()
   const { data: session } = authClient.useSession()
+  // El servidor no tiene sesión y no dibuja nada; si el primer render del navegador ya la tuviera
+  // (viene de la cache del cliente), el HTML no coincidiría y React avisa (hydration mismatch). Se
+  // dibuja recién ya hidratado: `false` en el servidor y en la hidratación, `true` después.
+  const hidratado = useSyncExternalStore(
+    suscribirNada,
+    () => true,
+    () => false,
+  )
   // El alumno ve su nombre y su foto (o un avatar genérico) de `GET /alumnos/mi-perfil` (HU-28);
   // los demás roles, como siempre: el nombre de la sesión y sus iniciales.
   const esAlumno = session?.user.role === 'ALUMNO'
   const { data: perfil } = useMiPerfil({ habilitado: esAlumno })
 
-  if (!session) return null
+  if (!hidratado || !session) return null
 
   const nombre =
     esAlumno && perfil
