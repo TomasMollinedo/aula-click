@@ -13,6 +13,7 @@ const { repository, getSession } = vi.hoisted(() => ({
     deProfesor: vi.fn(),
     leerProfesor: vi.fn(),
     ultimoAdjunto: vi.fn(),
+    pagar: vi.fn(),
   },
   getSession: vi.fn(),
 }))
@@ -36,6 +37,21 @@ function sesion(role = 'GERENTE') {
 }
 
 const listar = (query = '') => app.request(`/api/v1/liquidaciones${query}`)
+const BODY = {
+  fechaTransferencia: '2026-10-05',
+  numeroOperacion: '0004829137',
+  comprobanteAdjuntoId: 44,
+  totalConfirmado: 6800,
+}
+
+function pagar(datos?: unknown, profesorId: string | number = 4, mes = '2026-09') {
+  return app.request(`/api/v1/liquidaciones/profesores/${profesorId}/${mes}/pago`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: datos === undefined ? undefined : JSON.stringify(datos),
+  })
+}
+
 const detalle = (profesorId: string | number, mes: string) =>
   app.request(`/api/v1/liquidaciones/profesores/${profesorId}/${mes}`)
 
@@ -55,6 +71,7 @@ beforeEach(() => {
   repository.deProfesor.mockResolvedValue(null)
   repository.leerProfesor.mockResolvedValue({ id: 4, nombre: 'Ana', apellido: 'Gómez' })
   repository.ultimoAdjunto.mockResolvedValue(null)
+  repository.pagar.mockResolvedValue({ liquidacionId: 31, total: 6800 })
 })
 
 describe('auth', () => {
@@ -63,6 +80,7 @@ describe('auth', () => {
 
     expect((await listar()).status).toBe(401)
     expect((await detalle(4, '2026-09')).status).toBe(401)
+    expect((await pagar(BODY)).status).toBe(401)
   })
 
   it.each(['MESA_ENTRADAS', 'PROFESOR', 'ALUMNO'])('con %s → 403', async (role) => {
@@ -70,6 +88,8 @@ describe('auth', () => {
 
     expect((await listar()).status).toBe(403)
     expect((await detalle(4, '2026-09')).status).toBe(403)
+    expect((await pagar(BODY)).status).toBe(403)
+    expect(repository.pagar).not.toHaveBeenCalled()
     expect(repository.delMes).not.toHaveBeenCalled()
     expect(repository.deProfesor).not.toHaveBeenCalled()
     expect(repository.leerProfesor).not.toHaveBeenCalled()
@@ -143,6 +163,68 @@ describe('GET /liquidaciones/profesores/{profesorId}/{mes}', () => {
   })
 })
 
+describe('POST /liquidaciones/profesores/{profesorId}/{mes}/pago', () => {
+  it('GERENTE → 201 con la liquidación pagada', async () => {
+    const res = await pagar(BODY)
+
+    expect(res.status).toBe(201)
+    expect(await res.json()).toEqual({
+      liquidacionId: 31,
+      profesor: { id: 4, nombre: 'Ana', apellido: 'Gómez' },
+      mes: '2026-09',
+      total: 6800,
+      fechaTransferencia: '2026-10-05',
+    })
+    expect(repository.pagar).toHaveBeenCalledWith(
+      expect.objectContaining({ mes: '2026-09', hoy: '2026-10-15', totalConfirmado: 6800 }),
+      expect.objectContaining({ userId: 'usr_gerente', role: 'GERENTE' }),
+    )
+  })
+
+  it.each([
+    ['numeroOperacion vacío', { numeroOperacion: '  ' }, 'numeroOperacion'],
+    ['numeroOperacion > 50', { numeroOperacion: 'x'.repeat(51) }, 'numeroOperacion'],
+    ['observaciones > 500', { observaciones: 'x'.repeat(501) }, 'observaciones'],
+    ['fechaTransferencia inválida', { fechaTransferencia: '05/10/2026' }, 'fechaTransferencia'],
+    ['totalConfirmado 0', { totalConfirmado: 0 }, 'totalConfirmado'],
+    ['comprobanteAdjuntoId 0', { comprobanteAdjuntoId: 0 }, 'comprobanteAdjuntoId'],
+  ])('%s → 400 en su campo', async (_caso, cambios, campo) => {
+    const res = await pagar({ ...BODY, ...cambios })
+
+    expect(res.status).toBe(400)
+    const json = await res.json()
+    expect(json.error.code).toBe('VALIDACION')
+    expect(json.error.details).toEqual([expect.objectContaining({ path: [campo] })])
+    expect(repository.pagar).not.toHaveBeenCalled()
+  })
+
+  it('sin numeroOperacion ni totalConfirmado → un 400 por campo', async () => {
+    const res = await pagar({ fechaTransferencia: '2026-10-05' })
+
+    expect(res.status).toBe(400)
+    const campos = (await res.json()).error.details.map((d: { path: string[] }) => d.path[0])
+    expect(campos.sort()).toEqual(['numeroOperacion', 'totalConfirmado'])
+  })
+
+  it('sin body → 400', async () => {
+    expect((await pagar()).status).toBe(400)
+  })
+
+  it('profesorId=abc → 400', async () => {
+    expect((await pagar(BODY, 'abc')).status).toBe(400)
+  })
+
+  it('mes en curso → 409 CONFLICTO', async () => {
+    const res = await pagar(BODY, 4, '2026-10')
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toEqual({
+      code: 'CONFLICTO',
+      message: 'La liquidación de octubre de 2026 todavía no se puede pagar: el mes no terminó',
+    })
+  })
+})
+
 describe('OpenAPI', () => {
   const doc = app.getOpenAPIDocument({ openapi: '3.0.0', info: { title: 't', version: '1' } })
 
@@ -159,6 +241,15 @@ describe('OpenAPI', () => {
     ])
   })
 
+  it('declara el POST del pago con todos sus status codes', () => {
+    expect(
+      Object.keys(
+        doc.paths['/api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago']?.post?.responses ??
+          {},
+      ).sort(),
+    ).toEqual(['201', '400', '401', '403', '404', '409'])
+  })
+
   it('declara sus componentes', () => {
     expect(Object.keys(doc.components?.schemas ?? {})).toEqual(
       expect.arrayContaining([
@@ -171,6 +262,8 @@ describe('OpenAPI', () => {
         'AjusteDeLiquidacion',
         'ComprobanteDeTransferencia',
         'EstadoLiquidacion',
+        'PagarLiquidacion',
+        'LiquidacionPagada',
       ]),
     )
   })

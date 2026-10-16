@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { NotFoundError, ValidationError } from '@/server/errors'
+import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import type { UltimoAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import type { Actor } from '@/server/shared/actor'
 import type { EstadoLiquidacion, Liquidacion } from '../liquidaciones.condiciones'
 import { crearLiquidacionesService } from '../liquidaciones.service'
 
@@ -97,6 +98,7 @@ const repository = {
   deProfesor: vi.fn(),
   leerProfesor: vi.fn(),
   ultimoAdjunto: vi.fn(),
+  pagar: vi.fn(),
 }
 const service = crearLiquidacionesService({ repository, reloj })
 
@@ -106,6 +108,7 @@ beforeEach(() => {
   repository.deProfesor.mockResolvedValue(null)
   repository.leerProfesor.mockResolvedValue(GOMEZ)
   repository.ultimoAdjunto.mockResolvedValue(adjunto)
+  repository.pagar.mockResolvedValue({ liquidacionId: 31, total: 6800 })
 })
 
 async function errorDe(promesa: Promise<unknown>) {
@@ -367,5 +370,123 @@ describe('detalle', () => {
     ])
     expect(repository.leerProfesor).not.toHaveBeenCalled()
     expect(repository.deProfesor).not.toHaveBeenCalled()
+  })
+})
+
+describe('pagar', () => {
+  const gerente: Actor = { userId: 'usr_gerente', role: 'GERENTE' }
+  const params = { profesorId: GOMEZ.id, mes: '2026-09' }
+  const datos = {
+    fechaTransferencia: '2026-10-05',
+    numeroOperacion: '0004829137',
+    comprobanteAdjuntoId: 44,
+    observaciones: null,
+    totalConfirmado: 6800,
+  }
+
+  async function error400(cambios: Partial<typeof datos>, p = params) {
+    const error = await errorDe(service.pagar(p, { ...datos, ...cambios }, gerente))
+    expect(error).toBeInstanceOf(ValidationError)
+    expect(repository.pagar).not.toHaveBeenCalled()
+    return (error as ValidationError).details
+  }
+
+  it('con todo válido llama a pagar con los datos y el hoy del reloj, y arma la 201', async () => {
+    const resultado = await service.pagar(params, datos, gerente)
+
+    expect(repository.pagar).toHaveBeenCalledWith(
+      {
+        profesor: GOMEZ,
+        mes: '2026-09',
+        hoy: '2026-10-15',
+        fechaTransferencia: '2026-10-05',
+        numeroOperacion: '0004829137',
+        observaciones: null,
+        comprobanteAdjuntoId: 44,
+        totalConfirmado: 6800,
+      },
+      gerente,
+    )
+    expect(resultado).toEqual({
+      liquidacionId: 31,
+      profesor: GOMEZ,
+      mes: '2026-09',
+      total: 6800,
+      fechaTransferencia: '2026-10-05',
+    })
+  })
+
+  it('sin comprobante ni observaciones → null', async () => {
+    const { comprobanteAdjuntoId: _, ...sinAdjunto } = datos
+    void _
+
+    await service.pagar(params, { ...sinAdjunto, observaciones: undefined }, gerente)
+
+    expect(repository.pagar).toHaveBeenCalledWith(
+      expect.objectContaining({ comprobanteAdjuntoId: null, observaciones: null }),
+      gerente,
+    )
+  })
+
+  it('el último día del mes y hoy son válidos', async () => {
+    await service.pagar(params, { ...datos, fechaTransferencia: '2026-09-30' }, gerente)
+    await service.pagar(params, { ...datos, fechaTransferencia: '2026-10-15' }, gerente)
+
+    expect(repository.pagar).toHaveBeenCalledTimes(2)
+  })
+
+  it('fecha de transferencia futura → 400 en fechaTransferencia', async () => {
+    expect(await error400({ fechaTransferencia: '2026-10-16' })).toEqual([
+      {
+        path: ['fechaTransferencia'],
+        message: 'La fecha de la transferencia no puede ser futura',
+      },
+    ])
+  })
+
+  it('anterior al último día del mes → 400 en fechaTransferencia', async () => {
+    expect(await error400({ fechaTransferencia: '2026-09-29' })).toEqual([
+      {
+        path: ['fechaTransferencia'],
+        message: 'La transferencia no puede ser anterior al 30/09/2026',
+      },
+    ])
+  })
+
+  it('profesor inexistente → 404 antes que el resto', async () => {
+    repository.leerProfesor.mockResolvedValue(null)
+
+    const error = await errorDe(
+      service.pagar(
+        { ...params, mes: '2026-12' },
+        { ...datos, fechaTransferencia: '2027-01-01' },
+        gerente,
+      ),
+    )
+
+    expect(error).toBeInstanceOf(NotFoundError)
+    expect(repository.pagar).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ['en curso', '2026-10', 'octubre'],
+    ['futuro', '2026-11', 'noviembre'],
+  ])('mes %s → 409 CONFLICTO, antes que la fecha', async (_caso, mes, nombre) => {
+    const error = await errorDe(
+      service.pagar({ ...params, mes }, { ...datos, fechaTransferencia: '2027-01-01' }, gerente),
+    )
+
+    expect(error).toBeInstanceOf(ConflictError)
+    expect((error as ConflictError).code).toBe('CONFLICTO')
+    expect((error as ConflictError).message).toBe(
+      `La liquidación de ${nombre} de 2026 todavía no se puede pagar: el mes no terminó`,
+    )
+    expect(repository.pagar).not.toHaveBeenCalled()
+  })
+
+  it('los 409 de la transacción se propagan', async () => {
+    repository.pagar.mockRejectedValue(new ConflictError('No hay importe a pagar'))
+
+    await expect(service.pagar(params, datos, gerente)).rejects.toThrow('No hay importe a pagar')
   })
 })

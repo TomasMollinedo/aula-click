@@ -1,21 +1,27 @@
-import { NotFoundError, ValidationError } from '@/server/errors'
+import { ConflictError, NotFoundError, ValidationError } from '@/server/errors'
 import type { UltimoAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import type { Actor } from '@/server/shared/actor'
 import { hoy, type Reloj } from '@/server/shared/fechas'
+import { fechaDocumento } from '@/server/shared/formato'
 import { armarMeta, calcularSkipTake } from '@/server/shared/paginacion'
-import { mesAnterior, mesDe, minutosAHora } from '@/server/shared/zod'
+import { mesAnterior, mesDe, minutosAHora, ultimoDiaDelMes } from '@/server/shared/zod'
 import type { Liquidacion, ProfesorRef } from './liquidaciones.condiciones'
 import type { LiquidacionesRepository } from './liquidaciones.repository'
 import {
   MENSAJE_MES_FUTURO,
+  MENSAJE_TRANSFERENCIA_FUTURA,
+  mensajeMesNoTerminado,
   type FilaLiquidacion,
   type LiquidacionDetalle,
+  type LiquidacionPagada,
   type LiquidacionesDelMes,
   type LiquidacionesQuery,
   type LiquidacionParams,
+  type PagarLiquidacion,
   type TotalesLiquidacion,
 } from './liquidaciones.validation'
 
-// Liquidaciones del gerente (HU-44, T-124): el listado del mes y el detalle. No conoce HTTP ni
+// Liquidaciones del gerente (HU-44, T-124): el listado del mes, el detalle y el pago. No conoce HTTP ni
 // Prisma: lanza AppError o sus subclases. No calcula importes: todo sale de la `Liquidacion` del
 // motor (`liquidaciones.condiciones.ts`), que congela las cerradas (decisión T-156).
 
@@ -127,7 +133,7 @@ export function crearLiquidacionesService({
 }: {
   repository: Pick<
     LiquidacionesRepository,
-    'delMes' | 'deProfesor' | 'leerProfesor' | 'ultimoAdjunto'
+    'delMes' | 'deProfesor' | 'leerProfesor' | 'ultimoAdjunto' | 'pagar'
   >
   reloj?: Reloj
 }) {
@@ -138,6 +144,28 @@ export function crearLiquidacionesService({
         details: [{ path: ['mes'], message: MENSAJE_MES_FUTURO }],
       })
     }
+  }
+
+  /** 400 en `fechaTransferencia` si es futura o anterior al último día del mes liquidado. */
+  function exigirFechaTransferencia(fecha: string, mes: string, fechaHoy: string): void {
+    const ultimoDia = ultimoDiaDelMes(mes)
+    const mensaje =
+      fecha > fechaHoy
+        ? MENSAJE_TRANSFERENCIA_FUTURA
+        : fecha < ultimoDia
+          ? `La transferencia no puede ser anterior al ${fechaDocumento(ultimoDia)}`
+          : null
+    if (mensaje) {
+      throw new ValidationError('Datos de entrada inválidos', {
+        details: [{ path: ['fechaTransferencia'], message: mensaje }],
+      })
+    }
+  }
+
+  async function exigirProfesor(profesorId: number): Promise<ProfesorRef> {
+    const profesor = await repository.leerProfesor(profesorId)
+    if (!profesor) throw new NotFoundError('Profesor no encontrado')
+    return profesor
   }
 
   return {
@@ -177,6 +205,36 @@ export function crearLiquidacionesService({
           ? await repository.ultimoAdjunto(liquidacion.cerrada.id)
           : null
       return aRespuestaDetalle(liquidacion, adjunto)
+    },
+
+    /**
+     * Registra la transferencia de una liquidación `PENDIENTE_DE_PAGO` por su total calculado. Orden
+     * de errores: 404 del profesor; 409 si el mes no terminó; 400 de `fechaTransferencia`; después,
+     * los 409 de la transacción (`pagar`: ya pagada, sin importe o total modificado).
+     */
+    async pagar(
+      { profesorId, mes }: LiquidacionParams,
+      datos: PagarLiquidacion,
+      actor: Actor,
+    ): Promise<LiquidacionPagada> {
+      const fechaHoy = hoy(reloj)
+      const profesor = await exigirProfesor(profesorId)
+      if (mes >= mesDe(fechaHoy)) throw new ConflictError(mensajeMesNoTerminado(mes))
+      exigirFechaTransferencia(datos.fechaTransferencia, mes, fechaHoy)
+      const { liquidacionId, total } = await repository.pagar(
+        {
+          profesor,
+          mes,
+          hoy: fechaHoy,
+          fechaTransferencia: datos.fechaTransferencia,
+          numeroOperacion: datos.numeroOperacion,
+          observaciones: datos.observaciones ?? null,
+          comprobanteAdjuntoId: datos.comprobanteAdjuntoId ?? null,
+          totalConfirmado: datos.totalConfirmado,
+        },
+        actor,
+      )
+      return { liquidacionId, profesor, mes, total, fechaTransferencia: datos.fechaTransferencia }
     },
   }
 }
