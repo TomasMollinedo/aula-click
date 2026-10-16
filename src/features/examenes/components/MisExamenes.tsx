@@ -9,7 +9,7 @@ import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 
-import { etiquetaTipo, fechaExamen, textoDiasRestantes } from '../formato-examenes'
+import { fechaExamen, textoDiasRestantes } from '../formato-examenes'
 import { useMisExamenes } from '../hooks/use-mis-examenes'
 import { BadgeNota } from './BadgeNota'
 
@@ -57,14 +57,11 @@ export function MisExamenes({ materiaId }: MisExamenesProps) {
                 Próximo examen
               </h4>
               <p className="mt-1 flex flex-wrap items-center gap-2 font-semibold">
-                {etiquetaTipo(datos.proximo.tipo)}
+                <span className="first-letter:uppercase">{fechaExamen(datos.proximo.fecha)}</span>
                 <Badge variant="urgente">
                   <CalendarClock aria-hidden className="size-3.5 shrink-0" />
                   {textoDiasRestantes(datos.proximo.diasRestantes)}
                 </Badge>
-              </p>
-              <p className="text-muted-foreground mt-1 text-sm first-letter:uppercase">
-                {fechaExamen(datos.proximo.fecha)}
               </p>
             </section>
           )}
@@ -77,14 +74,11 @@ export function MisExamenes({ materiaId }: MisExamenesProps) {
               <ul className="divide-border border-border divide-y rounded-lg border">
                 {datos.rendidos.map((examen) => (
                   <li
-                    key={`${examen.fecha}-${examen.tipo}`}
+                    key={examen.fecha}
                     className="flex items-center justify-between gap-3 px-4 py-3"
                   >
-                    <span className="min-w-0">
-                      <span className="block text-sm font-medium">{etiquetaTipo(examen.tipo)}</span>
-                      <span className="text-muted-foreground block text-xs first-letter:uppercase">
-                        {fechaExamen(examen.fecha)}
-                      </span>
+                    <span className="min-w-0 text-sm font-medium first-letter:uppercase">
+                      {fechaExamen(examen.fecha)}
                     </span>
                     <BadgeNota resultado={examen.resultado} nota={examen.nota} />
                   </li>

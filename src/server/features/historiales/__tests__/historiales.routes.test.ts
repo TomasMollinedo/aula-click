@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { errorHandler } from '@/server/errors'
 import { createRouter } from '@/server/router'
+import { contarPaginas, metadato } from '@/server/shared/__tests__/pdf-inspeccion'
 import { historialesRoutes } from '../historiales.routes'
 
 // Contrato HTTP de `historiales` (T-108): validación de Zod, auth, roles y el orden de las rutas
@@ -13,6 +14,7 @@ const { repository, profesoresRepository, alumnosRepository, getSession } = vi.h
     buscarFechaDelPrimerTurno: vi.fn(),
     profesorTieneAlumno: vi.fn(),
     buscarUltimasIndicaciones: vi.fn(),
+    leerExamenesDelPeriodo: vi.fn(),
   },
   profesoresRepository: { buscarIdPorUsuario: vi.fn() },
   alumnosRepository: { buscarPorId: vi.fn() },
@@ -81,12 +83,14 @@ beforeEach(() => {
   repository.buscarFechaDelPrimerTurno.mockResolvedValue('2020-01-06')
   repository.profesorTieneAlumno.mockResolvedValue(true)
   repository.buscarUltimasIndicaciones.mockResolvedValue(null)
+  repository.leerExamenesDelPeriodo.mockResolvedValue([])
   profesoresRepository.buscarIdPorUsuario.mockResolvedValue(4)
   alumnosRepository.buscarPorId.mockResolvedValue({
     id: 12,
     nombre: 'Lucía',
     apellido: 'González',
     dni: '40123456',
+    nivelEscolaridad: 'SECUNDARIO',
   })
 })
 
@@ -166,6 +170,101 @@ describe('GET /historiales/alumnos/{alumnoId}', () => {
   it('sin sesión: 401', async () => {
     getSession.mockResolvedValue({ headers: new Headers(), response: null })
     await esperarError(await pedir('/alumnos/12'), 401, 'NO_AUTENTICADO')
+  })
+})
+
+// ---------------------------------------------------------------------------------------------
+// GET /historiales/alumnos/{alumnoId}/pdf (HU-32, T-110)
+// ---------------------------------------------------------------------------------------------
+
+/** Los headers del contrato común de los documentos PDF (docs/contrato-api.md → Documentos PDF). */
+function esperarHeadersDePdf(res: Response, archivo: string) {
+  expect(res.headers.get('content-type')).toBe('application/pdf')
+  expect(res.headers.get('content-disposition')).toBe(
+    `inline; filename="${archivo}"; filename*=UTF-8''${archivo}`,
+  )
+  expect(res.headers.get('cache-control')).toBe('no-store')
+  expect(res.headers.get('x-content-type-options')).toBe('nosniff')
+}
+
+describe('GET /historiales/alumnos/{alumnoId}/pdf', { timeout: 30_000 }, () => {
+  it('responde 200 con el PDF, sus headers y el nombre del archivo', async () => {
+    repository.leerOcurrenciasDelAlumno.mockResolvedValue([OCURRENCIA])
+
+    const res = await pedir('/alumnos/12/pdf?mes=2020-01')
+
+    expect(res.status).toBe(200)
+    esperarHeadersDePdf(res, 'historial-academico-gonzalez-lucia-2020-01.pdf')
+    const pdf = Buffer.from(await res.arrayBuffer())
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(contarPaginas(pdf)).toBe(1)
+    expect(metadato(pdf, 'Title')).toBe('Historial académico 01/01/2020 al 31/01/2020')
+  })
+
+  it('no cae en `/alumnos/{alumnoId}`: sin `mes`, el documento es del mes en curso', async () => {
+    const res = await pedir('/alumnos/12/pdf')
+
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toBe('application/pdf')
+  })
+
+  it('un `mes` con formato inválido: 400, en JSON', async () => {
+    const res = await pedir('/alumnos/12/pdf?mes=2020-13')
+
+    expect(res.headers.get('content-type')).toContain('application/json')
+    await esperarError(res, 400, 'VALIDACION')
+    await esperarError(await pedir('/alumnos/12/pdf?mes=enero'), 400, 'VALIDACION')
+  })
+
+  it('un `materiaId` que no es un número: 400', async () => {
+    await esperarError(await pedir('/alumnos/12/pdf?materiaId=abc'), 400, 'VALIDACION')
+  })
+
+  it('un alumno que no existe: 404', async () => {
+    alumnosRepository.buscarPorId.mockResolvedValue(null)
+    await esperarError(await pedir('/alumnos/99/pdf'), 404, 'NO_ENCONTRADO')
+  })
+
+  it('con un rango manda las dos fechas y responde el PDF del período', async () => {
+    const res = await pedir('/alumnos/12/pdf?desde=2020-01-05&hasta=2020-02-12')
+
+    expect(res.status).toBe(200)
+    esperarHeadersDePdf(res, 'historial-academico-gonzalez-lucia-2020-01-05_2020-02-12.pdf')
+    expect(repository.leerExamenesDelPeriodo).toHaveBeenCalledWith({
+      alumnoId: 12,
+      desde: '2020-01-05',
+      hasta: '2020-02-12',
+    })
+  })
+
+  it('`hasta` anterior a `desde`: 400 con `details` sobre `hasta`', async () => {
+    const res = await pedir('/alumnos/12/pdf?desde=2020-01-31&hasta=2020-01-01')
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.details).toEqual([
+      { path: ['hasta'], message: 'La fecha hasta no puede ser anterior a la fecha desde' },
+    ])
+  })
+
+  it('el profesor lo saca si el alumno es suyo, y recibe 403 si no', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
+    expect((await pedir('/alumnos/12/pdf')).status).toBe(200)
+
+    repository.profesorTieneAlumno.mockResolvedValue(false)
+    await esperarError(await pedir('/alumnos/12/pdf'), 403, 'SIN_PERMISO')
+  })
+
+  it('el gerente y el alumno no lo sacan: 403', async () => {
+    getSession.mockResolvedValue(sesion('GERENTE', 'usr_ger'))
+    await esperarError(await pedir('/alumnos/12/pdf'), 403, 'SIN_PERMISO')
+
+    getSession.mockResolvedValue(sesion('ALUMNO', 'usr_lucia', 12))
+    await esperarError(await pedir('/alumnos/12/pdf'), 403, 'SIN_PERMISO')
+  })
+
+  it('sin sesión: 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    await esperarError(await pedir('/alumnos/12/pdf'), 401, 'NO_AUTENTICADO')
   })
 })
 
@@ -278,6 +377,11 @@ describe('OpenAPI', () => {
       ).sort(),
     ).toEqual(['200', '400', '401', '403', '404'])
     expect(
+      Object.keys(
+        doc.paths?.['/api/v1/historiales/alumnos/{alumnoId}/pdf']?.get?.responses ?? {},
+      ).sort(),
+    ).toEqual(['200', '400', '401', '403', '404'])
+    expect(
       Object.keys(doc.paths?.['/api/v1/historiales/mis-materias']?.get?.responses ?? {}).sort(),
     ).toEqual(['200', '401', '403'])
     expect(
@@ -288,6 +392,17 @@ describe('OpenAPI', () => {
     ).toEqual(['200', '400', '401', '403', '404'])
   })
 
+  it('el 200 del PDF se declara como `application/pdf` binario', () => {
+    const contenido =
+      documento().paths?.['/api/v1/historiales/alumnos/{alumnoId}/pdf']?.get?.responses?.['200']
+        ?.content
+    expect(Object.keys(contenido ?? {})).toEqual(['application/pdf'])
+    expect(contenido?.['application/pdf']?.schema).toMatchObject({
+      type: 'string',
+      format: 'binary',
+    })
+  })
+
   it('el historial declara sus filtros en el query, y el portal sólo `mes`', () => {
     const doc = documento()
     const enQuery = (path: string) =>
@@ -296,6 +411,13 @@ describe('OpenAPI', () => {
         .sort()
 
     expect(enQuery('/alumnos/{alumnoId}')).toEqual(['desde', 'hasta', 'materiaId', 'profesorId'])
+    expect(enQuery('/alumnos/{alumnoId}/pdf')).toEqual([
+      'desde',
+      'hasta',
+      'materiaId',
+      'mes',
+      'profesorId',
+    ])
     expect(enQuery('/mis-materias')).toEqual([])
     expect(enQuery('/mis-materias/{materiaId}/{profesorId}')).toEqual(['mes'])
   })

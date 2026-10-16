@@ -405,7 +405,7 @@ describe('bloquesDelPortal', () => {
     ])
 
     const bloques = bloquesDelPortal(grupo.bloques)
-    // El bloque de hoy (agendado) desaparece; el otro queda con sus dos horas (decisión T-167).
+    // El bloque de hoy (agendado) desaparece; el otro queda con sus dos horas (decisión T-169).
     expect(bloques).toHaveLength(1)
     expect(bloques[0].clases.map((clase) => clase.turnoId)).toEqual([1, 2])
     expect(bloques[0].clases[1].estado).toBe('SIN_REGISTRAR')

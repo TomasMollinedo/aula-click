@@ -273,7 +273,7 @@ HU-39 (T-112, decisión T-162). La pestaña para ver **qué profesores no regist
 
 ## Exámenes
 
-HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia, con `tipo` (`PARCIAL`, `FINAL`, `RECUPERATORIO`, `TRABAJO_PRACTICO` u `OTRO`); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
+HU-17 (T-55; modelo de datos: T-29). Registrar un examen es cargar un `Examen` de un alumno en una materia y una fecha. **No tiene tipo**: no se distingue parcial, final, recuperatorio ni trabajo práctico (decisión T-170); "eliminar" (HU-17) es darlo de baja (`estado`), nunca borrarlo.
 
 - **Un examen pendiente por materia:** el alumno no puede tener dos exámenes `ACTIVO` de la misma materia con fecha `>= hoy` a la vez. Al intentar cargar o mover uno a esa situación, la API responde 409 `EXAMEN_PENDIENTE` con el existente, para ofrecer editarlo en vez de duplicarlo. Un examen pasado no cuenta: pasada su fecha, se puede cargar el siguiente de la misma materia sin límite.
 - **Fecha pasada:** se acepta igual (por ejemplo, para dejar registrado un examen que ya se tomó); la API lo marca con `pasado: true` para que el front avise, pero no lo rechaza.
@@ -313,9 +313,9 @@ HU-31 y HU-33 (T-108). El historial es **una lectura**: no tiene datos propios n
 - **Período:** un mes (por defecto, el mes en curso) o un rango de fechas, de hasta 366 días (decisión T-147). En el portal, siempre un mes.
 - **Filtros de la ficha:** materia y profesor. Sus opciones son las del historial **completo** del alumno, no las del período que se está viendo.
 - **"Mis materias" del alumno:** cada materia y profesor en los que tiene o tuvo turnos, con su próximo turno (la primera clase no cancelada de hoy en adelante, hasta 366 días, decisión T-149) y su porcentaje sobre todo su historial. Al entrar a una materia, primero las "Indicaciones para la próxima clase" (las de la última clase realizada con indicaciones, de **cualquier** fecha) y debajo las clases del mes.
-- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-167): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
+- **El alumno no ve** las observaciones internas de la ficha ni la observación de la ausencia, el motivo de la cancelación, ni datos de otros alumnos. Las clases "Sin registrar" **sí** las ve (decisión T-169): así se entera de la hora que el profesor no registró y puede avisar a la mesa de entrada; no cuentan para su porcentaje, igual que en la ficha.
 - **Desde cada clase se abre el detalle del turno**, que es donde se registra y se corrige la asistencia (HU-22).
-- El PDF mensual del historial es HU-32 (T-110).
+- **El PDF del historial es HU-32** (T-110): lo saca mesa de entrada desde la ficha y el profesor desde "Mis alumnos" (con el mismo criterio con el que ve el historial), **del período que se está viendo**, un mes o un rango (decisión T-163, _pendiente de confirmación de las PO_: HU-32 pedía sólo el mes y sólo mesa de entrada). No lleva las observaciones internas.
 
 ## Portal del alumno
 

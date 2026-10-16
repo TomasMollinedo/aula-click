@@ -20,7 +20,9 @@ export type AccionRegistrarPagoProps = {
  *
  * El diálogo se arma con una copia de la ocurrencia tomada al abrir y queda montado hasta que se
  * cierra, aunque el botón ya no se vea: registrar invalida el detalle, que vuelve con la acción
- * oculta, y el paso de éxito (o el rechazo) tiene que seguir en pantalla.
+ * oculta, y el rechazo tiene que seguir en pantalla. Al registrar, el diálogo se cierra **sin abrir
+ * el detalle del pago** (`abrirDetalleAlRegistrar={false}`): el detalle del turno, ya refrescado,
+ * muestra el pago con "Ver comprobante" y "Ver pago", y no quedan dos detalles superpuestos.
  *
  * Por lo mismo, al cerrarlo el botón que lo abrió puede no existir más y el foco quedaría fuera del
  * detalle: en ese caso va al modal que contiene esta acción (el detalle del turno), que se guarda
@@ -61,7 +63,9 @@ export function AccionRegistrarPago({ ocurrencia }: AccionRegistrarPagoProps) {
           Registrar pago
         </DetalleModalAccion>
       )}
-      {solicitud && <RegistrarPagoDialog {...solicitud} onCerrar={cerrar} />}
+      {solicitud && (
+        <RegistrarPagoDialog {...solicitud} onCerrar={cerrar} abrirDetalleAlRegistrar={false} />
+      )}
     </>
   )
 }
