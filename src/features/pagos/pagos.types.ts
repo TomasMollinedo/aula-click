@@ -39,6 +39,18 @@ export type RegistrarPago = {
   observaciones?: string
 } & MedioRegistrarPago
 
+/**
+ * Respuesta 201 de `POST /adjuntos`: el comprobante subido, todavía sin pago. Su `id` es el
+ * `comprobanteAdjuntoId` del pago, que lo vincula al registrarlo.
+ */
+export type AdjuntoSubido = {
+  id: number
+  nombre: string
+  /** `image/jpeg`, `image/png` o `application/pdf`. */
+  tipo: string
+  bytes: number
+}
+
 /** Respuesta 201 de `POST /pagos`. */
 export type PagoRegistrado = {
   pagoId: number
