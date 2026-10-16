@@ -6,6 +6,7 @@ import {
   mesSiguiente,
   paramsConMes,
   paramsConPagina,
+  ultimoDiaDelMes,
 } from '../mes-liquidacion'
 
 const leer = (qs: string) => leerMesLiquidacion(new URLSearchParams(qs))
@@ -73,5 +74,17 @@ describe('mesAnterior y mesSiguiente', () => {
   it('cruce de año', () => {
     expect(mesAnterior('2026-01')).toBe('2025-12')
     expect(mesSiguiente('2026-12')).toBe('2027-01')
+  })
+})
+
+describe('ultimoDiaDelMes', () => {
+  it.each([
+    ['2026-10', '2026-10-31'],
+    ['2026-09', '2026-09-30'],
+    ['2026-12', '2026-12-31'],
+    ['2026-02', '2026-02-28'],
+    ['2028-02', '2028-02-29'],
+  ])('%s → %s', (mes, esperado) => {
+    expect(ultimoDiaDelMes(mes)).toBe(esperado)
   })
 })

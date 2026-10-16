@@ -122,3 +122,27 @@ export type MiLiquidacionDetalle = Omit<LiquidacionDetalle, 'cerrada'> & {
  * vence a los 15 minutos: se usa como enlace y no se guarda.
  */
 export type AdjuntoDeLiquidacion = ComprobanteDeTransferencia & { url: string }
+
+/**
+ * Body de `POST /liquidaciones/profesores/{profesorId}/{mes}/pago` (T-132). El monto no se manda:
+ * `totalConfirmado` es el `total` que mostró el detalle, para que la API rechace si cambió.
+ */
+export type RegistrarPagoLiquidacion = {
+  /** `YYYY-MM-DD`. */
+  fechaTransferencia: string
+  numeroOperacion: string
+  comprobanteAdjuntoId: number | null
+  observaciones: string | null
+  totalConfirmado: number
+}
+
+/** Respuesta 201 del pago de una liquidación. */
+export type PagoLiquidacionRegistrado = {
+  liquidacionId: number
+  profesor: ProfesorLiquidacion
+  /** `YYYY-MM`. */
+  mes: string
+  total: number
+  /** `YYYY-MM-DD`. */
+  fechaTransferencia: string
+}

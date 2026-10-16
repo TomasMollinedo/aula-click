@@ -5,6 +5,8 @@ import {
   formatoEstadoLiquidacion,
   nombreDeProfesor,
   textoAdjuntadoPor,
+  textoConfirmacionPagoLiquidacion,
+  textoExitoPagoLiquidacion,
   textoNumeroComprobante,
   textoRegistradoPor,
 } from '../formato-liquidaciones'
@@ -70,5 +72,21 @@ describe('textos del detalle', () => {
       /^Registrado por Marta Ríos · \d{2}\/\d{2}\/2026, \d{2}:\d{2}$/,
     )
     expect(textoAdjuntadoPor(MARTA, instante)).toMatch(/^Adjuntado por Marta Ríos · /)
+  })
+})
+
+describe('textos del pago de una liquidación', () => {
+  const profesor = { id: 4, nombre: 'Ana', apellido: 'Gómez' }
+
+  it('la confirmación lleva el total, el profesor y el mes con año', () => {
+    expect(textoConfirmacionPagoLiquidacion({ total: 245000, profesor, mes: '2026-10' })).toBe(
+      '¿Registrar el pago de $\u00a0245.000,00 a Gómez, Ana por la liquidación de octubre de 2026?',
+    )
+  })
+
+  it('el éxito lleva el mes sin año y el profesor de la respuesta', () => {
+    expect(textoExitoPagoLiquidacion({ profesor, mes: '2026-09' })).toBe(
+      'Pago registrado. La liquidación de septiembre de Gómez, Ana quedó pagada',
+    )
   })
 })

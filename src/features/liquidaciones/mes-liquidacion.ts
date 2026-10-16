@@ -1,4 +1,4 @@
-import { sumarMeses } from '@/utils/calendario'
+import { sumarDias, sumarMeses } from '@/utils/calendario'
 
 // El mes y la página del listado de liquidaciones en la URL. Funciones puras: este es el único
 // lugar que conoce los nombres de los parámetros. Sin `?mes=` (o con uno que no sea `AAAA-MM`
@@ -56,4 +56,9 @@ export function mesAnterior(mes: string): string {
 /** `'2026-12'` → `'2027-01'`. */
 export function mesSiguiente(mes: string): string {
   return sumarAlMes(mes, 1)
+}
+
+/** `'2026-10'` → `'2026-10-31'`: el último día del mes (la transferencia no puede ser anterior). */
+export function ultimoDiaDelMes(mes: string): string {
+  return sumarDias(`${mesSiguiente(mes)}-01`, -1)
 }
