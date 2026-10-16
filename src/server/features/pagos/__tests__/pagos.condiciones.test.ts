@@ -5,6 +5,7 @@ import {
   leerPagoParaAnular,
   pagosConMismaTransferencia,
   pagosDelFiltro,
+  totalAnuladoDelFiltro,
   totalCobradoEntre,
   totalCobradoPorForma,
 } from '../pagos.condiciones'
@@ -209,6 +210,27 @@ describe('totalCobradoPorForma', () => {
     })
   })
 
+  it('con `estado` en el filtro: VIGENTE suma como siempre; ANULADO no coincide con ningún pago', async () => {
+    const vigentes = clienteConGrupos([], FORMAS)
+    await totalCobradoPorForma(vigentes.client, { ...PERIODO, estado: 'VIGENTE' })
+    expect(vigentes.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: 'VIGENTE' }) }),
+    )
+
+    const todos = clienteConGrupos([], FORMAS)
+    await totalCobradoPorForma(todos.client, { ...PERIODO, estado: 'TODOS' })
+    expect(todos.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: 'VIGENTE' }) }),
+    )
+
+    const anulados = clienteConGrupos([], FORMAS)
+    const totales = await totalCobradoPorForma(anulados.client, { ...PERIODO, estado: 'ANULADO' })
+    expect(anulados.groupBy).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: { in: [] } }) }),
+    )
+    expect(totales).toEqual({ EFECTIVO: 0, TRANSFERENCIA: 0, DEBITO: 0 })
+  })
+
   it('una forma de pago con pagos y sin código → 500 que pide correr el seed', async () => {
     const { client } = clienteConGrupos(
       [{ formaPagoId: 9, importe: 100 }],
@@ -264,6 +286,89 @@ describe('pagosDelFiltro', () => {
       some: { turno: { bloqueAgenda: { profesorId: 3 } } },
     })
   })
+
+  it('el estado: VIGENTE o ANULADO filtran; TODOS no agrega la clave', () => {
+    const periodo = { desde: '2026-10-01', hasta: '2026-10-31' }
+    expect(pagosDelFiltro({ ...periodo, estado: 'VIGENTE' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+      estado: 'VIGENTE',
+    })
+    expect(pagosDelFiltro({ ...periodo, estado: 'ANULADO' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+      estado: 'ANULADO',
+    })
+    expect(pagosDelFiltro({ ...periodo, estado: 'TODOS' })).toStrictEqual({
+      fechaPago: FECHA_PAGO,
+    })
+  })
+})
+
+// HU-36: lo anulado del filtro, en la base y con la misma definición que el listado.
+describe('totalAnuladoDelFiltro', () => {
+  const decimal = (n: number) => ({ toNumber: () => n })
+  const FECHA_PAGO = {
+    gte: new Date('2026-10-01T00:00:00.000Z'),
+    lte: new Date('2026-10-31T00:00:00.000Z'),
+  }
+  const OCTUBRE = { desde: '2026-10-01', hasta: '2026-10-31' }
+
+  function clienteConSuma(importe: number | null) {
+    const aggregate = vi.fn(async () => ({
+      _sum: { importeTotal: importe === null ? null : decimal(importe) },
+    }))
+    return { client: { pago: { aggregate } } as unknown as Cliente, aggregate }
+  }
+
+  it('sin filtros: suma los `ANULADO` del período', async () => {
+    const { client, aggregate } = clienteConSuma(16000)
+
+    expect(await totalAnuladoDelFiltro(client, OCTUBRE)).toBe(16000)
+    expect(aggregate).toHaveBeenCalledExactlyOnceWith({
+      where: { fechaPago: FECHA_PAGO, estado: 'ANULADO' },
+      _sum: { importeTotal: true },
+    })
+  })
+
+  it('con filtros: el mismo `where` del listado más `ANULADO`; sin pagos, 0', async () => {
+    const { client, aggregate } = clienteConSuma(null)
+
+    const total = await totalAnuladoDelFiltro(client, {
+      ...OCTUBRE,
+      alumnoId: 12,
+      materiaId: 2,
+      profesorId: 3,
+      formaPago: 'EFECTIVO',
+      estado: 'TODOS',
+    })
+
+    expect(total).toBe(0)
+    expect(aggregate).toHaveBeenCalledExactlyOnceWith({
+      where: {
+        fechaPago: FECHA_PAGO,
+        alumnoId: 12,
+        turnos: { some: { turno: { materiaId: 2, bloqueAgenda: { profesorId: 3 } } } },
+        formaPago: { tipoFormaPago: 'EFECTIVO' },
+        estado: 'ANULADO',
+      },
+      _sum: { importeTotal: true },
+    })
+  })
+
+  it('con `estado: ANULADO` suma los anulados; con `VIGENTE`, ningún pago coincide', async () => {
+    const anulados = clienteConSuma(16000)
+    expect(await totalAnuladoDelFiltro(anulados.client, { ...OCTUBRE, estado: 'ANULADO' })).toBe(
+      16000,
+    )
+    expect(anulados.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: 'ANULADO' }) }),
+    )
+
+    const vigentes = clienteConSuma(null)
+    expect(await totalAnuladoDelFiltro(vigentes.client, { ...OCTUBRE, estado: 'VIGENTE' })).toBe(0)
+    expect(vigentes.aggregate).toHaveBeenCalledWith(
+      expect.objectContaining({ where: expect.objectContaining({ estado: { in: [] } }) }),
+    )
+  })
 })
 
 // T-104 (HU-42): lo que la anulación lee del pago y de las otras transferencias.
@@ -300,8 +405,19 @@ describe('leerPagoParaAnular', () => {
     }
   }
 
+  /** Un cliente con el pago y las asistencias que devuelve la base (T-179). */
+  function clienteConAsistencias(filaPago: unknown, asistencias: unknown[] = []) {
+    const findUnique = vi.fn(async () => filaPago)
+    const findMany = vi.fn(async () => asistencias)
+    const client = {
+      pago: { findUnique },
+      asistenciaTurno: { findMany },
+    } as unknown as Cliente
+    return { client, findUnique, findMany }
+  }
+
   it('el pago con su total, sus turnos por fecha (con lo cobrado) y la transferencia', async () => {
-    const { client, findUnique } = cliente(fila())
+    const { client, findUnique } = clienteConAsistencias(fila())
 
     expect(await leerPagoParaAnular(client, 171)).toEqual({
       id: 171,
@@ -310,16 +426,42 @@ describe('leerPagoParaAnular', () => {
       alumno: LORENZO,
       total: 15000,
       turnos: [
-        { turnoId: 419, fecha: '2026-09-12', materia: LENGUA, importe: 7000 },
-        { turnoId: 455, fecha: '2026-09-15', materia: ECONOMIA, importe: 8000 },
+        { turnoId: 419, fecha: '2026-09-12', materia: LENGUA, importe: 7000, asistencia: null },
+        { turnoId: 455, fecha: '2026-09-15', materia: ECONOMIA, importe: 8000, asistencia: null },
       ],
       transferencia: { operacion: '0004829137', banco: 'Banco Macro' },
     })
     expect(findUnique).toHaveBeenCalledTimes(1)
   })
 
+  it('cada turno trae su asistencia, leída en una sola consulta con el mismo cliente', async () => {
+    const { client, findMany } = clienteConAsistencias(fila(), [
+      { turnoId: 455, fechaOcurrencia: new Date('2026-09-15T00:00:00.000Z'), estado: 'AUSENTE' },
+      // Otra ocurrencia del mismo turno: no es de este pago.
+      { turnoId: 419, fechaOcurrencia: new Date('2026-09-19T00:00:00.000Z'), estado: 'PRESENTE' },
+    ])
+
+    const pago = await leerPagoParaAnular(client, 171)
+
+    expect(pago?.turnos.map((t) => [t.turnoId, t.asistencia])).toEqual([
+      [419, null],
+      [455, 'AUSENTE'],
+    ])
+    expect(findMany).toHaveBeenCalledTimes(1)
+    expect(findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: {
+          OR: [
+            { turnoId: 455, fechaOcurrencia: new Date('2026-09-15T00:00:00.000Z') },
+            { turnoId: 419, fechaOcurrencia: new Date('2026-09-12T00:00:00.000Z') },
+          ],
+        },
+      }),
+    )
+  })
+
   it('un pago que no es por transferencia: `transferencia: null`; un anulado lo dice', async () => {
-    const { client } = cliente(
+    const { client } = clienteConAsistencias(
       fila({ estado: 'ANULADO', transferenciaOperacion: null, transferenciaBanco: null }),
     )
 
@@ -329,9 +471,10 @@ describe('leerPagoParaAnular', () => {
     })
   })
 
-  it('el pago no existe → `null`', async () => {
-    const { client } = cliente(null)
+  it('el pago no existe → `null`, sin leer asistencias', async () => {
+    const { client, findMany } = clienteConAsistencias(null)
     expect(await leerPagoParaAnular(client, 99)).toBeNull()
+    expect(findMany).not.toHaveBeenCalled()
   })
 })
 

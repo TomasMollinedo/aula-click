@@ -23,8 +23,8 @@ export function crearAnulacionesService({
     /**
      * La confirmación de la anulación: el resumen del pago y los avisos (deuda, precio y
      * transferencia compartida), que informan sin bloquear. Pago inexistente → 404; ya anulado →
-     * 409 `PAGO_ANULADO` (no hay nada que confirmar). Lee sin lock: es información, la decisión
-     * que vale es la de `anular`.
+     * 409 `PAGO_ANULADO`; con turnos ya dictados → 409 `TURNOS_DICTADOS` (no hay nada que
+     * confirmar). Lee sin lock: es información, la decisión que vale es la de `anular`.
      */
     async previa(pagoId: number): Promise<PreviaAnulacion> {
       const pago = exigirAnulable(await repository.leerPago(pagoId))
@@ -38,9 +38,12 @@ export function crearAnulacionesService({
      * 1. El body ya lo validó Zod (400): el motivo del enum y el `detalle` de hasta 500, obligatorio
      *    con `OTRO`.
      * 2. Chequeo previo sin lock (`exigirAnulable`): pago inexistente → 404; ya anulado → 409
-     *    `PAGO_ANULADO`. De acá sale el alumno, que el body no trae.
-     * 3. `repository.anular`, que bloquea el alumno, relee el pago y vuelve a decidir con la misma
-     *    regla antes de escribir. Los turnos quedan pendientes en la siguiente lectura del motor.
+     *    `PAGO_ANULADO`; algún turno con asistencia → 409 `TURNOS_DICTADOS`. De acá sale el
+     *    alumno, que el body no trae.
+     * 3. `repository.anular`, que bloquea el alumno, relee el pago (con la asistencia de sus
+     *    turnos) y vuelve a decidir con la misma regla antes de escribir: una asistencia registrada
+     *    entre el chequeo previo y el lock también da `TURNOS_DICTADOS`. Los turnos quedan
+     *    pendientes en la siguiente lectura del motor.
      */
     async anular(datos: AnularPago, actor: Actor): Promise<PagoAnulado> {
       const pago = exigirAnulable(await repository.leerPago(datos.pagoId))

@@ -40,8 +40,10 @@ import { formatearPorcentaje } from '@/utils/porcentaje'
 import {
   fechaLarga,
   nombreDeProfesor,
+  saldoADescontar,
   textoNumeroComprobante,
   textoRegistradoPor,
+  totalAPagar,
 } from '../formato-liquidaciones'
 import { useLiquidacion } from '../hooks/use-liquidacion'
 import { useMiLiquidacion } from '../hooks/use-mi-liquidacion'
@@ -398,8 +400,21 @@ function ContenidoLiquidacion({ contenido, volver }: { contenido: Contenido; vol
           <Dato label="Ajustes" valor={<Pesos importe={liquidacion.totalAjustes} />} />
           <Dato
             label="Total a pagar"
-            valor={<Pesos importe={liquidacion.total} className="text-xl font-semibold" />}
+            valor={
+              <Pesos importe={totalAPagar(liquidacion.total)} className="text-xl font-semibold" />
+            }
           />
+          {saldoADescontar(liquidacion.total) !== null && (
+            <Dato
+              label="Saldo a descontar el mes próximo"
+              valor={
+                <Pesos
+                  importe={liquidacion.total}
+                  className="text-cancelado text-xl font-semibold"
+                />
+              }
+            />
+          )}
         </Datos>
       </Seccion>
 

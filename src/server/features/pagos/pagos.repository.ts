@@ -2,6 +2,10 @@ import { Prisma } from '@/generated/prisma/client'
 import { prisma } from '@/lib/prisma'
 import { ConflictError } from '@/server/errors'
 import { ultimoAdjunto, vincularAdjunto } from '@/server/features/adjuntos/adjuntos.condiciones'
+import {
+  asistenciasDeOcurrencias,
+  type OcurrenciaConsultada,
+} from '@/server/features/asistencias/asistencias.condiciones'
 import { porcentajeVigente } from '@/server/features/reparto/reparto.condiciones'
 import {
   bloquearAlumno,
@@ -20,6 +24,7 @@ import {
 import { minutosAHora } from '@/server/shared/zod'
 import {
   pagosDelFiltro,
+  totalAnuladoDelFiltro,
   totalCobradoPorForma,
   type FiltroPagos,
   type TotalesPorForma,
@@ -444,17 +449,23 @@ export const pagosRepository = {
   },
 
   /**
-   * Pagos realizados del filtro (HU-36), vigentes y anulados (`pagosDelFiltro`), del más reciente
-   * al más antiguo y paginados, con lo cobrado por forma de **todo** el filtro, sin los anulados
-   * (`totalCobradoPorForma`, la misma definición que el tablero). Cantidad fija de consultas: la
-   * página y el `count` en una transacción, y la suma por forma y el código de las formas.
+   * Pagos realizados del filtro (HU-36), con su estado (`pagosDelFiltro`; con `TODOS`, vigentes y
+   * anulados), del más reciente al más antiguo y paginados, con lo cobrado por forma de **todo** el
+   * filtro, sin los anulados (`totalCobradoPorForma`, la misma definición que el tablero), y lo
+   * anulado (`totalAnuladoDelFiltro`). Cantidad fija de consultas: la página y el `count` en una
+   * transacción, la suma por forma y el código de las formas, y la suma de lo anulado.
    */
   async listarRealizados(
     filtro: FiltroPagos,
     paginacion: PaginacionQuery,
-  ): Promise<{ data: PagoRealizado[]; meta: MetaPaginacion; porForma: TotalesPorForma }> {
+  ): Promise<{
+    data: PagoRealizado[]
+    meta: MetaPaginacion
+    porForma: TotalesPorForma
+    anulado: number
+  }> {
     const where = pagosDelFiltro(filtro)
-    const [[filas, total], porForma] = await Promise.all([
+    const [[filas, total], porForma, anulado] = await Promise.all([
       prisma.$transaction([
         prisma.pago.findMany({
           where,
@@ -465,8 +476,14 @@ export const pagosRepository = {
         prisma.pago.count({ where }),
       ]),
       totalCobradoPorForma(prisma, filtro),
+      totalAnuladoDelFiltro(prisma, filtro),
     ])
-    return { data: filas.map(aPagoRealizado), meta: armarMeta(paginacion, total), porForma }
+    return {
+      data: filas.map(aPagoRealizado),
+      meta: armarMeta(paginacion, total),
+      porForma,
+      anulado,
+    }
   },
 
   /**
@@ -578,6 +595,15 @@ export const pagosRepository = {
         adjuntadoEl: adjunto.adjuntadoEl,
       }
     )
+  },
+
+  /**
+   * Si alguna de las ocurrencias (las de un pago) ya tiene asistencia `PRESENTE` o `AUSENTE`
+   * (`asistenciasDeOcurrencias`, de `asistencias`): un pago así no se anula (decisión T-179). Una
+   * consulta; ninguna si no hay ocurrencias.
+   */
+  async tieneTurnosDictados(ocurrencias: readonly OcurrenciaConsultada[]): Promise<boolean> {
+    return (await asistenciasDeOcurrencias(prisma, ocurrencias)).length > 0
   },
 }
 

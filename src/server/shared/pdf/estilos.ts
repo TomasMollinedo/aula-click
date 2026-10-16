@@ -8,6 +8,9 @@ export const px = (pixeles: number): number => pixeles * 0.75
 export const COLORES = {
   /** `--color-cobalto`: etiquetas, encabezados de tabla y la línea bajo el encabezado. */
   cobalto: '#3552cc',
+  /** `--color-dorado` y `--color-confirmado`: las otras series de los gráficos de barras. */
+  dorado: '#ddaf69',
+  confirmado: '#2c5540',
   /** Cobalto al 40 % sobre blanco: el borde del encabezado de las tablas. */
   cobaltoSuave: '#aebaeb',
   /** `--sidebar`: el nombre del centro, el título y la referencia. */

@@ -131,6 +131,20 @@ describe('interpretarErrorAnulacion', () => {
     })
   })
 
+  it('el 409 TURNOS_DICTADOS también es definitivo y trae el mensaje de la API', () => {
+    const error = new ApiError(
+      409,
+      'TURNOS_DICTADOS',
+      'No se puede anular: el pago incluye turnos que ya se dictaron',
+      [{ fecha: '2026-10-05', materia: { id: 2, nombre: 'Matemática' }, asistencia: 'PRESENTE' }],
+    )
+    expect(interpretarErrorAnulacion(error)).toEqual({
+      tipo: 'general',
+      mensaje: 'No se puede anular: el pago incluye turnos que ya se dictaron',
+      definitivo: true,
+    })
+  })
+
   it('el 404 es definitivo y el 403 explica el permiso', () => {
     expect(
       interpretarErrorAnulacion(new ApiError(404, 'NO_ENCONTRADO', 'Pago no encontrado')),

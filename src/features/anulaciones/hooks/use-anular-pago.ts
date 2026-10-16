@@ -12,7 +12,8 @@ import type { AnulacionCreada, AnularPagoBody } from '../anulaciones.types'
 /**
  * Anula un pago (HU-42). Al anular invalida lo que cambia: el pago (que pasa a "Anulado"), las
  * cuentas y las ocurrencias (sus turnos vuelven a estar por cobrar) y las agendas. Con un 409 invalida
- * lo mismo: si otra persona ya lo anuló, lo que muestra la pantalla quedó viejo. No invalida la
+ * lo mismo: si otra persona ya lo anuló o registró la asistencia de uno de sus turnos
+ * (`TURNOS_DICTADOS`), lo que muestra la pantalla quedó viejo. No invalida la
  * previa: es de un pago que ya no se puede anular y se pide de nuevo al abrir el diálogo.
  */
 export function useAnularPago() {

@@ -72,6 +72,12 @@ Next.js (App Router) + API con Hono/OpenAPI + Prisma (PostgreSQL) + Better Auth 
 
    Los emails y contraseñas de los usuarios salen de las variables `SEED_*` del `.env` (con los valores de ejemplo de `.env.example`: `mesa@aulaclick.local`, `profesor@aulaclick.local` y `gerente@aulaclick.local`). Si falta alguna, el seed falla y dice cuál. Al volver a correrlo, las contraseñas se actualizan a las del `.env`.
 
+   Opcional, para trabajar con liquidaciones, "Mis ingresos", la caja o el tablero de Finanzas: cargar trece profesores y veinte alumnos con cuatro meses de clases, cobros, anulaciones y liquidaciones en todos sus estados. Se corre **después** de `pnpm db:seed`; las fechas son relativas a hoy y los profesores que ya tienen clases no se vuelven a cargar. Los profesores entran con su email (`nombre.apellido@aulaclick.local`, sin tildes, por ejemplo `sofia.benitez@aulaclick.local`) y la contraseña `SEED_PROFESOR_PASSWORD`.
+
+   ```bash
+   pnpm db:seed:liquidaciones
+   ```
+
 10. Levantar la aplicación:
 
     ```bash
@@ -102,6 +108,7 @@ Si la app no arranca con `Variables de entorno inválidas o faltantes`, falta al
 | `pnpm db:migrate`                         | Crear y aplicar migraciones (coordinar antes, ver más abajo) |
 | `pnpm db:generate`                        | Generar el cliente de Prisma                                 |
 | `pnpm db:seed`                            | Cargar los datos de desarrollo (idempotente)                 |
+| `pnpm db:seed:liquidaciones`              | Cargar datos de liquidaciones (después de `db:seed`)         |
 | `pnpm db:studio`                          | Explorador visual de la base de datos                        |
 
 ## Estructura

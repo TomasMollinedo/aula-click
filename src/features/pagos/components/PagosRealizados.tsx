@@ -29,11 +29,13 @@ export type PagosRealizadosProps = {
 
 /**
  * Subpestaña "Pagos realizados" (HU-36): en la ficha del alumno, en `/mesa/pagos` y en
- * `/gerente/pagos` (`soloLectura`). Arriba lo cobrado del filtro y su detalle por forma de pago;
- * después los filtros y la tabla paginada, del más reciente al más antiguo. Todo lo calcula la API.
+ * `/gerente/pagos` (`soloLectura`). Arriba los totales del filtro según el estado (lo cobrado, lo
+ * anulado y el detalle por forma de pago); después los filtros y la tabla paginada, del más reciente
+ * al más antiguo. Todo lo calcula la API.
  *
  * - Los filtros van en la URL (`useFiltrosPagosRealizados`): el período por fecha de pago (por
- *   defecto, el mes en curso), materia, profesor, forma de pago y, en la vista global, alumno.
+ *   defecto, el mes en curso), materia, profesor, forma de pago, estado (por defecto, "Todos") y,
+ *   en la vista global, alumno.
  * - El gerente tiene los mismos filtros (decisión T-169); la única diferencia es que el alumno no
  *   enlaza a su ficha.
  * - Si la página de la URL quedó fuera de rango, pasa a la última.
@@ -63,6 +65,8 @@ export function PagosRealizados({
         <Card>
           <TotalesPagosRealizados
             totales={query.data.totales}
+            estado={filtros.estado}
+            periodo={filtros}
             porTurno={filtraPorTurno(filtros)}
             enEspera={enEspera}
           />

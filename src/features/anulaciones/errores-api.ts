@@ -17,7 +17,8 @@ export type ErrorAnulacion =
     }
   /**
    * `definitivo`: el pago no se puede anular y reintentar no cambia nada (no existe, otra persona ya
-   * lo anuló —409 `PAGO_ANULADO`—, o no hay permiso). Si no, se puede reintentar.
+   * lo anuló —409 `PAGO_ANULADO`—, alguno de sus turnos ya se dictó —409 `TURNOS_DICTADOS`—, o no
+   * hay permiso). Si no, se puede reintentar.
    */
   | { tipo: 'general'; mensaje: string; definitivo: boolean }
 
@@ -29,7 +30,9 @@ function esRegistro(valor: unknown): valor is Registro {
 
 /**
  * Convierte un ApiError de `GET /anulaciones/previa` o de `POST /anulaciones` en lo que muestra el
- * diálogo. Un 409 es siempre `PAGO_ANULADO`: se muestra con el mensaje de la API.
+ * diálogo. Un 409 es `PAGO_ANULADO` (otra persona ya lo anuló) o `TURNOS_DICTADOS` (alguien
+ * registró la asistencia de uno de sus turnos con el diálogo abierto): los dos son definitivos y se
+ * muestran con el mensaje de la API.
  */
 export function interpretarErrorAnulacion(error: ApiError): ErrorAnulacion {
   if (error.status === 403) {

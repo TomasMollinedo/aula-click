@@ -18,6 +18,7 @@
     "db:generate": "prisma generate",
     "db:seed": "prisma db seed",
     "db:seed:review": "tsx prisma/seed-review-sprint3.ts",
+    "db:seed:liquidaciones": "tsx prisma/seed-liquidaciones.ts",
     "db:studio": "prisma studio",
     "postinstall": "prisma generate",
     "prepare": "husky"

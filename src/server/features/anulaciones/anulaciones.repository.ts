@@ -58,10 +58,11 @@ export const anulacionesRepository = {
   /**
    * Anula el pago completo de forma atómica, en una sola transacción:
    * 1. `bloquearAlumno` (`alumno` `FOR UPDATE`), **antes de cualquier lectura**: serializa con un
-   *    pago, una cancelación, la finalización y la reprogramación de ese alumno. Un pago nuevo de
-   *    las mismas ocurrencias espera a que ésta termine (o ya falló con `YA_PAGADO`).
-   * 2. Relee el pago con el `tx`.
-   * 3. `verificar(pago)`: si lanza (no existe, ya anulado), no se escribe nada.
+   *    pago, una cancelación, la finalización, la reprogramación y el registro de asistencia de ese
+   *    alumno. Un pago nuevo de las mismas ocurrencias espera a que ésta termine (o ya falló con
+   *    `YA_PAGADO`), y una asistencia registrada antes de tomar el lock se ve en la relectura.
+   * 2. Relee el pago y la asistencia de sus turnos con el `tx`.
+   * 3. `verificar(pago)`: si lanza (no existe, ya anulado, turnos dictados), no se escribe nada.
    * 4. `Pago.estado = ANULADO` (con `updatedById`), una `AnulacionPago` y `vigente = null` en todos
    *    sus `PagoTurno`: sus turnos vuelven a estar pendientes y se pueden cobrar de nuevo. El pago
    *    conserva todos sus datos, su forma de pago y su comprobante adjunto.

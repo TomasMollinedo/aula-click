@@ -21,8 +21,8 @@ function fechaDeHoy(): string {
 }
 
 /**
- * Los filtros de "Pagos realizados" (período, alumno en la vista global, materia, profesor y forma
- * de pago) y la página, guardados en la URL con `router.replace` sobre la ruta actual: Atrás y
+ * Los filtros de "Pagos realizados" (período, alumno en la vista global, materia, profesor, forma
+ * de pago y estado) y la página, guardados en la URL con `router.replace` sobre la ruta actual: Atrás y
  * recargar conservan lo que se veía, y los demás parámetros (`tab`, `vista`, `pago`) se mantienen.
  * Cambiar un filtro vuelve a la página 1. Sin debounce: cada filtro es una elección, no texto.
  */

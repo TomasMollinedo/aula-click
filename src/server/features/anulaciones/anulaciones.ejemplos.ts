@@ -43,3 +43,14 @@ export const ejemploErrorPagoAnulado = {
     message: 'Un pago anulado no se puede volver a activar',
   },
 } satisfies ErrorResponse
+
+export const ejemploErrorTurnosDictados = {
+  error: {
+    code: 'TURNOS_DICTADOS',
+    message: 'No se puede anular: el pago incluye turnos que ya se dictaron',
+    details: [
+      { fecha: '2026-10-05', materia: { id: 2, nombre: 'Matemática' }, asistencia: 'PRESENTE' },
+      { fecha: '2026-10-12', materia: { id: 2, nombre: 'Matemática' }, asistencia: 'AUSENTE' },
+    ],
+  },
+} satisfies ErrorResponse

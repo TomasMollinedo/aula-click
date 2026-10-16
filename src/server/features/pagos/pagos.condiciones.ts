@@ -1,9 +1,10 @@
 import type { Prisma } from '@/generated/prisma/client'
+import { asistenciasDeOcurrencias } from '@/server/features/asistencias/asistencias.condiciones'
 import type { ClienteOcurrencias } from '@/server/features/turnos/ocurrencias.condiciones'
 import { SELECT_USUARIO_AUDITORIA, type UsuarioAuditoria } from '@/server/shared/auditoria'
 import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 import { errorFormasDePago, sumarImportes } from './pagos.reglas'
-import type { CodigoFormaPago } from './pagos.validation'
+import type { CodigoFormaPago, EstadoFiltroPago } from './pagos.validation'
 
 // Lo que otras features necesitan del cobro sin importar `pagos.reglas.ts` ni el repository (de otra
 // feature solo se importan `*.repository` y `*.condiciones`, lo hace cumplir ESLint, y un repository
@@ -21,7 +22,7 @@ import type { CodigoFormaPago } from './pagos.validation'
 //   comprobante (`agruparPorMateria`).
 // - `anulaciones` (T-104): el pago a anular con sus turnos (`leerPagoParaAnular`) y los otros pagos
 //   vigentes de la misma transferencia (`pagosConMismaTransferencia`), para la confirmación y sus
-//   avisos.
+//   avisos. Cada turno trae su asistencia: un pago con turnos ya dictados no se anula (T-179).
 //
 // El tope, la suma y el agrupado sólo se re-exportan: la implementación es la de `pagos.reglas.ts`.
 
@@ -76,19 +77,21 @@ type Periodo = { desde: string; hasta: string }
 /**
  * El filtro de los pagos realizados (HU-36): el período por **fecha de pago** (`fechaPago`, no
  * `createdAt`) y, si vienen, el alumno, la materia y el profesor de algún turno (los dos sobre el
- * **mismo** turno) y la forma de pago por su código (nunca por el nombre). Un `Periodo` solo ya es
- * un filtro: así lo pasa el tablero (T-61, T-112).
+ * **mismo** turno), la forma de pago por su código (nunca por el nombre) y el estado (`TODOS` o
+ * sin estado: vigentes y anulados). Un `Periodo` solo ya es un filtro: así lo pasa el tablero
+ * (T-61, T-112).
  */
 export type FiltroPagos = Periodo & {
   alumnoId?: number
   materiaId?: number
   profesorId?: number
   formaPago?: CodigoFormaPago
+  estado?: EstadoFiltroPago
 }
 
 /**
- * El `where` de los pagos del filtro, **vigentes y anulados**: el que lista `GET /pagos`. Sin
- * claves `undefined`: con sólo el período es `{ fechaPago }`.
+ * El `where` de los pagos del filtro, el que lista `GET /pagos`: con `estado` `TODOS` (o sin él),
+ * **vigentes y anulados**. Sin claves `undefined`: con sólo el período es `{ fechaPago }`.
  */
 export function pagosDelFiltro({
   desde,
@@ -97,6 +100,7 @@ export function pagosDelFiltro({
   materiaId,
   profesorId,
   formaPago,
+  estado,
 }: FiltroPagos): Prisma.PagoWhereInput {
   const turno: Prisma.TurnoWhereInput = {
     ...(materiaId !== undefined ? { materiaId } : {}),
@@ -107,15 +111,34 @@ export function pagosDelFiltro({
     ...(alumnoId !== undefined ? { alumnoId } : {}),
     ...(Object.keys(turno).length > 0 ? { turnos: { some: { turno } } } : {}),
     ...(formaPago !== undefined ? { formaPago: { tipoFormaPago: formaPago } } : {}),
+    ...(estado !== undefined && estado !== 'TODOS' ? { estado } : {}),
   }
+}
+
+/** Los pagos del filtro que están en `estado`, para sumarlos. */
+function delEstado(estado: 'VIGENTE' | 'ANULADO', filtro: FiltroPagos): Prisma.PagoWhereInput {
+  const pideOtro =
+    filtro.estado !== undefined && filtro.estado !== 'TODOS' && filtro.estado !== estado
+  // Si el filtro pide el otro estado, ningún pago cumple los dos: `in: []` no coincide con ninguna
+  // fila, así la suma la sigue haciendo la base y da 0 (sin una rama aparte que se saltee la consulta).
+  return { ...pagosDelFiltro(filtro), estado: pideOtro ? { in: [] } : estado }
 }
 
 /**
  * Lo cobrado: los pagos del filtro que están `VIGENTE` (un anulado no cuenta, HU-42). La única
- * definición: la usan el total, el total por forma y los totales de `GET /pagos`.
+ * definición: la usan el total, el total por forma y los totales de `GET /pagos`. Con
+ * `estado: 'ANULADO'` en el filtro no hay nada cobrado.
  */
 function cobrados(filtro: FiltroPagos): Prisma.PagoWhereInput {
-  return { estado: 'VIGENTE', ...pagosDelFiltro(filtro) }
+  return delEstado('VIGENTE', filtro)
+}
+
+/**
+ * Lo anulado: los pagos del filtro que están `ANULADO`. La única definición: la usa el total
+ * anulado de `GET /pagos`. Con `estado: 'VIGENTE'` en el filtro no hay nada anulado.
+ */
+function anulados(filtro: FiltroPagos): Prisma.PagoWhereInput {
+  return delEstado('ANULADO', filtro)
 }
 
 /**
@@ -132,6 +155,22 @@ export async function totalCobradoEntre(
     _sum: { importeTotal: true },
   })
   // La base suma en `Decimal`, que es exacto: no hay error de coma flotante que acumular.
+  return _sum.importeTotal ? _sum.importeTotal.toNumber() : 0
+}
+
+/**
+ * Total anulado del filtro (HU-36): la suma de `importeTotal` de los pagos `ANULADO` (`anulados`),
+ * en pesos; 0 si no hay ninguno. Una consulta, en la base, como `totalCobradoEntre`. Lo usan los
+ * pagos realizados; no suma al cobrado.
+ */
+export async function totalAnuladoDelFiltro(
+  client: ClienteOcurrencias,
+  filtro: FiltroPagos,
+): Promise<number> {
+  const { _sum } = await client.pago.aggregate({
+    where: anulados(filtro),
+    _sum: { importeTotal: true },
+  })
   return _sum.importeTotal ? _sum.importeTotal.toNumber() : 0
 }
 
@@ -173,19 +212,22 @@ export async function totalCobradoPorForma(
   return totales
 }
 
-/** Una ocurrencia de un pago a anular: la fecha, la materia y lo que se cobró por ella. */
+/** Una ocurrencia de un pago a anular: la fecha, la materia, lo que se cobró y su asistencia. */
 export type TurnoDePagoAAnular = {
   turnoId: number
   fecha: string
   materia: { id: number; nombre: string }
   /** El importe cobrado (`importeAplicado`), en pesos: no cambia si después cambia el precio. */
   importe: number
+  /** La asistencia registrada de esa ocurrencia; `null` si no tiene (futura o sin registrar). */
+  asistencia: 'PRESENTE' | 'AUSENTE' | null
 }
 
 /**
  * Lo que la anulación (HU-42, T-104) necesita de un pago: el estado (un anulado no se anula de
  * nuevo), el alumno, el número y el total para la confirmación, los turnos (fecha, materia e
- * importe cobrado) para los avisos de deuda y de precio, y la operación y el banco de una
+ * importe cobrado) para los avisos de deuda y de precio, su asistencia (un turno ya dictado impide
+ * anular, decisión T-179), y la operación y el banco de una
  * transferencia para el aviso de transferencia compartida (`null` si es de otra forma).
  */
 export type PagoParaAnular = {
@@ -199,8 +241,10 @@ export type PagoParaAnular = {
 }
 
 /**
- * El pago `pagoId` para anularlo, o `null` si no existe. Una consulta. Los turnos van ordenados
- * por fecha y `turnoId`. Recibe `prisma` o el `tx` de la anulación (con el lock del alumno).
+ * El pago `pagoId` para anularlo, o `null` si no existe. Dos consultas: el pago con sus turnos y la
+ * asistencia de esos turnos (`asistenciasDeOcurrencias`), **con el mismo `client`**: con el `tx` de
+ * la anulación, las dos se leen bajo el lock del alumno, que también toma registrar asistencia. Los
+ * turnos van ordenados por fecha y `turnoId`.
  */
 export async function leerPagoParaAnular(
   client: ClienteOcurrencias,
@@ -228,18 +272,24 @@ export async function leerPagoParaAnular(
   })
   if (!fila) return null
   const { transferenciaOperacion: operacion, transferenciaBanco: banco } = fila
+  const turnos = fila.turnos.map((pt) => ({
+    turnoId: pt.turnoId,
+    fecha: dateAFecha(pt.fechaOcurrencia),
+    materia: pt.turno.materia,
+    importe: pt.importeAplicado.toNumber(),
+  }))
+  const asistencias = await asistenciasDeOcurrencias(client, turnos)
+  const asistenciaDe = new Map(asistencias.map((a) => [`${a.turnoId}|${a.fecha}`, a.estado]))
   return {
     id: fila.id,
     numeroComprobante: fila.numeroComprobante,
     estado: fila.estado,
     alumno: fila.alumno,
     total: fila.importeTotal.toNumber(),
-    turnos: fila.turnos
-      .map((pt) => ({
-        turnoId: pt.turnoId,
-        fecha: dateAFecha(pt.fechaOcurrencia),
-        materia: pt.turno.materia,
-        importe: pt.importeAplicado.toNumber(),
+    turnos: turnos
+      .map((turno) => ({
+        ...turno,
+        asistencia: asistenciaDe.get(`${turno.turnoId}|${turno.fecha}`) ?? null,
       }))
       .sort((a, b) => a.fecha.localeCompare(b.fecha) || a.turnoId - b.turnoId),
     transferencia: operacion !== null && banco !== null ? { operacion, banco } : null,

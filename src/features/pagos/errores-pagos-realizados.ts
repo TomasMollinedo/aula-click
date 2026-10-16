@@ -13,6 +13,7 @@ export const CAMPOS_FILTRO_PAGOS = [
   'materiaId',
   'profesorId',
   'formaPago',
+  'estado',
 ] as const
 export type CampoFiltroPagos = (typeof CAMPOS_FILTRO_PAGOS)[number]
 

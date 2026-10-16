@@ -13,11 +13,12 @@ import {
   espaciado,
   px,
 } from '@/server/shared/pdf/estilos'
-import { BarrasPdf, DonaPdf, LeyendaPdf } from '@/server/shared/pdf/graficos'
+import { BarrasPdf, ColumnasAgrupadasPdf, DonaPdf, LeyendaPdf } from '@/server/shared/pdf/graficos'
 import { renderizarPdf } from '@/server/shared/pdf/renderizar'
 import { CeldaPdf, FilaPdf, TablaPdf, type ColumnaPdf } from '@/server/shared/pdf/tabla'
 import {
   NOMBRE_FORMA_DE_PAGO,
+  etiquetasDeMeses,
   formatearCantidad,
   formatearPorcentaje,
   nombreProfesor,
@@ -375,7 +376,7 @@ export function TableroAsistenciaPdf({ tablero, ...encabezado }: DatosTableroAsi
                 },
                 {
                   color: COLOR_CERRADO,
-                  etiqueta: 'Cerrados por el sistema',
+                  etiqueta: 'Cerrados',
                   valor: formatearCantidad(resumen.cerrados.cantidad),
                   detalle: formatearPorcentaje(resumen.cerrados.porcentaje),
                 },
@@ -467,11 +468,22 @@ const NOTA_TABLA_FINANZAS =
   'Turnos y Cobrado: turnos cobrados en el período, sin pagos anulados. Centro y Profesor: el reparto de esos cobros; un turno cobrado y cerrado sin registrar va entero al centro. Pagado: liquidaciones pagadas con fecha de transferencia en el período. Saldo: lo que se le debe a la fecha de hoy; negativo, un saldo a descontar.'
 
 const NOTA_TABLA_EVOLUCION =
-  'Cobrado y margen por fecha de pago; pagado a profesores por fecha de transferencia. El último mes llega hasta el fin del período.'
+  'Del mes más reciente al más alejado. Cobrado y margen por fecha de pago; pagado a profesores por fecha de transferencia. El mes del período llega hasta su fin. Importes en pesos: un mes sin movimientos queda en cero.'
+
+// Las series del gráfico de la evolución: los mismos colores que en la pantalla (cobalto, dorado y
+// el verde de "Pagado").
+const SERIES_EVOLUCION = [
+  { etiqueta: 'Total cobrado', color: COLORES.cobalto },
+  { etiqueta: 'Margen del centro', color: COLORES.dorado },
+  { etiqueta: 'Pagado a profesores', color: COLORES.confirmado },
+] as const
 
 export function TableroFinanzasPdf({ tablero, ...encabezado }: DatosTableroFinanzasPdf) {
   const { periodo, hoy, resumen, profesores, evolucion } = tablero
   const delPeriodo = `Período: ${textoPeriodo(periodo.desde, periodo.hasta)}`
+  // Del mes más reciente al más alejado, como la pantalla (la API manda del más viejo al más nuevo).
+  const meses = [...evolucion].reverse()
+  const etiquetas = etiquetasDeMeses(meses.map(({ mes }) => mes))
 
   return (
     <DocumentoOficialPdf
@@ -511,6 +523,36 @@ export function TableroFinanzasPdf({ tablero, ...encabezado }: DatosTableroFinan
           </Tarjeta>
         </Seccion>
 
+        {/* Como en la pantalla, la evolución va antes que la tabla por profesor, del mes más reciente
+            al más alejado. El título con su gráfico y la tabla de 6 filas son dos bloques que no se
+            parten: si el gráfico entra en lo que queda de la primera hoja, se queda ahí y la tabla
+            pasa a la siguiente. */}
+        <View wrap={false}>
+          <SeccionTabla titulo="Evolución de los últimos 6 meses" nota={NOTA_TABLA_EVOLUCION}>
+            <ColumnasAgrupadasPdf
+              series={SERIES_EVOLUCION}
+              grupos={meses.map((fila, indice) => ({
+                etiqueta: etiquetas[indice] ?? fila.mes,
+                valores: [fila.totalCobrado, fila.margenCentro, fila.pagadoAProfesores],
+              }))}
+              formatearEje={formatearCantidad}
+              vacio="No hay datos de los últimos meses."
+            />
+          </SeccionTabla>
+        </View>
+        <View wrap={false}>
+          <TablaPdf columnas={COLUMNAS_TABLA_EVOLUCION} alternada>
+            {meses.map((fila) => (
+              <FilaPdf key={fila.mes}>
+                <CeldaPdf>{textoMes(fila.mes)}</CeldaPdf>
+                <CeldaPdf>{formatearPesos(fila.totalCobrado)}</CeldaPdf>
+                <CeldaPdf>{formatearPesos(fila.margenCentro)}</CeldaPdf>
+                <CeldaPdf>{formatearPesos(fila.pagadoAProfesores)}</CeldaPdf>
+              </FilaPdf>
+            ))}
+          </TablaPdf>
+        </View>
+
         <SeccionTabla titulo="Por profesor" nota={NOTA_TABLA_FINANZAS}>
           {profesores.length === 0 ? (
             <Text style={estilos.rotulo}>No hay cobros, pagos ni saldos en este período.</Text>
@@ -530,22 +572,6 @@ export function TableroFinanzasPdf({ tablero, ...encabezado }: DatosTableroFinan
             </TablaPdf>
           )}
         </SeccionTabla>
-
-        {/* Son 6 filas: la tabla no se parte entre dos hojas. */}
-        <View wrap={false}>
-          <SeccionTabla titulo="Evolución mensual" nota={NOTA_TABLA_EVOLUCION}>
-            <TablaPdf columnas={COLUMNAS_TABLA_EVOLUCION} alternada>
-              {evolucion.map((fila) => (
-                <FilaPdf key={fila.mes}>
-                  <CeldaPdf>{textoMes(fila.mes)}</CeldaPdf>
-                  <CeldaPdf>{formatearPesos(fila.totalCobrado)}</CeldaPdf>
-                  <CeldaPdf>{formatearPesos(fila.margenCentro)}</CeldaPdf>
-                  <CeldaPdf>{formatearPesos(fila.pagadoAProfesores)}</CeldaPdf>
-                </FilaPdf>
-              ))}
-            </TablaPdf>
-          </SeccionTabla>
-        </View>
       </View>
     </DocumentoOficialPdf>
   )

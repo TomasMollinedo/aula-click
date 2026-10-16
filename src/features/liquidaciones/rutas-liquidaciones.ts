@@ -8,8 +8,8 @@ export function hrefPdfLiquidacion({ profesorId, mes }: { profesorId: number; me
 
 /**
  * `/api/v1/liquidaciones/mis-liquidaciones/{mes}/pdf`: el PDF de la liquidación del profesor de la
- * sesión, que no conoce su `profesorId` (los `mis-…` lo toman de la sesión, T-126). La ruta la suma
- * T-125 en la API; hasta entonces el enlace responde 404.
+ * sesión, que no conoce su `profesorId` (los `mis-…` lo toman de la sesión, T-126). La ruta es de
+ * T-125 (decisión T-179).
  */
 export function hrefPdfMiLiquidacion(mes: string) {
   return `/api/v1/liquidaciones/mis-liquidaciones/${mes}/pdf`

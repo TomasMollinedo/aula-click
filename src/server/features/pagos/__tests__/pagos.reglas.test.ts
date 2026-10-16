@@ -391,33 +391,55 @@ describe('agruparPorMateria', () => {
 describe('accionesDelPago', () => {
   const ninguna = { anular: false, reemplazarAdjunto: false, quitarAdjunto: false }
 
-  // Mesa de entradas, pago vigente: [forma, tiene adjunto, anular, reemplazar, quitar].
+  // Mesa de entradas, pago vigente: [forma, tiene adjunto, turnos dictados, anular, reemplazar,
+  // quitar]. Un turno ya dictado sólo apaga `anular` (T-179): el adjunto se sigue manejando igual.
   it.each([
-    ['EFECTIVO', false, true, false, false],
-    ['TRANSFERENCIA', true, true, true, false],
-    ['TRANSFERENCIA', false, true, true, false],
-    ['DEBITO', true, true, true, true],
+    ['EFECTIVO', false, false, true, false, false],
+    ['TRANSFERENCIA', true, false, true, true, false],
+    ['TRANSFERENCIA', false, false, true, true, false],
+    ['DEBITO', true, false, true, true, true],
     // En un débito sin adjunto, "reemplazar" es adjuntar uno; no hay nada que quitar.
-    ['DEBITO', false, true, true, false],
+    ['DEBITO', false, false, true, true, false],
+    ['EFECTIVO', false, true, false, false, false],
+    ['TRANSFERENCIA', true, true, false, true, false],
+    ['TRANSFERENCIA', false, true, false, true, false],
+    ['DEBITO', true, true, false, true, true],
+    ['DEBITO', false, true, false, true, false],
   ] as const)(
-    'mesa de entradas, vigente, %s con adjunto=%s → anular %s, reemplazar %s, quitar %s',
-    (formaPago, tieneAdjunto, anular, reemplazarAdjunto, quitarAdjunto) => {
+    'mesa de entradas, vigente, %s con adjunto=%s y dictados=%s → anular %s, reemplazar %s, quitar %s',
+    (formaPago, tieneAdjunto, tieneTurnosDictados, anular, reemplazarAdjunto, quitarAdjunto) => {
       expect(
-        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'VIGENTE', formaPago, tieneAdjunto }),
+        accionesDelPago({
+          rol: 'MESA_ENTRADAS',
+          estado: 'VIGENTE',
+          formaPago,
+          tieneAdjunto,
+          tieneTurnosDictados,
+        }),
       ).toEqual({ anular, reemplazarAdjunto, quitarAdjunto })
     },
   )
 
   const FORMAS = ['EFECTIVO', 'TRANSFERENCIA', 'DEBITO'] as const
   const combinaciones = FORMAS.flatMap((formaPago) =>
-    [true, false].map((tieneAdjunto) => [formaPago, tieneAdjunto] as const),
+    [true, false].flatMap((tieneAdjunto) =>
+      [true, false].map(
+        (tieneTurnosDictados) => [formaPago, tieneAdjunto, tieneTurnosDictados] as const,
+      ),
+    ),
   )
 
   it.each(combinaciones)(
-    'un pago anulado (%s, adjunto=%s): todas en false, también para la mesa',
-    (formaPago, tieneAdjunto) => {
+    'un pago anulado (%s, adjunto=%s, dictados=%s): todas en false, también para la mesa',
+    (formaPago, tieneAdjunto, tieneTurnosDictados) => {
       expect(
-        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'ANULADO', formaPago, tieneAdjunto }),
+        accionesDelPago({
+          rol: 'MESA_ENTRADAS',
+          estado: 'ANULADO',
+          formaPago,
+          tieneAdjunto,
+          tieneTurnosDictados,
+        }),
       ).toEqual(ninguna)
     },
   )
@@ -425,9 +447,11 @@ describe('accionesDelPago', () => {
   it.each(['GERENTE', 'PROFESOR', 'ALUMNO'] as const)(
     '%s: todas en false en cualquier pago (sólo lectura)',
     (rol) => {
-      for (const [formaPago, tieneAdjunto] of combinaciones) {
+      for (const [formaPago, tieneAdjunto, tieneTurnosDictados] of combinaciones) {
         for (const estado of ['VIGENTE', 'ANULADO'] as const) {
-          expect(accionesDelPago({ rol, estado, formaPago, tieneAdjunto })).toEqual(ninguna)
+          expect(
+            accionesDelPago({ rol, estado, formaPago, tieneAdjunto, tieneTurnosDictados }),
+          ).toEqual(ninguna)
         }
       }
     },
@@ -435,11 +459,34 @@ describe('accionesDelPago', () => {
 
   it('quitarAdjunto sólo con débito y adjunto', () => {
     const conQuitar = combinaciones.filter(
-      ([formaPago, tieneAdjunto]) =>
-        accionesDelPago({ rol: 'MESA_ENTRADAS', estado: 'VIGENTE', formaPago, tieneAdjunto })
-          .quitarAdjunto,
+      ([formaPago, tieneAdjunto, tieneTurnosDictados]) =>
+        accionesDelPago({
+          rol: 'MESA_ENTRADAS',
+          estado: 'VIGENTE',
+          formaPago,
+          tieneAdjunto,
+          tieneTurnosDictados,
+        }).quitarAdjunto,
     )
-    expect(conQuitar).toEqual([['DEBITO', true]])
+    expect(conQuitar).toEqual([
+      ['DEBITO', true, true],
+      ['DEBITO', true, false],
+    ])
+  })
+
+  it('anular sólo sin turnos dictados', () => {
+    const conAnular = combinaciones.filter(
+      ([formaPago, tieneAdjunto, tieneTurnosDictados]) =>
+        accionesDelPago({
+          rol: 'MESA_ENTRADAS',
+          estado: 'VIGENTE',
+          formaPago,
+          tieneAdjunto,
+          tieneTurnosDictados,
+        }).anular,
+    )
+    expect(conAnular.every(([, , tieneTurnosDictados]) => !tieneTurnosDictados)).toBe(true)
+    expect(conAnular).toHaveLength(6)
   })
 })
 

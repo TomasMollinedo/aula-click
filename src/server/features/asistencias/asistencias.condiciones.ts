@@ -3,7 +3,41 @@ import { dateAFecha, fechaADate } from '@/server/shared/fechas'
 
 // Lecturas de asistencias que otras features hacen dentro de su repository (decisión T-39): de
 // Prisma sólo importa tipos y recibe el cliente (`prisma` o el `tx` de quien llama). La usan
-// `asistencias` (pantalla del profesor, T-81) e `historiales` (HU-33, T-108).
+// `asistencias` (pantalla del profesor, T-81), `historiales` (HU-33, T-108) y `pagos` (los turnos ya
+// dictados de un pago, que no se puede anular: decisión T-179).
+
+/** Una ocurrencia por su turno y su fecha (`YYYY-MM-DD`). */
+export type OcurrenciaConsultada = { turnoId: number; fecha: string }
+
+/** Una ocurrencia que ya tiene asistencia, con su estado. */
+export type AsistenciaDeOcurrencia = OcurrenciaConsultada & { estado: 'PRESENTE' | 'AUSENTE' }
+
+/**
+ * De las ocurrencias pedidas, las que tienen asistencia registrada (`PRESENTE` o `AUSENTE`), con su
+ * estado; las que no tienen, no vienen. **Una sola consulta**, sobre el único
+ * `(turnoId, fechaOcurrencia)`. Recibe `prisma` o el `tx` de quien llama: dentro de una
+ * transacción con el lock del alumno ve la asistencia que otro registró antes de tomarlo.
+ */
+export async function asistenciasDeOcurrencias(
+  client: Prisma.TransactionClient,
+  ocurrencias: readonly OcurrenciaConsultada[],
+): Promise<AsistenciaDeOcurrencia[]> {
+  if (ocurrencias.length === 0) return []
+  const filas = await client.asistenciaTurno.findMany({
+    where: {
+      OR: ocurrencias.map(({ turnoId, fecha }) => ({
+        turnoId,
+        fechaOcurrencia: fechaADate(fecha),
+      })),
+    },
+    select: { turnoId: true, fechaOcurrencia: true, estado: true },
+  })
+  return filas.map((fila) => ({
+    turnoId: fila.turnoId,
+    fecha: dateAFecha(fila.fechaOcurrencia),
+    estado: fila.estado,
+  }))
+}
 
 /** Una consulta de `ultimasIndicaciones`: la última anterior a `antesDe` (`YYYY-MM-DD`). */
 export type ConsultaIndicaciones = { alumnoId: number; materiaId: number; antesDe: string }

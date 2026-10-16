@@ -51,6 +51,20 @@ export const liquidacionesQuerySchema = paginacionQuerySchema.extend({
       'Mes a liquidar (AAAA-MM). Por defecto, el último mes terminado. No puede ser futuro',
     example: '2026-09',
   }),
+  profesorId: idPositivo('Sólo las liquidaciones de este profesor', 4)
+    .optional()
+    .openapi({
+      param: { name: 'profesorId', in: 'query' },
+    }),
+  estado: z
+    .enum(ESTADOS_LIQUIDACION, { error: 'El estado no es válido' })
+    .optional()
+    .openapi({
+      param: { name: 'estado', in: 'query' },
+      description:
+        'Sólo las liquidaciones en este estado. Se combina con `profesorId`. Sin estado, todas',
+      example: 'PENDIENTE_DE_PAGO',
+    }),
 })
 
 export type LiquidacionesQuery = z.infer<typeof liquidacionesQuerySchema>
@@ -115,9 +129,16 @@ export type FilaLiquidacion = z.infer<typeof filaLiquidacionSchema>
 export const liquidacionesDelMesSchema = paginatedSchema(filaLiquidacionSchema)
   .extend({
     mes: mesISO.openapi({ description: 'El mes pedido o el por defecto' }),
-    totales: totalesLiquidacionSchema.openapi({
-      description: 'Suma de cada columna de todo el listado, no de la página',
-    }),
+    totales: totalesLiquidacionSchema
+      .extend({
+        totalAPagar: pesos(
+          'Lo que hay que transferir: la suma de los totales mayores a 0. Un total de 0 o menos no se paga, es un saldo que pasa al mes siguiente',
+          122400,
+        ),
+      })
+      .openapi({
+        description: 'Suma de cada columna de todo el listado, no de la página',
+      }),
   })
   .openapi('LiquidacionesDelMes')
 

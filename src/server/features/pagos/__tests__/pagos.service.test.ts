@@ -700,6 +700,22 @@ describe('obtenerDetalle: cantidad, adjunto y acciones', () => {
     })
   })
 
+  it('con algún turno ya dictado no se puede anular; el adjunto se sigue manejando (T-179)', async () => {
+    const pagoId = await pagoConDebito()
+    memoria.repository.tieneTurnosDictados.mockResolvedValue(true)
+
+    const detalle = await service.obtenerDetalle(pagoId, actor)
+
+    expect(detalle.acciones).toEqual({
+      anular: false,
+      reemplazarAdjunto: true,
+      quitarAdjunto: true,
+    })
+    expect(memoria.repository.tieneTurnosDictados).toHaveBeenCalledExactlyOnceWith(
+      detalle.turnos.map(({ turnoId, fecha }) => ({ turnoId, fecha })),
+    )
+  })
+
   it('inexistente → 404 sin leer el adjunto', async () => {
     expect(await errorDe(service.obtenerDetalle(99, gerente))).toBeInstanceOf(NotFoundError)
     expect(memoria.repository.buscarAdjunto).not.toHaveBeenCalled()
@@ -837,6 +853,7 @@ describe('listar (pagos realizados)', () => {
       data: [],
       meta: { page: 2, pageSize: 5, total: 7, totalPages: 2 },
       porForma: { EFECTIVO: 0.1, TRANSFERENCIA: 0.2, DEBITO: 10000 },
+      anulado: 4500,
     })
 
     const res = await service.listar({
@@ -846,6 +863,7 @@ describe('listar (pagos realizados)', () => {
       materiaId: 2,
       profesorId: 3,
       formaPago: 'EFECTIVO',
+      estado: 'VIGENTE',
       page: 2,
       pageSize: 5,
     })
@@ -858,15 +876,18 @@ describe('listar (pagos realizados)', () => {
         materiaId: 2,
         profesorId: 3,
         formaPago: 'EFECTIVO',
+        estado: 'VIGENTE',
       },
       { page: 2, pageSize: 5 },
     )
+    // `anulado` es el que da el repository (la suma la hace la base): el service no lo toca.
     expect(res).toEqual({
       data: [],
       meta: { page: 2, pageSize: 5, total: 7, totalPages: 2 },
       totales: {
         cobrado: 10000.3,
         porForma: { EFECTIVO: 0.1, TRANSFERENCIA: 0.2, DEBITO: 10000 },
+        anulado: 4500,
       },
     })
   })

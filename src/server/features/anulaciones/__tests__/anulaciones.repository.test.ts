@@ -18,6 +18,7 @@ const {
   pagoUpdate,
   anulacionCreate,
   pagoTurnoUpdateMany,
+  asistenciaFindMany,
   ErrorConocido,
 } = vi.hoisted(() => ({
   transaction: vi.fn(),
@@ -26,6 +27,7 @@ const {
   pagoUpdate: vi.fn(),
   anulacionCreate: vi.fn(),
   pagoTurnoUpdateMany: vi.fn(),
+  asistenciaFindMany: vi.fn(),
   ErrorConocido: class extends Error {
     readonly code = 'P2002'
   },
@@ -41,6 +43,7 @@ const tx = {
   pago: { findUnique: pagoFindUnique, update: pagoUpdate },
   anulacionPago: { create: anulacionCreate },
   pagoTurno: { updateMany: pagoTurnoUpdateMany },
+  asistenciaTurno: { findMany: asistenciaFindMany },
 }
 
 const entrada: EntradaAnulacion = {
@@ -68,6 +71,7 @@ beforeEach(() => {
   pagoUpdate.mockResolvedValue({})
   anulacionCreate.mockResolvedValue({})
   pagoTurnoUpdateMany.mockResolvedValue({ count: 2 })
+  asistenciaFindMany.mockResolvedValue([])
 })
 
 describe('anular', () => {
@@ -124,6 +128,62 @@ describe('anular', () => {
     expect(error).toBeInstanceOf(ConflictError)
     expect(error.code).toBe('PAGO_ANULADO')
     expect(error.message).toBe('Un pago anulado no se puede volver a activar')
+  })
+
+  // T-179: la asistencia se relee con el tx, después del lock que también toma registrar asistencia.
+  describe('turnos ya dictados', () => {
+    const turno = (iso: string) => ({
+      turnoId: 41,
+      fechaOcurrencia: new Date(`${iso}T00:00:00.000Z`),
+      importeAplicado: { toNumber: () => 8000 },
+      turno: { materia: { id: 2, nombre: 'Matemática' } },
+    })
+
+    beforeEach(() => {
+      pagoFindUnique.mockResolvedValue({
+        ...fila,
+        turnos: [turno('2026-10-05'), turno('2026-10-19')],
+      })
+    })
+
+    it('lee la asistencia de los turnos del pago con el tx, después del lock', async () => {
+      const verificar = vi.fn((pago) => pago)
+
+      await anulacionesRepository.anular(entrada, verificar, actor)
+
+      expect(asistenciaFindMany).toHaveBeenCalledTimes(1)
+      expect(asistenciaFindMany.mock.calls[0]?.[0].where).toEqual({
+        OR: [
+          { turnoId: 41, fechaOcurrencia: new Date('2026-10-05T00:00:00.000Z') },
+          { turnoId: 41, fechaOcurrencia: new Date('2026-10-19T00:00:00.000Z') },
+        ],
+      })
+      expect(queryRaw.mock.invocationCallOrder[0]).toBeLessThan(
+        asistenciaFindMany.mock.invocationCallOrder[0] ?? -Infinity,
+      )
+      expect(
+        verificar.mock.calls[0]?.[0].turnos.map((t: { asistencia: unknown }) => t.asistencia),
+      ).toEqual([null, null])
+    })
+
+    it('con una asistencia registrada → 409 TURNOS_DICTADOS desde exigirAnulable y no se escribe nada', async () => {
+      asistenciaFindMany.mockResolvedValue([
+        { turnoId: 41, fechaOcurrencia: new Date('2026-10-05T00:00:00.000Z'), estado: 'AUSENTE' },
+      ])
+
+      const error = await anulacionesRepository
+        .anular(entrada, exigirAnulable, actor)
+        .catch((e) => e)
+
+      expect(error).toBeInstanceOf(ConflictError)
+      expect(error.code).toBe('TURNOS_DICTADOS')
+      expect(error.details).toEqual([
+        { fecha: '2026-10-05', materia: { id: 2, nombre: 'Matemática' }, asistencia: 'AUSENTE' },
+      ])
+      expect(pagoUpdate).not.toHaveBeenCalled()
+      expect(anulacionCreate).not.toHaveBeenCalled()
+      expect(pagoTurnoUpdateMany).not.toHaveBeenCalled()
+    })
   })
 
   it('cualquier otro error se propaga tal cual', async () => {
