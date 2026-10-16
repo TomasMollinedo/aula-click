@@ -17,10 +17,14 @@ const BASE = '/api/v1/liquidaciones'
 /** Sin `mes`, la API devuelve el último mes terminado. */
 export function obtenerLiquidacionesDelMes({
   mes,
+  profesorId,
+  estado,
   page,
 }: ListarLiquidacionesDelMesParams): Promise<LiquidacionesDelMes> {
   const params = new URLSearchParams({ page: String(page) })
   if (mes !== undefined) params.set('mes', mes)
+  if (profesorId !== undefined) params.set('profesorId', String(profesorId))
+  if (estado !== undefined) params.set('estado', estado)
   return fetchJson<LiquidacionesDelMes>(`${BASE}?${params.toString()}`)
 }
 

@@ -2150,7 +2150,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
 
 **Importes** en pesos (número JSON), sumados en centavos: en cada fila y en los totales, `parteProfesor + totalAjustes = total` y `parteCentro + parteProfesor = totalCobrado`. Los ajustes son negativos.
 
-**`GET /liquidaciones?mes=2026-09&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy):
+**`GET /liquidaciones?mes=2026-09&profesorId=4&estado=PENDIENTE_DE_PAGO&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy). `profesorId` (opcional, entero mayor a 0; si no, 400 en `["profesorId"]`) deja sólo la liquidación de ese profesor: lista de 0 o 1 fila, con `totales` de esa fila. Un profesor sin movimientos en el mes, o que no existe, da `data: []` (no 404). `estado` (opcional: `EN_CURSO`, `PENDIENTE_DE_PAGO`, `SALDO_A_DESCONTAR`, `PAGADA` o `DESCONTADA`; otro valor, 400 en `["estado"]`) deja sólo las liquidaciones en ese estado. Los dos filtros se combinan, y `data`, `meta` y `totales` son los del resultado filtrado (sin coincidencias: `data: []` y totales en 0). Las opciones del filtro por profesor salen del buscador del gerente `GET /pagos/profesores`:
 
 ```json
 {
@@ -2161,7 +2161,8 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
     "parteCentro": 22800,
     "parteProfesor": 129200,
     "totalAjustes": -6800,
-    "total": 122400
+    "total": 122400,
+    "totalAPagar": 122400
   },
   "data": [
     {
@@ -2195,7 +2196,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
 
 - `mes`: el pedido o el por defecto (el front arma el selector con él).
 - Una fila por profesor **con turnos o ajustes en el mes, aunque esté inactivo**, por apellido y nombre. Un profesor sin movimientos no aparece. Sin ninguno: `data: []` y los totales en 0 ("No hay liquidaciones en …").
-- `totales`: la suma de cada columna de **todo el listado**, no de la página.
+- `totales`: la suma de cada columna de **todo el listado**, no de la página. Suma además **`totalAPagar`**: lo que hay que transferir, la suma de los `total` **mayores a 0**. El `total` de una fila conserva su signo (un saldo negativo es lo que se descuenta del mes siguiente) y entra en `totales.total`; la UI nunca lo muestra como "a pagar" (ver `arquitectura-frontend.md`).
 - `fechaTransferencia`: sólo en una `PAGADA`; `descontadaEnMes`: sólo en una `DESCONTADA` ("Descontada en la liquidación de …"). Si no, `null`.
 
 **`GET /liquidaciones/profesores/{profesorId}/{mes}`**: el detalle, con el mismo cálculo del listado.

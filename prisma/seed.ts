@@ -13,6 +13,7 @@ import { hashPassword } from '@/lib/auth'
 import { prisma } from '@/lib/prisma'
 import { normalizarBusqueda } from '@/server/shared/busqueda'
 import { dateAFecha, fechaADate, hoy } from '@/server/shared/fechas'
+import { upsertUsuario } from './seed-comun'
 
 const ROLES = [
   {
@@ -75,16 +76,6 @@ const AULAS = [
   { nombre: 'Aula 9', capacidad: 10 },
 ]
 
-type UsuarioSeed = {
-  role: string
-  email: string
-  password: string
-  nombre: string
-  apellido: string
-  dni: string
-  telefono: string
-}
-
 // Lee las credenciales del seed desde env y falla con un mensaje claro si falta alguna.
 function credenciales() {
   const variables = {
@@ -104,36 +95,6 @@ function credenciales() {
     )
   }
   return variables as { [K in keyof typeof variables]: string }
-}
-
-async function upsertUsuario(datos: UsuarioSeed) {
-  const { email, password, ...resto } = datos
-  const perfil = {
-    ...resto,
-    busqueda: normalizarBusqueda(`${datos.apellido} ${datos.nombre} ${datos.dni}`),
-  }
-  const usuario = await prisma.usuario.upsert({
-    where: { email },
-    create: { id: randomUUID(), email, emailVerified: true, ...perfil },
-    update: perfil,
-  })
-
-  // La contraseña vive en Account (providerId 'credential', accountId = id del usuario),
-  // que es donde la busca Better Auth en el login. Se re-hashea en cada corrida.
-  const hash = await hashPassword(password)
-  await prisma.account.upsert({
-    where: { providerId_accountId: { providerId: 'credential', accountId: usuario.id } },
-    create: {
-      id: randomUUID(),
-      providerId: 'credential',
-      accountId: usuario.id,
-      userId: usuario.id,
-      password: hash,
-    },
-    update: { password: hash },
-  })
-
-  return usuario
 }
 
 // Usuario del portal (HU-27): inicial del nombre + apellido + últimos 3 dígitos del DNI, en

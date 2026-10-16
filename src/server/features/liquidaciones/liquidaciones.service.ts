@@ -69,6 +69,11 @@ function sumarTotales(filas: readonly TotalesLiquidacion[]): TotalesLiquidacion 
   }
 }
 
+/** Lo que hay que transferir: la suma de los totales mayores a 0, en centavos. */
+function sumarAPagar(filas: readonly TotalesLiquidacion[]): number {
+  return filas.reduce((suma, fila) => suma + Math.max(aCentavos(fila.total), 0), 0) / 100
+}
+
 function aFila(liquidacion: Liquidacion): FilaLiquidacion {
   return {
     profesor: liquidacion.profesor,
@@ -296,17 +301,22 @@ export function crearLiquidacionesService({
   return {
     /**
      * Las liquidaciones del mes (por defecto, el último terminado), una por profesor con
-     * movimientos, paginadas en memoria; `totales` es de todo el listado.
+     * movimientos, que se pueden filtrar por profesor y por estado, paginadas en memoria;
+     * `totales` es de todo el listado filtrado.
      */
     async listar(query: LiquidacionesQuery): Promise<LiquidacionesDelMes> {
       const fechaHoy = hoy(reloj)
       const mes = query.mes ?? mesAnterior(mesDe(fechaHoy))
       exigirMesNoFuturo(mes, fechaHoy)
-      const filas = (await repository.delMes({ mes, hoy: fechaHoy })).map(aFila)
+      const delMes = (
+        await repository.delMes({ mes, profesorId: query.profesorId, hoy: fechaHoy })
+      ).map(aFila)
+      // El estado se filtra antes de paginar y de sumar: el total y las páginas son los del filtro.
+      const filas = query.estado ? delMes.filter((fila) => fila.estado === query.estado) : delMes
       const { skip, take } = calcularSkipTake(query)
       return {
         mes,
-        totales: sumarTotales(filas),
+        totales: { ...sumarTotales(filas), totalAPagar: sumarAPagar(filas) },
         data: filas.slice(skip, skip + take),
         meta: armarMeta(query, filas.length),
       }
