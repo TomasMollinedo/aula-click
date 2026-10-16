@@ -25,10 +25,38 @@ const pagoVigente = {
   alumno: juan,
   total: 32000,
   turnos: [
-    { turnoId: 41, fecha: '2999-10-05', materia: { id: 2, nombre: 'Matemática' }, importe: 8000 },
-    { turnoId: 41, fecha: '2999-10-12', materia: { id: 2, nombre: 'Matemática' }, importe: 8000 },
+    {
+      turnoId: 41,
+      fecha: '2999-10-05',
+      materia: { id: 2, nombre: 'Matemática' },
+      importe: 8000,
+      asistencia: null,
+    },
+    {
+      turnoId: 41,
+      fecha: '2999-10-12',
+      materia: { id: 2, nombre: 'Matemática' },
+      importe: 8000,
+      asistencia: null,
+    },
   ],
   transferencia: null,
+}
+
+/** El pago de siempre con su primer turno ya dictado (T-179). */
+const pagoConTurnoDictado = {
+  ...pagoVigente,
+  turnos: pagoVigente.turnos.map((turno, i) =>
+    i === 0 ? { ...turno, asistencia: 'PRESENTE' } : turno,
+  ),
+}
+
+const errorTurnosDictados = {
+  code: 'TURNOS_DICTADOS',
+  message: 'No se puede anular: el pago incluye turnos que ya se dictaron',
+  details: [
+    { fecha: '2999-10-05', materia: { id: 2, nombre: 'Matemática' }, asistencia: 'PRESENTE' },
+  ],
 }
 
 function sesion(role = 'MESA_ENTRADAS') {
@@ -115,6 +143,16 @@ describe('GET /anulaciones/previa', () => {
     expect(res.status).toBe(409)
     expect((await res.json()).error.code).toBe('PAGO_ANULADO')
   })
+
+  it('pago con turnos ya dictados → 409 TURNOS_DICTADOS con los turnos en details', async () => {
+    repository.leerPago.mockResolvedValue(pagoConTurnoDictado)
+
+    const res = await previa()
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toEqual(errorTurnosDictados)
+    expect(repository.leerContextoDePrevia).not.toHaveBeenCalled()
+  })
 })
 
 describe('POST /anulaciones', () => {
@@ -169,6 +207,27 @@ describe('POST /anulaciones', () => {
     expect(json.error.message).toBe('Un pago anulado no se puede volver a activar')
     expect(repository.anular).not.toHaveBeenCalled()
   })
+
+  it('pago con turnos ya dictados → 409 TURNOS_DICTADOS y no llega a anular', async () => {
+    repository.leerPago.mockResolvedValue(pagoConTurnoDictado)
+
+    const res = await anular({ pagoId: 31, motivo: 'ERROR_CARGA' })
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toEqual(errorTurnosDictados)
+    expect(repository.anular).not.toHaveBeenCalled()
+  })
+
+  it('una asistencia registrada antes del lock → 409 TURNOS_DICTADOS desde el verificar', async () => {
+    repository.anular.mockImplementation(
+      async (_entrada, verificar) => verificar(pagoConTurnoDictado).turnos.length,
+    )
+
+    const res = await anular({ pagoId: 31, motivo: 'ERROR_CARGA' })
+
+    expect(res.status).toBe(409)
+    expect((await res.json()).error).toEqual(errorTurnosDictados)
+  })
 })
 
 describe('OpenAPI', () => {
@@ -193,5 +252,24 @@ describe('OpenAPI', () => {
       '404',
       '409',
     ])
+  })
+
+  it('el 409 documenta PAGO_ANULADO y TURNOS_DICTADOS en los dos endpoints', () => {
+    const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
+    for (const [path, metodo] of [
+      ['/api/v1/anulaciones/previa', 'get'],
+      ['/api/v1/anulaciones', 'post'],
+    ] as const) {
+      const conflicto = doc.paths?.[path]?.[metodo]?.responses?.['409'] as {
+        description: string
+        content: Record<
+          string,
+          { examples?: Record<string, { value: { error: { code: string } } }> }
+        >
+      }
+      expect(conflicto.description).toContain('TURNOS_DICTADOS')
+      const ejemplos = Object.values(conflicto.content['application/json']?.examples ?? {})
+      expect(ejemplos.map((e) => e.value.error.code)).toEqual(['PAGO_ANULADO', 'TURNOS_DICTADOS'])
+    }
   })
 })

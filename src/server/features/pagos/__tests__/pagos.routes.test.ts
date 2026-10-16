@@ -16,6 +16,7 @@ const { repository, alumnosRepository, getSession } = vi.hoisted(() => ({
     listarRealizados: vi.fn(),
     listarDelAlumno: vi.fn(),
     buscarAdjunto: vi.fn(),
+    tieneTurnosDictados: vi.fn(),
     buscarAlumnos: vi.fn(),
     buscarProfesores: vi.fn(),
     buscarMaterias: vi.fn(),
@@ -166,6 +167,7 @@ beforeEach(() => {
   }))
   repository.buscarComprobante.mockResolvedValue(comprobante)
   repository.buscarAdjunto.mockResolvedValue(null)
+  repository.tieneTurnosDictados.mockResolvedValue(false)
   repository.listarRealizados.mockResolvedValue(realizados)
   repository.listarDelAlumno.mockResolvedValue(misPagos)
 })

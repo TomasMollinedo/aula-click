@@ -1,6 +1,6 @@
 import { vi } from 'vitest'
 import { ConflictError } from '@/server/errors'
-import type { PagoParaAnular } from '@/server/features/pagos/pagos.condiciones'
+import type { PagoParaAnular, TurnoDePagoAAnular } from '@/server/features/pagos/pagos.condiciones'
 import type { AnulacionesRepository } from '../anulaciones.repository'
 
 // `anulacionesRepository` en memoria para los tests del service (T-104), con el patrón del pago y la
@@ -9,27 +9,53 @@ import type { AnulacionesRepository } from '../anulaciones.repository'
 // momento y ejecuta el `verificar` real que le pasa el service. Si `verificar` lanza, no se escribe
 // nada. Una ocurrencia está pagada si algún pago **vigente** la incluye (como `PagoTurno.vigente`
 // en el motor); `cobrar` simula un pago nuevo en la misma cola.
+//
+// Las asistencias (T-179) se guardan aparte, como `AsistenciaTurno`, por `(turnoId, fecha)`: el pago
+// se lee con la de cada turno (como `leerPagoParaAnular`). `registrarAsistencia` escribe una en la
+// misma cola que `anular`, como registrar asistencia, que toma el mismo lock del alumno.
 
-export type PagoEnBase = PagoParaAnular
+type Asistencia = NonNullable<TurnoDePagoAAnular['asistencia']>
+
+/** Un pago guardado: sus turnos no traen la asistencia, que se lee aparte al leerlo. */
+export type PagoEnBase = Omit<PagoParaAnular, 'turnos'> & {
+  turnos: Omit<TurnoDePagoAAnular, 'asistencia'>[]
+}
 
 export type DatosDePreviaEnBase = {
   deudaVencida?: { cantidad: number; total: number }
   precios?: Map<number, number | null>
+  /** Asistencias ya registradas: `[turnoId, fecha, estado]`. */
+  asistencias?: [number, string, Asistencia][]
 }
 
 export function crearAnulacionesEnMemoria(
   pagos: PagoEnBase[],
-  { deudaVencida = { cantidad: 0, total: 0 }, precios = new Map() }: DatosDePreviaEnBase = {},
+  {
+    deudaVencida = { cantidad: 0, total: 0 },
+    precios = new Map(),
+    asistencias: iniciales = [],
+  }: DatosDePreviaEnBase = {},
 ) {
   const anulaciones = new Map<
     number,
     { motivo: string; detalle: string | null; creadoPor: string }
   >()
   const clave = (turnoId: number, fecha: string) => `${turnoId}|${fecha}`
+  const asistencias = new Map(
+    iniciales.map(([turnoId, fecha, estado]) => [clave(turnoId, fecha), estado]),
+  )
 
-  const leer = (pagoId: number) => {
+  const leer = (pagoId: number): PagoParaAnular | null => {
     const pago = pagos.find((p) => p.id === pagoId)
-    return pago ? structuredClone(pago) : null
+    if (!pago) return null
+    const copia = structuredClone(pago)
+    return {
+      ...copia,
+      turnos: copia.turnos.map((turno) => ({
+        ...turno,
+        asistencia: asistencias.get(clave(turno.turnoId, turno.fecha)) ?? null,
+      })),
+    }
   }
 
   /** Ocurrencias con un pago vigente: lo que el motor lee como `PAGADO`. */
@@ -98,10 +124,20 @@ export function crearAnulacionesEnMemoria(
     return ejecucion
   }
 
+  /** Registra la asistencia de una ocurrencia en la misma cola que las anulaciones. */
+  function registrarAsistencia(turnoId: number, fecha: string, estado: Asistencia) {
+    const ejecucion = cola.then(() => {
+      asistencias.set(clave(turnoId, fecha), estado)
+    })
+    cola = ejecucion.catch(() => undefined)
+    return ejecucion
+  }
+
   return {
     repository: { leerPago, leerContextoDePrevia, anular },
     anulaciones,
     pagadas,
     cobrar,
+    registrarAsistencia,
   }
 }

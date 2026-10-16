@@ -302,6 +302,8 @@ export type EntradaAccionesPago = {
   formaPago: CodigoFormaPago
   /** Si tiene un comprobante adjunto activo. */
   tieneAdjunto: boolean
+  /** Si alguno de sus turnos ya tiene asistencia (`PRESENTE` o `AUSENTE`): ya se dictó. */
+  tieneTurnosDictados: boolean
 }
 
 /**
@@ -309,7 +311,7 @@ export type EntradaAccionesPago = {
  * aceptan `POST /anulaciones` y `PUT`/`DELETE /adjuntos/pagos/{pagoId}` (T-95): un pago anulado
  * conserva todo como estaba, un efectivo no lleva adjunto y uno por transferencia no puede quedar
  * sin comprobante. Sólo la mesa de entradas actúa; el gerente ve en sólo lectura (todas en `false`).
- * - `anular`: vigente.
+ * - `anular`: vigente y sin turnos ya dictados (decisión T-179).
  * - `reemplazarAdjunto`: vigente y con transferencia o débito (en un débito sin adjunto es
  *   "adjuntar").
  * - `quitarAdjunto`: vigente, con débito y con adjunto.
@@ -319,10 +321,11 @@ export function accionesDelPago({
   estado,
   formaPago,
   tieneAdjunto,
+  tieneTurnosDictados,
 }: EntradaAccionesPago): AccionesPago {
   const puede = rol === 'MESA_ENTRADAS' && estado === 'VIGENTE'
   return {
-    anular: puede,
+    anular: puede && !tieneTurnosDictados,
     reemplazarAdjunto: puede && formaPago !== 'EFECTIVO',
     quitarAdjunto: puede && formaPago === 'DEBITO' && tieneAdjunto,
   }

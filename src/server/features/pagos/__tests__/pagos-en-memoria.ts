@@ -160,6 +160,8 @@ export function crearPagosEnMemoria(
   const listarRealizados = vi.fn<PagosRepository['listarRealizados']>()
   const listarDelAlumno = vi.fn<PagosRepository['listarDelAlumno']>()
   const buscarAdjunto = vi.fn<PagosRepository['buscarAdjunto']>(async () => null)
+  // Las asistencias (T-179), tampoco: por defecto, ningún turno dictado.
+  const tieneTurnosDictados = vi.fn<PagosRepository['tieneTurnosDictados']>(async () => false)
   // Los buscadores de los filtros (T-100), tampoco: por defecto, ninguna opción.
   const buscarAlumnos = vi.fn<PagosRepository['buscarAlumnos']>(async () => [])
   const buscarProfesores = vi.fn<PagosRepository['buscarProfesores']>(async () => [])
@@ -173,6 +175,7 @@ export function crearPagosEnMemoria(
       listarRealizados,
       listarDelAlumno,
       buscarAdjunto,
+      tieneTurnosDictados,
       buscarAlumnos,
       buscarProfesores,
       buscarMaterias,
