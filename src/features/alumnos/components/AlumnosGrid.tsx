@@ -6,17 +6,17 @@ import { Card } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/utils/cn'
 
-import type { AlumnoListadoItem } from '../alumnos.types'
+import type { AlumnoListadoItem, AlumnoMateria } from '../alumnos.types'
 import { AlumnoCard } from './AlumnoCard'
 
 type AlumnosGridProps = {
   /** URL del listado de alumnos en el segmento del rol (por ejemplo `/mesa/alumnos`). */
   rutaBase: string
-  /** URL que abre la edición de un alumno como modal encima del listado. */
-  hrefEditar: (id: number) => string
+  /** URL que abre la edición de un alumno como modal encima del listado. Sin ella, no hay lápiz. */
+  hrefEditar?: (id: number) => string
   /** Se llama al abrir la edición con el lápiz en esta pestaña (no con Cmd/Ctrl+clic). */
-  onEditar: () => void
-  data?: AlumnoListadoItem[]
+  onEditar?: () => void
+  data?: (AlumnoListadoItem & { materias?: AlumnoMateria[] })[]
   isLoading: boolean
   /** Hay datos en pantalla y se está pidiendo otra página o búsqueda. */
   isFetching: boolean
@@ -24,7 +24,8 @@ type AlumnosGridProps = {
   vacio: ReactNode
 }
 
-// Grilla de tarjetas del listado (HU-26), como ProfesoresGrid.
+// Grilla de tarjetas del listado (HU-26), como ProfesoresGrid. La comparten mesa (con edición) y
+// "Mis alumnos" del profesor (solo lectura: sin `hrefEditar`).
 export function AlumnosGrid({
   rutaBase,
   hrefEditar,

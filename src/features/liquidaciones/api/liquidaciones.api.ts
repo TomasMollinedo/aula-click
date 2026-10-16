@@ -6,6 +6,8 @@ import type {
   LiquidacionesDelMes,
   ListarLiquidacionesDelMesParams,
   MiLiquidacionDetalle,
+  MisIngresos,
+  MisLiquidaciones,
   PagoLiquidacionRegistrado,
   RegistrarPagoLiquidacion,
 } from '../liquidaciones.types'
@@ -53,6 +55,17 @@ export function registrarPagoLiquidacion({
       body: JSON.stringify(body),
     },
   )
+}
+
+/** "Mis ingresos" del profesor de la sesión (T-126): el mes en curso y sus clases. */
+export function obtenerMisIngresos(): Promise<MisIngresos> {
+  return fetchJson<MisIngresos>(`${BASE}/mis-ingresos`)
+}
+
+/** Las liquidaciones del profesor de la sesión, una por mes, sin el mes en curso (T-126). */
+export function obtenerMisLiquidaciones(page: number, pageSize: number): Promise<MisLiquidaciones> {
+  const params = new URLSearchParams({ page: String(page), pageSize: String(pageSize) })
+  return fetchJson<MisLiquidaciones>(`${BASE}/mis-liquidaciones?${params.toString()}`)
 }
 
 /** La liquidación del profesor de la sesión (T-126). */

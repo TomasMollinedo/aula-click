@@ -5,19 +5,20 @@ import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
 import { TableHead } from '@/components/ui/table'
 import { cn } from '@/utils/cn'
 
-import type { DireccionOrden, OrdenProfesores } from '../tablero.types'
+/** La dirección de un orden, la misma que mandan las APIs (`?direccion=`). */
+export type SortDirection = 'asc' | 'desc'
 
 /**
- * El encabezado de una columna que ordena la tabla de profesores (HU-39). Es el único lugar del
- * proyecto con una tabla ordenable, así que vive en la feature: si aparece un segundo consumidor,
- * se sube a `components/ui/`.
+ * El encabezado de una columna que reordena una tabla. Genérico sobre el nombre de las columnas
+ * (`T`, el conjunto de valores que acepta la API en `?orden=`), así que cada tabla pasa el suyo y
+ * el compilador no deja ordenar por una columna que no existe.
  *
  * Accesibilidad: el `<th>` activo lleva `aria-sort` (`ascending` o `descending`) y el control es un
  * `<button>` con el **texto** de la columna, no sólo un ícono; el ícono es decorativo
  * (`aria-hidden`) y el estado se dice en palabras para el lector de pantalla. El que ordena la
  * tabla es el servidor: acá sólo se avisa qué columna se clickeó.
  */
-export function EncabezadoOrdenable({
+export function SortableTableHead<T extends string>({
   columna,
   children,
   orden,
@@ -25,12 +26,12 @@ export function EncabezadoOrdenable({
   onOrdenar,
   numerica = false,
 }: {
-  columna: OrdenProfesores
+  columna: T
   children: string
   /** La columna por la que está ordenada la tabla ahora. */
-  orden: OrdenProfesores
-  direccion: DireccionOrden
-  onOrdenar: (columna: OrdenProfesores) => void
+  orden: T
+  direccion: SortDirection
+  onOrdenar: (columna: T) => void
   /** Columna de números: se alinea a la derecha, como sus celdas. */
   numerica?: boolean
 }) {
