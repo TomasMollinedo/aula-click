@@ -41,6 +41,7 @@ import {
   valoresInicialesPago,
 } from '../pagos.schema'
 import { hrefComprobante } from '../rutas-pagos'
+import { CamposDelMedio, SelectorFormaPago } from './CamposFormaPago'
 import { ResumenACobrarTabla } from './ResumenACobrarTabla'
 import { TurnosRechazados } from './TurnosRechazados'
 
@@ -50,9 +51,14 @@ const FORM_ID = 'registrar-pago-form'
 type Paso = 'formulario' | 'confirmar'
 
 /**
- * Registrar el pago en efectivo de una o varias ocurrencias de un alumno (HU-15). Un solo diálogo
- * por pasos: formulario → confirmar → éxito (o el rechazo de la API). Lo abren `AccionRegistrarPago`
- * (desde el detalle del turno) y `cuentas` (con `renderRegistrarPago`, compuesto en `app/`).
+ * Registrar el pago de una o varias ocurrencias de un alumno (HU-15), en efectivo, por
+ * transferencia o con débito (HU-23), con el comprobante adjunto que se sube al elegirlo (HU-24).
+ * Un solo diálogo por pasos: formulario → confirmar → éxito (o el rechazo de la API). Lo abren
+ * `AccionRegistrarPago` (desde el detalle del turno) y `cuentas` (con `renderRegistrarPago`,
+ * compuesto en `app/`).
+ *
+ * - La forma de pago se elige siempre (no hay una por defecto) y el formulario muestra solo los
+ *   campos de esa (`CamposFormaPago`). Mientras se sube el comprobante no se puede continuar.
  *
  * - Los importes que muestra son los que mandó la API a quien lo abre; el cliente solo los suma
  *   para el resumen (`resumenACobrar`). Cantidad, total y vuelto del éxito salen de la respuesta.
@@ -64,6 +70,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
   const mutation = useRegistrarPago()
   const toast = useToast()
   const [paso, setPaso] = useState<Paso>('formulario')
+  const [subiendoComprobante, setSubiendoComprobante] = useState(false)
   // `isPending` se actualiza después del próximo tick: un doble clic rápido llegaría a mandar dos
   // veces. El ref lo corta en el mismo evento.
   const enviando = useRef(false)
@@ -118,6 +125,8 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
   }, [vista, primerCampoConError, setFocus])
 
   const continuar = handleSubmit(() => {
+    // El botón ya está deshabilitado; esto corta un Enter en un campo mientras sube.
+    if (subiendoComprobante) return
     mutation.reset()
     setPaso('confirmar')
   })
@@ -158,7 +167,9 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
       >
         <DialogHeader>
           <DialogTitle>Registrar pago</DialogTitle>
-          <DialogDescription>Pago en efectivo de los turnos del alumno.</DialogDescription>
+          <DialogDescription>
+            Pago de los turnos del alumno, con la forma de pago que elijas.
+          </DialogDescription>
         </DialogHeader>
 
         <div ref={contenidoRef} tabIndex={-1} className="space-y-5 outline-none">
@@ -217,10 +228,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               </section>
 
               <div className="grid gap-5 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <p className="text-sm font-semibold">Forma de pago</p>
-                  <p className="text-sm">Efectivo</p>
-                </div>
+                <SelectorFormaPago form={form} />
                 <Field
                   label="Fecha de pago"
                   htmlFor="pago-fechaPago"
@@ -238,28 +246,7 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
                 </Field>
               </div>
 
-              <Field
-                label="Monto recibido"
-                htmlFor="pago-montoRecibido"
-                required
-                error={errors.montoRecibido?.message}
-              >
-                <Input
-                  id="pago-montoRecibido"
-                  inputMode="decimal"
-                  autoComplete="off"
-                  placeholder="Por ejemplo 35.000"
-                  aria-invalid={!!errors.montoRecibido}
-                  aria-describedby={cn(
-                    fieldErrorId('pago-montoRecibido'),
-                    'pago-montoRecibido-ayuda',
-                  )}
-                  {...register('montoRecibido')}
-                />
-                <p id="pago-montoRecibido-ayuda" className="text-muted-foreground text-xs">
-                  Lo que entrega el alumno: con eso calculamos el vuelto
-                </p>
-              </Field>
+              <CamposDelMedio form={form} onSubiendo={setSubiendoComprobante} />
 
               <Field
                 label="Observaciones"
@@ -302,8 +289,8 @@ export function RegistrarPagoDialog({ alumnoId, ocurrencias, onCerrar }: Solicit
               <Button type="button" variant="outline" onClick={cerrar}>
                 Cancelar
               </Button>
-              <Button type="submit" form={FORM_ID}>
-                Continuar
+              <Button type="submit" form={FORM_ID} disabled={subiendoComprobante}>
+                {subiendoComprobante ? 'Subiendo comprobante…' : 'Continuar'}
               </Button>
             </>
           )}
