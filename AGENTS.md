@@ -43,6 +43,7 @@ Node 24.19.0 y pnpm 11.21.0 (`corepack enable`). Scripts de `package.json`:
 | `pnpm services:up` / `services:down`            | Levanta / baja Postgres y MinIO (Docker Compose)                    |
 | `pnpm db:migrate` / `db:generate` / `db:studio` | Migraciones, cliente Prisma, explorador visual                      |
 | `pnpm db:seed`                                  | Seed de desarrollo (idempotente; `migrate dev` no lo corre solo)    |
+| `pnpm db:seed:liquidaciones`                    | Datos de liquidaciones (después de `db:seed`; ver `README.md`)      |
 
 `postinstall` genera el cliente Prisma y `prepare` instala husky. Hooks: `pre-commit` corre lint-staged (eslint --fix + prettier) y `pre-push` corre `pnpm check`. El CI (`.github/workflows/ci.yml`) corre `pnpm check` en push a `main` y en cada PR.
 

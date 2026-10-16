@@ -75,9 +75,12 @@ export type ClaseLeida = {
 }
 
 export const liquidacionesRepository = {
-  /** Una liquidación por profesor con movimientos en `mes` (aunque esté inactivo), por apellido y nombre. */
-  async delMes({ mes, hoy }: { mes: string; hoy: string }): Promise<Liquidacion[]> {
-    return liquidacionesDelMes(prisma, { mes, hoy })
+  /**
+   * Una liquidación por profesor con movimientos en `mes` (aunque esté inactivo), por apellido y
+   * nombre; con `profesorId`, sólo la de ese profesor.
+   */
+  async delMes(filtro: { mes: string; profesorId?: number; hoy: string }): Promise<Liquidacion[]> {
+    return liquidacionesDelMes(prisma, filtro)
   },
 
   /** La liquidación de `profesorId` en `mes` (cerrada o abierta), o `null` sin movimientos. */

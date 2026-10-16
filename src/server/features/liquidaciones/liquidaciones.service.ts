@@ -281,7 +281,9 @@ export function crearLiquidacionesService({
       const fechaHoy = hoy(reloj)
       const mes = query.mes ?? mesAnterior(mesDe(fechaHoy))
       exigirMesNoFuturo(mes, fechaHoy)
-      const filas = (await repository.delMes({ mes, hoy: fechaHoy })).map(aFila)
+      const filas = (
+        await repository.delMes({ mes, profesorId: query.profesorId, hoy: fechaHoy })
+      ).map(aFila)
       const { skip, take } = calcularSkipTake(query)
       return {
         mes,

@@ -51,6 +51,11 @@ export const liquidacionesQuerySchema = paginacionQuerySchema.extend({
       'Mes a liquidar (AAAA-MM). Por defecto, el último mes terminado. No puede ser futuro',
     example: '2026-09',
   }),
+  profesorId: idPositivo('Sólo las liquidaciones de este profesor', 4)
+    .optional()
+    .openapi({
+      param: { name: 'profesorId', in: 'query' },
+    }),
 })
 
 export type LiquidacionesQuery = z.infer<typeof liquidacionesQuerySchema>
