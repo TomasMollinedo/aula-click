@@ -225,10 +225,36 @@ describe('GET /historiales/alumnos/{alumnoId}/pdf', { timeout: 30_000 }, () => {
     await esperarError(await pedir('/alumnos/99/pdf'), 404, 'NO_ENCONTRADO')
   })
 
-  it('sólo mesa de entradas: el profesor, el gerente y el alumno reciben 403', async () => {
-    getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
-    await esperarError(await pedir('/alumnos/12/pdf'), 403, 'SIN_PERMISO')
+  it('con un rango manda las dos fechas y responde el PDF del período', async () => {
+    const res = await pedir('/alumnos/12/pdf?desde=2020-01-05&hasta=2020-02-12')
 
+    expect(res.status).toBe(200)
+    esperarHeadersDePdf(res, 'historial-academico-gonzalez-lucia-2020-01-05_2020-02-12.pdf')
+    expect(repository.leerExamenesDelPeriodo).toHaveBeenCalledWith({
+      alumnoId: 12,
+      desde: '2020-01-05',
+      hasta: '2020-02-12',
+    })
+  })
+
+  it('`hasta` anterior a `desde`: 400 con `details` sobre `hasta`', async () => {
+    const res = await pedir('/alumnos/12/pdf?desde=2020-01-31&hasta=2020-01-01')
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.details).toEqual([
+      { path: ['hasta'], message: 'La fecha hasta no puede ser anterior a la fecha desde' },
+    ])
+  })
+
+  it('el profesor lo saca si el alumno es suyo, y recibe 403 si no', async () => {
+    getSession.mockResolvedValue(sesion('PROFESOR', 'usr_ana'))
+    expect((await pedir('/alumnos/12/pdf')).status).toBe(200)
+
+    repository.profesorTieneAlumno.mockResolvedValue(false)
+    await esperarError(await pedir('/alumnos/12/pdf'), 403, 'SIN_PERMISO')
+  })
+
+  it('el gerente y el alumno no lo sacan: 403', async () => {
     getSession.mockResolvedValue(sesion('GERENTE', 'usr_ger'))
     await esperarError(await pedir('/alumnos/12/pdf'), 403, 'SIN_PERMISO')
 
@@ -385,7 +411,13 @@ describe('OpenAPI', () => {
         .sort()
 
     expect(enQuery('/alumnos/{alumnoId}')).toEqual(['desde', 'hasta', 'materiaId', 'profesorId'])
-    expect(enQuery('/alumnos/{alumnoId}/pdf')).toEqual(['materiaId', 'mes', 'profesorId'])
+    expect(enQuery('/alumnos/{alumnoId}/pdf')).toEqual([
+      'desde',
+      'hasta',
+      'materiaId',
+      'mes',
+      'profesorId',
+    ])
     expect(enQuery('/mis-materias')).toEqual([])
     expect(enQuery('/mis-materias/{materiaId}/{profesorId}')).toEqual(['mes'])
   })

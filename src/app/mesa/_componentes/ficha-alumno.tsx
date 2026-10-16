@@ -71,7 +71,7 @@ function FichaAlumnoConDetalle({ alumnoId }: { alumnoId: string }) {
         renderHistorial={(alumno) => (
           // Sin `renderDetalle`: el detalle del turno de esta ficha se monta una sola vez, abajo,
           // para todas sus pestañas. El historial sólo navega a `?detalle=&fecha=`.
-          <HistorialAcademico alumnoId={alumno.id} rol="MESA_ENTRADAS" />
+          <HistorialAcademico alumnoId={alumno.id} />
         )}
         renderExamenes={(alumno) => <ExamenesDelAlumno alumnoId={alumno.id} rol="MESA_ENTRADAS" />}
         renderPagos={(alumno) => (

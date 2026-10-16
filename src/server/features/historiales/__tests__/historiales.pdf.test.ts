@@ -131,6 +131,16 @@ describe('renderizarHistorialPdf', { timeout: 60_000 }, () => {
     expect(idioma(pdf)).toBe('es')
   })
 
+  it('un período que no es un mes se rotula "Período" y renderiza', async () => {
+    const pdf = await renderizarHistorialPdf({
+      documento: documento({ mes: null, desde: '2026-09-05', hasta: '2026-10-12' }),
+      ...encabezado,
+    })
+
+    expect(pdf.subarray(0, 5).toString('latin1')).toBe('%PDF-')
+    expect(metadato(pdf, 'Title')).toBe('Historial académico 05/09/2026 al 12/10/2026')
+  })
+
   it('un mes con dos materias, cancelados y exámenes renderiza todo el documento', async () => {
     const pdf = await renderizarHistorialPdf({ documento: documento(), ...encabezado })
 

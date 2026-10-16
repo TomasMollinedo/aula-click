@@ -38,15 +38,20 @@ export const historialDelAlumno: RouteHandler<typeof historialDelAlumnoRoute, Ap
 }
 
 /**
- * El historial del mes en PDF (HU-32): el mismo cálculo del historial, con el encabezado oficial y
- * los headers comunes de los documentos.
+ * El historial del período en PDF (HU-32): el mismo cálculo del historial, con el encabezado
+ * oficial y los headers comunes de los documentos. El actor decide el acceso (un profesor, sólo
+ * sus alumnos), como en el historial JSON.
  */
 export const historialDelAlumnoPdf: RouteHandler<
   typeof historialDelAlumnoPdfRoute,
   AppEnv
 > = async (c) => {
   const { alumnoId } = c.req.valid('param')
-  const documento = await historialesService.historialParaDocumento(alumnoId, c.req.valid('query'))
+  const documento = await historialesService.historialParaDocumento(
+    alumnoId,
+    c.req.valid('query'),
+    c.get('actor'),
+  )
   const pdf = await renderizarHistorialPdf({
     documento,
     ...encabezadoDeDocumento(c.get('user')),

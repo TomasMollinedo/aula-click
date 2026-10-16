@@ -24,7 +24,7 @@ import {
   tituloGrupo,
 } from './historiales.formato'
 
-// El historial académico de un alumno en un mes, en PDF (HU-32, T-110). Solo presentación: recibe
+// El historial académico de un alumno en un período, en PDF (HU-32, T-110). Solo presentación:
 // lo que arma el service con **el mismo cálculo** del historial de la pantalla (los grupos, su
 // resumen y sus bloques de horas seguidas) y no agrupa, no reordena y no cuenta nada. No lleva las
 // observaciones internas del alumno ni de los turnos.
@@ -113,7 +113,7 @@ function GrupoDelHistorialPdf({ grupo }: { grupo: HistorialDocumento['grupos'][n
 }
 
 export function HistorialPdf({ documento, ...encabezado }: DatosHistorialPdf) {
-  const { alumno, desde, hasta, filtros, grupos, cancelados, examenes } = documento
+  const { alumno, mes, desde, hasta, filtros, grupos, cancelados, examenes } = documento
   const filtrosAplicados = textoFiltrosDelHistorial(filtros)
 
   return (
@@ -132,7 +132,11 @@ export function HistorialPdf({ documento, ...encabezado }: DatosHistorialPdf) {
               label="Nivel de escolaridad"
               valor={etiquetaNivelEscolaridad(alumno.nivelEscolaridad)}
             />
-            <CampoPdf label="Mes" valor={textoMesDelHistorial(desde, hasta)} />
+            {/* Un mes completo se rotula "Mes"; cualquier otro rango, "Período" (T-163). */}
+            <CampoPdf
+              label={mes === null ? 'Período' : 'Mes'}
+              valor={textoMesDelHistorial(desde, hasta)}
+            />
             <CampoPdf label="Filtros" valor={filtrosAplicados} />
           </CamposPdf>
         </SeccionPdf>

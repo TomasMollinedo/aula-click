@@ -10,7 +10,6 @@ import { EmptyState } from '@/components/ui/empty-state'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useDetalleEnUrl } from '@/features/ocurrencias/hooks/use-detalle-en-url'
 import type { RenderDetalleOcurrencia } from '@/types/ocurrencia'
-import type { Role } from '@/types'
 import { cn } from '@/utils/cn'
 
 import { interpretarErrorHistorial } from '../errores-historiales'
@@ -27,12 +26,6 @@ const SIN_OPCIONES: OpcionesDelHistorial = { materias: [], profesores: [] }
 
 export type HistorialAcademicoProps = {
   alumnoId: number
-  /**
-   * Rol de quien mira. La pestaña es igual para mesa de entradas y profesor (sólo lectura en los
-   * dos, HU-31); lo único que cambia es el botón "Generar PDF", que sólo ve mesa de entradas
-   * (HU-32: el endpoint del documento también es sólo de ese rol).
-   */
-  rol: Role
   /**
    * El detalle del turno, que compone `app/` (es de `features/ocurrencias`). **Opcional**: una
    * pantalla que ya monta su propio detalle único para todas sus pestañas (la ficha de mesa de
@@ -73,10 +66,11 @@ function HistorialCargando() {
  * El clic en una clase navega a `?detalle=&fecha=`; quién monta el modal lo decide `app/` con
  * `renderDetalle` (ver sus props).
  *
- * Mesa de entradas tiene además "Generar PDF" junto a los filtros (HU-32), con el mes y los filtros
- * que se están viendo; el profesor no lo ve.
+ * "Generar PDF" va en la fila de los filtros, a la derecha de "Limpiar filtros" (HU-32), con el
+ * período y los filtros que se están viendo. Lo ven los dos roles: al profesor el endpoint le deja
+ * el documento de los alumnos que tiene o tuvo (decisión T-163).
  */
-export function HistorialAcademico({ alumnoId, rol, renderDetalle }: HistorialAcademicoProps) {
+export function HistorialAcademico({ alumnoId, renderDetalle }: HistorialAcademicoProps) {
   const id = useId()
   const { filtros, hoy, cambiar, elegirOpcion, elegirMes, elegirAnio, cambiarRango, limpiar } =
     useFiltrosHistorial()
@@ -108,13 +102,9 @@ export function HistorialAcademico({ alumnoId, rol, renderDetalle }: HistorialAc
           puedeLimpiar={hayFiltros(filtros, hoy)}
           errores={error?.tipo === 'filtros' ? error.campos : undefined}
           errorGeneral={error?.tipo === 'filtros' ? error.mensaje : null}
+          // "Generar PDF" va en la misma fila que "Limpiar filtros", a su derecha.
+          acciones={<BotonPdfHistorial alumnoId={alumnoId} filtros={filtros} />}
         />
-
-        {rol === 'MESA_ENTRADAS' && (
-          <div className="flex justify-end">
-            <BotonPdfHistorial alumnoId={alumnoId} filtros={filtros} />
-          </div>
-        )}
       </Card>
 
       {query.isPending ? (

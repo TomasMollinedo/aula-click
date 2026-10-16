@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import { nombreArchivoPdf } from '@/server/shared/pdf/respuesta'
-import { canceladosDeLosGrupos, nombreArchivoHistorial } from '../historiales.documentos'
+import {
+  canceladosDeLosGrupos,
+  mesDelPeriodo,
+  nombreArchivoHistorial,
+} from '../historiales.documentos'
 import type { BloqueDelHistorial, GrupoDelHistorial } from '../historiales.validation'
 
 // Lo propio del PDF del historial que no es dibujo (T-110): la lista de cancelados que sale de los
@@ -117,11 +121,29 @@ describe('canceladosDeLosGrupos', () => {
   })
 })
 
+describe('mesDelPeriodo', () => {
+  it('un mes completo (del primero al último día) es ese mes', () => {
+    expect(mesDelPeriodo('2026-10-01', '2026-10-31')).toBe('2026-10')
+    expect(mesDelPeriodo('2026-02-01', '2026-02-28')).toBe('2026-02')
+    // 2024 es bisiesto: el último día lo calcula `ultimoDiaDelMes`.
+    expect(mesDelPeriodo('2024-02-01', '2024-02-29')).toBe('2024-02')
+  })
+
+  it('cualquier otro rango no tiene mes', () => {
+    expect(mesDelPeriodo('2026-10-01', '2026-10-30')).toBeNull()
+    expect(mesDelPeriodo('2026-10-02', '2026-10-31')).toBeNull()
+    expect(mesDelPeriodo('2026-09-01', '2026-10-31')).toBeNull()
+    expect(mesDelPeriodo('2026-02-01', '2026-02-29')).toBeNull()
+  })
+})
+
 describe('nombreArchivoHistorial', () => {
   it('"historial-academico", el alumno (apellido y nombre) y el mes, con guiones (T-162)', () => {
     const nombre = nombreArchivoHistorial({
       alumno: { nombre: 'Juan', apellido: 'Pérez', dni: '30123456', nivelEscolaridad: null },
       mes: '2026-10',
+      desde: '2026-10-01',
+      hasta: '2026-10-31',
     })
 
     expect(nombre).toBe('historial-academico-Pérez-Juan-2026-10')
@@ -138,8 +160,21 @@ describe('nombreArchivoHistorial', () => {
         nivelEscolaridad: 'SECUNDARIO',
       },
       mes: '2026-09',
+      desde: '2026-09-01',
+      hasta: '2026-09-30',
     })
 
     expect(nombreArchivoPdf(nombre)).toBe('historial-academico-nunez-pena-maria-jose-2026-09')
+  })
+
+  it('un período que no es un mes completo lleva las dos fechas con `_` (T-123)', () => {
+    const nombre = nombreArchivoHistorial({
+      alumno: { nombre: 'Juan', apellido: 'Pérez', dni: '30123456', nivelEscolaridad: null },
+      mes: null,
+      desde: '2026-09-05',
+      hasta: '2026-10-12',
+    })
+
+    expect(nombreArchivoPdf(nombre)).toBe('historial-academico-perez-juan-2026-09-05_2026-10-12')
   })
 })

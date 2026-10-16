@@ -1,5 +1,6 @@
 import type { AlumnosRepository } from '@/server/features/alumnos/alumnos.repository'
 import type { ExamenDelPeriodo } from '@/server/features/examenes/examenes.condiciones'
+import { mesDe, primerDiaDelMes, ultimoDiaDelMes } from '@/server/shared/zod'
 import type { ClaseDelHistorial, GrupoDelHistorial } from './historiales.validation'
 
 // Lo propio del documento PDF del historial académico (T-110, HU-32) que no es dibujo: la forma de
@@ -46,14 +47,17 @@ export type FiltrosDelDocumento = {
   profesor: { nombre: string; apellido: string } | null
 }
 
-/** Lo que va en el PDF del historial académico de un alumno en un mes. */
+/** Lo que va en el PDF del historial académico de un alumno en un período. */
 export type HistorialDocumento = {
   alumno: AlumnoDelDocumento
-  /** El mes que se documenta (`AAAA-MM`): el pedido o el mes en curso. */
-  mes: string
-  /** Primer día del mes. */
+  /**
+   * El mes (`AAAA-MM`) cuando el período es un mes **completo**, y `null` cuando es un rango
+   * cualquiera (decisión T-163): de eso dependen el nombre del archivo y el rótulo del campo.
+   */
+  mes: string | null
+  /** Primer día del período, incluido. */
   desde: string
-  /** Último día del mes (las clases llegan hasta hoy, como en la pantalla). */
+  /** Último día del período, incluido (las clases llegan hasta hoy, como en la pantalla). */
   hasta: string
   filtros: FiltrosDelDocumento
   /** Los **mismos** grupos del historial de la pantalla: resumen y bloques de horas seguidas. */
@@ -100,12 +104,26 @@ export function canceladosDeLosGrupos(
 }
 
 /**
- * `historial-academico-gonzalez-lucia-2026-10` (sin extensión). HU-32 pide los `_` que la decisión
- * T-123 reserva para las dos fechas de un rango, así que van guiones (decisión T-162).
+ * El mes `AAAA-MM` si `[desde, hasta]` es **un mes completo** (del primero al último día), o `null`
+ * si es cualquier otro rango: con eso el documento se nombra y se rotula como mensual o como de un
+ * período (decisión T-163). Lanza `RangeError` si una fecha es inválida (`mesDe`).
+ */
+export function mesDelPeriodo(desde: string, hasta: string): string | null {
+  const mes = mesDe(desde)
+  const esMesCompleto = desde === primerDiaDelMes(mes) && hasta === ultimoDiaDelMes(mes)
+  return esMesCompleto ? mes : null
+}
+
+/**
+ * `historial-academico-gonzalez-lucia-2026-10` con un mes completo y
+ * `historial-academico-gonzalez-lucia-2026-10-05_2026-11-12` con un rango (sin extensión). HU-32
+ * pide los `_` que la decisión T-123 reserva para las dos fechas de un rango, así que entre las
+ * partes van guiones (decisión T-162) y el `_` queda sólo para separar las dos fechas.
  */
 export function nombreArchivoHistorial(
-  documento: Pick<HistorialDocumento, 'alumno' | 'mes'>,
+  documento: Pick<HistorialDocumento, 'alumno' | 'mes' | 'desde' | 'hasta'>,
 ): string {
-  const { alumno, mes } = documento
-  return `historial-academico-${alumno.apellido}-${alumno.nombre}-${mes}`
+  const { alumno, mes, desde, hasta } = documento
+  const periodo = mes ?? `${desde}_${hasta}`
+  return `historial-academico-${alumno.apellido}-${alumno.nombre}-${periodo}`
 }

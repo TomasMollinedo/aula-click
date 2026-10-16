@@ -159,18 +159,33 @@ export const historialQuerySchema = z.object({
 export type HistorialQuery = z.infer<typeof historialQuerySchema>
 
 // ---------------------------------------------------------------------------------------------
-// GET /historiales/alumnos/{alumnoId}/pdf?mes&materiaId&profesorId (HU-32, T-110)
+// GET /historiales/alumnos/{alumnoId}/pdf?mes|desde&hasta&materiaId&profesorId (HU-32, T-110)
 // ---------------------------------------------------------------------------------------------
 
 /**
- * El documento es **de un mes** (no de un rango): `mes` reemplaza a `desde`/`hasta`, con los mismos
- * filtros de materia y profesor que el historial de la ficha.
+ * El documento se pide **del mismo período que se ve en la pantalla** (decisión T-163): un `mes`
+ * (`AAAA-MM`) o un rango `desde`/`hasta`, con los mismos filtros de materia y profesor. Si vienen
+ * los dos, manda el rango; el extremo que falte lo completa el mes (o el mes en curso), igual que
+ * en `GET /historiales/alumnos/{alumnoId}`. El tope del rango es el mismo del historial
+ * (`MAX_DIAS_HISTORIAL`) y lo valida el service, no el schema.
  */
 export const historialPdfQuerySchema = z.object({
   mes: mesISO.optional().openapi({
     param: { name: 'mes', in: 'query' },
-    description: 'Mes del documento (AAAA-MM). Por defecto, el mes en curso',
+    description:
+      'Mes del documento (AAAA-MM). Sin `mes` ni `desde`/`hasta`, el mes en curso; si viene un rango, manda el rango',
     example: '2026-10',
+  }),
+  desde: fechaISO.optional().openapi({
+    param: { name: 'desde', in: 'query' },
+    description: 'Primer día del período, incluido. Tiene prioridad sobre `mes`',
+    example: '2026-10-01',
+  }),
+  hasta: fechaISO.optional().openapi({
+    param: { name: 'hasta', in: 'query' },
+    description:
+      'Último día del período, incluido. No puede ser anterior a `desde` ni superar los 366 días. Las clases van hasta hoy',
+    example: '2026-10-31',
   }),
   materiaId: idPositivo('Sólo las clases y los exámenes de esta materia', 3)
     .optional()

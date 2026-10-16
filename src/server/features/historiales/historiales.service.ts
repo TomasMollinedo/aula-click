@@ -6,6 +6,7 @@ import { hoy, sumarDias, type Reloj } from '@/server/shared/fechas'
 import { mesDe } from '@/server/shared/zod'
 import {
   canceladosDeLosGrupos,
+  mesDelPeriodo,
   type FiltrosDelDocumento,
   type HistorialDocumento,
 } from './historiales.documentos'
@@ -286,14 +287,23 @@ export function crearHistorialesService({
     },
 
     /**
-     * Lo que va en el PDF del historial académico (HU-32, T-110), de **un mes**: el alumno con su
-     * nivel de escolaridad, el mes y los filtros, los grupos del historial, los turnos cancelados
-     * del mes y sus exámenes.
+     * Lo que va en el PDF del historial académico (HU-32, T-110): el alumno con su nivel de
+     * escolaridad, el período y los filtros, los grupos del historial, los turnos cancelados del
+     * período y sus exámenes.
+     *
+     * **El período es el que se ve en la pantalla** (decisión T-163): un `mes` o un rango
+     * `desde`/`hasta`; si vienen los dos manda el rango, el extremo que falte lo completa el mes (o
+     * el mes en curso) y se valida igual que el JSON (`validarPeriodo`: en orden y hasta
+     * `MAX_DIAS_HISTORIAL` días, 400 en `hasta`). `mes` queda en el documento sólo si el período es
+     * un mes completo: de eso dependen el nombre del archivo y el rótulo del campo.
      *
      * Reusa `armarHistorial`, la misma función que la ficha y el portal: los grupos, su resumen y
-     * sus bloques de horas seguidas salen idénticos a los de la pantalla. Por defecto, el mes en
-     * curso (como "Mis materias"). Los cancelados salen de esos mismos grupos (`canceladosDeLosGrupos`),
-     * no de una segunda lectura del motor. Un alumno inexistente es 404, como en `obtenerDelAlumno`.
+     * sus bloques de horas seguidas salen idénticos a los de la pantalla. Los cancelados salen de
+     * esos mismos grupos (`canceladosDeLosGrupos`), no de una segunda lectura del motor.
+     *
+     * Mismo orden de errores y mismas reglas de acceso que `obtenerDelAlumno`: período (400),
+     * alumno inexistente (404) y el permiso del profesor (403), que sólo puede sacar el documento
+     * de un alumno que tiene o tuvo turnos con él (decisión T-163).
      *
      * El filtro de materia también se aplica a los exámenes (`materiaIds`); el de profesor no, porque
      * un examen es del alumno y de la materia, no de un profesor. Sin observaciones internas.
@@ -301,13 +311,18 @@ export function crearHistorialesService({
     async historialParaDocumento(
       alumnoId: number,
       query: HistorialPdfQuery,
+      actor: Actor,
     ): Promise<HistorialDocumento> {
       const fechaHoy = hoy(reloj)
-      const mes = query.mes ?? mesDe(fechaHoy)
-      const { desde, hasta } = rangoDelMes(mes)
+      // El mes pedido (o el en curso) es la base: completa el extremo que no venga en el rango.
+      const base = rangoDelMes(query.mes ?? mesDe(fechaHoy))
+      const desde = query.desde ?? base.desde
+      const hasta = query.hasta ?? base.hasta
+      validarPeriodo(desde, hasta)
 
       const alumno = await alumnosRepository.buscarPorId(alumnoId)
       if (!alumno) throw new NotFoundError(MENSAJE_ALUMNO_NO_ENCONTRADO)
+      await verificarProfesor(actor, alumnoId)
 
       const grupos = await armarHistorial(
         { alumnoId, desde, hasta, materiaId: query.materiaId, profesorId: query.profesorId },
@@ -327,7 +342,7 @@ export function crearHistorialesService({
           dni: alumno.dni,
           nivelEscolaridad: alumno.nivelEscolaridad,
         },
-        mes,
+        mes: mesDelPeriodo(desde, hasta),
         desde,
         hasta,
         filtros: await filtrosDelDocumento(alumnoId, query, fechaHoy),

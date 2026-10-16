@@ -76,15 +76,17 @@ export const historialDelAlumnoPdfRoute = createRoute({
   tags,
   summary: 'Historial académico de un alumno, en PDF',
   description:
-    'El historial académico del alumno **de un mes** como documento oficial en PDF (A4, HU-32): el alumno con su nivel de escolaridad, el mes y los filtros aplicados; por cada materia y profesor, su resumen y sus clases en **bloques de horas seguidas** (el estado de cada hora, y "Qué se trabajó" e indicaciones una sola vez); los turnos cancelados del mes con su motivo; y los exámenes del mes con su nota. Sale del **mismo cálculo** que `GET /historiales/alumnos/{alumnoId}`, con `mes` en lugar de `desde`/`hasta` (por defecto, el mes en curso). No lleva las observaciones internas del alumno ni de los turnos. Archivo `historial-academico-<apellido>-<nombre>-<mes>.pdf`. Los errores responden JSON.',
-  middleware: [requireAuth(), requireRole('MESA_ENTRADAS')] as const,
+    'El historial académico del alumno **del período pedido** como documento oficial en PDF (A4, HU-32): el alumno con su nivel de escolaridad, el período y los filtros aplicados; por cada materia y profesor, su resumen y sus clases en **bloques de horas seguidas** (el estado de cada hora, y "Qué se trabajó" e indicaciones una sola vez); los turnos cancelados del período con su motivo; y los exámenes del período con su nota. Sale del **mismo cálculo** que `GET /historiales/alumnos/{alumnoId}`: un `mes` (`AAAA-MM`) o un rango `desde`/`hasta` (si vienen los dos manda el rango; sin ninguno, el mes en curso), con el mismo tope de 366 días. No lleva las observaciones internas del alumno ni de los turnos. Mismas reglas de acceso que el historial: `PROFESOR` sólo de un alumno que tiene o tuvo turnos con él (decisión T-163). Archivo `historial-academico-<apellido>-<nombre>-<mes>.pdf`, o `…-<desde>_<hasta>.pdf` si el período no es un mes completo. Los errores responden JSON.',
+  middleware: [requireAuth(), requireRole('MESA_ENTRADAS', 'PROFESOR')] as const,
   request: { params: alumnoIdParamsSchema, query: historialPdfQuerySchema },
   responses: {
-    200: respuestaPdf('El PDF del historial académico del mes'),
-    400: respuestaError('`alumnoId`, `mes`, `materiaId` o `profesorId` inválidos (VALIDACION)'),
+    200: respuestaPdf('El PDF del historial académico del período'),
+    400: respuestaError(
+      '`alumnoId`, `mes`, una fecha, `materiaId` o `profesorId` inválidos, `hasta` anterior a `desde` o un período de más de 366 días (`details` sobre `hasta`) (VALIDACION)',
+    ),
     401: respuestaError('Sin sesión (NO_AUTENTICADO)'),
     403: respuestaError(
-      'El rol no es mesa de entradas o el usuario está inhabilitado (SIN_PERMISO)',
+      'El rol no es mesa de entradas ni profesor, el alumno no tiene ni tuvo turnos con el profesor de la sesión, o el usuario está inhabilitado (SIN_PERMISO)',
     ),
     404: respuestaError('El alumno no existe (NO_ENCONTRADO)'),
   },
