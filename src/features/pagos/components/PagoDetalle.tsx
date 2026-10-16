@@ -8,7 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Card } from '@/components/ui/card'
 import { Dato, Datos } from '@/components/ui/datos'
 import { DetalleModal } from '@/components/ui/detalle-modal'
-import type { PagoParaAcciones } from '@/types/pago'
+import type { PagoParaAcciones, RepartoDelPago } from '@/types/pago'
 import { fechaConDia, fechaCorta } from '@/utils/formato-fechas'
 import { rangoHoras } from '@/utils/horas'
 import { formatearPesos } from '@/utils/moneda'
@@ -36,6 +36,12 @@ export type PagoDetalleProps = {
    * esta prop el detalle es de solo lectura (el gerente).
    */
   renderAcciones?: (pago: PagoParaAcciones) => ReactNode
+  /**
+   * El reparto del pago entre el centro y los profesores (HU-43). Lo compone `app/` con
+   * `RepartoDelPago` (`features/reparto`) y se muestra solo si la respuesta trae `reparto`: lo
+   * decide la API, no el rol en el cliente.
+   */
+  renderReparto?: (reparto: RepartoDelPago) => ReactNode
 }
 
 /** Una sección del detalle: tarjeta con título e ícono, como las del detalle del turno. */
@@ -113,8 +119,8 @@ function TurnosDelPago({ pago }: { pago: DetallePago }) {
  * El detalle de un pago como modal (`?pago=<pagoId>`, `useDetallePagoEnUrl`): lo abren "Pagos
  * realizados", la caja del gerente y el detalle de un turno pagado (HU-24, HU-36). Muestra el pago
  * tal como lo manda la API: número y estado (con el aviso "Anulado"), alumno, fecha, la forma de pago
- * con sus datos, los turnos con su importe y el total, las observaciones, el comprobante adjunto y
- * quién lo registró. "Ver comprobante" (el PDF del centro) va en el encabezado.
+ * con sus datos, los turnos con su importe y el total, el reparto si la API lo manda
+ * (`renderReparto`), las observaciones, el comprobante adjunto y quién lo registró. "Ver comprobante" (el PDF del centro) va en el encabezado.
  *
  * Las acciones del pie las compone `app/` (`renderAcciones`, con el pago como `PagoParaAcciones`);
  * las del comprobante adjunto son de esta feature y van en su sección. Todas se muestran según
@@ -124,7 +130,7 @@ function TurnosDelPago({ pago }: { pago: DetallePago }) {
  * La trazabilidad es propia: un pago tiene quién lo registró y cuándo, pero no "Última
  * modificación" (`Trazabilidad` pide los cuatro campos de auditoría).
  */
-export function PagoDetalle({ pagoId, onCerrar, renderAcciones }: PagoDetalleProps) {
+export function PagoDetalle({ pagoId, onCerrar, renderAcciones, renderReparto }: PagoDetalleProps) {
   const { data: pago, isLoading, error, refetch } = usePago(pagoId)
   const idTrazabilidad = useId()
 
@@ -174,6 +180,8 @@ export function PagoDetalle({ pagoId, onCerrar, renderAcciones }: PagoDetallePro
           </Seccion>
 
           <TurnosDelPago pago={pago} />
+
+          {pago.reparto && renderReparto?.(pago.reparto)}
 
           {pago.observaciones && (
             <Seccion icon={NotebookPen} titulo="Observaciones">

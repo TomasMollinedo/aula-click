@@ -4,7 +4,7 @@
 // `YYYY-MM-DD`; instantes: ISO 8601 en UTC; horas: `HH:mm`.
 
 import type { UsuarioAuditoria } from '@/types'
-import type { EstadoPagoRegistrado, PagoParaAcciones } from '@/types/pago'
+import type { EstadoPagoRegistrado, PagoParaAcciones, RepartoDelPago } from '@/types/pago'
 
 /** La forma de pago por su código fijo (nunca por el nombre, que es solo para mostrar). */
 export type CodigoFormaPago = 'EFECTIVO' | 'TRANSFERENCIA' | 'DEBITO'
@@ -75,4 +75,6 @@ export type DetallePago = {
   adjunto: AdjuntoDelPago | null
   /** Las decide la API según el rol, el estado, la forma de pago y si tiene adjunto. */
   acciones: PagoParaAcciones['acciones']
+  /** El reparto de cada turno (HU-43). Solo lo recibe el gerente: para la mesa de entradas la clave no existe. */
+  reparto?: RepartoDelPago
 }
