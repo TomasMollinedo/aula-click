@@ -5,28 +5,61 @@ import type { ApiError } from '@/utils/fetch-json'
 // (redirige a /login); acá solo se elige el texto y dónde va. Es el único lugar de `tablero` que
 // conoce la forma de los `details` del 400.
 
+/** Los campos del período, que se muestran junto al selector. */
+export const CAMPOS_PERIODO = ['desde', 'hasta'] as const
+
+/**
+ * Los parámetros propios de la sección "Asistencia" (HU-39): la página de cada tabla, el orden y
+ * el filtro. Un 400 sobre uno de ellos no invalida el período, así que se muestra en la sección.
+ */
+export const CAMPOS_ASISTENCIA = [
+  'paginaProfesores',
+  'paginaMaterias',
+  'orden',
+  'direccion',
+  'soloSinRegistrar',
+] as const
+
+export type CampoTablero = (typeof CAMPOS_PERIODO)[number] | (typeof CAMPOS_ASISTENCIA)[number]
+
 export type ErrorTablero = {
-  tipo: 'periodo' | 'sinPermiso' | 'general'
-  /** El texto del lugar del contenido; con `tipo: 'periodo'`, el general si no se ubicó en un campo. */
+  /**
+   * `periodo`: un 400 que toca el período (o que no se pudo ubicar). `parametros`: un 400 sólo
+   * sobre los parámetros de las tablas de "Asistencia", con el período válido (el PDF sigue
+   * disponible). `sinPermiso`: 403. `general`: cualquier otro.
+   */
+  tipo: 'periodo' | 'parametros' | 'sinPermiso' | 'general'
+  /** El texto del lugar del contenido; en un 400, el general si algo no se ubicó en un campo. */
   mensaje: string | null
-  /** Solo con `tipo: 'periodo'`: el `message` de la API sobre cada extremo, tal cual. */
-  campos: { desde?: string; hasta?: string }
+  /** Solo en un 400: el `message` de la API sobre cada campo, tal cual. */
+  campos: Partial<Record<CampoTablero, string>>
   /** Si tiene sentido ofrecer "Reintentar" (no con 400 ni 403: daría lo mismo). */
   reintentar: boolean
 }
 
 export const MENSAJE_PERIODO_INVALIDO = 'El período no es válido. Revisá las fechas.'
 
+const CAMPOS: readonly CampoTablero[] = [...CAMPOS_PERIODO, ...CAMPOS_ASISTENCIA]
+
+function esCampo(valor: unknown): valor is CampoTablero {
+  return typeof valor === 'string' && (CAMPOS as readonly string[]).includes(valor)
+}
+
 /** Un detalle de Zod de un solo campo conocido: `path: ['hasta']` y `message`. */
-function campoDelDetalle(detalle: unknown): { campo: 'desde' | 'hasta'; mensaje: string } | null {
+function campoDelDetalle(detalle: unknown): { campo: CampoTablero; mensaje: string } | null {
   if (typeof detalle !== 'object' || detalle === null) return null
   const { path, message } = detalle as { path?: unknown; message?: unknown }
   if (!Array.isArray(path) || path.length !== 1 || typeof message !== 'string') return null
   const [campo] = path
-  return campo === 'desde' || campo === 'hasta' ? { campo, mensaje: message } : null
+  return esCampo(campo) ? { campo, mensaje: message } : null
 }
 
-function errorDelPeriodo(details: unknown): ErrorTablero {
+/**
+ * El 400 de cualquiera de los tres endpoints: cada `details` va a su campo. Si toca el período (o
+ * algo no se pudo ubicar) es un error del período, que además deja el documento sin armar; si sólo
+ * toca los parámetros de las tablas, el período sigue siendo válido.
+ */
+function errorDeValidacion(details: unknown): ErrorTablero {
   const detalles = Array.isArray(details) ? details : []
   const campos: ErrorTablero['campos'] = {}
   let sinUbicar = detalles.length === 0
@@ -35,18 +68,29 @@ function errorDelPeriodo(details: unknown): ErrorTablero {
     if (!ubicado) sinUbicar = true
     else campos[ubicado.campo] ??= ubicado.mensaje
   }
+  const tocaElPeriodo = sinUbicar || CAMPOS_PERIODO.some((campo) => campos[campo] !== undefined)
   return {
-    tipo: 'periodo',
+    tipo: tocaElPeriodo ? 'periodo' : 'parametros',
     mensaje: sinUbicar ? MENSAJE_PERIODO_INVALIDO : null,
     campos,
     reintentar: false,
   }
 }
 
+/** Los mensajes del 400 que no van junto al selector de período: los de las tablas. */
+export function mensajesDeAsistencia(error: ErrorTablero | null | undefined): string[] {
+  if (!error) return []
+  return CAMPOS_ASISTENCIA.map((campo) => error.campos[campo]).filter(
+    (mensaje): mensaje is string => mensaje !== undefined,
+  )
+}
+
 /**
- * - 400: el período no es válido (hasta anterior a desde, más de 366 días): cada `details` sobre un
- *   extremo sale junto a ese campo, con el `message` de la API; si alguno no se puede ubicar, o no
- *   hay `details`, queda además el error general.
+ * - 400: el período no es válido (hasta anterior a desde, más de 366 días) o un parámetro de las
+ *   tablas de "Asistencia" no existe (una página que no es un entero >= 1, un `orden`, una
+ *   `direccion` o un `soloSinRegistrar` desconocidos): cada `details` sale junto a su campo, con el
+ *   `message` de la API; si alguno no se puede ubicar, o no hay `details`, queda además el error
+ *   general.
  * - 403: sin permiso (el tablero es solo del gerente).
  * - Cualquier otro (500, red, desconocido): mensaje genérico con reintentar. Un error de red lo
  *   lanza `fetch` y no es un `ApiError`, así que `status` puede no estar.
@@ -54,7 +98,7 @@ function errorDelPeriodo(details: unknown): ErrorTablero {
 export function interpretarErrorTablero(error: ApiError | null | undefined): ErrorTablero {
   switch (error?.status) {
     case 400:
-      return errorDelPeriodo(error.details)
+      return errorDeValidacion(error.details)
     case 403:
       return {
         tipo: 'sinPermiso',

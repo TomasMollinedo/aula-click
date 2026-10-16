@@ -1,5 +1,7 @@
 import { format, parseISO } from 'date-fns'
 
+import type { CodigoFormaPago } from './tablero.types'
+
 // Textos del tablero: cómo se escriben los números y los períodos que manda la API. Solo
 // presentación: los cálculos (porcentajes, ocupación, qué cuenta cada indicador) los hace la API.
 
@@ -58,7 +60,41 @@ export function nombreDeProfesor({
   return `${apellido}, ${nombre}`
 }
 
+/**
+ * Las clases cuyo turno cerró el sistema: `'clases del 14/10/2026'` si es un solo día y `'clases
+ * del 10/09/2026 al 14/10/2026'` si son varios.
+ */
+export function textoClasesCerradas({ desde, hasta }: { desde: string; hasta: string }): string {
+  return desde === hasta
+    ? `clases del ${fechaCompleta(desde)}`
+    : `clases del ${fechaCompleta(desde)} al ${fechaCompleta(hasta)}`
+}
+
 /** `1` → `"1 turno"`, `15` → `"15 turnos"`. */
 export function textoTurnos(cantidad: number): string {
   return `${formatearCantidad(cantidad)} ${cantidad === 1 ? 'turno' : 'turnos'}`
+}
+
+/**
+ * La forma de pago para mostrar (HU-39): la API manda sólo el código. Es un `Record` completo, así
+ * que una forma nueva en el contrato no compila hasta decidir cómo se escribe.
+ */
+export const ETIQUETA_FORMA_PAGO: Record<CodigoFormaPago, string> = {
+  EFECTIVO: 'Efectivo',
+  TRANSFERENCIA: 'Transferencia',
+  DEBITO: 'Débito',
+}
+
+/**
+ * El pie de una tabla paginada: `"Mostrando 1–10 de 23 profesores"`. Los números son los de la
+ * `meta` de la API; `nombres` es el sustantivo en singular y en plural.
+ */
+export function textoMostrando(
+  meta: { page: number; pageSize: number; total: number },
+  nombres: { singular: string; plural: string },
+): string {
+  const desde = (meta.page - 1) * meta.pageSize + 1
+  const hasta = Math.min(meta.page * meta.pageSize, meta.total)
+  const sustantivo = meta.total === 1 ? nombres.singular : nombres.plural
+  return `Mostrando ${formatearCantidad(desde)}–${formatearCantidad(hasta)} de ${formatearCantidad(meta.total)} ${sustantivo}`
 }

@@ -454,10 +454,17 @@ describe('asistencia: GET /tablero/asistencia', () => {
     ])
   }
 
-  it('lee las ocurrencias una sola vez, del período entero, con el reloj del service, y nada más', async () => {
+  it('lee las ocurrencias del período y las de la ventana de registro que termina hoy, con el reloj del service, y nada más', async () => {
     await service.obtenerAsistencia(PRIMERA_PAGINA)
 
-    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA, reloj)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(2)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenNthCalledWith(1, ESTA_SEMANA, reloj)
+    // Hoy es el 02/10: la ventana va de 7 días atrás a hoy.
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenNthCalledWith(
+      2,
+      { desde: '2026-09-25', hasta: '2026-10-02' },
+      reloj,
+    )
     expect(repository.capacidadesDeBloques).not.toHaveBeenCalled()
     expect(repository.contarAlumnosNuevos).not.toHaveBeenCalled()
     expect(repository.totalCobrado).not.toHaveBeenCalled()
@@ -472,10 +479,13 @@ describe('asistencia: GET /tablero/asistencia', () => {
       periodo: ESTA_SEMANA,
       hoy: HOY,
       resumen: {
-        porcentajeAsistencia: 0,
-        cerradosSinRegistrar: 0,
+        presentes: { cantidad: 0, porcentaje: 0 },
+        ausentes: { cantidad: 0, porcentaje: 0 },
+        sinRegistrar: { cantidad: 0, porcentaje: 0 },
+        cerrados: { cantidad: 0, porcentaje: 0 },
+        total: 0,
+        clasesCerradas: null,
         profesoresSinRegistrar: 0,
-        alumnosBajoElUmbral: 0,
       },
       profesores: { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } },
       materias: { data: [], meta: { page: 1, pageSize: 10, total: 0, totalPages: 0 } },
@@ -488,10 +498,15 @@ describe('asistencia: GET /tablero/asistencia', () => {
     const { resumen, profesores, materias } = await service.obtenerAsistencia(PRIMERA_PAGINA)
 
     expect(resumen).toEqual({
-      porcentajeAsistencia: 100,
-      cerradosSinRegistrar: 2,
+      presentes: { cantidad: 1, porcentaje: 25 },
+      ausentes: { cantidad: 0, porcentaje: 0 },
+      sinRegistrar: { cantidad: 1, porcentaje: 25 },
+      cerrados: { cantidad: 2, porcentaje: 50 },
+      total: 4,
+      // Las dos clases cerradas son del 22/09.
+      clasesCerradas: { desde: '2026-09-22', hasta: '2026-09-22' },
+      // Ana tiene un turno todavía dentro del plazo; Luis sólo cerrados.
       profesoresSinRegistrar: 1,
-      alumnosBajoElUmbral: 0,
     })
     // Por defecto, los de más cerrados sin registrar primero.
     expect(profesores.data.map((f) => [f.profesor.nombre, f.cerradosSinRegistrar])).toEqual([
@@ -500,22 +515,44 @@ describe('asistencia: GET /tablero/asistencia', () => {
     ])
     expect(profesores.data[0]).toEqual({
       profesor: { id: 7, nombre: 'Luis', apellido: 'Pérez' },
-      clasesRealizadas: 0,
-      ausencias: 0,
-      porcentajeAsistencia: 0,
+      asistenciasRegistradas: 0,
+      porcentajeRegistrado: 0,
       cerradosSinRegistrar: 2,
-      dentroDelPlazo: 0,
-      porcentajeSinRegistrar: 100,
+      porcentajeCerrados: 100,
+      sinRegistrar: 0,
+      porcentajeSinRegistrar: 0,
+      total: 2,
       noRegistraAsistencia: true,
     })
+    // Ana: 1 registrada y 1 dentro del plazo.
     expect(profesores.data[1]).toMatchObject({
-      clasesRealizadas: 1,
-      dentroDelPlazo: 1,
-      porcentajeSinRegistrar: 0,
+      asistenciasRegistradas: 1,
+      porcentajeRegistrado: 50,
+      sinRegistrar: 1,
+      porcentajeSinRegistrar: 50,
+      total: 2,
       noRegistraAsistencia: false,
     })
     expect(materias.data.map((f) => f.materia.nombre)).toEqual(['Física', 'Matemática'])
     expect(Object.keys(materias.data[0] ?? {})).not.toContain('noRegistraAsistencia')
+  })
+
+  it('`profesoresSinRegistrar` es el de la ventana que termina hoy, no el del período pedido', async () => {
+    // El período pedido (de hace dos semanas) sólo tiene cerrados; en la ventana de hoy, un pendiente.
+    const PERIODO_VIEJO = { desde: '2026-09-07', hasta: '2026-09-13' }
+    repository.ocurrenciasDelPeriodo.mockImplementation(async (periodo) =>
+      periodo.desde === PERIODO_VIEJO.desde
+        ? [ocurrencia('2026-09-08', 'SIN_REGISTRAR', { profesorId: 7, vencido: true })]
+        : [
+            ocurrencia('2026-09-30', 'SIN_REGISTRAR', { profesorId: 3, vencido: false }),
+            ocurrencia('2026-10-01', 'SIN_REGISTRAR', { profesorId: 5, vencido: false }),
+          ],
+    )
+
+    const { resumen } = await service.obtenerAsistencia({ ...PRIMERA_PAGINA, ...PERIODO_VIEJO })
+
+    expect(resumen.cerrados.cantidad).toBe(1)
+    expect(resumen.profesoresSinRegistrar).toBe(2)
   })
 
   it('`orden` y `direccion` reordenan sólo la tabla de profesores', async () => {
@@ -635,11 +672,12 @@ describe('asistencia: tablas completas para el PDF', () => {
 
     expect(periodo).toEqual(ESTA_SEMANA)
     expect(hoy).toBe(HOY)
-    expect(resumen.cerradosSinRegistrar).toBe(1)
+    expect(resumen.cerrados.cantidad).toBe(1)
     expect(profesores).toHaveLength(26)
     expect(profesores[0]?.profesor.id).toBe(7)
     expect(materias).toHaveLength(26)
-    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledExactlyOnceWith(ESTA_SEMANA, reloj)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenCalledTimes(2)
+    expect(repository.ocurrenciasDelPeriodo).toHaveBeenNthCalledWith(1, ESTA_SEMANA, reloj)
   })
 })
 
