@@ -12,6 +12,7 @@ const { repository, alumnosRepository, getSession } = vi.hoisted(() => ({
     leerAdeudados: vi.fn(),
     leerProximos: vi.fn(),
     dnisDeAlumnos: vi.fn(),
+    estadosDeMaterias: vi.fn(),
   },
   alumnosRepository: { buscarPorId: vi.fn() },
   getSession: vi.fn(),
@@ -57,6 +58,7 @@ beforeEach(() => {
   repository.leerAdeudados.mockResolvedValue([adeudado])
   repository.leerProximos.mockResolvedValue([])
   repository.dnisDeAlumnos.mockResolvedValue(new Map([[12, '52345678']]))
+  repository.estadosDeMaterias.mockResolvedValue(new Map([[2, 'INACTIVO']]))
 })
 
 describe('auth', () => {
@@ -438,12 +440,102 @@ describe('GET /cuentas/mi-cuenta (portal, HU-37, T-101)', () => {
   })
 })
 
+describe('GET /cuentas/alumnos/{alumnoId}/opciones (decisión T-177)', () => {
+  it('200 con las materias y los profesores de lo por cobrar, con el estado de la materia', async () => {
+    repository.leerProximos.mockResolvedValue([
+      {
+        ...adeudado,
+        ocurrencia: {
+          ...adeudado.ocurrencia,
+          fecha: '2026-10-12',
+          estado: 'AGENDADO',
+          materia: { id: 7, nombre: 'Física' },
+          profesor: { id: 5, nombre: 'Juan', apellido: 'Ruiz', busqueda: 'ruiz juan' },
+        },
+      },
+    ])
+    repository.estadosDeMaterias.mockResolvedValue(
+      new Map([
+        [2, 'INACTIVO'],
+        [7, 'ACTIVO'],
+      ]),
+    )
+
+    const res = await pedir('/alumnos/12/opciones')
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({
+      materias: [
+        { id: 7, nombre: 'Física', estado: 'ACTIVO' },
+        { id: 2, nombre: 'Matemática', estado: 'INACTIVO' },
+      ],
+      profesores: [
+        { id: 3, nombre: 'Ana', apellido: 'Gómez' },
+        { id: 5, nombre: 'Juan', apellido: 'Ruiz' },
+      ],
+    })
+  })
+
+  it('las opciones salen sólo de lo por cobrar, sin período, materia ni profesor', async () => {
+    await pedir('/alumnos/12/opciones?desde=2026-09-01&materiaId=7&profesorId=5')
+
+    const filtro = expect.objectContaining({
+      alumnoId: 12,
+      materiaIds: undefined,
+      profesorId: undefined,
+      desde: undefined,
+      hasta: undefined,
+    })
+    expect(repository.leerAdeudados).toHaveBeenCalledWith(filtro)
+    expect(repository.leerProximos).toHaveBeenCalledWith(filtro)
+  })
+
+  it('no pisa la cuenta: `/alumnos/{alumnoId}` sigue respondiendo la cuenta', async () => {
+    const json = await (await pedir('/alumnos/12')).json()
+    expect(json).toHaveProperty('totalAdeudado')
+  })
+
+  it('alumno inexistente → 404 NO_ENCONTRADO sin leer nada', async () => {
+    alumnosRepository.buscarPorId.mockResolvedValue(null)
+
+    const res = await pedir('/alumnos/99/opciones')
+
+    expect(res.status).toBe(404)
+    expect((await res.json()).error.code).toBe('NO_ENCONTRADO')
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
+  })
+
+  it('id inválido → 400 VALIDACION', async () => {
+    const res = await pedir('/alumnos/abc/opciones')
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+  })
+
+  it.each(['PROFESOR', 'GERENTE', 'ALUMNO'])('con %s → 403', async (role) => {
+    getSession.mockResolvedValue(sesion(role))
+
+    expect((await pedir('/alumnos/12/opciones')).status).toBe(403)
+    expect(repository.leerAdeudados).not.toHaveBeenCalled()
+  })
+
+  it('sin sesión → 401', async () => {
+    getSession.mockResolvedValue({ headers: new Headers(), response: null })
+    expect((await pedir('/alumnos/12/opciones')).status).toBe(401)
+  })
+})
+
 describe('OpenAPI', () => {
   it('declara todos los status codes de cada endpoint', () => {
     const doc = app.getOpenAPI31Document({ openapi: '3.1.0', info: { title: 't', version: '1' } })
     const codigos = ['200', '400', '401', '403', '404']
     expect(
       Object.keys(doc.paths?.['/api/v1/cuentas/alumnos/{alumnoId}']?.get?.responses ?? {}).sort(),
+    ).toEqual(codigos)
+    expect(
+      Object.keys(
+        doc.paths?.['/api/v1/cuentas/alumnos/{alumnoId}/opciones']?.get?.responses ?? {},
+      ).sort(),
     ).toEqual(codigos)
     expect(
       Object.keys(doc.paths?.['/api/v1/cuentas/adeudados']?.get?.responses ?? {}).sort(),

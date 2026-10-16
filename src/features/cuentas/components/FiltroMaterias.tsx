@@ -9,16 +9,20 @@ import { MenuConBuscador } from '@/components/ui/menu-con-buscador'
 import { cn } from '@/utils/cn'
 
 import { useMateriasDeCuenta } from '../hooks/use-materias-de-cuenta'
+import { useOpcionesDeCuenta } from '../hooks/use-opciones-de-cuenta'
 import {
   alternarMateria,
   filtrarMaterias,
   opcionesDeMaterias,
   textoBotonMaterias,
 } from '../materias-del-filtro'
+import { materiasDelFiltro } from '../opciones-de-cuenta'
 
 type FiltroMateriasProps = {
   /** El `id` del botón, para el `htmlFor` del `Field` que lo rotula. */
   id: string
+  /** Con alumno, solo las materias de lo que tiene por cobrar (`useOpcionesDeCuenta`, T-177). */
+  alumnoId: number | null
   /** Las materias elegidas; `[]` = todas. */
   value: readonly number[]
   /** Cada elegida con su nombre (`useNombresDeFiltros`): también las que no están en la lista. */
@@ -31,13 +35,15 @@ type FiltroMateriasProps = {
 /**
  * El filtro de materias de `cuentas`, de selección múltiple (HU-25): para cobrar varias materias
  * completas se eligen todas acá. Es un `MenuConBuscador` (el botón dice "Todas", "Inglés y
- * Matemática" o "3 materias") con una casilla por materia, también las dadas de baja
- * (`useMateriasDeCuenta`). Tildar o destildar se aplica enseguida y **no cierra el menú**, para
+ * Matemática" o "3 materias") con una casilla por materia, también las dadas de baja: sin alumno,
+ * todas (`useMateriasDeCuenta`); con alumno, solo las de lo que tiene por cobrar
+ * (`useOpcionesDeCuenta`, decisión T-177). Lo escrito filtra la lista en el cliente. Tildar o destildar se aplica enseguida y **no cierra el menú**, para
  * elegir varias seguidas; "Todas" saca el filtro. El teclado es el de `MenuConBuscador`, y Enter o
  * Espacio en una opción la tildan.
  */
 export function FiltroMaterias({
   id,
+  alumnoId,
   value,
   elegidas,
   onChange,
@@ -46,7 +52,10 @@ export function FiltroMaterias({
 }: FiltroMateriasProps) {
   // El estado del menú (abierto y lo escrito) es el de un combobox: al cerrar, el buscador se vacía.
   const { abierto, texto, setTexto, cambiarAbierto } = useComboboxBuscador()
-  const { materias, isLoading } = useMateriasDeCuenta()
+  const todas = useMateriasDeCuenta()
+  const deLaCuenta = useOpcionesDeCuenta(alumnoId)
+  const materias = materiasDelFiltro(alumnoId, deLaCuenta.data, todas.materias)
+  const isLoading = alumnoId === null ? todas.isLoading : deLaCuenta.isLoading
 
   const opciones = filtrarMaterias(opcionesDeMaterias(materias, elegidas), texto)
   const sinFiltro = value.length === 0

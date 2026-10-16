@@ -2,7 +2,6 @@ import Link from 'next/link'
 import { Eye } from 'lucide-react'
 
 import { EstadoTurnoBadge } from '@/components/turno/estado-turno-badge'
-import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
   Table,
@@ -53,6 +52,10 @@ type OcurrenciasTablaProps = {
  * el importe destacado y la acción de la fila entren sin scroll en un escritorio.
  */
 const CELDA = 'px-3 first:pl-6 last:pr-6'
+
+/** "Ver detalle" de cada fila: solo el ícono, sin relleno, como en "Pagos realizados". */
+const accionDeFila =
+  'focus-visible:ring-ring inline-flex size-9 items-center justify-center rounded-lg outline-none transition-colors focus-visible:ring-2 disabled:pointer-events-none'
 
 export function OcurrenciasTabla({
   filas,
@@ -137,17 +140,16 @@ export function OcurrenciasTabla({
                 <ImporteDeCuenta importe={fila.importe} />
               </TableCell>
               <TableCell className={cn(CELDA, 'text-right')}>
-                <Button
+                <button
                   type="button"
-                  size="sm"
-                  variant="outline"
                   onClick={(e) => onVerDetalle(fila, e.currentTarget)}
                   disabled={enEspera}
                   aria-label={accion}
+                  title="Ver detalle"
+                  className={cn(accionDeFila, 'text-cobalto hover:bg-cobalto/10')}
                 >
-                  <Eye />
-                  Ver detalle
-                </Button>
+                  <Eye className="size-5" />
+                </button>
               </TableCell>
             </TableRow>
           )

@@ -1191,12 +1191,13 @@ Responde el formato de un listado paginado **más `totales`, junto a `data` y `m
 
 HU-16 (T-53, con los ajustes de la PO del 01/10: decisiones T-91 a T-96), varias materias (HU-25) y la cuenta del portal (HU-37), de la tarea T-101 (decisión T-146). Turnos adeudados y próximos turnos de un alumno, y las dos vistas globales con la misma estructura. Reglas en `dominio.md` → Deuda. **Los importes y los totales los calcula la API** con el precio por hora **vigente** de cada materia, leído en cada consulta: si el gerente cambia el precio, los impagos muestran el nuevo (lo ya pagado no cambia). El cliente sólo los muestra y, para el resumen de una selección, suma los que recibió.
 
-| Endpoint                                 | Roles           | Qué hace                                                                         |
-| ---------------------------------------- | --------------- | -------------------------------------------------------------------------------- |
-| `GET /api/v1/cuentas/alumnos/{alumnoId}` | `MESA_ENTRADAS` | Adeudados y próximos del alumno, con el total adeudado. 404 si no existe         |
-| `GET /api/v1/cuentas/adeudados`          | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado      |
-| `GET /api/v1/cuentas/proximos`           | `MESA_ENTRADAS` | Próximos turnos de todos los alumnos (o de uno), paginados, con el tope de cobro |
-| `GET /api/v1/cuentas/mi-cuenta`          | `ALUMNO`        | La cuenta del alumno de la sesión, agrupada por materia (portal)                 |
+| Endpoint                                          | Roles           | Qué hace                                                                                       |
+| ------------------------------------------------- | --------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /api/v1/cuentas/alumnos/{alumnoId}`          | `MESA_ENTRADAS` | Adeudados y próximos del alumno, con el total adeudado. 404 si no existe                       |
+| `GET /api/v1/cuentas/alumnos/{alumnoId}/opciones` | `MESA_ENTRADAS` | Materias y profesores de lo que el alumno tiene por cobrar, para los filtros. 404 si no existe |
+| `GET /api/v1/cuentas/adeudados`                   | `MESA_ENTRADAS` | Adeudados de todos los alumnos (o de uno), paginados, con el total adeudado                    |
+| `GET /api/v1/cuentas/proximos`                    | `MESA_ENTRADAS` | Próximos turnos de todos los alumnos (o de uno), paginados, con el tope de cobro               |
+| `GET /api/v1/cuentas/mi-cuenta`                   | `ALUMNO`        | La cuenta del alumno de la sesión, agrupada por materia (portal)                               |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. El estado del alumno no importa: uno dado de baja puede deber.
 
@@ -1326,6 +1327,27 @@ Con un período sólo pasado (`?desde=2026-09-01&hasta=2026-09-30`), `"proximos"
 
 - Los mismos próximos que la cuenta del alumno, de todos los alumnos (o del filtrado), por fecha, hora de inicio y `turnoId`. La misma fila que los adeudados (`OcurrenciaDeCuentaGlobal`).
 - `aplica: false` (período sólo pasado): `data: []`, `meta.total: 0` y `meta.totalPages: 0`. `limiteCobro` viene igual.
+
+**`GET /cuentas/alumnos/{alumnoId}/opciones`** (`MESA_ENTRADAS`, decisión T-177): las opciones de los filtros de materia y profesor de "Por cobrar" con un alumno (la ficha, o la vista global con el alumno filtrado). Sin query:
+
+- Salen de lo que el alumno tiene **por cobrar**, con la misma lectura que la cuenta **sin filtros**: sus adeudados y sus próximos hasta `limiteCobro`, sin período, materia ni profesor. Así el filtro no se queda sin opciones al elegir uno.
+- Incluyen las materias y los profesores **dados de baja**. Las materias van por nombre y traen su `estado` (`ACTIVO` o `INACTIVO`); los profesores, por apellido y nombre, sólo con `id`, `nombre` y `apellido`.
+- Sin nada por cobrar: `200` con las dos listas vacías.
+
+```json
+{
+  "materias": [
+    { "id": 7, "nombre": "Física", "estado": "ACTIVO" },
+    { "id": 2, "nombre": "Matemática", "estado": "INACTIVO" }
+  ],
+  "profesores": [
+    { "id": 3, "nombre": "Ana", "apellido": "Gómez" },
+    { "id": 5, "nombre": "Juan", "apellido": "Ruiz" }
+  ]
+}
+```
+
+- **Errores:** 400 `VALIDACION` si `alumnoId` no es un entero positivo; 401 sin sesión; 403 `SIN_PERMISO` con otro rol; 404 `NO_ENCONTRADO` si el alumno no existe (como `GET /cuentas/alumnos/{alumnoId}`).
 
 **Seleccionar todo (HU-25).** Para cobrar una o varias materias completas, se eligen en el filtro de materia y se seleccionan los adeudados y los próximos que trae la cuenta del alumno (`GET /cuentas/alumnos/{alumnoId}`, sin paginar). En la vista global se usa la misma cuenta, con los mismos filtros (decisión T-102). No hay filtro por meses ni por tipo de turno. Si la selección supera el máximo de un pago, `POST /pagos` responde 400 `VALIDACION` en `ocurrencias`: "No se pueden cobrar más de 200 turnos en un pago" (ver Pagos).
 

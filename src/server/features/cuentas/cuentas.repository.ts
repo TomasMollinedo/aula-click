@@ -1,4 +1,5 @@
 import { prisma } from '@/lib/prisma'
+import type { Estado } from '@/server/shared/estado'
 import { leerAdeudados, leerProximos, type Adeudado, type FiltroDeuda } from './cuentas.condiciones'
 
 // Único lugar de la feature que usa Prisma. Sólo lecturas, sin transacción ni locks: la lista de
@@ -26,6 +27,17 @@ export const cuentasRepository = {
       select: { id: true, dni: true },
     })
     return new Map(alumnos.map((a) => [a.id, a.dni]))
+  },
+
+  /** Estado de cada materia pedida (`Ocurrencia.materia` no lo trae), en una consulta. */
+  async estadosDeMaterias(materiaIds: readonly number[]): Promise<Map<number, Estado>> {
+    const ids = [...new Set(materiaIds)]
+    if (ids.length === 0) return new Map()
+    const materias = await prisma.materia.findMany({
+      where: { id: { in: ids } },
+      select: { id: true, estado: true },
+    })
+    return new Map(materias.map((m) => [m.id, m.estado]))
   },
 }
 
