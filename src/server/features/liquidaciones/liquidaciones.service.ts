@@ -275,15 +275,18 @@ export function crearLiquidacionesService({
   return {
     /**
      * Las liquidaciones del mes (por defecto, el último terminado), una por profesor con
-     * movimientos, paginadas en memoria; `totales` es de todo el listado.
+     * movimientos, que se pueden filtrar por profesor y por estado, paginadas en memoria;
+     * `totales` es de todo el listado filtrado.
      */
     async listar(query: LiquidacionesQuery): Promise<LiquidacionesDelMes> {
       const fechaHoy = hoy(reloj)
       const mes = query.mes ?? mesAnterior(mesDe(fechaHoy))
       exigirMesNoFuturo(mes, fechaHoy)
-      const filas = (
+      const delMes = (
         await repository.delMes({ mes, profesorId: query.profesorId, hoy: fechaHoy })
       ).map(aFila)
+      // El estado se filtra antes de paginar y de sumar: el total y las páginas son los del filtro.
+      const filas = query.estado ? delMes.filter((fila) => fila.estado === query.estado) : delMes
       const { skip, take } = calcularSkipTake(query)
       return {
         mes,

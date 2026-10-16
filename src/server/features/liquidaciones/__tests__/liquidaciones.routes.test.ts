@@ -116,16 +116,27 @@ describe('GET /liquidaciones', () => {
     })
   })
 
-  it.each(['?mes=2026-13', '?mes=2026-9', '?pageSize=101', '?profesorId=0', '?profesorId=abc'])(
-    '%s → 400',
-    async (query) => {
-      const res = await listar(query)
+  it('?estado=PAGADA → 200', async () => {
+    const res = await listar('?mes=2026-09&estado=PAGADA')
 
-      expect(res.status).toBe(400)
-      expect((await res.json()).error.code).toBe('VALIDACION')
-      expect(repository.delMes).not.toHaveBeenCalled()
-    },
-  )
+    expect(res.status).toBe(200)
+  })
+
+  it.each([
+    '?mes=2026-13',
+    '?mes=2026-9',
+    '?pageSize=101',
+    '?profesorId=0',
+    '?profesorId=abc',
+    '?estado=NADA',
+    '?estado=',
+  ])('%s → 400', async (query) => {
+    const res = await listar(query)
+
+    expect(res.status).toBe(400)
+    expect((await res.json()).error.code).toBe('VALIDACION')
+    expect(repository.delMes).not.toHaveBeenCalled()
+  })
 
   it('mes futuro → 400 en mes', async () => {
     const res = await listar('?mes=2026-11')

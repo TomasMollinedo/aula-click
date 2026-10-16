@@ -2109,14 +2109,14 @@ Cualquier otro rol recibe 403 `SIN_PERMISO` en los dos, también si se llama por
 
 HU-44 (T-124). La liquidación mensual de cada profesor: lo que se le debe por los turnos cobrados y dados, con sus ajustes. Reglas (devengo, ajustes, saldo y estados) en `dominio.md` → Liquidaciones; el cálculo es uno solo, el del motor (`convenciones-backend.md` → Liquidaciones). El PDF lo suma T-125 en [Documentos PDF](#documentos-pdf) y los endpoints del profesor, T-126.
 
-| Endpoint                                                        | Roles      | Qué hace                                                                                  |
-| --------------------------------------------------------------- | ---------- | ----------------------------------------------------------------------------------------- |
-| `GET /api/v1/liquidaciones`                                     | `GERENTE`  | Las liquidaciones del mes, una por profesor (o la de `profesorId`), con totales. 200; 400 |
-| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`  | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404          |
-| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`  | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409                     |
-| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR` | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200                 |
-| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR` | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                           |
-| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR` | Su liquidación de un mes. 200; 400                                                        |
+| Endpoint                                                        | Roles      | Qué hace                                                                                      |
+| --------------------------------------------------------------- | ---------- | --------------------------------------------------------------------------------------------- |
+| `GET /api/v1/liquidaciones`                                     | `GERENTE`  | Las liquidaciones del mes, una por profesor, filtrables por `profesorId` y `estado`. 200; 400 |
+| `GET /api/v1/liquidaciones/profesores/{profesorId}/{mes}`       | `GERENTE`  | La liquidación de un profesor en un mes, con sus turnos y ajustes. 200; 400; 404              |
+| `POST /api/v1/liquidaciones/profesores/{profesorId}/{mes}/pago` | `GERENTE`  | Registra la transferencia y cierra la liquidación. 201; 400; 404; 409                         |
+| `GET /api/v1/liquidaciones/mis-ingresos`                        | `PROFESOR` | Su mes en curso, sus clases sin cobrar y las cobradas sin asistencia. 200                     |
+| `GET /api/v1/liquidaciones/mis-liquidaciones?page`              | `PROFESOR` | Sus liquidaciones, una fila por mes (sin el en curso). 200; 400                               |
+| `GET /api/v1/liquidaciones/mis-liquidaciones/{mes}`             | `PROFESOR` | Su liquidación de un mes. 200; 400                                                            |
 
 Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de la sesión (HU-45, T-126): ver [Mis ingresos del profesor](#mis-ingresos-del-profesor).
 
@@ -2126,7 +2126,7 @@ Cualquier otro rol recibe 403 `SIN_PERMISO`. Los `mis-…` son del profesor de l
 
 **Importes** en pesos (número JSON), sumados en centavos: en cada fila y en los totales, `parteProfesor + totalAjustes = total` y `parteCentro + parteProfesor = totalCobrado`. Los ajustes son negativos.
 
-**`GET /liquidaciones?mes=2026-09&profesorId=4&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy). `profesorId` (opcional, entero mayor a 0; si no, 400 en `["profesorId"]`) deja sólo la liquidación de ese profesor: lista de 0 o 1 fila, con `totales` de esa fila. Un profesor sin movimientos en el mes, o que no existe, da `data: []` (no 404). Las opciones del filtro salen del buscador del gerente `GET /pagos/profesores`:
+**`GET /liquidaciones?mes=2026-09&profesorId=4&estado=PENDIENTE_DE_PAGO&page=1&pageSize=10`** (paginación de [Listados paginados](#listados-paginados)). Sin `mes`, el **último mes terminado** (el anterior al de hoy). `profesorId` (opcional, entero mayor a 0; si no, 400 en `["profesorId"]`) deja sólo la liquidación de ese profesor: lista de 0 o 1 fila, con `totales` de esa fila. Un profesor sin movimientos en el mes, o que no existe, da `data: []` (no 404). `estado` (opcional: `EN_CURSO`, `PENDIENTE_DE_PAGO`, `SALDO_A_DESCONTAR`, `PAGADA` o `DESCONTADA`; otro valor, 400 en `["estado"]`) deja sólo las liquidaciones en ese estado. Los dos filtros se combinan, y `data`, `meta` y `totales` son los del resultado filtrado (sin coincidencias: `data: []` y totales en 0). Las opciones del filtro por profesor salen del buscador del gerente `GET /pagos/profesores`:
 
 ```json
 {

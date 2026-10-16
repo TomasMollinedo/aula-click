@@ -2,9 +2,17 @@ import type { PaginatedResponse, UsuarioAuditoria } from '@/types'
 
 // Tipos de lo que devuelve la API de liquidaciones (docs/contrato-api.md → Liquidaciones).
 
+/** Los estados de la liquidación de un profesor en un mes, en el orden en que se ofrecen. */
+export const ESTADOS_LIQUIDACION = [
+  'EN_CURSO',
+  'PENDIENTE_DE_PAGO',
+  'SALDO_A_DESCONTAR',
+  'PAGADA',
+  'DESCONTADA',
+] as const
+
 /** El estado de la liquidación de un profesor en un mes. */
-export type EstadoLiquidacion =
-  'EN_CURSO' | 'PENDIENTE_DE_PAGO' | 'SALDO_A_DESCONTAR' | 'PAGADA' | 'DESCONTADA'
+export type EstadoLiquidacion = (typeof ESTADOS_LIQUIDACION)[number]
 
 export type ProfesorLiquidacion = {
   id: number
@@ -44,6 +52,8 @@ export type ListarLiquidacionesDelMesParams = {
   mes?: string
   /** Sólo las liquidaciones de este profesor; sin él, las de todos. */
   profesorId?: number
+  /** Sólo las liquidaciones en este estado; sin él, todas. */
+  estado?: EstadoLiquidacion
   page: number
 }
 

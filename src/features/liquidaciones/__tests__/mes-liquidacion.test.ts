@@ -4,9 +4,11 @@ import {
   leerMesLiquidacion,
   mesAnterior,
   mesSiguiente,
+  paramsConEstado,
   paramsConMes,
   paramsConPagina,
   paramsConProfesor,
+  paramsSinFiltros,
   ultimoDiaDelMes,
 } from '../mes-liquidacion'
 
@@ -45,6 +47,56 @@ describe('leerMesLiquidacion', () => {
   })
 })
 
+describe('el estado', () => {
+  it('se lee de la URL, combinado con el profesor', () => {
+    expect(leer('mes=2026-09&profesorId=4&estado=PENDIENTE_DE_PAGO')).toEqual({
+      mes: '2026-09',
+      profesorId: 4,
+      estado: 'PENDIENTE_DE_PAGO',
+      page: 1,
+    })
+  })
+
+  it.each(['EN_CURSO', 'PENDIENTE_DE_PAGO', 'SALDO_A_DESCONTAR', 'PAGADA', 'DESCONTADA'])(
+    'acepta %s',
+    (estado) => {
+      expect(leer(`estado=${estado}`).estado).toBe(estado)
+    },
+  )
+
+  it.each(['', 'pagada', 'NADA', 'TODOS'])('un estado desconocido (%s) es sin filtro', (estado) => {
+    expect(leer(`estado=${estado}`).estado).toBeUndefined()
+  })
+})
+
+describe('paramsConEstado', () => {
+  it('escribe el estado, conserva el mes y el profesor y vuelve a la página 1', () => {
+    const params = paramsConEstado(new URLSearchParams('mes=2026-09&profesorId=4&page=3'), 'PAGADA')
+    expect(params.get('estado')).toBe('PAGADA')
+    expect(params.get('profesorId')).toBe('4')
+    expect(params.get('mes')).toBe('2026-09')
+    expect(params.has('page')).toBe(false)
+  })
+
+  it('null saca sólo el estado', () => {
+    expect(
+      paramsConEstado(
+        new URLSearchParams('mes=2026-09&profesorId=4&estado=PAGADA'),
+        null,
+      ).toString(),
+    ).toBe('mes=2026-09&profesorId=4')
+  })
+})
+
+describe('paramsSinFiltros', () => {
+  it('saca el profesor, el estado y la página; conserva el mes', () => {
+    const params = paramsSinFiltros(
+      new URLSearchParams('mes=2026-09&profesorId=4&estado=PAGADA&page=2'),
+    )
+    expect(params.toString()).toBe('mes=2026-09')
+  })
+})
+
 describe('paramsConProfesor', () => {
   it('escribe el profesor, conserva el mes y vuelve a la página 1', () => {
     const params = paramsConProfesor(new URLSearchParams('mes=2026-09&page=3'), 4)
@@ -65,6 +117,12 @@ describe('paramsConMes', () => {
     expect(params.get('mes')).toBe('2026-08')
     expect(params.get('otro')).toBe('x')
     expect(params.has('page')).toBe(false)
+  })
+
+  it('conserva el estado elegido', () => {
+    expect(paramsConMes(new URLSearchParams('estado=PAGADA'), '2026-08').get('estado')).toBe(
+      'PAGADA',
+    )
   })
 
   it('conserva el profesor elegido', () => {

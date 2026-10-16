@@ -56,6 +56,15 @@ export const liquidacionesQuerySchema = paginacionQuerySchema.extend({
     .openapi({
       param: { name: 'profesorId', in: 'query' },
     }),
+  estado: z
+    .enum(ESTADOS_LIQUIDACION, { error: 'El estado no es válido' })
+    .optional()
+    .openapi({
+      param: { name: 'estado', in: 'query' },
+      description:
+        'Sólo las liquidaciones en este estado. Se combina con `profesorId`. Sin estado, todas',
+      example: 'PENDIENTE_DE_PAGO',
+    }),
 })
 
 export type LiquidacionesQuery = z.infer<typeof liquidacionesQuerySchema>

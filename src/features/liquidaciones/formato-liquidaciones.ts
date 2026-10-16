@@ -9,6 +9,7 @@ import { textoMes } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
 
 import type {
+  EstadoLiquidacion,
   FilaLiquidacion,
   LiquidacionDetalle,
   PagoLiquidacionRegistrado,
@@ -59,6 +60,15 @@ export function formatoEstadoLiquidacion({
         variante: 'outline',
       }
   }
+}
+
+/** El texto de cada estado en el filtro del listado (sin fechas: el badge de la fila las lleva). */
+export const TEXTO_ESTADO_FILTRO: Record<EstadoLiquidacion, string> = {
+  EN_CURSO: 'En curso',
+  PENDIENTE_DE_PAGO: 'Pendiente de pago',
+  SALDO_A_DESCONTAR: 'Saldo a descontar',
+  PAGADA: 'Pagada',
+  DESCONTADA: 'Descontada',
 }
 
 /** "Gómez, Ana". */

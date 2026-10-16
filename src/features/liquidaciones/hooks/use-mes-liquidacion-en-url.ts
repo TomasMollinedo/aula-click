@@ -6,16 +6,20 @@ import { format } from 'date-fns'
 
 import {
   leerMesLiquidacion,
+  paramsConEstado,
   paramsConMes,
   paramsConPagina,
   paramsConProfesor,
+  paramsSinFiltros,
 } from '../mes-liquidacion'
+import type { EstadoLiquidacion } from '../liquidaciones.types'
 
 /**
- * El mes (`?mes=`), el profesor (`?profesorId=`) y la página (`?page=`) del listado de
- * liquidaciones, guardados en la URL con `router.replace` sobre la ruta actual, como el período
- * del tablero. `mesEnCurso` sale del navegador (docs/arquitectura-frontend.md → Fechas y horas),
- * solo para deshabilitar "Mes siguiente": qué mes es válido lo decide la API.
+ * El mes (`?mes=`), los filtros por profesor (`?profesorId=`) y estado (`?estado=`) y la página
+ * (`?page=`) del listado de liquidaciones, guardados en la URL con `router.replace` sobre la
+ * ruta actual, como el período del tablero. `mesEnCurso` sale del navegador
+ * (docs/arquitectura-frontend.md → Fechas y horas), solo para deshabilitar "Mes siguiente": qué mes
+ * es válido lo decide la API.
  */
 export function useMesLiquidacionEnUrl() {
   const searchParams = useSearchParams()
@@ -23,7 +27,7 @@ export function useMesLiquidacionEnUrl() {
   const router = useRouter()
 
   const texto = searchParams.toString()
-  const { mes, profesorId, page } = useMemo(
+  const { mes, profesorId, estado, page } = useMemo(
     () => leerMesLiquidacion(new URLSearchParams(texto)),
     [texto],
   )
@@ -46,6 +50,16 @@ export function useMesLiquidacionEnUrl() {
     [ir, texto],
   )
 
+  const elegirEstado = useCallback(
+    (nuevo: EstadoLiquidacion | null) => ir(paramsConEstado(new URLSearchParams(texto), nuevo)),
+    [ir, texto],
+  )
+
+  const limpiarFiltros = useCallback(
+    () => ir(paramsSinFiltros(new URLSearchParams(texto))),
+    [ir, texto],
+  )
+
   const cambiarPagina = useCallback(
     (nueva: number) => ir(paramsConPagina(new URLSearchParams(texto), nueva)),
     [ir, texto],
@@ -54,10 +68,13 @@ export function useMesLiquidacionEnUrl() {
   return {
     mes,
     profesorId,
+    estado,
     page,
     mesEnCurso: format(new Date(), 'yyyy-MM'),
     elegirMes,
     elegirProfesor,
+    elegirEstado,
+    limpiarFiltros,
     cambiarPagina,
   }
 }

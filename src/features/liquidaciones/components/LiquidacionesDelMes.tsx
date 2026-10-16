@@ -5,12 +5,19 @@ import Link from 'next/link'
 import { AlertCircle, ChevronLeft, ChevronRight, HandCoins, RotateCw } from 'lucide-react'
 
 import { Alert, AlertDescription } from '@/components/ui/alert'
+import { BarraFiltros, claseControlFiltro } from '@/components/ui/barra-filtros'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { EmptyState } from '@/components/ui/empty-state'
 import { Field } from '@/components/ui/field'
-import { LimpiarFiltros } from '@/components/ui/limpiar-filtros'
 import { PaginationControls } from '@/components/ui/pagination'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
 import {
   Table,
@@ -26,10 +33,15 @@ import type { ApiError } from '@/utils/fetch-json'
 import { textoMes } from '@/utils/formato-fechas'
 import { formatearPesos } from '@/utils/moneda'
 
-import { nombreDeProfesor } from '../formato-liquidaciones'
+import { nombreDeProfesor, TEXTO_ESTADO_FILTRO } from '../formato-liquidaciones'
 import { useLiquidacionesDelMes } from '../hooks/use-liquidaciones-del-mes'
 import { useMesLiquidacionEnUrl } from '../hooks/use-mes-liquidacion-en-url'
-import type { LiquidacionesDelMes as Listado, TotalesLiquidacion } from '../liquidaciones.types'
+import {
+  ESTADOS_LIQUIDACION,
+  type EstadoLiquidacion,
+  type LiquidacionesDelMes as Listado,
+  type TotalesLiquidacion,
+} from '../liquidaciones.types'
 import { mesAnterior, mesSiguiente } from '../mes-liquidacion'
 import { EstadoLiquidacionBadge } from './EstadoLiquidacionBadge'
 import { FiltroProfesorDeLiquidaciones } from './FiltroProfesorDeLiquidaciones'
@@ -51,14 +63,25 @@ const IMPORTE = 'text-right tabular-nums whitespace-nowrap'
  * Listado de liquidaciones del mes (HU-44), en `/gerente/liquidaciones`: el mes va en la URL
  * (`?mes=`; sin él, el último terminado, que decide la API) y se recorre con las flechas. Todo se
  * rotula con el `mes` de la respuesta, no con el pedido: mientras llega el mes nuevo se ve el
- * anterior atenuado. Se puede filtrar por profesor (`?profesorId=`, con un buscador). Los totales
- * son de todo lo que devuelve el filtro, no de la página.
+ * anterior atenuado. Se puede filtrar por profesor (`?profesorId=`, con un buscador) y por estado
+ * (`?estado=`), y los dos se combinan. Los totales son de todo lo que devuelve el filtro, no de la
+ * página.
  */
 export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
-  const { mes, profesorId, page, mesEnCurso, elegirMes, elegirProfesor, cambiarPagina } =
-    useMesLiquidacionEnUrl()
-  const idProfesor = useId()
-  const query = useLiquidacionesDelMes({ mes, profesorId, page })
+  const {
+    mes,
+    profesorId,
+    estado,
+    page,
+    mesEnCurso,
+    elegirMes,
+    elegirProfesor,
+    elegirEstado,
+    limpiarFiltros,
+    cambiarPagina,
+  } = useMesLiquidacionEnUrl()
+  const id = useId()
+  const query = useLiquidacionesDelMes({ mes, profesorId, estado, page })
   const { data } = query
 
   // Página fuera de rango (una URL vieja): pasa a la última que exista.
@@ -73,13 +96,15 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
     if (page > ultima) corregir.current(ultima)
   }, [totalPages, page])
 
+  const hayFiltros = profesorId !== undefined || estado !== undefined
+
   // Las flechas parten del mes pedido; sin mes en la URL, del que devolvió la API.
   const base = mes ?? data?.mes
 
   return (
     <div className="space-y-6">
       {!query.isError && (
-        <div className="flex flex-wrap items-end justify-between gap-4">
+        <div className="space-y-4">
           <SelectorMes
             mes={data?.mes}
             enCurso={data?.mes === mesEnCurso}
@@ -88,19 +113,23 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
               base && base < mesEnCurso ? () => elegirMes(mesSiguiente(base)) : undefined
             }
           />
-          <div className="flex items-end gap-3">
-            <Field label="Profesor" htmlFor={idProfesor} className="w-64">
+          <BarraFiltros
+            hayFiltros={hayFiltros}
+            onLimpiar={limpiarFiltros}
+            limpiarEnFila="lg"
+            className="sm:grid-cols-2 lg:grid-cols-[minmax(0,18rem)_minmax(0,14rem)_auto]"
+          >
+            <Field label="Profesor" htmlFor={`${id}-profesor`}>
               <FiltroProfesorDeLiquidaciones
-                id={idProfesor}
+                id={`${id}-profesor`}
                 value={profesorId ?? null}
                 onChange={elegirProfesor}
               />
             </Field>
-            <LimpiarFiltros
-              hayFiltros={profesorId !== undefined}
-              onClick={() => elegirProfesor(null)}
-            />
-          </div>
+            <Field label="Estado" htmlFor={`${id}-estado`}>
+              <FiltroEstado id={`${id}-estado`} value={estado ?? null} onChange={elegirEstado} />
+            </Field>
+          </BarraFiltros>
         </div>
       )}
 
@@ -121,7 +150,7 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
           <TablaLiquidaciones
             listado={data}
             rutaBase={rutaBase}
-            conFiltro={profesorId !== undefined}
+            conFiltro={hayFiltros}
             onPageChange={cambiarPagina}
           />
         </div>
@@ -133,6 +162,38 @@ export function LiquidacionesDelMes({ rutaBase }: LiquidacionesDelMesProps) {
         </Card>
       )}
     </div>
+  )
+}
+
+// Radix Select no admite un valor vacío: "sin filtro" es este valor y se traduce a `null`.
+const TODOS = 'TODOS'
+
+function FiltroEstado({
+  id,
+  value,
+  onChange,
+}: {
+  id: string
+  value: EstadoLiquidacion | null
+  onChange: (valor: EstadoLiquidacion | null) => void
+}) {
+  return (
+    <Select
+      value={value ?? TODOS}
+      onValueChange={(valor) => onChange(valor === TODOS ? null : (valor as EstadoLiquidacion))}
+    >
+      <SelectTrigger id={id} className={claseControlFiltro(value === null)}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={TODOS}>Todos los estados</SelectItem>
+        {ESTADOS_LIQUIDACION.map((estado) => (
+          <SelectItem key={estado} value={estado}>
+            {TEXTO_ESTADO_FILTRO[estado]}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   )
 }
 
@@ -195,7 +256,7 @@ function TablaLiquidaciones({
 }: {
   listado: Listado
   rutaBase: string
-  /** Si el listado está filtrado por profesor: cambia el vacío y el rótulo del total. */
+  /** Si el listado está filtrado: cambia el vacío y el rótulo del total. */
   conFiltro: boolean
   onPageChange: (page: number) => void
 }) {
@@ -207,7 +268,9 @@ function TablaLiquidaciones({
         <EmptyState
           icon={HandCoins}
           title={`No hay liquidaciones en ${textoMes(mes)}`}
-          description={conFiltro ? 'Ese profesor no tiene movimientos en el mes.' : undefined}
+          description={
+            conFiltro ? 'Ninguna liquidación del mes coincide con los filtros.' : undefined
+          }
         />
       </Card>
     )
@@ -249,7 +312,7 @@ function TablaLiquidaciones({
         <TableFooter>
           <TableRow className="hover:bg-transparent">
             <TableCell className="font-semibold whitespace-nowrap">
-              {conFiltro ? 'Total del profesor' : 'Total del mes'}
+              {conFiltro ? 'Total filtrado' : 'Total del mes'}
             </TableCell>
             <Importes totales={totales} />
             <TableCell />
