@@ -250,7 +250,7 @@ src/
 │ ├── anulaciones/ # HU-42 (T-79, T-105): anular un pago
 │ │ ├── anulaciones.{types,schema}.ts, errores-api.ts, formato-anulaciones.ts, api/{anulaciones.api,anulaciones.keys}.ts
 │ │ ├── hooks/{use-previa-anulacion.ts, use-anular-pago.ts, use-invalidar-anulaciones.ts} # al anular invalida pagos, cuentas, ocurrencias y agendas
-│ │ └── components/{AccionAnularPago, AnularPagoDialog}.tsx # AccionAnularPago({ pago: PagoParaAcciones }): el pie del detalle del pago
+│ │ └── components/{AccionAnularPago, AnularPagoDialog}.tsx # AccionAnularPago({ pago: PagoParaAcciones }): el pie del detalle del pago (con el pago vigente que la API no deja anular —turnos ya dictados, decisión T-179— queda deshabilitado, con el motivo en un tooltip y para lectores de pantalla)
 │ ├── cancelaciones/ # HU-13 (T-46): cancelar uno o varios turnos
 │ │ ├── cancelaciones.{types,schema}.ts, errores-api.ts, formato-cancelaciones.ts, api/{cancelaciones.api,cancelaciones.keys}.ts
 │ │ ├── hooks/{use-cancelar-turnos.ts, use-invalidar-cancelaciones.ts} # al cancelar invalida ocurrencias, agendas y cuentas
